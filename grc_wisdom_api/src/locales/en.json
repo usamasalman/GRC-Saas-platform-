@@ -1,0 +1,6 @@
+{
+  "invoice.generated": "Invoice generated successfully.",
+  "auth.unauthorized": "Unauthorized access.",
+  "doc.locked": "Document locked for editing.",
+  "zatca.cleared": "Invoice cleared by ZATCA."
+}

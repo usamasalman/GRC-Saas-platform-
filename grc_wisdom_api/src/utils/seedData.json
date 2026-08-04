@@ -1,0 +1,1736 @@
+{
+ "SEED_DOCS": [
+  {
+   "id": "DOC-001",
+   "code": "POL-SEC-001",
+   "title": "Enterprise Information Security Policy",
+   "category": "Policy",
+   "department": "Information Security",
+   "classification": "Confidential",
+   "owner": "Eleanor Vance",
+   "status": "Draft",
+   "version": "1.0",
+   "checkedOutBy": null,
+   "content": "<h2>1. Purpose</h2><p>This policy establishes the information security governance requirements of Global Bank.</p><h2>2. Scope</h2><p>It applies to all personnel, information assets, locations, suppliers and technology services.</p><h2>3. Governance Requirements</h2><p>Control owners shall maintain evidence, report exceptions and complete periodic effectiveness reviews.</p>",
+   "versions": [
+    {
+     "version": "1.0",
+     "summary": "Initial controlled draft",
+     "content": "<h2>1. Purpose</h2><p>This policy establishes the information security governance requirements of Global Bank.</p><h2>2. Scope</h2><p>It applies to all personnel, information assets, locations, suppliers and technology services.</p><h2>3. Governance Requirements</h2><p>Control owners shall maintain evidence, report exceptions and complete periodic effectiveness reviews.</p>",
+     "at": "2026-07-20T10:15:00Z",
+     "by": "Eleanor Vance"
+    }
+   ],
+   "approvals": [],
+   "acknowledgements": [],
+   "retention": "7 years after supersession",
+   "legalHold": false,
+   "reviewDate": "2026-09-30",
+   "frameworks": [
+    "ISO 27001",
+    "SOC 2"
+   ],
+   "createdAt": "2026-07-20T10:15:00Z"
+  },
+  {
+   "id": "DOC-002",
+   "code": "PRO-ACC-014",
+   "title": "User Access Management Procedure",
+   "category": "Procedure",
+   "department": "IT Operations",
+   "classification": "Internal",
+   "owner": "Eleanor Vance",
+   "status": "Pending Approval",
+   "version": "2.1",
+   "checkedOutBy": null,
+   "content": "<h2>Access Lifecycle</h2><p>Access shall be approved, provisioned, reviewed, modified and revoked through controlled workflows.</p><h2>Privileged Access</h2><p>Privileged roles require MFA, time-bound authorization and monthly review.</p>",
+   "versions": [
+    {
+     "version": "2.0",
+     "summary": "Annual review",
+     "content": "<h2>Access Lifecycle</h2><p>Access shall be approved, provisioned and revoked through controlled workflows.</p>",
+     "at": "2026-06-01T09:00:00Z",
+     "by": "Eleanor Vance"
+    },
+    {
+     "version": "2.1",
+     "summary": "Added review and privileged access clauses",
+     "content": "<h2>Access Lifecycle</h2><p>Access shall be approved, provisioned, reviewed, modified and revoked through controlled workflows.</p><h2>Privileged Access</h2><p>Privileged roles require MFA, time-bound authorization and monthly review.</p>",
+     "at": "2026-07-18T12:00:00Z",
+     "by": "Eleanor Vance"
+    }
+   ],
+   "approvals": [],
+   "acknowledgements": [],
+   "retention": "7 years after supersession",
+   "legalHold": false,
+   "reviewDate": "2026-08-12",
+   "frameworks": [
+    "ISO 27001 A.5.18"
+   ],
+   "createdAt": "2026-06-01T09:00:00Z"
+  },
+  {
+   "id": "DOC-003",
+   "code": "POL-DP-007",
+   "title": "Personal Data Protection Policy",
+   "category": "Policy",
+   "department": "Legal & Compliance",
+   "classification": "Confidential",
+   "owner": "Eleanor Vance",
+   "status": "Published",
+   "version": "2.0",
+   "checkedOutBy": null,
+   "content": "<h2>Purpose and Scope</h2><p>This policy governs lawful and transparent processing of personal data.</p><h2>Data Subject Rights</h2><p>Requests shall be verified, tracked and completed within approved service targets.</p>",
+   "versions": [
+    {
+     "version": "1.0",
+     "summary": "Initial issue",
+     "content": "<h2>Purpose</h2><p>This policy governs personal data processing.</p>",
+     "at": "2025-09-01T08:00:00Z",
+     "by": "Eleanor Vance"
+    },
+    {
+     "version": "2.0",
+     "summary": "Major update for Saudi PDPL",
+     "content": "<h2>Purpose and Scope</h2><p>This policy governs lawful and transparent processing of personal data.</p><h2>Data Subject Rights</h2><p>Requests shall be verified, tracked and completed within approved service targets.</p>",
+     "at": "2026-07-01T08:00:00Z",
+     "by": "Eleanor Vance"
+    }
+   ],
+   "approvals": [
+    {
+     "name": "Sarah Jenkins",
+     "role": "Compliance Approver",
+     "at": "2026-07-01T11:20:00Z",
+     "ip": "10.42.8.21",
+     "session": "SES-APP-2048",
+     "hash": "a91c0e7427d2c5139db42190f34a51d0c46b93309bd07f3c1d4298e867d8cd77"
+    }
+   ],
+   "acknowledgements": [
+    {
+     "name": "Alex Rivera",
+     "email": "alex.rivera@globalbank.com",
+     "at": "2026-07-02T09:17:00Z",
+     "signature": "Alex Rivera"
+    }
+   ],
+   "retention": "7 years after supersession",
+   "legalHold": false,
+   "reviewDate": "2027-07-01",
+   "frameworks": [
+    "Saudi PDPL"
+   ],
+   "createdAt": "2025-09-01T08:00:00Z"
+  },
+  {
+   "id": "DOC-004",
+   "code": "RPT-IA-032",
+   "title": "Internal Audit Report — Identity & Access",
+   "category": "Report",
+   "department": "Internal Audit",
+   "classification": "Restricted",
+   "owner": "Internal Audit",
+   "status": "Published",
+   "version": "1.0",
+   "checkedOutBy": null,
+   "content": "<h2>Executive Summary</h2><p>The audit identified four findings, including one high-priority privileged-access issue.</p><h2>Conclusion</h2><p>Control design is generally adequate; operating effectiveness requires improvement.</p>",
+   "versions": [
+    {
+     "version": "1.0",
+     "summary": "Final signed report",
+     "content": "<h2>Executive Summary</h2><p>The audit identified four findings, including one high-priority privileged-access issue.</p><h2>Conclusion</h2><p>Control design is generally adequate; operating effectiveness requires improvement.</p>",
+     "at": "2026-07-15T13:00:00Z",
+     "by": "Internal Audit"
+    }
+   ],
+   "approvals": [
+    {
+     "name": "Sarah Jenkins",
+     "role": "Compliance Approver",
+     "at": "2026-07-15T14:30:00Z",
+     "ip": "10.42.8.21",
+     "session": "SES-APP-1891",
+     "hash": "b1db68f7f22d45f4c6f7e489a27ef0e61ac3b34800c8862df4522b7dfc45e79a"
+    }
+   ],
+   "acknowledgements": [],
+   "retention": "10 years",
+   "legalHold": true,
+   "reviewDate": "N/A",
+   "frameworks": [
+    "ISO 27001",
+    "SOC 2"
+   ],
+   "createdAt": "2026-07-15T13:00:00Z"
+  }
+ ],
+ "SEED_LOGS": [
+  {
+   "id": "LOG-001",
+   "event": "Create",
+   "document": "POL-SEC-001",
+   "user": "Eleanor Vance",
+   "role": "Compliance Manager",
+   "at": "2026-07-20T10:15:00Z",
+   "ip": "10.42.18.15",
+   "hash": "23af4477d34fbac97f31357751295fa14e43b04ac748b6ed2634d82a5e40804b"
+  },
+  {
+   "id": "LOG-002",
+   "event": "Approve",
+   "document": "POL-DP-007",
+   "user": "Sarah Jenkins",
+   "role": "Compliance Approver",
+   "at": "2026-07-01T11:20:00Z",
+   "ip": "10.42.8.21",
+   "hash": "a91c0e7427d2c5139db42190f34a51d0c46b93309bd07f3c1d4298e867d8cd77"
+  },
+  {
+   "id": "LOG-003",
+   "event": "Acknowledge",
+   "document": "POL-DP-007",
+   "user": "Alex Rivera",
+   "role": "Staff Employee",
+   "at": "2026-07-02T09:17:00Z",
+   "ip": "10.42.35.61",
+   "hash": "4c72a5651fe1235533cbb4a23ef0369b004574fa388f1644827c1d370a811cc2"
+  },
+  {
+   "id": "LOG-004",
+   "event": "Legal Hold",
+   "document": "RPT-IA-032",
+   "user": "Sarah Jenkins",
+   "role": "Compliance Approver",
+   "at": "2026-07-16T08:45:00Z",
+   "ip": "10.42.8.21",
+   "hash": "3cf97dad50c956011e80e11a2db312b6e3c741bdfbc843432db6865bdbce364d"
+  }
+ ],
+ "SEED_TICKETS": [
+  {
+   "id": "INC-2026-0142",
+   "context": "OmniOps",
+   "requester": "Hassan Rahman",
+   "email": "support.coordinator@omniops.me",
+   "type": "Incident",
+   "service": "Reports & Exports",
+   "subject": "Board report export timing out",
+   "description": "The bilingual board pack fails during Word export for the consolidated organization scope.",
+   "priority": "P2 High",
+   "status": "In Progress",
+   "assignedTeam": "Application Support",
+   "agent": "Muneeb Ali",
+   "createdAt": "2026-07-24T08:12:00Z",
+   "dueAt": "2026-07-24T16:12:00Z",
+   "sla": "8 business hours",
+   "comments": [
+    {
+     "by": "Hassan Rahman",
+     "at": "2026-07-24T08:12:00Z",
+     "text": "Issue reproduced for two report templates."
+    },
+    {
+     "by": "Muneeb Ali",
+     "at": "2026-07-24T09:05:00Z",
+     "text": "Engineering trace collected; workaround shared."
+    }
+   ]
+  },
+  {
+   "id": "SR-2026-0098",
+   "context": "Al Noor Holding Group",
+   "requester": "Maha Al Faisal",
+   "email": "group.admin@alnoor.com",
+   "type": "Service Request",
+   "service": "Identity & Access",
+   "subject": "Enable SAML SSO for Jordan subsidiary",
+   "description": "Configure a new identity provider and map regional administrator claims.",
+   "priority": "P3 Medium",
+   "status": "Pending Customer",
+   "assignedTeam": "Identity Engineering",
+   "agent": "Lina Al Harbi",
+   "createdAt": "2026-07-23T10:00:00Z",
+   "dueAt": "2026-07-28T14:00:00Z",
+   "sla": "3 business days",
+   "comments": [
+    {
+     "by": "Lina Al Harbi",
+     "at": "2026-07-23T14:30:00Z",
+     "text": "Awaiting IdP metadata and approved attribute mapping."
+    }
+   ]
+  },
+  {
+   "id": "INC-2026-0131",
+   "context": "Hayat National Hospital — Madinah",
+   "requester": "Nizar Al-Saqqaf",
+   "email": "network.admin@givc.com.sa",
+   "type": "Incident",
+   "service": "Document Management",
+   "subject": "Document check-in button unavailable",
+   "description": "A checked-out procedure remains locked after browser session expiry.",
+   "priority": "P2 High",
+   "status": "Resolved",
+   "assignedTeam": "Application Support",
+   "agent": "Huda Al Mansour",
+   "createdAt": "2026-07-22T07:45:00Z",
+   "dueAt": "2026-07-22T15:45:00Z",
+   "sla": "8 business hours",
+   "comments": [
+    {
+     "by": "Huda Al Mansour",
+     "at": "2026-07-22T09:10:00Z",
+     "text": "Orphan lock safely released after ownership validation."
+    }
+   ]
+  },
+  {
+   "id": "SR-2026-0087",
+   "context": "RetailCo Franchise Network",
+   "requester": "Sana Javed",
+   "email": "network.support@retailco.com",
+   "type": "Service Request",
+   "service": "Eye Phish",
+   "subject": "Authorize Arabic QR phishing campaign",
+   "description": "Review sending domain, target population and awareness communications for 1,240 users.",
+   "priority": "P3 Medium",
+   "status": "New",
+   "assignedTeam": "Human Risk Services",
+   "agent": "Unassigned",
+   "createdAt": "2026-07-24T11:15:00Z",
+   "dueAt": "2026-07-29T11:15:00Z",
+   "sla": "3 business days",
+   "comments": []
+  },
+  {
+   "id": "SEC-2026-0034",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "requester": "Khalid Al Harbi",
+   "email": "asm@grcwisdom.com",
+   "type": "Security Event",
+   "service": "Wisdom Eye",
+   "subject": "Potential cross-tenant exposure correlation",
+   "description": "A finding correlation rule requires validation before customer notification.",
+   "priority": "P1 Critical",
+   "status": "In Progress",
+   "assignedTeam": "Security Operations",
+   "agent": "Lina Al Harbi",
+   "createdAt": "2026-07-24T07:32:00Z",
+   "dueAt": "2026-07-24T08:32:00Z",
+   "sla": "1 hour",
+   "comments": [
+    {
+     "by": "Lina Al Harbi",
+     "at": "2026-07-24T07:45:00Z",
+     "text": "Isolation check started; no confirmed customer data exposure."
+    }
+   ]
+  },
+  {
+   "id": "REQ-2026-0051",
+   "context": "Global Bank — Information Security",
+   "requester": "Eleanor Vance",
+   "email": "eleanor.vance@globalbank.com",
+   "type": "Service Request",
+   "service": "Document Management",
+   "subject": "Create new restricted retention class",
+   "description": "Add a ten-year retention class with mandatory legal review before disposition.",
+   "priority": "P4 Low",
+   "status": "New",
+   "assignedTeam": "GRC Configuration",
+   "agent": "Unassigned",
+   "createdAt": "2026-07-21T13:20:00Z",
+   "dueAt": "2026-07-30T13:20:00Z",
+   "sla": "5 business days",
+   "comments": []
+  },
+  {
+   "id": "SR-2026-0102",
+   "context": "GRC Consulting Partners",
+   "requester": "Usman Tariq",
+   "email": "post.sales@grcconsulting.com",
+   "type": "Service Request",
+   "service": "Client Workspace",
+   "subject": "Transfer completed client workspace",
+   "description": "Transfer Eteqan Projects workspace from partner subscription to direct customer subscription.",
+   "priority": "P3 Medium",
+   "status": "Under Review",
+   "assignedTeam": "Customer Success",
+   "agent": "Noura Al Zahrani",
+   "createdAt": "2026-07-24T09:50:00Z",
+   "dueAt": "2026-07-29T09:50:00Z",
+   "sla": "3 business days",
+   "comments": []
+  }
+ ],
+ "SEED_PLATFORM_USERS": [
+  {
+   "id": "USR-0001",
+   "name": "Wasif Mehmood",
+   "email": "owner@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Executive & Product",
+   "role": "Platform Super Admin",
+   "profile": "Platform Owner",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Board",
+   "lastLogin": "2026-07-24T21:04:00Z"
+  },
+  {
+   "id": "USR-0002",
+   "name": "Huda Al Mansour",
+   "email": "servicedesk@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Customer Support",
+   "role": "Platform Service Desk Manager",
+   "profile": "Service Desk Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Customer Operations",
+   "lastLogin": "2026-07-24T20:40:00Z"
+  },
+  {
+   "id": "USR-0003",
+   "name": "Bilal Qureshi",
+   "email": "marketplace@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Product & Engineering",
+   "role": "Open Source Marketplace Curator",
+   "profile": "Marketplace Curator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Product Lead",
+   "lastLogin": "2026-07-24T18:10:00Z"
+  },
+  {
+   "id": "USR-0004",
+   "name": "Noura Al Zahrani",
+   "email": "success@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Customer Success",
+   "role": "Customer Success Manager",
+   "profile": "Customer Success",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T19:30:00Z"
+  },
+  {
+   "id": "USR-0101",
+   "name": "Maha Al Faisal",
+   "email": "group.admin@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Group Governance",
+   "role": "Group Admin",
+   "profile": "Group Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Group CEO",
+   "lastLogin": "2026-07-24T17:00:00Z"
+  },
+  {
+   "id": "USR-0102",
+   "name": "Laila Al Noor",
+   "email": "group.compliance@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Compliance & GRC",
+   "role": "Group Compliance Manager",
+   "profile": "Group Compliance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Group CISO",
+   "lastLogin": "2026-07-24T16:30:00Z"
+  },
+  {
+   "id": "USR-0103",
+   "name": "Saad Al Rashid",
+   "email": "group.risk@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Enterprise Risk",
+   "role": "Group Risk Manager",
+   "profile": "Group Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Group CRO",
+   "lastLogin": "2026-07-24T15:42:00Z"
+  },
+  {
+   "id": "USR-0104",
+   "name": "Reem Al Qahtani",
+   "email": "group.hr@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Human Resources",
+   "role": "Group HR Manager",
+   "profile": "Group HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CHRO",
+   "lastLogin": "2026-07-24T14:20:00Z"
+  },
+  {
+   "id": "USR-0105",
+   "name": "Yasir Malik",
+   "email": "group.finance@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Finance",
+   "role": "Group Finance Manager",
+   "profile": "Group Finance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CFO",
+   "lastLogin": "2026-07-24T13:05:00Z"
+  },
+  {
+   "id": "USR-0201",
+   "name": "Fadi Ibrahim",
+   "email": "company.admin@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "GRC Administration",
+   "role": "Organization Admin",
+   "profile": "Organization Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Top Management",
+   "lastLogin": "2026-07-24T18:45:00Z"
+  },
+  {
+   "id": "USR-0202",
+   "name": "Mahmoud Abdulaziz",
+   "email": "grc.manager@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Compliance & GRC",
+   "role": "Organization GRC Manager",
+   "profile": "GRC Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Fadi Ibrahim",
+   "lastLogin": "2026-07-24T17:35:00Z"
+  },
+  {
+   "id": "USR-0203",
+   "name": "Saud Smadi",
+   "email": "risk.manager@omniops.me",
+   "context": "OmniOps",
+   "branch": "Jordan Office",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Risk Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Fadi Ibrahim",
+   "lastLogin": "2026-07-24T17:10:00Z"
+  },
+  {
+   "id": "USR-0204",
+   "name": "Noura Alsuhaimi",
+   "email": "hr.manager@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Human Resources",
+   "role": "HR Manager",
+   "profile": "HR Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Top Management",
+   "lastLogin": "2026-07-24T16:40:00Z"
+  },
+  {
+   "id": "USR-0205",
+   "name": "Alaa Tamimi",
+   "email": "finance.manager@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Finance",
+   "role": "Finance Manager",
+   "profile": "Finance Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CFO",
+   "lastLogin": "2026-07-24T16:00:00Z"
+  },
+  {
+   "id": "USR-0206",
+   "name": "Hassan Rahman",
+   "email": "support.coordinator@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Customer Support",
+   "role": "Organization Support Coordinator",
+   "profile": "Support Coordinator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Fadi Ibrahim",
+   "lastLogin": "2026-07-24T15:20:00Z"
+  },
+  {
+   "id": "USR-0207",
+   "name": "Ibrahim Abdulaziz",
+   "email": "security.manager@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Security Operations",
+   "role": "Wisdom Eye Manager",
+   "profile": "Security Services Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CISO",
+   "lastLogin": "2026-07-24T14:55:00Z"
+  },
+  {
+   "id": "USR-0301",
+   "name": "Nizar Al-Saqqaf",
+   "email": "network.admin@givc.com.sa",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "IT Operations",
+   "role": "Branch Admin",
+   "profile": "Branch Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Organization Admin",
+   "lastLogin": "2026-07-24T17:20:00Z"
+  },
+  {
+   "id": "USR-0302",
+   "name": "Hassan Mehmood",
+   "email": "compliance.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Compliance & GRC",
+   "role": "Branch Compliance Officer",
+   "profile": "Branch Compliance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Branch Admin",
+   "lastLogin": "2026-07-24T16:10:00Z"
+  },
+  {
+   "id": "USR-0303",
+   "name": "Mariam Ali",
+   "email": "hr.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Human Resources",
+   "role": "Branch HR User",
+   "profile": "Branch HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Branch Admin",
+   "lastLogin": "2026-07-24T15:30:00Z"
+  },
+  {
+   "id": "USR-0304",
+   "name": "Rashid Khan",
+   "email": "finance.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Finance",
+   "role": "Branch Finance User",
+   "profile": "Branch Finance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Branch Admin",
+   "lastLogin": "2026-07-24T14:15:00Z"
+  },
+  {
+   "id": "USR-0401",
+   "name": "Aisha Khan",
+   "email": "partner.owner@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Executive",
+   "role": "Partner Owner",
+   "profile": "Partner Owner",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Board",
+   "lastLogin": "2026-07-24T19:00:00Z"
+  },
+  {
+   "id": "USR-0402",
+   "name": "Zainab Iqbal",
+   "email": "presales@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Pre-Sales",
+   "role": "Pre-Sales Manager",
+   "profile": "Pre-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T18:25:00Z"
+  },
+  {
+   "id": "USR-0403",
+   "name": "Usman Tariq",
+   "email": "post.sales@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Post-Sales & Customer Success",
+   "role": "Post-Sales Customer Success Manager",
+   "profile": "Post-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T18:05:00Z"
+  },
+  {
+   "id": "USR-0501",
+   "name": "Rania Al Saud",
+   "email": "franchisor.admin@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Franchise Governance",
+   "role": "Franchisor Admin",
+   "profile": "Franchisor Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T17:50:00Z"
+  },
+  {
+   "id": "USR-0502",
+   "name": "Sana Javed",
+   "email": "network.support@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Customer Support",
+   "role": "Franchise Support Manager",
+   "profile": "Network Support",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Franchisor Admin",
+   "lastLogin": "2026-07-24T16:55:00Z"
+  },
+  {
+   "id": "USR-0005",
+   "name": "Omar Siddiqui",
+   "email": "billing@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Finance",
+   "role": "Platform Billing Admin",
+   "profile": "Billing Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CFO",
+   "lastLogin": "2026-07-24T19:05:00Z"
+  },
+  {
+   "id": "USR-0006",
+   "name": "Lina Al Harbi",
+   "email": "security@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Security Operations",
+   "role": "Platform Security Admin",
+   "profile": "Security Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CISO",
+   "lastLogin": "2026-07-24T19:25:00Z"
+  },
+  {
+   "id": "USR-0007",
+   "name": "Khalid Al Harbi",
+   "email": "asm@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Security Operations",
+   "role": "Wisdom Eye Security Analyst",
+   "profile": "ASM Analyst",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Platform Security Admin",
+   "lastLogin": "2026-07-24T18:55:00Z"
+  },
+  {
+   "id": "USR-0008",
+   "name": "Sara Iqbal",
+   "email": "hr@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Human Resources",
+   "role": "HR Manager",
+   "profile": "Platform HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T16:45:00Z"
+  },
+  {
+   "id": "USR-0009",
+   "name": "Adeel Farooq",
+   "email": "risk@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Platform Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CISO",
+   "lastLogin": "2026-07-24T16:15:00Z"
+  },
+  {
+   "id": "USR-0010",
+   "name": "Zainab Noor",
+   "email": "presales@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Pre-Sales",
+   "role": "Pre-Sales Manager",
+   "profile": "Platform Pre-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Lead",
+   "lastLogin": "2026-07-24T15:55:00Z"
+  },
+  {
+   "id": "USR-0011",
+   "name": "Usman Shah",
+   "email": "postsales@grcwisdom.com",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "branch": "Platform",
+   "department": "Post-Sales & Customer Success",
+   "role": "Post-Sales Customer Success Manager",
+   "profile": "Platform Post-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Customer Success Lead",
+   "lastLogin": "2026-07-24T15:40:00Z"
+  },
+  {
+   "id": "USR-0208",
+   "name": "Abdullah Alfifi",
+   "email": "top.management@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Executive Management",
+   "role": "Executive Sponsor",
+   "profile": "Executive Read Only",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Board",
+   "lastLogin": "2026-07-24T18:00:00Z"
+  },
+  {
+   "id": "USR-0209",
+   "name": "Shahd Hamdan",
+   "email": "asset.owner@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "IT Operations",
+   "role": "Asset Owner",
+   "profile": "Asset Owner",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CTO",
+   "lastLogin": "2026-07-24T14:30:00Z"
+  },
+  {
+   "id": "USR-0210",
+   "name": "Mehdi Tantaoui",
+   "email": "internal.audit@omniops.me",
+   "context": "OmniOps",
+   "branch": "Morocco Office",
+   "department": "Internal Audit",
+   "role": "Internal Auditor",
+   "profile": "Auditor",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Audit Committee",
+   "lastLogin": "2026-07-24T13:40:00Z"
+  },
+  {
+   "id": "USR-0305",
+   "name": "Ahmed Saleh",
+   "email": "risk.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Branch Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Branch Admin",
+   "lastLogin": "2026-07-24T13:55:00Z"
+  },
+  {
+   "id": "USR-0306",
+   "name": "Fatima Noor",
+   "email": "support.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Customer Support",
+   "role": "Support Coordinator",
+   "profile": "Branch Support",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Branch Admin",
+   "lastLogin": "2026-07-24T13:25:00Z"
+  },
+  {
+   "id": "USR-0404",
+   "name": "Amir Zaman",
+   "email": "engagement.manager@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Post-Sales & Delivery",
+   "role": "Engagement Manager",
+   "profile": "Engagement Manager",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T17:45:00Z"
+  },
+  {
+   "id": "USR-0405",
+   "name": "Wasif Mehmood",
+   "email": "finance@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Finance",
+   "role": "Finance Manager",
+   "profile": "Partner Finance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T17:10:00Z"
+  },
+  {
+   "id": "USR-0406",
+   "name": "Ammad Masood",
+   "email": "consultant@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "KSA Delivery",
+   "department": "Compliance & GRC",
+   "role": "Consultant",
+   "profile": "Consultant",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Engagement Manager",
+   "lastLogin": "2026-07-24T16:35:00Z"
+  },
+  {
+   "id": "USR-0407",
+   "name": "Hira Khan",
+   "email": "hr@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "Partner HQ",
+   "department": "Human Resources",
+   "role": "HR Manager",
+   "profile": "Partner HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T15:15:00Z"
+  },
+  {
+   "id": "USR-0408",
+   "name": "Sajid Ali",
+   "email": "risk@grcconsulting.com",
+   "context": "GRC Consulting Partners",
+   "branch": "KSA Delivery",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Partner Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Partner Owner",
+   "lastLogin": "2026-07-24T14:55:00Z"
+  },
+  {
+   "id": "USR-0503",
+   "name": "Omar Al Riyadh",
+   "email": "finance@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Finance",
+   "role": "Finance Manager",
+   "profile": "Network Finance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CFO",
+   "lastLogin": "2026-07-24T16:30:00Z"
+  },
+  {
+   "id": "USR-0504",
+   "name": "Mona Saleh",
+   "email": "hr@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Human Resources",
+   "role": "HR Manager",
+   "profile": "Network HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CHRO",
+   "lastLogin": "2026-07-24T16:05:00Z"
+  },
+  {
+   "id": "USR-0505",
+   "name": "Khaled Noor",
+   "email": "compliance@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Compliance & GRC",
+   "role": "Compliance Manager",
+   "profile": "Network Compliance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Franchisor Admin",
+   "lastLogin": "2026-07-24T15:45:00Z"
+  },
+  {
+   "id": "USR-0506",
+   "name": "Yousef Hamdan",
+   "email": "franchisee.admin@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Riyadh North",
+   "department": "Franchise Operations",
+   "role": "Franchisee Admin",
+   "profile": "Location Administrator",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Franchisor Admin",
+   "lastLogin": "2026-07-24T15:20:00Z"
+  },
+  {
+   "id": "USR-0507",
+   "name": "Rana Adel",
+   "email": "risk@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Network Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Franchisor Admin",
+   "lastLogin": "2026-07-24T14:45:00Z"
+  },
+  {
+   "id": "USR-0508",
+   "name": "Nadia Saeed",
+   "email": "presales@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Pre-Sales",
+   "role": "Pre-Sales Manager",
+   "profile": "Franchise Development",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Director",
+   "lastLogin": "2026-07-24T14:15:00Z"
+  },
+  {
+   "id": "USR-0509",
+   "name": "Fahad Amir",
+   "email": "postsales@retailco.com",
+   "context": "RetailCo Franchise Network",
+   "branch": "Network HQ",
+   "department": "Post-Sales & Customer Success",
+   "role": "Customer Success Manager",
+   "profile": "Franchise Success",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T13:50:00Z"
+  },
+  {
+   "id": "USR-0601",
+   "name": "Eleanor Vance",
+   "email": "eleanor.vance@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Compliance & GRC",
+   "role": "Compliance Manager",
+   "profile": "Document Owner",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CISO",
+   "lastLogin": "2026-07-24T17:25:00Z"
+  },
+  {
+   "id": "USR-0602",
+   "name": "Sarah Jenkins",
+   "email": "sarah.jenkins@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Legal & Compliance",
+   "role": "Compliance Approver",
+   "profile": "Document Approver",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "General Counsel",
+   "lastLogin": "2026-07-24T16:50:00Z"
+  },
+  {
+   "id": "USR-0603",
+   "name": "Alex Rivera",
+   "email": "alex.rivera@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Technology Center",
+   "department": "IT Operations",
+   "role": "Staff Employee",
+   "profile": "Employee",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "IT Manager",
+   "lastLogin": "2026-07-24T16:10:00Z"
+  },
+  {
+   "id": "USR-0604",
+   "name": "Maya Chen",
+   "email": "risk@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Enterprise Risk",
+   "role": "Risk Manager",
+   "profile": "Enterprise Risk",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CRO",
+   "lastLogin": "2026-07-24T15:35:00Z"
+  },
+  {
+   "id": "USR-0605",
+   "name": "Daniel Morgan",
+   "email": "finance@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Finance",
+   "role": "Finance Manager",
+   "profile": "Finance",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CFO",
+   "lastLogin": "2026-07-24T15:05:00Z"
+  },
+  {
+   "id": "USR-0606",
+   "name": "Priya Shah",
+   "email": "hr@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Human Resources",
+   "role": "HR Manager",
+   "profile": "HR",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "CHRO",
+   "lastLogin": "2026-07-24T14:40:00Z"
+  },
+  {
+   "id": "USR-0607",
+   "name": "Marcus Thorne",
+   "email": "marcus.thorne@auditco.com",
+   "context": "Global Bank — Information Security",
+   "branch": "External Audit Room",
+   "department": "External Assurance",
+   "role": "External Auditor",
+   "profile": "Read Only Auditor",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Audit Partner",
+   "lastLogin": "2026-07-24T14:00:00Z"
+  },
+  {
+   "id": "USR-0106",
+   "name": "Fahad Nasser",
+   "email": "support@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Customer Support",
+   "role": "Group Support Manager",
+   "profile": "Group Support",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T13:20:00Z"
+  },
+  {
+   "id": "USR-0107",
+   "name": "Dana Karim",
+   "email": "presales@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Pre-Sales",
+   "role": "Pre-Sales Manager",
+   "profile": "Group Pre-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Director",
+   "lastLogin": "2026-07-24T12:55:00Z"
+  },
+  {
+   "id": "USR-0108",
+   "name": "Tariq Saleh",
+   "email": "postsales@alnoor.com",
+   "context": "Al Noor Holding Group",
+   "branch": "Group HQ",
+   "department": "Post-Sales & Customer Success",
+   "role": "Customer Success Manager",
+   "profile": "Group Customer Success",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Director",
+   "lastLogin": "2026-07-24T12:35:00Z"
+  },
+  {
+   "id": "USR-0211",
+   "name": "Rami Khalil",
+   "email": "presales@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Pre-Sales",
+   "role": "Pre-Sales Manager",
+   "profile": "Organization Pre-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Sales Director",
+   "lastLogin": "2026-07-24T13:15:00Z"
+  },
+  {
+   "id": "USR-0212",
+   "name": "Salma Noor",
+   "email": "postsales@omniops.me",
+   "context": "OmniOps",
+   "branch": "HQ Riyadh",
+   "department": "Post-Sales & Customer Success",
+   "role": "Customer Success Manager",
+   "profile": "Organization Customer Success",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "COO",
+   "lastLogin": "2026-07-24T12:45:00Z"
+  },
+  {
+   "id": "USR-0307",
+   "name": "Ali Raza",
+   "email": "business.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Pre-Sales",
+   "role": "Business Development User",
+   "profile": "Branch Business Development",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Hospital Director",
+   "lastLogin": "2026-07-24T12:35:00Z"
+  },
+  {
+   "id": "USR-0308",
+   "name": "Noor Ahmed",
+   "email": "experience.madinah@hayathospitals.com",
+   "context": "Hayat National Hospital — Madinah",
+   "branch": "Madinah Hospital",
+   "department": "Post-Sales & Customer Success",
+   "role": "Patient Experience User",
+   "profile": "Branch Customer Success",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Hospital Director",
+   "lastLogin": "2026-07-24T12:15:00Z"
+  },
+  {
+   "id": "USR-0608",
+   "name": "Jordan Lee",
+   "email": "support@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Technology Center",
+   "department": "Customer Support",
+   "role": "Support Coordinator",
+   "profile": "Employee Support",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "IT Service Manager",
+   "lastLogin": "2026-07-24T13:30:00Z"
+  },
+  {
+   "id": "USR-0609",
+   "name": "Sophia Patel",
+   "email": "presales@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Pre-Sales",
+   "role": "Relationship Solutions Manager",
+   "profile": "Pre-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Director",
+   "lastLogin": "2026-07-24T13:05:00Z"
+  },
+  {
+   "id": "USR-0610",
+   "name": "David King",
+   "email": "postsales@globalbank.com",
+   "context": "Global Bank — Information Security",
+   "branch": "Head Office",
+   "department": "Post-Sales & Customer Success",
+   "role": "Customer Success Manager",
+   "profile": "Post-Sales",
+   "status": "Active",
+   "mfa": "Enforced",
+   "manager": "Commercial Director",
+   "lastLogin": "2026-07-24T12:40:00Z"
+  }
+ ],
+ "SEED_INVOICES_V3": [
+  {
+   "id": "INV-2026-0081",
+   "context": "Al Noor Holding Group",
+   "customer": "Al Noor Holding Group",
+   "issueDate": "2026-07-05",
+   "dueDate": "2026-08-05",
+   "currency": "SAR",
+   "status": "Paid",
+   "po": "PO-ANHG-774",
+   "lines": [
+    {
+     "description": "Enterprise Intelligence annual subscription",
+     "qty": 1,
+     "unit": 225000
+    },
+    {
+     "description": "Priority support add-on",
+     "qty": 1,
+     "unit": 33750
+    }
+   ],
+   "vatRate": 15,
+   "payments": [
+    {
+     "id": "PAY-11820",
+     "date": "2026-07-05",
+     "method": "Bank Transfer",
+     "amount": 297562.5,
+     "reference": "TRX-ANHG-88314"
+    }
+   ]
+  },
+  {
+   "id": "INV-2026-0082",
+   "context": "OmniOps",
+   "customer": "OmniOps",
+   "issueDate": "2026-07-02",
+   "dueDate": "2026-07-09",
+   "currency": "SAR",
+   "status": "Paid",
+   "po": "PO-OMNI-122",
+   "lines": [
+    {
+     "description": "Assurance annual subscription",
+     "qty": 1,
+     "unit": 110000
+    }
+   ],
+   "vatRate": 15,
+   "payments": [
+    {
+     "id": "PAY-11811",
+     "date": "2026-07-02",
+     "method": "Payment Gateway",
+     "amount": 126500,
+     "reference": "GW-CHARGE-1177"
+    }
+   ]
+  },
+  {
+   "id": "INV-2026-0083",
+   "context": "Hayat National Hospital — Madinah",
+   "customer": "Hayat National Hospitals",
+   "issueDate": "2026-07-02",
+   "dueDate": "2026-07-09",
+   "currency": "SAR",
+   "status": "Paid",
+   "po": "PO-HNH-301",
+   "lines": [
+    {
+     "description": "Professional annual subscription",
+     "qty": 1,
+     "unit": 60000
+    },
+    {
+     "description": "Additional branch pack",
+     "qty": 1,
+     "unit": 12000
+    }
+   ],
+   "vatRate": 15,
+   "payments": [
+    {
+     "id": "PAY-11808",
+     "date": "2026-07-02",
+     "method": "Bank Transfer",
+     "amount": 82800,
+     "reference": "TRX-HNH-60112"
+    }
+   ]
+  },
+  {
+   "id": "INV-2026-0084",
+   "context": "RetailCo Franchise Network",
+   "customer": "RetailCo Franchise Network",
+   "issueDate": "2026-07-20",
+   "dueDate": "2026-08-03",
+   "currency": "SAR",
+   "status": "Pending",
+   "po": "PO-RET-441",
+   "lines": [
+    {
+     "description": "Franchise Governance Edition",
+     "qty": 1,
+     "unit": 180000
+    },
+    {
+     "description": "Eye Phish — 1,500 targeted users",
+     "qty": 1500,
+     "unit": 18
+    }
+   ],
+   "vatRate": 15,
+   "payments": []
+  },
+  {
+   "id": "INV-2026-0085",
+   "context": "GRC Consulting Partners",
+   "customer": "GRC Consulting Partners",
+   "issueDate": "2026-07-01",
+   "dueDate": "2026-07-15",
+   "currency": "SAR",
+   "status": "Overdue",
+   "po": "PO-GRCP-019",
+   "lines": [
+    {
+     "description": "Consulting Partner Edition",
+     "qty": 1,
+     "unit": 150000
+    },
+    {
+     "description": "10 client workspace pack",
+     "qty": 1,
+     "unit": 40000
+    }
+   ],
+   "vatRate": 15,
+   "payments": []
+  },
+  {
+   "id": "INV-2026-0086",
+   "context": "Global Bank — Information Security",
+   "customer": "Global Bank",
+   "issueDate": "2026-07-18",
+   "dueDate": "2026-08-18",
+   "currency": "SAR",
+   "status": "Pending",
+   "po": "PO-GB-7701",
+   "lines": [
+    {
+     "description": "Assurance annual subscription",
+     "qty": 1,
+     "unit": 110000
+    },
+    {
+     "description": "Advanced Document Governance add-on",
+     "qty": 1,
+     "unit": 25000
+    }
+   ],
+   "vatRate": 15,
+   "payments": []
+  }
+ ],
+ "SEED_OPEN_SOURCE_TOOLS": [
+  {
+   "id": "TOOL-001",
+   "name": "Wazuh",
+   "category": "SIEM / XDR",
+   "license": "GPLv2",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "Tenant-managed or GRC Wisdom managed connector",
+   "description": "Security monitoring, endpoint telemetry and compliance evidence integration.",
+   "annualPrice": 18000,
+   "risk": "Low",
+   "installed": [
+    "Al Noor Holding Group",
+    "OmniOps"
+   ]
+  },
+  {
+   "id": "TOOL-002",
+   "name": "OWASP ZAP",
+   "category": "Application Security",
+   "license": "Apache-2.0",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "Isolated scanning worker",
+   "description": "Web application security testing integration for authorized targets and remediation tracking.",
+   "annualPrice": 12000,
+   "risk": "Medium",
+   "installed": [
+    "OmniOps"
+   ]
+  },
+  {
+   "id": "TOOL-003",
+   "name": "Greenbone Community Edition",
+   "category": "Vulnerability Management",
+   "license": "GPL",
+   "maturity": "Pilot",
+   "review": "Operational Validation",
+   "deployment": "Dedicated scanner appliance",
+   "description": "Vulnerability scan findings imported into Wisdom Eye and corrective-action workflows.",
+   "annualPrice": 24000,
+   "risk": "Medium",
+   "installed": []
+  },
+  {
+   "id": "TOOL-004",
+   "name": "DefectDojo",
+   "category": "Vulnerability Orchestration",
+   "license": "BSD-3-Clause",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "Managed integration",
+   "description": "Normalize findings from multiple security tools and synchronize remediation status.",
+   "annualPrice": 18000,
+   "risk": "Low",
+   "installed": [
+    "Al Noor Holding Group"
+   ]
+  },
+  {
+   "id": "TOOL-005",
+   "name": "TheHive",
+   "category": "Incident Response",
+   "license": "AGPL / Community",
+   "maturity": "Under Review",
+   "review": "License and Architecture Review",
+   "deployment": "Dedicated environment",
+   "description": "Security case management and incident response orchestration connector.",
+   "annualPrice": 30000,
+   "risk": "Medium",
+   "installed": []
+  },
+  {
+   "id": "TOOL-006",
+   "name": "MISP",
+   "category": "Threat Intelligence",
+   "license": "AGPLv3",
+   "maturity": "Pilot",
+   "review": "Data Handling Validation",
+   "deployment": "Dedicated threat intelligence service",
+   "description": "Threat intelligence feeds linked to assets, risks and Wisdom Eye findings.",
+   "annualPrice": 26000,
+   "risk": "Medium",
+   "installed": []
+  },
+  {
+   "id": "TOOL-007",
+   "name": "Keycloak",
+   "category": "Identity & Access",
+   "license": "Apache-2.0",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "Customer dedicated identity service",
+   "description": "Optional identity federation and access-management component for dedicated deployments.",
+   "annualPrice": 20000,
+   "risk": "Low",
+   "installed": [
+    "RetailCo Franchise Network"
+   ]
+  },
+  {
+   "id": "TOOL-008",
+   "name": "Dependency-Track",
+   "category": "Software Supply Chain",
+   "license": "Apache-2.0",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "Managed integration",
+   "description": "SBOM and component-risk monitoring integrated with applications and risk treatment.",
+   "annualPrice": 16000,
+   "risk": "Low",
+   "installed": [
+    "GRC Consulting Partners"
+   ]
+  },
+  {
+   "id": "TOOL-009",
+   "name": "Trivy",
+   "category": "Cloud-Native Security",
+   "license": "Apache-2.0",
+   "maturity": "Approved",
+   "review": "Security Review Passed",
+   "deployment": "CI/CD connector",
+   "description": "Container, filesystem, IaC and SBOM findings for authorized engineering pipelines.",
+   "annualPrice": 14000,
+   "risk": "Low",
+   "installed": []
+  },
+  {
+   "id": "TOOL-010",
+   "name": "OpenSCAP",
+   "category": "Configuration Compliance",
+   "license": "LGPLv2.1",
+   "maturity": "Under Review",
+   "review": "Content Licensing Review",
+   "deployment": "Customer-managed agent",
+   "description": "Configuration compliance evidence linked to controls and implementation records.",
+   "annualPrice": 10000,
+   "risk": "Medium",
+   "installed": []
+  }
+ ],
+ "SEED_ASM_ASSETS": [
+  {
+   "id": "ASM-001",
+   "context": "OmniOps",
+   "asset": "omniops.me",
+   "type": "Root Domain",
+   "owner": "Ibrahim Abdulaziz",
+   "authorization": "Approved",
+   "score": 76,
+   "critical": 1,
+   "high": 3,
+   "lastScan": "2026-07-24T09:15:00Z",
+   "branch": "Organization-wide"
+  },
+  {
+   "id": "ASM-002",
+   "context": "OmniOps",
+   "asset": "portal.omniops.me",
+   "type": "Web Application",
+   "owner": "Digital Products",
+   "authorization": "Approved",
+   "score": 69,
+   "critical": 1,
+   "high": 4,
+   "lastScan": "2026-07-24T09:15:00Z",
+   "branch": "HQ Riyadh"
+  },
+  {
+   "id": "ASM-003",
+   "context": "Al Noor Holding Group",
+   "asset": "alnoor-group.com",
+   "type": "Root Domain",
+   "owner": "Group Security",
+   "authorization": "Approved",
+   "score": 84,
+   "critical": 0,
+   "high": 2,
+   "lastScan": "2026-07-24T08:40:00Z",
+   "branch": "Group"
+  },
+  {
+   "id": "ASM-004",
+   "context": "RetailCo Franchise Network",
+   "asset": "*.retailco.sa",
+   "type": "Wildcard Domain",
+   "owner": "Network Security",
+   "authorization": "Approved",
+   "score": 72,
+   "critical": 2,
+   "high": 7,
+   "lastScan": "2026-07-24T07:20:00Z",
+   "branch": "Network-wide"
+  },
+  {
+   "id": "ASM-005",
+   "context": "Hayat National Hospital — Madinah",
+   "asset": "madinah.hayathospitals.com",
+   "type": "Web Application",
+   "owner": "Nizar Al-Saqqaf",
+   "authorization": "Approved",
+   "score": 81,
+   "critical": 0,
+   "high": 2,
+   "lastScan": "2026-07-23T22:10:00Z",
+   "branch": "Madinah Hospital"
+  },
+  {
+   "id": "ASM-006",
+   "context": "GRC Wisdom SaaS Control Plane",
+   "asset": "app.grcwisdom.com",
+   "type": "SaaS Application",
+   "owner": "Platform Security",
+   "authorization": "Approved",
+   "score": 91,
+   "critical": 0,
+   "high": 1,
+   "lastScan": "2026-07-24T10:00:00Z",
+   "branch": "Platform"
+  }
+ ],
+ "SEED_PHISH_CAMPAIGNS": [
+  {
+   "id": "PH-2026-021",
+   "context": "OmniOps",
+   "name": "Microsoft 365 Storage Alert",
+   "scope": "All branches",
+   "scenario": "Credential Harvest",
+   "language": "English / Arabic",
+   "targets": 245,
+   "status": "Completed",
+   "failureRate": 5.7,
+   "reportRate": 67,
+   "remediation": 14
+  },
+  {
+   "id": "PH-2026-022",
+   "context": "Al Noor Holding Group",
+   "name": "Executive Invoice Request",
+   "scope": "Finance teams across subsidiaries",
+   "scenario": "Business Email Compromise",
+   "language": "English / Arabic",
+   "targets": 86,
+   "status": "Scheduled",
+   "failureRate": 0,
+   "reportRate": 0,
+   "remediation": 0
+  },
+  {
+   "id": "PH-2026-023",
+   "context": "RetailCo Franchise Network",
+   "name": "QR Benefits Update",
+   "scope": "All franchise locations",
+   "scenario": "QR Phishing",
+   "language": "Arabic",
+   "targets": 1240,
+   "status": "Approval Required",
+   "failureRate": 0,
+   "reportRate": 0,
+   "remediation": 0
+  },
+  {
+   "id": "PH-2026-024",
+   "context": "Hayat National Hospital — Madinah",
+   "name": "Shared Clinical Document",
+   "scope": "Madinah staff",
+   "scenario": "Attachment",
+   "language": "English / Arabic",
+   "targets": 178,
+   "status": "Completed",
+   "failureRate": 7.9,
+   "reportRate": 59,
+   "remediation": 18
+  }
+ ]
+}
