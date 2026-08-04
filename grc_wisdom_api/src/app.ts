@@ -34,14 +34,19 @@ app.use(helmet({
 }));
 
 // CORS Configuration
-const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'https://grcwisdom.com', 'https://app.grcwisdom.com']
-  : (process.env.NODE_ENV === 'production' 
-      ? ['https://grcwisdom.com', 'https://app.grcwisdom.com'] 
-      : '*');
-
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, postman, health checks)
+    if (!origin) return callback(null, true);
+    if (process.env.FRONTEND_URL && process.env.FRONTEND_URL !== '*') {
+      if (origin === process.env.FRONTEND_URL) return callback(null, true);
+    }
+    // Allow Vercel domains, localhost, and production domains
+    if (origin.endsWith('.vercel.app') || origin.includes('localhost') || origin === 'https://grcwisdom.com' || origin === 'https://app.grcwisdom.com') {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
 
