@@ -55,7 +55,7 @@ const TenantManager: React.FC = () => {
       const s = err?.response?.status;
       if (s === 401) setError('Session expired. Please sign in again.');
       else if (s === 403) setError(err?.response?.data?.message || 'Not authorized to view tenants.');
-      else setError('Could not reach the API on port 3000.');
+      else setError('Could not reach the backend API.');
     } finally {
       setLoading(false);
     }

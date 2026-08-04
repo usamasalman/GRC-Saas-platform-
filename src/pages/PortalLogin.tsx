@@ -178,7 +178,7 @@ const PortalLogin = () => {
       } else if (status === 400) {
         setError(serverMsg || 'Please provide both email and password.');
       } else {
-        setError('Unable to reach the login service. Is the API running on port 3000?');
+        setError(serverMsg || 'Unable to reach the login service. Please verify backend API connectivity.');
       }
     } finally {
       setSubmitting(false);
