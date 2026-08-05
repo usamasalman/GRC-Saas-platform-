@@ -47,7 +47,28 @@
       "Bash(python -c ' *)",
       "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_seed2.py\")",
       "Bash(JWT_SECRET=x ./node_modules/.bin/tsx src/seed.ts)",
-      "Bash(cd \"C:/Users/Pablo/Downloads/grc_wisdom_web/grc_wisdom_api\" *)"
+      "Bash(cd \"C:/Users/Pablo/Downloads/grc_wisdom_web/grc_wisdom_api\" *)",
+      "WebSearch",
+      "Bash(awk '{print \"  \"$1}')",
+      "Bash(awk '{print $1}')",
+      "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_universe_rels.py\")",
+      "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_seed_universe.py\")",
+      "Bash(bash \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/planning-test.sh\")",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Back up dev.db first\" npx prisma db push --accept-data-loss)",
+      "Bash(npx tsx *)",
+      "Bash(bash \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/issue-test.sh\")",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(sed -n '/^model Risk {/,/^}/p' prisma/schema.prisma)",
+      "Bash(sed -n '/^model RiskTreatmentAction {/,/^}/p' prisma/schema.prisma)",
+      "Bash(grep -n \"audit universe: \\\\|console.log\\(\\\\`  risks:\" src/seed.ts)",
+      "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_seed4.py\")",
+      "Bash(bash \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/erm-test.sh\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"grc.manager@omniops.me\",\"password\":\"Demo@2026\"}')",
+      "Bash(npm run *)",
+      "Bash(grep -c \"grc_wisdom_api[\\\\\\\\/]src[\\\\\\\\/]\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")",
+      "Bash(curl -s \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")"
     ]
   }
 }

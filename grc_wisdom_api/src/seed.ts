@@ -7,6 +7,7 @@ import RBAC from './utils/rbacData.json';
 import { generateMaterializedPath } from './utils/treeUtils';
 import { computePriority, DEFAULT_SLA } from './services/slaService';
 import { STANDARDS, CONTROLS } from './utils/grcSeedData';
+import { computeEntityRisk, suggestedBudgetHours } from './services/auditRiskScoring';
 
 /**
  * Roles present on seeded users that TRD Appendix A does not define.
@@ -65,9 +66,18 @@ async function main() {
   const seed = SEED as any;
 
   // ── Wipe in FK-safe order ────────────────────────────────────────────────
+  await prisma.kriReading.deleteMany();
+  await prisma.kri.deleteMany();
+  await prisma.lossEvent.deleteMany();
+  await prisma.rcsaAssessment.deleteMany();
+  await prisma.rcsaCampaign.deleteMany();
+  await prisma.riskAppetite.deleteMany();
   await prisma.riskTreatmentAction.deleteMany();
   await prisma.riskControlLink.deleteMany();
-  await prisma.auditFinding.deleteMany();
+  await prisma.issue.deleteMany();
+  await prisma.auditPlanItem.deleteMany();
+  await prisma.auditPlan.deleteMany();
+  await prisma.auditableEntity.deleteMany();
   await prisma.audit.deleteMany();
   await prisma.risk.deleteMany();
   await prisma.evidence.deleteMany();
@@ -925,13 +935,24 @@ async function main() {
           const capOwner = users[(a + 2) % users.length];
           const closer = users[(a + 3) % users.length];
           const isClosed = ff.close && closer.id !== raiser.id;
-          await prisma.auditFinding.create({
+          await prisma.issue.create({
             data: {
               auditId: audit.id, tenantId: tid, ref: `${audit.ref}-F${f + 1}`,
+              source: 'InternalAudit',
+              title: ff.condition.slice(0, 120),
               criterion: ff.criterion, condition: ff.condition, cause: ff.cause,
               recommendation: ff.recommendation, riskRating: ff.rating,
               raisedById: raiser.id,
+              identifiedDate: new Date(Date.now() - (35 + f * 12) * 86400000),
               status: isClosed ? 'Closed' : (ff.cap ? 'CAPAssigned' : 'Open'),
+              // A CAP only exists once management has accepted the finding.
+              responseType: ff.cap || isClosed ? 'Agree' : null,
+              responseNarrative: ff.cap || isClosed
+                ? 'Management accepts the finding and will remediate within the agreed window.'
+                : null,
+              managementActionPlan: ff.cap || isClosed ? `Remediation: ${ff.recommendation}` : null,
+              respondedById: ff.cap || isClosed ? capOwner.id : null,
+              respondedAt: ff.cap || isClosed ? new Date(Date.now() - 20 * 86400000) : null,
               capOwnerId: ff.cap ? capOwner.id : null,
               capDueDate: ff.cap ? new Date(Date.now() + 30 * 86400000) : null,
               capDescription: ff.cap ? `Corrective action: ${ff.recommendation}` : null,
@@ -946,6 +967,301 @@ async function main() {
     }
   }
   console.log(`  risks: ${riskCount}  treatments: ${treatmentCount}  audits: ${auditCount}  findings: ${findingCount}`);
+
+
+  // -- 10h. Audit universe + risk-based annual plan (IIA Std 9.4) ----------
+  const UNIVERSE = [
+    { name: 'Identity and access management', type: 'Process', fm: 4, re: 5, cx: 4, cv: 4, pf: 5, fe: 4, months: 8 },
+    { name: 'Procure to pay', type: 'Process', fm: 5, re: 3, cx: 4, cv: 2, pf: 4, fe: 5, months: 14 },
+    { name: 'Order to cash', type: 'Process', fm: 5, re: 3, cx: 3, cv: 2, pf: 3, fe: 4, months: 20 },
+    { name: 'Payroll and HR operations', type: 'Process', fm: 4, re: 4, cx: 3, cv: 2, pf: 2, fe: 4, months: 30 },
+    { name: 'Personal data processing', type: 'Process', fm: 3, re: 5, cx: 4, cv: 4, pf: 4, fe: 2, months: null },
+    { name: 'Third-party and cloud management', type: 'ThirdParty', fm: 4, re: 4, cx: 5, cv: 5, pf: 4, fe: 3, months: null },
+    { name: 'Change and release management', type: 'Process', fm: 3, re: 3, cx: 4, cv: 5, pf: 3, fe: 2, months: 18 },
+    { name: 'Business continuity and recovery', type: 'Process', fm: 4, re: 3, cx: 3, cv: 2, pf: 3, fe: 1, months: 40 },
+    { name: 'Core banking platform', type: 'System', fm: 5, re: 5, cx: 5, cv: 3, pf: 3, fe: 4, months: 12 },
+    { name: 'Treasury and cash management', type: 'Process', fm: 5, re: 4, cx: 4, cv: 2, pf: 2, fe: 5, months: 26 },
+    { name: 'Physical and environmental security', type: 'Process', fm: 2, re: 2, cx: 2, cv: 1, pf: 1, fe: 2, months: 22 },
+    { name: 'Security operations centre', type: 'BusinessUnit', fm: 3, re: 4, cx: 4, cv: 4, pf: 3, fe: 2, months: 10 },
+  ];
+
+  let entityCount = 0, planCount = 0, planItemCount = 0;
+  const planYear = new Date().getFullYear();
+
+  for (const ctxName of Object.keys(tenantMap)) {
+    if (!GRC_TENANTS.some((g) => ctxName.replace(/[^A-Za-z ]/g, '').trim() === g.replace(/[^A-Za-z ]/g, '').trim())) continue;
+    const tid = tenantMap[ctxName];
+    if (!tid) continue;
+
+    // Owners and the audit lead must be people who actually hold the capability.
+    const tenantUsers = await prisma.user.findMany({
+      where: { tenantId: tid, status: 'Active' },
+      include: { roleRef: { select: { capabilityGrants: true } } },
+      take: 12,
+    });
+    const auditors = tenantUsers.filter((u) => {
+      try { return JSON.parse(u.roleRef?.capabilityGrants || '[]').includes('plan-and-execute-an-audit'); }
+      catch { return false; }
+    });
+    if (tenantUsers.length === 0) continue;
+    const lead = auditors[0] || tenantUsers[0];
+    const approver = auditors[1] || tenantUsers.find((u) => u.id !== lead.id) || tenantUsers[0];
+
+    const created: any[] = [];
+    for (let i = 0; i < UNIVERSE.length; i++) {
+      const u = UNIVERSE[i];
+      const factors = {
+        financialMateriality: u.fm, regulatoryExposure: u.re, complexity: u.cx,
+        changeVolatility: u.cv, priorFindings: u.pf, fraudExposure: u.fe,
+      };
+      const last = u.months === null ? null : new Date(Date.now() - u.months * 30 * 86400000);
+      const calc = computeEntityRisk(factors, last, 24);
+      const e = await prisma.auditableEntity.create({
+        data: {
+          tenantId: tid,
+          ref: `AE-${String(i + 1).padStart(3, '0')}`,
+          name: u.name,
+          type: u.type,
+          description: `Auditable ${u.type.toLowerCase()} within the annual audit universe.`,
+          ownerId: tenantUsers[i % tenantUsers.length].id,
+          ...factors,
+          riskScore: calc.riskScore,
+          riskTier: calc.riskTier,
+          lastAuditedAt: last,
+          auditCycleMonths: 24,
+        },
+      });
+      created.push({ ...e, calc });
+      entityCount++;
+    }
+
+    // Only the two GRC-heavy tenants get a full approved plan.
+    if (!['OmniOps', 'Al Noor'].some((n) => ctxName.startsWith(n))) continue;
+
+    const plan = await prisma.auditPlan.create({
+      data: {
+        tenantId: tid,
+        year: planYear,
+        title: `${planYear} Internal Audit Plan`,
+        totalBudgetHours: 1200,
+        preparedById: lead.id,
+        status: 'Draft',
+      },
+    });
+    planCount++;
+
+    // Risk-based selection: take the highest-scoring entities that fit capacity.
+    const ranked = [...created].sort((a, b) => b.riskScore - a.riskScore);
+    let allocated = 0;
+    for (let i = 0; i < ranked.length; i++) {
+      const e = ranked[i];
+      const hours = suggestedBudgetHours(e.riskTier);
+      if (allocated + hours > 1200) break;
+      allocated += hours;
+      await prisma.auditPlanItem.create({
+        data: {
+          planId: plan.id,
+          auditableEntityId: e.id,
+          plannedQuarter: (i % 4) + 1,
+          budgetHours: hours,
+          rationale: `Risk tier ${e.riskTier} (score ${e.riskScore}).${e.lastAuditedAt ? '' : ' Never audited.'}`,
+          assignedLeadId: lead.id,
+          status: 'Planned',
+        },
+      });
+      planItemCount++;
+    }
+
+    // Walk the plan through submit -> committee approval so the demo starts live.
+    await prisma.auditPlan.update({
+      where: { id: plan.id },
+      data: {
+        status: 'Approved',
+        submittedAt: new Date(Date.now() - 20 * 86400000),
+        approvedById: approver.id,
+        approvedAt: new Date(Date.now() - 14 * 86400000),
+        approvalNote: 'Approved by the audit committee. Coverage of all high-risk entities confirmed.',
+      },
+    });
+  }
+  console.log(`  audit universe: ${entityCount} entities · plans: ${planCount} · plan items: ${planItemCount}`);
+
+
+  // -- 10i. Risk appetite, RCSA, KRIs and loss events ----------------------
+  const APPETITE = [
+    { category: 'Compliance',   appetite: 6,  tolerance: 12, statement: 'Minimal appetite for regulatory breach; any PDPL or NCA exposure is escalated.' },
+    { category: 'Technology',   appetite: 9,  tolerance: 15, statement: 'Moderate appetite where compensating controls and monitoring are in place.' },
+    { category: 'Operational',  appetite: 9,  tolerance: 16, statement: 'Accepts operational variability that does not affect client delivery.' },
+    { category: 'Financial',    appetite: 6,  tolerance: 12, statement: 'Low appetite for financial misstatement or unbudgeted loss.' },
+    { category: 'Third-Party',  appetite: 8,  tolerance: 14, statement: 'Vendor risk accepted only with a current assessment and contractual remedies.' },
+    { category: 'Strategic',    appetite: 12, tolerance: 20, statement: 'Higher appetite where the upside is aligned to Vision 2030 growth.' },
+    { category: 'People',       appetite: 8,  tolerance: 14, statement: 'Low appetite for key-person dependency in regulated functions.' },
+  ];
+
+  const KRI_SEED = [
+    { name: 'Privileged accounts without recent review', unit: '', direction: 'Higher', amber: 5,  red: 12, freq: 'Monthly',   series: [3, 6, 9, 14] },
+    { name: 'Critical patches outstanding past SLA',     unit: '', direction: 'Higher', amber: 10, red: 25, freq: 'Monthly',   series: [4, 8, 11, 9] },
+    { name: 'Phishing simulation pass rate',             unit: '%', direction: 'Lower', amber: 85, red: 70, freq: 'Quarterly', series: [92, 88, 83] },
+    { name: 'Vendor assessments overdue',                unit: '', direction: 'Higher', amber: 3,  red: 8,  freq: 'Monthly',   series: [1, 2, 4] },
+  ];
+
+  const LOSS_SEED = [
+    { title: 'Duplicate supplier payment', category: 'ExecutionDeliveryProcessManagement', gross: 84000, recovered: 61000, daysAgo: 120, lagDays: 18,
+      description: 'A supplier invoice was paid twice after a manual re-key into the payment file.' },
+    { title: 'Business email compromise attempt', category: 'ExternalFraud', gross: 22000, recovered: 0, daysAgo: 75, lagDays: 2,
+      description: 'A spoofed vendor bank-change request was actioned before verification.' },
+    { title: 'Datacentre cooling failure', category: 'BusinessDisruptionSystemFailure', gross: 145000, recovered: 30000, daysAgo: 210, lagDays: 0,
+      description: 'A cooling unit failure forced an unplanned shutdown of two racks for eleven hours.' },
+    { title: 'Payroll overpayment in Q3', category: 'ExecutionDeliveryProcessManagement', gross: 31000, recovered: 27500, daysAgo: 45, lagDays: 31,
+      description: 'An allowance was applied to a leaver cohort for one extra cycle.' },
+  ];
+
+  const LOSS_CATEGORY_RISK: Record<string, string> = {
+    ExecutionDeliveryProcessManagement: 'Operational',
+    ExternalFraud: 'Financial',
+    BusinessDisruptionSystemFailure: 'Technology',
+  };
+
+  let appetiteCount = 0, campaignCount = 0, assessmentCount = 0;
+  let kriCount = 0, readingCount = 0, lossCount = 0, autoIssueCount = 0;
+
+  for (const ctxName of Object.keys(tenantMap)) {
+    const tid = tenantMap[ctxName];
+    if (!tid) continue;
+    const users = await prisma.user.findMany({
+      where: { tenantId: tid, status: 'Active' }, select: { id: true }, take: 6,
+    });
+    if (users.length < 3) continue;
+    const setter = users[0], approver = users[1];
+
+    for (const a of APPETITE) {
+      await prisma.riskAppetite.create({
+        data: {
+          tenantId: tid, category: a.category, statement: a.statement,
+          appetiteThreshold: a.appetite, toleranceThreshold: a.tolerance,
+          setById: setter.id, status: 'Approved',
+          approvedById: approver.id, approvedAt: new Date(Date.now() - 60 * 86400000),
+        },
+      });
+      appetiteCount++;
+    }
+
+    // Only the GRC-heavy tenants get the full ERM data set, to keep volume sane.
+    if (!['OmniOps', 'Al Noor Holding Group'].some((n) => ctxName.startsWith(n.split(' ')[0]))) continue;
+
+    const tenantRisks = await prisma.risk.findMany({ where: { tenantId: tid }, select: { id: true, category: true } });
+    const riskByCategory = (c: string) => tenantRisks.find((r) => r.category === c)?.id ?? null;
+
+    for (let k = 0; k < KRI_SEED.length; k++) {
+      const ks = KRI_SEED[k];
+      const kri = await prisma.kri.create({
+        data: {
+          tenantId: tid, name: ks.name, unit: ks.unit, direction: ks.direction,
+          amberThreshold: ks.amber, redThreshold: ks.red, frequency: ks.freq,
+          ownerId: users[k % users.length].id,
+          riskId: riskByCategory(k % 2 === 0 ? 'Technology' : 'Operational'),
+        },
+      });
+      kriCount++;
+
+      for (let r = 0; r < ks.series.length; r++) {
+        const value = ks.series[r];
+        const level = ks.direction === 'Lower'
+          ? (value <= ks.red ? 'Red' : value <= ks.amber ? 'Amber' : 'Green')
+          : (value >= ks.red ? 'Red' : value >= ks.amber ? 'Amber' : 'Green');
+        const month = 3 + r;
+        await prisma.kriReading.create({
+          data: {
+            kriId: kri.id, tenantId: tid,
+            periodLabel: `2026-${String(month).padStart(2, '0')}`,
+            value, breachLevel: level,
+            recordedById: users[(k + 1) % users.length].id,
+            recordedAt: new Date(Date.now() - (ks.series.length - r) * 30 * 86400000),
+          },
+        });
+        readingCount++;
+      }
+    }
+
+    for (let l = 0; l < LOSS_SEED.length; l++) {
+      const ls = LOSS_SEED[l];
+      const occurred = new Date(Date.now() - ls.daysAgo * 86400000);
+      await prisma.lossEvent.create({
+        data: {
+          tenantId: tid, ref: `LOSS-2026-${String(l + 1).padStart(3, '0')}`,
+          title: ls.title, description: ls.description, category: ls.category,
+          occurredAt: occurred,
+          discoveredAt: new Date(occurred.getTime() + ls.lagDays * 86400000),
+          grossAmount: ls.gross, recoveredAmount: ls.recovered, currency: 'SAR',
+          status: l === 0 ? 'Closed' : l === 1 ? 'UnderInvestigation' : 'Open',
+          reportedById: users[l % users.length].id,
+          riskId: riskByCategory(LOSS_CATEGORY_RISK[ls.category] ?? 'Operational'),
+        },
+      });
+      lossCount++;
+    }
+
+    // One launched campaign, part-completed, with a self-identified issue from
+    // the control the respondent marked ineffective.
+    const impls = await prisma.controlImplementation.findMany({
+      where: { tenantId: tid }, take: 6,
+      include: { control: { select: { code: true, title: true } } },
+    });
+    if (impls.length === 0) continue;
+
+    const campaign = await prisma.rcsaCampaign.create({
+      data: {
+        tenantId: tid, ref: 'RCSA-2026-01', title: 'H1 2026 control self-assessment',
+        period: '2026-H1', dueDate: new Date(Date.now() + 21 * 86400000),
+        status: 'Launched', launchedById: users[0].id,
+        launchedAt: new Date(Date.now() - 10 * 86400000),
+      },
+    });
+    campaignCount++;
+
+    for (let a = 0; a < impls.length; a++) {
+      const impl = impls[a];
+      const respondent = impl.ownerId ?? users[a % users.length].id;
+      // First two submitted clean, third ineffective, the rest still pending.
+      const submitted = a < 3;
+      const ineffective = a === 2;
+
+      let issueId: string | null = null;
+      if (ineffective) {
+        const existing = await prisma.issue.count({ where: { tenantId: tid, source: 'SelfIdentified' } });
+        const issue = await prisma.issue.create({
+          data: {
+            tenantId: tid,
+            ref: `ISS-2026-${String(existing + 1).padStart(3, '0')}`,
+            source: 'SelfIdentified', sourceReference: campaign.ref,
+            title: `Self-assessed ineffective control: ${impl.control.code}`,
+            condition: 'The control has not operated for two consecutive periods owing to a vacant role.',
+            recommendation: `Remediate ${impl.control.code} - ${impl.control.title}.`,
+            riskRating: 'Medium', raisedById: respondent, status: 'Open',
+            identifiedDate: new Date(Date.now() - 8 * 86400000),
+          },
+        });
+        issueId = issue.id;
+        autoIssueCount++;
+      }
+
+      await prisma.rcsaAssessment.create({
+        data: {
+          campaignId: campaign.id, tenantId: tid,
+          implementationId: impl.id, respondentId: respondent,
+          designRating: submitted ? (ineffective ? 'PartiallyEffective' : 'Effective') : null,
+          operatingRating: submitted ? (ineffective ? 'Ineffective' : 'Effective') : null,
+          narrative: ineffective ? 'The control has not operated for two consecutive periods owing to a vacant role.' : null,
+          status: submitted ? 'Submitted' : 'Pending',
+          submittedAt: submitted ? new Date(Date.now() - 6 * 86400000) : null,
+          issueId,
+        },
+      });
+      assessmentCount++;
+    }
+  }
+  console.log(`  risk appetite: ${appetiteCount} categories · rcsa: ${campaignCount} campaigns / ${assessmentCount} assessments`);
+  console.log(`  kris: ${kriCount} (${readingCount} readings) · loss events: ${lossCount} · auto-raised issues: ${autoIssueCount}`);
 
   // ── 11. SoD platform-default rules (TRD §6.4) ───────────────────────────
   await prisma.sodRule.createMany({
@@ -971,10 +1287,10 @@ async function main() {
       {
         tenantId: null,
         key: 'audit-finding-closure',
-        description: 'The auditor who raised a finding cannot independently close it.',
-        subjectType: 'AuditFinding',
-        conflictingActions: JSON.stringify(['AUDIT_FINDING_RAISED']),
-        guardedAction: 'AUDIT_FINDING_CLOSED',
+        description: 'Whoever raised an issue cannot independently close it.',
+        subjectType: 'Issue',
+        conflictingActions: JSON.stringify(['ISSUE_RAISED']),
+        guardedAction: 'ISSUE_CLOSED',
         isActive: true,
       },
       {
@@ -997,7 +1313,7 @@ async function main() {
       },
     ],
   });
-  console.log('  sod rules: 4');
+  console.log(`  sod rules: ${await prisma.sodRule.count()}`);
 
   console.log('Seeding complete. All users log in with: ' + DEMO_PASSWORD);
 }

@@ -10,6 +10,8 @@ const AUDIT_STATUS_PILL: Record<string, React.CSSProperties> = {
 };
 const FINDING_STATUS_PILL: Record<string, React.CSSProperties> = {
   Open: pill('#fbbf24', '#78350f'),
+  Responded: pill('#7dd3fc', '#075985'),
+  Disputed: pill('#f0abfc', '#701a75'),
   CAPAssigned: pill('#93c5fd', '#1e3a8a'),
   PendingClosure: pill('#c4b5fd', '#5b21b6'),
   Closed: pill('#86efac', '#15803d'),
@@ -93,21 +95,56 @@ const AuditProgramme: React.FC = () => {
     finally { setBusy(false); }
   };
 
+  const respond = async (f: any) => {
+    if (f.raisedBy?.id === me?.id) {
+      window.alert("SoD: the person who raised the finding cannot write management's response to it.");
+      return;
+    }
+    const responseType = window.prompt('Management response — Agree, PartiallyAgree or Disagree:', 'Agree');
+    if (!responseType) return;
+    const responseNarrative = window.prompt('Management position (required):');
+    if (!responseNarrative) return;
+    let managementActionPlan = '';
+    if (responseType !== 'Disagree') {
+      managementActionPlan = window.prompt('What will management do about it? (required)', f.recommendation) || '';
+      if (!managementActionPlan) return;
+    }
+    try {
+      const res = await apiClient.post(`/api/grc/issues/${f.id}/respond`, { responseType, responseNarrative, managementActionPlan });
+      setNotice(res.data?.message || 'Management response recorded');
+      await openDetail(detail.id);
+      await load();
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
+  const escalate = async (f: any) => {
+    const reason = window.prompt('Reason for escalation:');
+    if (!reason) return;
+    try {
+      const res = await apiClient.post(`/api/grc/issues/${f.id}/escalate`, { reason });
+      setNotice(res.data?.message || 'Escalated');
+      await openDetail(detail.id);
+      await load();
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
   const assignCap = async (f: any) => {
     const capDescription = window.prompt('Corrective action plan description:', f.recommendation);
     if (!capDescription) return;
     const capDueDate = window.prompt('CAP due date (YYYY-MM-DD):');
     if (!capDueDate) return;
     try {
-      await apiClient.patch(`/api/grc/findings/${f.id}`, { capOwnerId: me?.id, capDueDate, capDescription });
+      await apiClient.post(`/api/grc/issues/${f.id}/cap`, { capOwnerId: me?.id, capDueDate, capDescription });
       await openDetail(detail.id);
       await load();
     } catch (err) { window.alert(apiError(err)); }
   };
 
   const submitForClosure = async (f: any) => {
+    const evidenceNote = window.prompt('What was remediated, and where is the evidence? (required)');
+    if (!evidenceNote) return;
     try {
-      await apiClient.patch(`/api/grc/findings/${f.id}`, { submitForClosure: true });
+      await apiClient.post(`/api/grc/issues/${f.id}/submit-closure`, { evidenceNote });
       await openDetail(detail.id);
       await load();
     } catch (err) { window.alert(apiError(err)); }
@@ -118,7 +155,7 @@ const AuditProgramme: React.FC = () => {
     const note = window.prompt('Closure note (validation evidence — required):');
     if (!note) return;
     try {
-      const res = await apiClient.post(`/api/grc/findings/${f.id}/close`, { note });
+      const res = await apiClient.post(`/api/grc/issues/${f.id}/close`, { note });
       setNotice(res.data?.message || 'Finding closed');
       await openDetail(detail.id);
       await load();
@@ -129,7 +166,7 @@ const AuditProgramme: React.FC = () => {
     const reason = window.prompt('Reason for reopening:');
     if (!reason) return;
     try {
-      await apiClient.post(`/api/grc/findings/${f.id}/reopen`, { reason });
+      await apiClient.post(`/api/grc/issues/${f.id}/reopen`, { reason });
       await openDetail(detail.id);
       await load();
     } catch (err) { window.alert(apiError(err)); }
@@ -255,11 +292,11 @@ const AuditProgramme: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: '#f1f5f9' }}>Findings ({detail.findings.length})</span>
+              <span style={{ fontSize: 13, color: '#f1f5f9' }}>Findings ({detail.issues.length})</span>
               {detail.status !== 'Closed' && <button onClick={() => setShowFinding(true)} style={primaryBtn()}>+ Raise finding</button>}
             </div>
 
-            {detail.findings.map((f: any) => (
+            {detail.issues.map((f: any) => (
               <div key={f.id} style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 12, marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: '#e2e8f0' }}>
@@ -272,19 +309,30 @@ const AuditProgramme: React.FC = () => {
                   <div><span style={{ color: '#475569' }}>Condition:</span> {f.condition}</div>
                   <div><span style={{ color: '#475569' }}>Cause:</span> {f.cause}</div>
                   <div><span style={{ color: '#475569' }}>Recommendation:</span> {f.recommendation}</div>
+                  {f.responseType && (
+                    <div style={{ color: f.responseType === 'Disagree' ? '#f0abfc' : '#7dd3fc' }}>
+                      Management {f.responseType}{f.respondedBy ? ` (${f.respondedBy.name})` : ''}: {f.responseNarrative}
+                      {f.managementActionPlan && <div style={{ color: '#64748b' }}>Action plan: {f.managementActionPlan}</div>}
+                    </div>
+                  )}
+                  {f.escalationLevel > 0 && (
+                    <div style={{ color: '#fca5a5' }}>Escalated to {f.escalationLevel === 1 ? 'executive management' : 'the audit committee'}</div>
+                  )}
                   {f.capOwner && <div style={{ color: '#93c5fd' }}>CAP: {f.capOwner.name}{f.capDueDate ? ` · due ${f.capDueDate.slice(0, 10)}` : ''}</div>}
                   {f.closedBy && <div style={{ color: '#86efac' }}>Closed by {f.closedBy.name} — {f.closureNote}</div>}
                   <div style={{ color: '#475569', fontSize: 10 }}>raised by {f.raisedBy.name}</div>
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {(f.status === 'Open' || f.status === 'Reopened') && <button onClick={() => assignCap(f)} style={linkBtn('#93c5fd')}>assign CAP</button>}
+                  {(f.status === 'Open' || f.status === 'Reopened') && <button onClick={() => respond(f)} style={linkBtn('#7dd3fc')}>record management response</button>}
+                  {f.status === 'Responded' && <button onClick={() => assignCap(f)} style={linkBtn('#93c5fd')}>assign CAP</button>}
+                  {f.status === 'Disputed' && <button onClick={() => escalate(f)} style={linkBtn('#f0abfc')}>escalate</button>}
                   {f.status === 'CAPAssigned' && <button onClick={() => submitForClosure(f)} style={linkBtn('#c4b5fd')}>submit for closure</button>}
                   {f.status === 'PendingClosure' && <button onClick={() => closeFinding(f)} style={linkBtn('#86efac')}>validate &amp; close</button>}
                   {f.status === 'Closed' && <button onClick={() => reopenFinding(f)} style={linkBtn('#fca5a5')}>reopen</button>}
                 </div>
               </div>
             ))}
-            {detail.findings.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>No findings raised.</div>}
+            {detail.issues.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>No findings raised.</div>}
 
             {showFinding && (
               <div style={{ marginTop: 14, border: '1px solid #1e293b', borderRadius: 8, padding: 14 }}>

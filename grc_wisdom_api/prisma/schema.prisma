@@ -44,7 +44,15 @@ model Tenant {
   evidence      Evidence[]
   risks         Risk[]
   audits        Audit[]
-  auditFindings AuditFinding[]
+  issues        Issue[]
+  riskAppetites RiskAppetite[]
+  rcsaCampaigns RcsaCampaign[]
+  rcsaAssessments RcsaAssessment[]
+  kris          Kri[]
+  kriReadings   KriReading[]
+  lossEvents    LossEvent[]
+  auditableEntities AuditableEntity[]
+  auditPlans    AuditPlan[]
 }
 
 model User {
@@ -99,9 +107,27 @@ model User {
   risksAccepted           Risk[] @relation("RiskAcceptor")
   treatmentsOwned         RiskTreatmentAction[] @relation("TreatmentOwner")
   auditsLed               Audit[] @relation("AuditLead")
-  findingsRaised          AuditFinding[] @relation("FindingRaiser")
-  findingsCapOwned        AuditFinding[] @relation("FindingCapOwner")
-  findingsClosed          AuditFinding[] @relation("FindingCloser")
+  issuesRaised            Issue[] @relation("IssueRaiser")
+  issuesCapOwned          Issue[] @relation("IssueCapOwner")
+  issuesResponded         Issue[] @relation("IssueResponder")
+  issuesClosed            Issue[] @relation("IssueCloser")
+  appetitesSet            RiskAppetite[] @relation("AppetiteSetter")
+  appetitesApproved       RiskAppetite[] @relation("AppetiteApprover")
+  campaignsLaunched       RcsaCampaign[] @relation("CampaignLauncher")
+  rcsaResponses           RcsaAssessment[] @relation("RcsaRespondent")
+  krisOwned               Kri[] @relation("KriOwner")
+  kriReadingsRecorded     KriReading[] @relation("KriRecorder")
+  lossEventsReported      LossEvent[] @relation("LossReporter")
+  entitiesOwned           AuditableEntity[] @relation("EntityOwner")
+  plansPrepared           AuditPlan[] @relation("PlanPreparer")
+  plansApproved           AuditPlan[] @relation("PlanApprover")
+  planItemsLed            AuditPlanItem[] @relation("PlanItemLead")
+  proceduresAssigned      TestProcedure[] @relation("ProcedureAssignee")
+  testsExecuted           TestResult[] @relation("TestExecutor")
+  workpapersPrepared      Workpaper[] @relation("WorkpaperPreparer")
+  workpapersReviewed      Workpaper[] @relation("WorkpaperReviewer")
+  reviewNotesRaised       WorkpaperReviewNote[] @relation("ReviewNoteRaiser")
+  reviewNotesCleared      WorkpaperReviewNote[] @relation("ReviewNoteClearer")
 
   // Phase 2: Saudi Usability (PDPL Encrypted PII)
   encryptedNationalId String?
@@ -330,6 +356,8 @@ model ControlImplementation {
 
   evidence        Evidence[]
   riskLinks       RiskControlLink[]
+  engagementRisks EngagementRisk[]
+  rcsaAssessments RcsaAssessment[]
 
   @@index([tenantId, status])
   @@index([nextDueDate])
@@ -413,6 +441,8 @@ model Risk {
 
   controlLinks       RiskControlLink[]
   treatments         RiskTreatmentAction[]
+  kris               Kri[]
+  lossEvents         LossEvent[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -446,6 +476,125 @@ model RiskTreatmentAction {
 }
 
 // ----------------------------------------------------------------------
+// PHASE 4: INTERNAL AUDIT — UNIVERSE & RISK-BASED ANNUAL PLAN
+// (IIA Global Internal Audit Standards 2024, Domain IV/V)
+// ----------------------------------------------------------------------
+
+/// The audit universe: every entity that COULD be audited. This is the
+/// population the annual risk assessment scores and the plan selects from.
+/// Engagements originate here — never ad hoc.
+model AuditableEntity {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref           String
+  name          String
+  /// Process | BusinessUnit | System | ThirdParty | LegalEntity
+  type          String   @default("Process")
+  description   String?
+
+  /// Self-referential so a universe can mirror the org/process hierarchy.
+  parentId      String?
+  parent        AuditableEntity?  @relation("UniverseTree", fields: [parentId], references: [id])
+  children      AuditableEntity[] @relation("UniverseTree")
+
+  ownerId       String?
+  owner         User?    @relation("EntityOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  // ── Annual risk-assessment factors, each scored 1–5 ──────────────────
+  financialMateriality Int @default(3)
+  regulatoryExposure   Int @default(3)
+  complexity           Int @default(3)
+  changeVolatility     Int @default(3)
+  priorFindings        Int @default(3)
+  fraudExposure        Int @default(3)
+
+  /// Weighted composite (1.00–5.00), computed server-side — never client-set.
+  riskScore     Float    @default(3)
+  /// High | Medium | Low, derived from riskScore.
+  riskTier      String   @default("Medium")
+
+  lastAuditedAt DateTime?
+  auditCycleMonths Int   @default(24)
+
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  planItems     AuditPlanItem[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, riskTier])
+}
+
+/// The annual audit plan. Approved by the audit committee; deviations are
+/// reported against it. Finite hours are allocated to the highest-risk entities.
+model AuditPlan {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  year           Int
+  title          String
+  /// Draft | SubmittedForApproval | Approved | Active | Closed
+  status         String   @default("Draft")
+
+  /// Total auditor capacity available for the year.
+  totalBudgetHours Int    @default(0)
+
+  preparedById   String
+  preparedBy     User     @relation("PlanPreparer", fields: [preparedById], references: [id], onDelete: Cascade)
+
+  /// Committee approval — approver must differ from preparer (SoD).
+  submittedAt    DateTime?
+  approvedById   String?
+  approvedBy     User?    @relation("PlanApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime?
+  approvalNote   String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items          AuditPlanItem[]
+
+  @@unique([tenantId, year])
+  @@index([tenantId, status])
+}
+
+/// One planned engagement. An Audit is instantiated FROM this.
+model AuditPlanItem {
+  id                String   @id @default(uuid())
+  planId            String
+  plan              AuditPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  auditableEntityId String
+  auditableEntity   AuditableEntity @relation(fields: [auditableEntityId], references: [id], onDelete: Cascade)
+
+  /// 1–4
+  plannedQuarter    Int      @default(1)
+  budgetHours       Int      @default(80)
+  /// Why this entity made the plan — the risk-based justification.
+  rationale         String?
+
+  assignedLeadId    String?
+  assignedLead      User?    @relation("PlanItemLead", fields: [assignedLeadId], references: [id], onDelete: SetNull)
+
+  /// Planned | InProgress | Completed | Deferred | Cancelled
+  status            String   @default("Planned")
+  deferralReason    String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  /// Set once the engagement is instantiated.
+  audit             Audit?
+
+  @@unique([planId, auditableEntityId])
+  @@index([planId, status])
+}
+
+// ----------------------------------------------------------------------
 // PHASE 4: GRC CORE — AUDIT PROGRAMME (TRD §7.2)
 // ----------------------------------------------------------------------
 
@@ -463,6 +612,10 @@ model Audit {
   leadAuditorId  String
   leadAuditor    User     @relation("AuditLead", fields: [leadAuditorId], references: [id], onDelete: Cascade)
 
+  /// Engagements originate from an approved plan item (IIA Std 9.4).
+  planItemId     String?  @unique
+  planItem       AuditPlanItem? @relation(fields: [planItemId], references: [id], onDelete: SetNull)
+
   /// Planned | Fieldwork | Reporting | Closed
   status         String   @default("Planned")
   startDate      DateTime?
@@ -471,7 +624,9 @@ model Audit {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  findings       AuditFinding[]
+  issues         Issue[]
+  engagementRisks EngagementRisk[]
+  workpapers     Workpaper[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -479,43 +634,245 @@ model Audit {
 
 /// Criterion / condition / cause / recommendation are the four mandatory
 /// finding fields; closure is independently validated and reopenable.
-model AuditFinding {
+/// Central, cross-source issue register.
+///
+/// Findings arrive from internal audit, external audit, regulators, incidents
+/// and self-identification. They all land here so aging, escalation and
+/// ownership are managed in one place rather than per-source. Audit-originated
+/// issues additionally carry the IIA criterion/condition/cause structure.
+model Issue {
   id             String   @id @default(uuid())
-  auditId        String
-  audit          Audit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
   tenantId       String
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   ref            String
-  criterion      String
-  condition      String
-  cause          String
+
+  /// InternalAudit | ExternalAudit | Regulator | SelfIdentified | Incident | RiskAssessment
+  source         String   @default("InternalAudit")
+  /// External identifier: regulator letter, external audit report, incident id.
+  sourceReference String?
+
+  /// Only audit-sourced issues link to an engagement.
+  auditId        String?
+  audit          Audit?   @relation(fields: [auditId], references: [id], onDelete: SetNull)
+
+  title          String
+
+  // IIA finding structure — mandatory for InternalAudit, optional elsewhere.
+  criterion      String?
+  condition      String?
+  cause          String?
   recommendation String
+
   /// High | Medium | Low
   riskRating     String   @default("Medium")
 
-  /// Open | CAPAssigned | PendingClosure | Closed | Reopened
+  /// Open | Responded | Disputed | CAPAssigned | PendingClosure | Closed | Reopened
   status         String   @default("Open")
 
   raisedById     String
-  raisedBy       User     @relation("FindingRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
+  raisedBy       User     @relation("IssueRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
 
+  identifiedDate  DateTime  @default(now())
+  targetCloseDate DateTime?
+
+  // ── Management response ────────────────────────────────────────────────
+  // Management must formally accept or dispute before remediation begins.
+  /// Agree | PartiallyAgree | Disagree
+  responseType         String?
+  responseNarrative    String?
+  managementActionPlan String?
+  respondedById        String?
+  respondedBy          User?     @relation("IssueResponder", fields: [respondedById], references: [id], onDelete: SetNull)
+  respondedAt          DateTime?
+
+  // ── Corrective action plan ─────────────────────────────────────────────
   capOwnerId     String?
-  capOwner       User?    @relation("FindingCapOwner", fields: [capOwnerId], references: [id], onDelete: SetNull)
+  capOwner       User?    @relation("IssueCapOwner", fields: [capOwnerId], references: [id], onDelete: SetNull)
   capDueDate     DateTime?
   capDescription String?
 
+  // ── Closure ────────────────────────────────────────────────────────────
   closedById     String?
-  closedBy       User?    @relation("FindingCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closedBy       User?    @relation("IssueCloser", fields: [closedById], references: [id], onDelete: SetNull)
   closedAt       DateTime?
   closureNote    String?
   reopenedCount  Int      @default(0)
+  escalationLevel Int     @default(0)
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  testResults    TestResult[]
+  rcsaAssessments RcsaAssessment[]
+  kriReadings    KriReading[]
+  lossEvents     LossEvent[]
+
+  @@unique([tenantId, ref])
   @@index([tenantId, status])
+  @@index([tenantId, source])
   @@index([auditId])
+}
+
+// ----------------------------------------------------------------------
+// PHASE 4: INTERNAL AUDIT — RISK & CONTROL MATRIX, TESTING, WORKPAPERS
+// (IIA Standards Domain V — performing internal audit services)
+// ----------------------------------------------------------------------
+
+/// One row of the engagement's Risk & Control Matrix: a process risk in scope,
+/// and the control relied upon to mitigate it.
+model EngagementRisk {
+  id          String   @id @default(uuid())
+  auditId     String
+  audit       Audit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  ref         String
+  title       String
+  description String
+
+  /// High | Medium | Low — the risk to the engagement objective.
+  riskRating  String   @default("Medium")
+
+  /// The tenant's control relied upon. Optional: a risk may have no control,
+  /// which is itself a finding (control gap).
+  implementationId String?
+  implementation   ControlImplementation? @relation(fields: [implementationId], references: [id], onDelete: SetNull)
+
+  /// Preventive | Detective | Corrective
+  controlType String?
+  /// Manual | Automated | Hybrid
+  controlNature String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  procedures  TestProcedure[]
+
+  @@unique([auditId, ref])
+  @@index([auditId])
+}
+
+/// The planned test for an RCM row. Sampling method and size are recorded
+/// up front so the conclusion is reproducible.
+model TestProcedure {
+  id               String   @id @default(uuid())
+  engagementRiskId String
+  engagementRisk   EngagementRisk @relation(fields: [engagementRiskId], references: [id], onDelete: Cascade)
+
+  ref              String
+  objective        String
+  /// The step-by-step procedure the auditor will perform.
+  procedure        String
+
+  /// DesignEffectiveness | OperatingEffectiveness | Both
+  testType         String   @default("OperatingEffectiveness")
+  /// Statistical | Judgmental | FullPopulation | Inquiry | Observation
+  samplingMethod   String   @default("Judgmental")
+  populationSize   Int?
+  sampleSize       Int      @default(25)
+
+  /// NotStarted | InProgress | Completed
+  status           String   @default("NotStarted")
+
+  assignedToId     String?
+  assignedTo       User?    @relation("ProcedureAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  result           TestResult?
+  workpapers       Workpaper[]
+
+  @@unique([engagementRiskId, ref])
+}
+
+/// The outcome of executing a test procedure. An unsatisfactory conclusion is
+/// what legitimately gives rise to a finding.
+model TestResult {
+  id             String   @id @default(uuid())
+  procedureId    String   @unique
+  procedure      TestProcedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+
+  itemsTested    Int
+  exceptionsFound Int     @default(0)
+  /// Satisfactory | SatisfactoryWithExceptions | Unsatisfactory
+  conclusion     String
+  narrative      String
+
+  testedById     String
+  testedBy       User     @relation("TestExecutor", fields: [testedById], references: [id], onDelete: Cascade)
+  testedAt       DateTime @default(now())
+
+  /// Set when the exception was escalated into a reportable finding.
+  findingId      String?
+  finding        Issue?   @relation(fields: [findingId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime @default(now())
+}
+
+/// The indexed evidence file. Preparer → reviewer sign-off is what makes the
+/// engagement survive an external quality assessment (IIA Std 12.1/14.5).
+model Workpaper {
+  id           String   @id @default(uuid())
+  auditId      String
+  audit        Audit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  /// Cross-reference index, e.g. "B-2.1".
+  ref          String
+  title        String
+  /// Planning | Fieldwork | Reporting
+  section      String   @default("Fieldwork")
+
+  content      String?
+  fileUrl      String?
+  fileName     String?
+
+  /// Optional tie to the test this paper evidences.
+  procedureId  String?
+  procedure    TestProcedure? @relation(fields: [procedureId], references: [id], onDelete: SetNull)
+
+  preparedById String
+  preparedBy   User     @relation("WorkpaperPreparer", fields: [preparedById], references: [id], onDelete: Cascade)
+  preparedAt   DateTime @default(now())
+
+  /// Draft | SubmittedForReview | Reviewed | Returned
+  status       String   @default("Draft")
+
+  reviewedById String?
+  reviewedBy   User?    @relation("WorkpaperReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewConclusion String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviewNotes  WorkpaperReviewNote[]
+
+  @@unique([auditId, ref])
+  @@index([auditId, status])
+}
+
+/// A reviewer's coaching note. Every note must be cleared before the paper
+/// can be signed off — this is the review trail regulators look for.
+model WorkpaperReviewNote {
+  id          String   @id @default(uuid())
+  workpaperId String
+  workpaper   Workpaper @relation(fields: [workpaperId], references: [id], onDelete: Cascade)
+
+  note        String
+  raisedById  String
+  raisedBy    User     @relation("ReviewNoteRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
+
+  /// Open | Cleared
+  status      String   @default("Open")
+  response    String?
+  clearedById String?
+  clearedBy   User?    @relation("ReviewNoteClearer", fields: [clearedById], references: [id], onDelete: SetNull)
+  clearedAt   DateTime?
+
+  createdAt   DateTime @default(now())
+
+  @@index([workpaperId, status])
 }
 
 // ----------------------------------------------------------------------
@@ -1078,4 +1435,193 @@ model RiskScoreSnapshot {
   recordedAt    DateTime @default(now())
 
   @@index([riskId])
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Enterprise risk management — appetite, self-assessment, indicators, losses
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Board-set tolerance per risk category. Residual scores are 1-25
+/// (likelihood x impact), so thresholds live on that same scale.
+model RiskAppetite {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  category           String
+  statement          String
+  /// At or below this, risk is carried without further approval.
+  appetiteThreshold  Int
+  /// Above this, the risk cannot be accepted at all — it must be treated.
+  toleranceThreshold Int
+
+  setById            String
+  setBy              User     @relation("AppetiteSetter", fields: [setById], references: [id], onDelete: Cascade)
+  /// Appetite is only binding once approved by someone other than the setter.
+  approvedById       String?
+  approvedBy         User?    @relation("AppetiteApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt         DateTime?
+  /// Draft | Approved
+  status             String   @default("Draft")
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([tenantId, category])
+  @@index([tenantId, status])
+}
+
+/// Risk & Control Self-Assessment: the first-line mechanism of the Three
+/// Lines Model. Management periodically attests to its own controls.
+model RcsaCampaign {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref            String
+  title          String
+  /// e.g. 2026-H1
+  period         String
+  dueDate        DateTime
+
+  /// Draft | Launched | Closed
+  status         String   @default("Draft")
+  launchedById   String?
+  launchedBy     User?    @relation("CampaignLauncher", fields: [launchedById], references: [id], onDelete: SetNull)
+  launchedAt     DateTime?
+  closedAt       DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assessments    RcsaAssessment[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, status])
+}
+
+model RcsaAssessment {
+  id               String   @id @default(uuid())
+  campaignId       String
+  campaign         RcsaCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  implementationId String
+  implementation   ControlImplementation @relation(fields: [implementationId], references: [id], onDelete: Cascade)
+  respondentId     String
+  respondent       User     @relation("RcsaRespondent", fields: [respondentId], references: [id], onDelete: Cascade)
+
+  /// Effective | PartiallyEffective | Ineffective
+  designRating     String?
+  operatingRating  String?
+  narrative        String?
+
+  /// Pending | Submitted
+  status           String   @default("Pending")
+  submittedAt      DateTime?
+
+  /// A self-reported ineffective control raises an issue automatically.
+  issueId          String?
+  issue            Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime @default(now())
+
+  @@unique([campaignId, implementationId])
+  @@index([tenantId, status])
+}
+
+/// Key Risk Indicator — a measured signal with escalation thresholds.
+model Kri {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  riskId         String?
+  risk           Risk?    @relation(fields: [riskId], references: [id], onDelete: SetNull)
+
+  name           String
+  unit           String
+  /// Higher = a rising value is worse. Lower = a falling value is worse.
+  direction      String   @default("Higher")
+  amberThreshold Float
+  redThreshold   Float
+  /// Monthly | Quarterly
+  frequency      String   @default("Monthly")
+
+  ownerId        String
+  owner          User     @relation("KriOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  readings       KriReading[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+}
+
+model KriReading {
+  id           String   @id @default(uuid())
+  kriId        String
+  kri          Kri      @relation(fields: [kriId], references: [id], onDelete: Cascade)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// e.g. 2026-03. One reading per period keeps the trend honest.
+  periodLabel  String
+  value        Float
+  /// Green | Amber | Red — derived from the thresholds at record time.
+  breachLevel  String
+
+  recordedById String
+  recordedBy   User     @relation("KriRecorder", fields: [recordedById], references: [id], onDelete: Cascade)
+  recordedAt   DateTime @default(now())
+
+  /// A red reading raises an issue automatically.
+  issueId      String?
+  issue        Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@unique([kriId, periodLabel])
+  @@index([tenantId, breachLevel])
+}
+
+/// A risk that actually materialised, with its financial impact. Loss history
+/// is the empirical check on whether the register's scoring was realistic.
+model LossEvent {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref             String
+  riskId          String?
+  risk            Risk?    @relation(fields: [riskId], references: [id], onDelete: SetNull)
+
+  title           String
+  description     String
+  /// Basel-style operational risk event category.
+  category        String
+
+  occurredAt      DateTime
+  discoveredAt    DateTime
+  grossAmount     Float
+  recoveredAmount Float    @default(0)
+  currency        String   @default("SAR")
+
+  /// Open | UnderInvestigation | Closed
+  status          String   @default("Open")
+  reportedById    String
+  reportedBy      User     @relation("LossReporter", fields: [reportedById], references: [id], onDelete: Cascade)
+
+  issueId         String?
+  issue           Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, status])
+  @@index([tenantId, occurredAt])
 }

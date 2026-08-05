@@ -1,6 +1,8 @@
-import dotenv from 'dotenv';
-// Load environment variables before importing app
-dotenv.config();
+// Must be a side-effect import, and must stay first. TypeScript hoists every
+// `require` above statement bodies, so calling `dotenv.config()` here as a
+// statement would run *after* './app' had already been loaded — and app.ts
+// reads JWT_SECRET at module scope.
+import 'dotenv/config';
 
 import app from './app';
 import { startEscalationScanner } from './services/slaService';

@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { evaluateAppetite } from '../services/riskThresholds';
 
 const SUBJ_RISK = 'Risk';
 const TREATMENTS = ['Accept', 'Mitigate', 'Transfer', 'Avoid'];
@@ -391,6 +392,23 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
+    // Board-set appetite is the ceiling on what may be accepted. Only an
+    // approved statement binds — a draft is still just a proposal.
+    const appetite = await prisma.riskAppetite.findFirst({
+      where: { tenantId: risk.tenantId, category: risk.category, status: 'Approved' },
+    });
+    const band = appetite ? evaluateAppetite(risk.residualScore, appetite) : null;
+    if (band === 'BeyondTolerance') {
+      res.status(409).json({
+        status: 'error',
+        code: 'BEYOND_RISK_TOLERANCE',
+        message: `${risk.ref} has a residual score of ${risk.residualScore}, beyond the approved tolerance of ${appetite!.toleranceThreshold} for ${risk.category}. A risk this far outside appetite must be treated down, not accepted.`,
+        residualScore: risk.residualScore,
+        toleranceThreshold: appetite!.toleranceThreshold,
+      });
+      return;
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.risk.update({
         where: { id },
@@ -405,12 +423,19 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
       await writeAudit(tx, {
         tenantId: risk.tenantId, actorId: req.user!.id, action: 'RISK_ACCEPTED',
         subjectType: SUBJ_RISK, subjectId: id,
-        payload: { until: untilDate, reason, residualScore: risk.residualScore },
+        payload: { until: untilDate, reason, residualScore: risk.residualScore, appetiteBand: band },
       });
       return u;
     });
 
-    res.json({ status: 'success', message: `Risk accepted until ${untilDate.toISOString().slice(0, 10)}`, risk: updated });
+    res.json({
+      status: 'success',
+      message: band === 'WithinTolerance'
+        ? `${risk.ref} accepted until ${untilDate.toISOString().slice(0, 10)} — note this is outside appetite but within tolerance, so the acceptance is on record.`
+        : `Risk accepted until ${untilDate.toISOString().slice(0, 10)}`,
+      appetiteBand: band ?? 'NoAppetiteSet',
+      risk: updated,
+    });
   } catch (error: any) {
     console.error('[Risk Accept Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to accept risk' });

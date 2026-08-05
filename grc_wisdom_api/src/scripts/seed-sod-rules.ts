@@ -25,9 +25,9 @@ const DEFAULTS = [
   {
     key: 'audit-finding-closure',
     description: 'The auditor who raised a finding cannot independently close it.',
-    subjectType: 'AuditFinding',
-    conflictingActions: ['AUDIT_FINDING_RAISED'],
-    guardedAction: 'AUDIT_FINDING_CLOSED',
+    subjectType: 'Issue',
+    conflictingActions: ['ISSUE_RAISED'],
+    guardedAction: 'ISSUE_CLOSED',
   },
   {
     key: 'billing-invoice-approver',

@@ -6,7 +6,7 @@ import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResol
 import { checkSod, SodViolation } from '../services/sodEngine';
 
 const SUBJ_AUDIT = 'Audit';
-const SUBJ_FINDING = 'AuditFinding';
+const SUBJ_ISSUE = 'Issue';
 const AUDIT_STATUSES = ['Planned', 'Fieldwork', 'Reporting', 'Closed'];
 const RATINGS = ['High', 'Medium', 'Low'];
 
@@ -31,7 +31,7 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
       include: {
         leadAuditor: { select: { id: true, name: true, email: true } },
         tenant: { select: { id: true, name: true } },
-        findings: { select: { id: true, status: true, riskRating: true } },
+        issues: { select: { id: true, status: true, riskRating: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
@@ -40,14 +40,14 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
     const enriched = audits.map((a) => ({
       ...a,
       findingCounts: {
-        total: a.findings.length,
-        open: a.findings.filter((f) => f.status !== 'Closed').length,
-        closed: a.findings.filter((f) => f.status === 'Closed').length,
-        high: a.findings.filter((f) => f.riskRating === 'High').length,
+        total: a.issues.length,
+        open: a.issues.filter((f) => f.status !== 'Closed').length,
+        closed: a.issues.filter((f) => f.status === 'Closed').length,
+        high: a.issues.filter((f) => f.riskRating === 'High').length,
       },
     }));
 
-    const allFindings = audits.flatMap((a) => a.findings);
+    const allFindings = audits.flatMap((a) => a.issues);
     res.json({
       status: 'success',
       scope: scope.kind,
@@ -80,10 +80,11 @@ export const getAudit = async (req: AuthenticatedRequest, res: Response): Promis
       include: {
         leadAuditor: { select: { id: true, name: true, email: true } },
         tenant: { select: { id: true, name: true } },
-        findings: {
+        issues: {
           include: {
             raisedBy: { select: { id: true, name: true, email: true } },
             capOwner: { select: { id: true, name: true, email: true } },
+            respondedBy: { select: { id: true, name: true, email: true } },
             closedBy: { select: { id: true, name: true, email: true } },
           },
           orderBy: { createdAt: 'asc' },
@@ -149,7 +150,7 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
     const scope = await resolveTenantScope(req.user!.tenantId);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
-      include: { findings: { select: { status: true } } },
+      include: { issues: { select: { status: true } } },
     });
     if (!audit) { res.status(404).json({ status: 'error', message: 'Audit not found' }); return; }
 
@@ -168,9 +169,34 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
         res.status(400).json({ status: 'error', message: `status must be one of: ${AUDIT_STATUSES.join(', ')}` });
         return;
       }
+      // IIA Std 14.5: the engagement file must be complete and independently
+      // reviewed before results are communicated.
+      if (status === 'Reporting') {
+        const papers = await prisma.workpaper.findMany({
+          where: { auditId: id },
+          select: { status: true, ref: true },
+        });
+        const unreviewed = papers.filter((w) => w.status !== 'Reviewed');
+        if (papers.length === 0) {
+          res.status(409).json({
+            status: 'error',
+            code: 'NO_WORKPAPERS',
+            message: 'The engagement has no workpapers. Results cannot be reported without an evidence file.',
+          });
+          return;
+        }
+        if (unreviewed.length > 0) {
+          res.status(409).json({
+            status: 'error',
+            code: 'WORKPAPERS_UNREVIEWED',
+            message: `${unreviewed.length} workpaper(s) are not yet reviewed (${unreviewed.map((w) => w.ref).join(', ')}). The file must be signed off before reporting.`,
+          });
+          return;
+        }
+      }
       // An audit cannot close while any finding stays open.
       if (status === 'Closed') {
-        const open = audit.findings.filter((f) => f.status !== 'Closed').length;
+        const open = audit.issues.filter((f) => f.status !== 'Closed').length;
         if (open > 0) {
           res.status(409).json({ status: 'error', message: `${open} finding(s) are still open — close them before closing the audit` });
           return;
@@ -206,7 +232,7 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
 export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { criterion, condition, cause, recommendation, riskRating } = req.body || {};
+    const { title, criterion, condition, cause, recommendation, riskRating, targetCloseDate } = req.body || {};
     if (!criterion || !condition || !cause || !recommendation) {
       res.status(400).json({ status: 'error', message: 'criterion, condition, cause and recommendation are all required (TRD §7.2)' });
       return;
@@ -219,7 +245,7 @@ export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Pr
     const scope = await resolveTenantScope(req.user!.tenantId);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
-      include: { _count: { select: { findings: true } } },
+      include: { _count: { select: { issues: true } } },
     });
     if (!audit) { res.status(404).json({ status: 'error', message: 'Audit not found' }); return; }
     if (audit.status === 'Closed') {
@@ -228,11 +254,13 @@ export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Pr
     }
 
     const finding = await prisma.$transaction(async (tx) => {
-      const created = await tx.auditFinding.create({
+      const created = await tx.issue.create({
         data: {
           auditId: id,
           tenantId: audit.tenantId,
-          ref: `${audit.ref}-F${audit._count.findings + 1}`,
+          ref: `${audit.ref}-F${audit._count.issues + 1}`,
+          source: 'InternalAudit',
+          title: String(title || condition).trim().slice(0, 120),
           criterion: String(criterion).trim(),
           condition: String(condition).trim(),
           cause: String(cause).trim(),
@@ -240,13 +268,14 @@ export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Pr
           riskRating: riskRating || 'Medium',
           raisedById: req.user!.id,
           status: 'Open',
+          targetCloseDate: targetCloseDate ? new Date(targetCloseDate) : null,
         },
       });
       // This audit entry is what the SoD engine matches when the same person
       // later attempts closure (rule: audit-finding-closure).
       await writeAudit(tx, {
-        tenantId: audit.tenantId, actorId: req.user!.id, action: 'AUDIT_FINDING_RAISED',
-        subjectType: SUBJ_FINDING, subjectId: created.id,
+        tenantId: audit.tenantId, actorId: req.user!.id, action: 'ISSUE_RAISED',
+        subjectType: SUBJ_ISSUE, subjectId: created.id,
         payload: { ref: created.ref, riskRating: riskRating || 'Medium', criterion },
       });
       return created;
@@ -256,163 +285,5 @@ export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Pr
   } catch (error: any) {
     console.error('[Raise Finding Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to raise finding' });
-  }
-};
-
-export const updateFinding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
-    const finding = await prisma.auditFinding.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
-    if (!finding) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
-    if (finding.status === 'Closed') {
-      res.status(409).json({ status: 'error', message: 'Closed findings are immutable — reopen first' });
-      return;
-    }
-
-    const { capOwnerId, capDueDate, capDescription, submitForClosure } = req.body || {};
-    const data: any = {};
-
-    // A corrective action plan needs an owner and a due date (TRD §7.2).
-    if (capOwnerId || capDueDate || capDescription) {
-      if (!(capOwnerId || finding.capOwnerId) || !(capDueDate || finding.capDueDate)) {
-        res.status(400).json({ status: 'error', message: 'A CAP requires both capOwnerId and capDueDate' });
-        return;
-      }
-      if (capOwnerId) data.capOwnerId = capOwnerId;
-      if (capDueDate) data.capDueDate = new Date(capDueDate);
-      if (capDescription) data.capDescription = capDescription;
-      if (finding.status === 'Open' || finding.status === 'Reopened') data.status = 'CAPAssigned';
-    }
-
-    if (submitForClosure === true) {
-      if (!(data.capOwnerId || finding.capOwnerId)) {
-        res.status(409).json({ status: 'error', message: 'Assign a CAP before submitting for closure' });
-        return;
-      }
-      data.status = 'PendingClosure';
-    }
-
-    if (Object.keys(data).length === 0) {
-      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
-      return;
-    }
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.auditFinding.update({ where: { id }, data });
-      await writeAudit(tx, {
-        tenantId: finding.tenantId, actorId: req.user!.id, action: 'AUDIT_FINDING_UPDATED',
-        subjectType: SUBJ_FINDING, subjectId: id,
-        payload: { before: { status: finding.status }, after: data },
-      });
-      return u;
-    });
-
-    res.json({ status: 'success', finding: updated });
-  } catch (error: any) {
-    console.error('[Update Finding Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to update finding' });
-  }
-};
-
-/**
- * Independent closure validation (TRD §7.2): the person who raised the
- * finding cannot close it. Enforced both explicitly and via the data-driven
- * SoD rule `audit-finding-closure`.
- */
-export const closeFinding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const id = req.params.id as string;
-    const { note } = req.body || {};
-    if (!note) {
-      res.status(400).json({ status: 'error', message: 'A closure note is required — it is the validation evidence' });
-      return;
-    }
-
-    const scope = await resolveTenantScope(req.user!.tenantId);
-    const finding = await prisma.auditFinding.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
-    if (!finding) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
-    if (finding.status !== 'PendingClosure') {
-      res.status(409).json({ status: 'error', message: `Only findings pending closure can be closed (current: ${finding.status})` });
-      return;
-    }
-    if (finding.raisedById === req.user!.id) {
-      res.status(403).json({
-        status: 'error',
-        code: 'SOD_VIOLATION',
-        message: 'Independent closure required: the auditor who raised a finding cannot close it.',
-      });
-      return;
-    }
-
-    const updated = await prisma.$transaction(async (tx) => {
-      await checkSod(tx, {
-        tenantId: finding.tenantId,
-        actorId: req.user!.id,
-        guardedAction: 'AUDIT_FINDING_CLOSED',
-        subjectType: SUBJ_FINDING,
-        subjectId: id,
-      });
-      const u = await tx.auditFinding.update({
-        where: { id },
-        data: { status: 'Closed', closedById: req.user!.id, closedAt: new Date(), closureNote: String(note).trim() },
-      });
-      await writeAudit(tx, {
-        tenantId: finding.tenantId, actorId: req.user!.id, action: 'AUDIT_FINDING_CLOSED',
-        subjectType: SUBJ_FINDING, subjectId: id,
-        payload: { ref: finding.ref, note },
-      });
-      return u;
-    });
-
-    res.json({ status: 'success', message: `${finding.ref} closed`, finding: updated });
-  } catch (error: any) {
-    if (error instanceof SodViolation) {
-      res.status(403).json({ status: 'error', code: error.code, rule: error.ruleKey, message: error.message });
-      return;
-    }
-    console.error('[Close Finding Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to close finding' });
-  }
-};
-
-/** Reopen-if-insufficient path (TRD §7.2 explicit requirement). */
-export const reopenFinding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const id = req.params.id as string;
-    const { reason } = req.body || {};
-    if (!reason) { res.status(400).json({ status: 'error', message: 'reason is required to reopen a finding' }); return; }
-
-    const scope = await resolveTenantScope(req.user!.tenantId);
-    const finding = await prisma.auditFinding.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
-    if (!finding) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
-    if (finding.status !== 'Closed') {
-      res.status(409).json({ status: 'error', message: 'Only closed findings can be reopened' });
-      return;
-    }
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.auditFinding.update({
-        where: { id },
-        data: {
-          status: 'Reopened',
-          reopenedCount: finding.reopenedCount + 1,
-          closedById: null,
-          closedAt: null,
-          closureNote: null,
-        },
-      });
-      await writeAudit(tx, {
-        tenantId: finding.tenantId, actorId: req.user!.id, action: 'AUDIT_FINDING_REOPENED',
-        subjectType: SUBJ_FINDING, subjectId: id,
-        payload: { ref: finding.ref, reason, reopenedCount: finding.reopenedCount + 1 },
-      });
-      return u;
-    });
-
-    res.json({ status: 'success', message: `${finding.ref} reopened (count: ${updated.reopenedCount})`, finding: updated });
-  } catch (error: any) {
-    console.error('[Reopen Finding Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to reopen finding' });
   }
 };
