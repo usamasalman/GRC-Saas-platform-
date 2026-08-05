@@ -69,7 +69,10 @@
       "Bash(grep -c \"grc_wisdom_api[\\\\\\\\/]src[\\\\\\\\/]\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")",
       "Bash(curl -s \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(mv docs/platform-guide.html public/platform-guide.html)",
+      "Bash(rmdir docs *)",
+      "Bash(curl -s -o /dev/null -w \"  http://localhost:5173/platform-guide.html -> HTTP %{http_code}\\\\n\" http://localhost:5173/platform-guide.html)"
     ]
   }
 }
