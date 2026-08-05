@@ -1,0 +1,882 @@
+<title>GRC Wisdom — Operations Manual</title>
+<style>
+  :root {
+    --ground:      #FBFAF8;
+    --ground-sunk: #F3F0EA;
+    --card:        #FFFFFF;
+    --ink:         #141A22;
+    --ink-soft:    #4A5260;
+    --ink-faint:   #7C8494;
+    --rule:        #DFD9CF;
+    --rule-soft:   #EBE6DE;
+    --accent:      #17456B;
+    --accent-soft: #E4EDF4;
+    --plum:        #6B3F5E;
+    --plum-soft:   #F1E7ED;
+    --ok:          #2E6B4F;
+    --ok-soft:     #E3EFE8;
+    --warn:        #8A6410;
+    --warn-soft:   #F6EEDC;
+    --crit:        #9B3024;
+    --crit-soft:   #F7E6E3;
+
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #12161C; --ground-sunk: #171C24; --card: #1A2029;
+      --ink: #E8E4DE; --ink-soft: #A8B0BD; --ink-faint: #78808D;
+      --rule: #2B3340; --rule-soft: #232A34;
+      --accent: #7FB2D9; --accent-soft: #1B2A38;
+      --plum: #C08FAE; --plum-soft: #2A1F27;
+      --ok: #6FBF95; --ok-soft: #17281F;
+      --warn: #D9A94A; --warn-soft: #2A2216;
+      --crit: #E08076; --crit-soft: #2C1B19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #12161C; --ground-sunk: #171C24; --card: #1A2029;
+    --ink: #E8E4DE; --ink-soft: #A8B0BD; --ink-faint: #78808D;
+    --rule: #2B3340; --rule-soft: #232A34;
+    --accent: #7FB2D9; --accent-soft: #1B2A38;
+    --plum: #C08FAE; --plum-soft: #2A1F27;
+    --ok: #6FBF95; --ok-soft: #17281F;
+    --warn: #D9A94A; --warn-soft: #2A2216;
+    --crit: #E08076; --crit-soft: #2C1B19;
+  }
+  :root[data-theme="light"] {
+    --ground: #FBFAF8; --ground-sunk: #F3F0EA; --card: #FFFFFF;
+    --ink: #141A22; --ink-soft: #4A5260; --ink-faint: #7C8494;
+    --rule: #DFD9CF; --rule-soft: #EBE6DE;
+    --accent: #17456B; --accent-soft: #E4EDF4;
+    --plum: #6B3F5E; --plum-soft: #F1E7ED;
+    --ok: #2E6B4F; --ok-soft: #E3EFE8;
+    --warn: #8A6410; --warn-soft: #F6EEDC;
+    --crit: #9B3024; --crit-soft: #F7E6E3;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1240px; margin: 0 auto; padding: 0 24px 96px;
+    display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 56px; align-items: start;
+  }
+
+  .masthead { grid-column: 1 / -1; border-bottom: 2px solid var(--ink); padding: 56px 0 28px; margin-bottom: 48px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--plum); margin: 0 0 18px;
+  }
+  .masthead h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(2.3rem, 5.2vw, 3.4rem); line-height: 1.08;
+    letter-spacing: -0.015em; margin: 0 0 18px; text-wrap: balance;
+  }
+  .standfirst {
+    font-family: var(--serif); font-size: clamp(1.05rem, 2vw, 1.22rem);
+    line-height: 1.5; color: var(--ink-soft); max-width: 62ch; margin: 0;
+  }
+
+  .rail { position: sticky; top: 28px; }
+  .rail-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding-bottom: 10px; border-bottom: 1px solid var(--rule); margin-bottom: 12px;
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rail a {
+    display: block; padding: 5px 0 5px 11px; margin-left: -11px;
+    font-size: 13.5px; line-height: 1.4; color: var(--ink-soft);
+    text-decoration: none; border-left: 2px solid transparent;
+    transition: color .12s, border-color .12s;
+  }
+  .rail a:hover, .rail a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .rail-num { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-right: 7px; }
+
+  main { min-width: 0; }
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(1.6rem, 3vw, 2rem); line-height: 1.2;
+    letter-spacing: -0.01em; margin: 0 0 10px; text-wrap: balance;
+  }
+  .sec-num {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    color: var(--plum); display: block; margin-bottom: 10px;
+  }
+  h3 { font-family: var(--sans); font-weight: 650; font-size: 1.02rem; margin: 34px 0 10px; text-wrap: balance; }
+  h4 {
+    font-family: var(--mono); font-weight: 500; font-size: 11.5px;
+    letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-faint); margin: 26px 0 8px;
+  }
+  p { margin: 0 0 15px; max-width: var(--measure); }
+  .lede { font-size: 1.06rem; color: var(--ink-soft); max-width: var(--measure); }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  ul, ol { max-width: var(--measure); padding-left: 20px; margin: 0 0 15px; }
+  li { margin-bottom: 7px; }
+  strong { font-weight: 650; }
+  code {
+    font-family: var(--mono); font-size: 0.855em; background: var(--ground-sunk);
+    border: 1px solid var(--rule-soft); border-radius: 3px; padding: 1px 5px; word-break: break-word;
+  }
+
+  /* Gate stack */
+  .gates { display: flex; flex-direction: column; gap: 10px; margin: 0 0 24px; max-width: var(--measure); }
+  .gate {
+    display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 16px;
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    background: var(--card); border-radius: 0 5px 5px 0; padding: 14px 18px;
+  }
+  .gate-n {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent); padding-top: 3px;
+  }
+  .gate-b strong { display: block; margin-bottom: 3px; }
+  .gate-b p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+  .gate-b code { font-size: 12px; }
+
+  /* Trace */
+  .trace { border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; margin: 0 0 24px; background: var(--card); }
+  .trace-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); border-bottom: 1px solid var(--rule-soft); }
+  .trace-row:last-child { border-bottom: none; }
+  .trace-actor {
+    background: var(--ground-sunk); padding: 13px 16px;
+    font-size: 13px; font-weight: 600; border-right: 1px solid var(--rule-soft);
+  }
+  .trace-actor span { display: block; font-weight: 400; font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
+  .trace-body { padding: 13px 18px; }
+  .trace-body strong { display: block; margin-bottom: 3px; font-size: 14.5px; }
+  .trace-body p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .trace-sys {
+    display: block; font-family: var(--mono); font-size: 11.5px;
+    color: var(--plum); margin-top: 7px;
+  }
+
+  .scroll { overflow-x: auto; margin: 0 0 22px; border: 1px solid var(--rule); border-radius: 5px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 500;
+    background: var(--ground-sunk); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.caps { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--ink-soft); }
+
+  .chip {
+    display: inline-flex; align-items: center; font-family: var(--mono);
+    font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 3px; white-space: nowrap;
+  }
+  .chip-on  { background: var(--ok-soft);   color: var(--ok);   border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
+  .chip-off { background: var(--crit-soft); color: var(--crit); border: 1px solid color-mix(in srgb, var(--crit) 30%, transparent); }
+  .chip-part{ background: var(--warn-soft); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+
+  .note {
+    border-left: 3px solid var(--plum); background: var(--plum-soft);
+    padding: 14px 18px; border-radius: 0 4px 4px 0; margin: 0 0 22px; max-width: var(--measure);
+  }
+  .note.alert { border-left-color: var(--crit); background: var(--crit-soft); }
+  .note p { margin: 0; }
+  .note p + p { margin-top: 10px; }
+  .note-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--plum); display: block; margin-bottom: 5px;
+  }
+  .note.alert .note-label { color: var(--crit); }
+
+  pre {
+    background: var(--ground-sunk); border: 1px solid var(--rule-soft); border-radius: 5px;
+    padding: 14px 16px; overflow-x: auto; font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.6; margin: 0 0 22px;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  .footer {
+    grid-column: 1 / -1; border-top: 2px solid var(--ink); padding-top: 20px;
+    font-size: 13.5px; color: var(--ink-faint); max-width: var(--measure);
+  }
+
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 20px 64px; }
+    .rail { position: static; margin-bottom: 44px; padding-bottom: 28px; border-bottom: 1px solid var(--rule); }
+    .rail ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 20px; }
+    .masthead { padding-top: 40px; margin-bottom: 36px; }
+    .trace-row { grid-template-columns: 1fr; }
+    .trace-actor { border-right: none; border-bottom: 1px solid var(--rule-soft); }
+    .gate { grid-template-columns: 1fr; gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Operations Manual · Roles, Privileges &amp; Workflows</p>
+    <h1>Who does what, and what happens next</h1>
+    <p class="standfirst">
+      A role-by-role account of how work moves through GRC Wisdom. Follow a ticket from the moment
+      someone raises it to the moment it closes, see exactly which privilege unlocks which action, and
+      and see exactly when the platform tells someone their attention is needed.
+    </p>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#gates"><span class="rail-num">01</span>How permission is decided</a></li>
+      <li><a href="#ticket"><span class="rail-num">02</span>A ticket, end to end</a></li>
+      <li><a href="#telling"><span class="rail-num">03</span>How users find out</a></li>
+      <li><a href="#privileges"><span class="rail-num">04</span>The 34 privileges</a></li>
+      <li><a href="#roles"><span class="rail-num">05</span>All 42 roles</a></li>
+      <li><a href="#traces"><span class="rail-num">06</span>The other workflows</a></li>
+      <li><a href="#who"><span class="rail-num">07</span>Who checks whom</a></li>
+      <li><a href="#gaps"><span class="rail-num">08</span>Gaps to know about</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="gates">
+      <span class="sec-num">01</span>
+      <h2>How permission is decided</h2>
+
+      <p class="lede">
+        Every request passes four independent gates. They are not alternatives — all four apply, in
+        order, and any one can stop the request. Understanding this stack explains almost every
+        "why can't I do that?" question.
+      </p>
+
+      <div class="gates">
+        <div class="gate">
+          <div class="gate-n">Gate 1</div>
+          <div class="gate-b">
+            <strong>Are you who you say you are?</strong>
+            <p>A valid token is required. Users who must change their password are stopped here with
+            <code>428</code>. Impersonated sessions are allowed to read but every write is refused.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-n">Gate 2</div>
+          <div class="gate-b">
+            <strong>Does your role grant this privilege?</strong>
+            <p>Each route names the capability it needs. Your role grants a set of capability keys.
+            No key, no entry — and the error names the missing privilege so an administrator knows
+            exactly what to grant.</p>
+            <code>CAPABILITY_DENIED: Your role "Risk Manager" does not grant "plan-and-execute-an-audit".</code>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-n">Gate 3</div>
+          <div class="gate-b">
+            <strong>Is this record inside your world?</strong>
+            <p>Your tenant's operating model resolves to a set of tenant IDs. Every query is filtered to
+            that set before it runs, so a branch user cannot reach a sibling branch's data even with the
+            right privilege. Legitimate group-level cross-tenant reads are logged as such.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-n">Gate 4</div>
+          <div class="gate-b">
+            <strong>Would this create a conflict of interest?</strong>
+            <p>Separation of duties is checked last, against the audit history of the record itself.
+            This is why holding the right privilege is not enough — the system knows you raised this
+            finding, so it will not let you close it.</p>
+            <code>SOD_VIOLATION: Independent closure required: whoever raised an issue cannot close it.</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <span class="note-label">The distinction that matters</span>
+        <p>
+          <strong>Privilege</strong> is about job function — can this kind of person do this kind of
+          thing? <strong>Separation of duties</strong> is about this specific record — has this person
+          already played a conflicting part in this case? A GRC Manager holds both the risk and audit
+          privileges, yet is still blocked from validating a corrective action they personally owned.
+        </p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="ticket">
+      <span class="sec-num">02</span>
+      <h2>A ticket, end to end</h2>
+
+      <p class="lede">
+        Your worked example. Every one of the 42 roles holds <code>create-an-itsm-ticket</code>, so
+        anyone can start this. What happens afterwards depends on what they picked.
+      </p>
+
+      <div class="trace">
+        <div class="trace-row">
+          <div class="trace-actor">Requester<span>any role</span></div>
+          <div class="trace-body">
+            <strong>Raises the ticket</strong>
+            <p>Opens <em>ITSM Service Desk</em>, describes the problem, and chooses impact and urgency —
+            or picks a catalogue item, which supplies those defaults.</p>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>on save</span></div>
+          <div class="trace-body">
+            <strong>Works out how urgent this really is</strong>
+            <p>Priority is calculated on the server from the ITIL 3&times;3 matrix. A requester cannot
+            declare their own ticket P1 — High impact plus High urgency produces P1, Medium and Medium
+            produces P3, and so on.</p>
+            <span class="trace-sys">priority = MATRIX[impact][urgency] · never taken from the request</span>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>on save</span></div>
+          <div class="trace-body">
+            <strong>Starts the clock</strong>
+            <p>Two deadlines are set from the priority: when someone must respond, and when it must be
+            resolved. A tenant's own SLA policy wins; otherwise the platform default applies.</p>
+            <span class="trace-sys">P1 respond 15m / resolve 1h · P2 1h / 8h · P3 4h / 3d · P4 8h / 5d</span>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>routing</span></div>
+          <div class="trace-body">
+            <strong>Sends it to a team — or to approval first</strong>
+            <p>The catalogue item decides. Most items set an assignment group and the ticket opens as
+            <code>New</code>. Four items carry an approval workflow instead: the ticket opens as
+            <code>Pending Approval</code> and does not reach the queue until approvers have signed.</p>
+            <span class="trace-sys">workflow-routed: production access · new starter · production change · security event</span>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Approvers<span>if workflow</span></div>
+          <div class="trace-body">
+            <strong>Approve in sequence</strong>
+            <p>Each step names the privilege needed to act on it, so the right people see it in their
+            workflow inbox. A production access request needs a manager review from someone holding
+            <code>add-a-user-with-role-based-access</code>, then security approval from someone holding
+            <code>monitor-security-and-handle-incidents</code>.</p>
+            <span class="trace-sys">GET /api/itsm/workflows/inbox — an approver's queue</span>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Service desk<span>resolver role</span></div>
+          <div class="trace-body">
+            <strong>Picks it up</strong>
+            <p>Staff working <em>Ticket Queues</em> see it grouped by team, priority and SLA state.
+            Assignment is a deliberate act — nothing auto-assigns to an individual, so a ticket sits with
+            the team until a person takes it.</p>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>first touch</span></div>
+          <div class="trace-body">
+            <strong>Stops the response clock</strong>
+            <p>The first assignment, status change, or comment from anyone other than the requester marks
+            the ticket as responded to. Nothing else needs to be recorded.</p>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Service desk<span>while working</span></div>
+          <div class="trace-body">
+            <strong>Writes two kinds of note</strong>
+            <p>A <strong>comment</strong> is visible to the requester. A <strong>work note</strong> is
+            internal and stored in a separate table entirely. The requester can never write an internal
+            note on their own ticket — the system silently downgrades the attempt to a public comment.</p>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>every 5 min</span></div>
+          <div class="trace-body">
+            <strong>Escalates anything that has run out of time</strong>
+            <p>A background scan finds open tickets past their resolve deadline, marks them breached,
+            raises the escalation level by one, and writes a permanent audit record. Breached tickets
+            surface in <em>SLA &amp; Escalations</em>.</p>
+            <span class="trace-sys">TICKET_SLA_BREACHED · escalationLevel + 1</span>
+          </div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Service desk<span>resolver role</span></div>
+          <div class="trace-body">
+            <strong>Resolves it</strong>
+            <p>Status moves to <code>Resolved</code>, <code>Closed</code> or <code>Cancelled</code> and
+            the resolution timestamp is stamped. Good practice is to add a public comment first, because
+            that comment is the only thing the requester will actually read.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>Who can resolve a ticket</h3>
+      <p>
+        Resolution belongs to roles holding <code>manage-and-resolve-support-tickets</code>. Seven of
+        the 42 roles have it:
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th>Portal</th><th>Handles</th></tr></thead>
+          <tbody>
+            <tr><td>Platform Service Desk Manager</td><td>SaaS</td><td>All customer tickets and SLA queues</td></tr>
+            <tr><td>Customer Success Manager</td><td>SaaS</td><td>Onboarding, adoption and escalations</td></tr>
+            <tr><td>Wisdom Eye Security Analyst</td><td>SaaS</td><td>Security findings</td></tr>
+            <tr><td>Organization Support Coordinator</td><td>Multibranch</td><td>Organization tickets and service requests</td></tr>
+            <tr><td>Wisdom Eye Manager</td><td>Multibranch</td><td>Security and phishing campaigns</td></tr>
+            <tr><td>Franchise Support Manager</td><td>Franchise</td><td>Network tickets and location escalations</td></tr>
+            <tr><td>Post-Sales Customer Success Manager</td><td>Partner</td><td>Client tickets and renewals</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The same privilege also unlocks writing knowledge base articles and triggering an SLA scan
+        on demand.
+      </p>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="telling">
+      <span class="sec-num">03</span>
+      <h2>How users find out</h2>
+
+      <p class="lede">
+        The platform tells people when something needs them. Notifications are written inside the same
+        transaction as the action that caused them, so the platform can never announce a change that was
+        rolled back.
+      </p>
+
+      <h3>What gets a notification</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Event</th><th>Who is told</th><th>Because</th></tr></thead>
+          <tbody>
+            <tr><td>Ticket assigned</td><td>The new assignee</td><td>They now own it, with the resolve deadline in the message</td></tr>
+            <tr><td>Ticket resolved or closed</td><td>The requester</td><td>The answer to "is my problem fixed?"</td></tr>
+            <tr><td>Public comment added</td><td>The other party</td><td>Requester hears from the desk; the desk hears back</td></tr>
+            <tr><td>SLA breached</td><td>The assignee</td><td>The escalation is now on their record</td></tr>
+            <tr><td>Management responds to a finding</td><td>Whoever raised it</td><td>The auditor learns whether it was accepted or disputed</td></tr>
+            <tr><td>Corrective action assigned</td><td>The action owner</td><td>They now own remediation, with the due date</td></tr>
+            <tr><td>Issue closed</td><td>The raiser and the action owner</td><td>Independent validation has completed</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Two rules the notifier never breaks</h3>
+      <ul>
+        <li><strong>Nobody is told about their own action.</strong> A service desk agent who assigns a
+          ticket to themselves gets nothing — they already know.</li>
+        <li><strong>Internal work notes never travel.</strong> Only public comments generate a
+          notification, so a private note about a customer cannot reach that customer by accident.</li>
+      </ul>
+
+      <h4>Reading your inbox</h4>
+      <pre><code>GET  /api/notifications              your inbox, unread first
+GET  /api/notifications/unread-count badge count
+POST /api/notifications/:id/read     mark one read
+POST /api/notifications/read-all     clear the badge</code></pre>
+
+      <p>
+        An inbox belongs to a person, not a tenant. It is the one place the tenant scope resolver is
+        deliberately not used — a group-level role that can read an entire subtree still cannot read
+        anyone else's notifications.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Still pull, not push</span>
+        <p>
+          Delivery is in-app. There is no email or SMS integration, so a user who never opens the
+          platform will not hear anything. Adding email later is a matter of reading the same
+          notification rows — the events are already captured at the right moments.
+        </p>
+      </div>
+
+      <h3>Everything else users can check</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Signal</th><th>Where</th></tr></thead>
+          <tbody>
+            <tr><td>Ticket status and SLA countdown</td><td>Service Desk, on the ticket</td></tr>
+            <tr><td>Pending approvals assigned to you</td><td>To Do &amp; Approvals · workflow inbox</td></tr>
+            <tr><td>Breached and escalated tickets</td><td>SLA &amp; Escalations</td></tr>
+            <tr><td>Everything that has happened to a record</td><td>Immutable Audit Log</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="privileges">
+      <span class="sec-num">04</span>
+      <h2>The 34 privileges</h2>
+
+      <p class="lede">
+        The role matrix defines 34 capabilities. Thirteen are enforced on live routes today; the other
+        twenty-one are granted to roles but guard modules that are not built yet, so holding one changes
+        nothing at present.
+      </p>
+
+      <h3><span class="chip chip-on">Enforced</span> &nbsp;13 privileges that control real behaviour</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Privilege</th><th>What it unlocks</th></tr></thead>
+          <tbody>
+            <tr><td><code>create-an-itsm-ticket</code></td><td>Raise a ticket, comment on one, update ticket fields</td></tr>
+            <tr><td><code>manage-and-resolve-support-tickets</code></td><td>Work queues, resolve tickets, write knowledge articles, run an SLA scan</td></tr>
+            <tr><td><code>create-or-manage-a-tenant</code></td><td>Provision tenants, set operating models, reach the database console</td></tr>
+            <tr><td><code>add-a-user-with-role-based-access</code></td><td>Create users and assign roles</td></tr>
+            <tr><td><code>maintain-roles-and-permissions</code></td><td>Edit the role matrix; also approves risk appetite statements</td></tr>
+            <tr><td><code>transfer-a-user-between-branches-or-entities</code></td><td>Move a user between branches or entities</td></tr>
+            <tr><td><code>monitor-security-and-handle-incidents</code></td><td>Security approvals in workflows; second route to appetite approval</td></tr>
+            <tr><td><code>create-import-and-version-a-document</code></td><td>Author and version documents and policies</td></tr>
+            <tr><td><code>apply-retention-and-legal-hold</code></td><td>Retention schedules and legal hold</td></tr>
+            <tr><td><code>import-or-enable-a-standard</code></td><td>Enable ISO 27001, NCA ECC, PDPL, SOC 2 for a tenant</td></tr>
+            <tr><td><code>manage-a-control-implementation-and-evidence</code></td><td>Implementations, evidence, corrective actions, RCSA campaigns, KRI readings, loss events</td></tr>
+            <tr><td><code>assess-and-treat-a-risk</code></td><td>Risk register, treatments, acceptance, appetite drafting, KRIs, RCSA, losses, management response</td></tr>
+            <tr><td><code>plan-and-execute-an-audit</code></td><td>Audit universe, annual plan, engagements, testing, workpapers, issue closure and escalation</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3><span class="chip chip-off">Not yet enforced</span> &nbsp;21 privileges awaiting their module</h3>
+      <p>
+        These appear in role definitions and will matter once the corresponding module ships. Today they
+        neither grant nor block anything.
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Privilege</th><th>Waiting on</th></tr></thead>
+          <tbody>
+            <tr><td><code>first-time-login-and-mfa</code></td><td>Handled by auth directly, not by a capability check</td></tr>
+            <tr><td><code>review-approve-and-digitally-sign-a-document</code></td><td>Digital signature module</td></tr>
+            <tr><td><code>acknowledge-or-monitor-a-policy</code></td><td>Acknowledgement enforcement</td></tr>
+            <tr><td><code>generate-and-distribute-a-report</code></td><td>Reporting engine</td></tr>
+            <tr><td><code>create-an-approval-or-automation-workflow</code></td><td>Workflow authoring UI — the engine exists, the editor does not</td></tr>
+            <tr><td><code>configure-an-integration</code></td><td>Integrations</td></tr>
+            <tr><td><code>publish-or-enable-a-module</code> · <code>govern-a-feature-flag</code></td><td>Module marketplace and feature flags</td></tr>
+            <tr><td><code>create-or-select-a-commercial-plan</code> · <code>manage-a-subscription</code> · <code>generate-or-review-an-invoice</code> · <code>record-and-reconcile-a-payment</code> · <code>monitor-resource-usage-and-quotas</code></td><td>Billing and subscriptions</td></tr>
+            <tr><td><code>operate-wisdom-eye-and-eye-phish</code></td><td>Security services</td></tr>
+            <tr><td><code>assess-and-remediate-a-vendor</code></td><td>Third-party risk</td></tr>
+            <tr><td><code>maintain-an-asset</code></td><td>Asset management</td></tr>
+            <tr><td><code>assign-or-complete-learning</code></td><td>Awareness and training</td></tr>
+            <tr><td><code>onboard-or-purchase-an-open-source-tool</code></td><td>Tool marketplace</td></tr>
+            <tr><td><code>manage-group-or-regional-governance</code> · <code>manage-franchise-governance</code> · <code>manage-partner-client-workspaces-and-engagements</code></td><td>Currently expressed through tenant scope rather than a capability check</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="roles">
+      <span class="sec-num">05</span>
+      <h2>All 42 roles</h2>
+
+      <p class="lede">
+        Grouped by portal. The privilege column lists what each role holds; privileges marked
+        <span class="chip chip-off">not enforced</span> above are shown in grey because they do not yet
+        change behaviour.
+      </p>
+
+      <h3>SaaS portal — platform operations</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Scope</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Platform Super Admin</strong></td><td class="num">9</td><td>All tenants, break-glass</td><td class="caps">tenants · users · roles · modules · flags · workflows · integrations · security · tickets</td></tr>
+            <tr><td><strong>Platform Security Admin</strong></td><td class="num">7</td><td>Security config and logs</td><td class="caps">security · roles · flags · integrations · workflows · reports · tickets</td></tr>
+            <tr><td><strong>Platform Billing Admin</strong></td><td class="num">7</td><td>Subscriptions and finance</td><td class="caps">plans · subscriptions · invoices · payments · quotas · reports · tickets</td></tr>
+            <tr><td><strong>Platform Service Desk Manager</strong></td><td class="num">5</td><td>All customer tickets</td><td class="caps"><strong>resolve tickets</strong> · workflows · users · reports · tickets</td></tr>
+            <tr><td><strong>Open Source Marketplace Curator</strong></td><td class="num">6</td><td>Tool review and publishing</td><td class="caps">tools · modules · integrations · security · quotas · tickets</td></tr>
+            <tr><td><strong>Customer Success Manager</strong></td><td class="num">6</td><td>Onboarding and renewals</td><td class="caps">tenants · subscriptions · <strong>resolve tickets</strong> · learning · reports</td></tr>
+            <tr><td><strong>Wisdom Eye Security Analyst</strong></td><td class="num">5</td><td>Authorized attack surfaces</td><td class="caps">security services · security · <strong>resolve tickets</strong> · reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Holding portal — group oversight</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Scope</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Group Admin</strong></td><td class="num">7</td><td>Assigned group tree</td><td class="caps">group governance · <strong>users · transfers · roles · standards</strong> · reports</td></tr>
+            <tr><td><strong>Regional Admin</strong></td><td class="num">7</td><td>Selected entities</td><td class="caps">group governance · <strong>users · transfers · roles · risk</strong> · reports</td></tr>
+            <tr><td><strong>Group Compliance Manager</strong></td><td class="num">7</td><td>Group standards and documents</td><td class="caps"><strong>standards · implementations · documents · retention</strong> · signing · reports</td></tr>
+            <tr><td><strong>Group Risk Manager</strong></td><td class="num">5</td><td>Consolidated risk</td><td class="caps"><strong>risk · implementations</strong> · group governance · reports</td></tr>
+            <tr><td><strong>Group HR Manager</strong></td><td class="num">7</td><td>Group people operations</td><td class="caps"><strong>users · transfers</strong> · policy · learning · security services · reports</td></tr>
+            <tr><td><strong>Group Finance Manager</strong></td><td class="num">6</td><td>Group finance</td><td class="caps">invoices · payments · subscriptions · quotas · reports · tickets</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Multibranch portal — organization</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Scope</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Organization Admin</strong></td><td class="num">8</td><td>The organization</td><td class="caps"><strong>users · transfers · roles · standards</strong> · modules · tools · reports</td></tr>
+            <tr><td><strong>Organization GRC Manager</strong></td><td class="num">7</td><td>Organization-wide GRC</td><td class="caps"><strong>standards · implementations · risk · audit · documents</strong> · reports</td></tr>
+            <tr><td><strong>Risk Manager</strong></td><td class="num">4</td><td>Organization and branches</td><td class="caps"><strong>risk · implementations</strong> · reports · tickets</td></tr>
+            <tr><td><strong>HR Manager</strong></td><td class="num">7</td><td>People operations</td><td class="caps"><strong>users · transfers</strong> · policy · learning · security services · reports</td></tr>
+            <tr><td><strong>Finance Manager</strong></td><td class="num">6</td><td>Billing and payments</td><td class="caps">invoices · payments · subscriptions · tools · reports · tickets</td></tr>
+            <tr><td><strong>Organization Support Coordinator</strong></td><td class="num">5</td><td>Organization tickets</td><td class="caps"><strong>resolve tickets · users</strong> · workflows · reports</td></tr>
+            <tr><td><strong>Wisdom Eye Manager</strong></td><td class="num">5</td><td>Assets and campaigns</td><td class="caps">security services · <strong>resolve tickets</strong> · learning · reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Branch portal — local execution</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Scope</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Branch Admin</strong></td><td class="num">7</td><td>Assigned branch</td><td class="caps"><strong>users · transfers · roles · implementations · risk</strong> · reports</td></tr>
+            <tr><td><strong>Branch Compliance Officer</strong></td><td class="num">6</td><td>Branch controls and evidence</td><td class="caps"><strong>implementations · documents · risk · audit</strong> · reports</td></tr>
+            <tr><td><strong>Branch Finance User</strong></td><td class="num">4</td><td>Branch invoice visibility</td><td class="caps">invoices · payments · reports · tickets</td></tr>
+            <tr><td><strong>Branch HR User</strong></td><td class="num">6</td><td>Branch staff and awareness</td><td class="caps"><strong>users</strong> · policy · learning · security services · reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Document portal — policy lifecycle</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Scope</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Compliance Manager</strong></td><td class="num">7</td><td>Owned documents and frameworks</td><td class="caps"><strong>documents · retention · implementations</strong> · signing · policy · reports</td></tr>
+            <tr><td><strong>Compliance Approver</strong></td><td class="num">5</td><td>Approval queue</td><td class="caps"><strong>retention</strong> · signing · policy · reports · tickets</td></tr>
+            <tr><td><strong>Staff Employee</strong></td><td class="num">3</td><td>Own acknowledgements</td><td class="caps">policy · learning · tickets</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Specialist and partner roles</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Role</th><th class="num">Privs</th><th>Portal</th><th>Key privileges</th></tr></thead>
+          <tbody>
+            <tr><td><strong>External Auditor</strong></td><td class="num">4</td><td>Auditor</td><td class="caps"><strong>audit</strong> · signing · reports · tickets — read-only on the engagement</td></tr>
+            <tr><td><strong>Internal Auditor</strong></td><td class="num">5</td><td>Tenant Assurance</td><td class="caps"><strong>audit · implementations · documents</strong> · reports</td></tr>
+            <tr><td><strong>Control Owner</strong></td><td class="num">5</td><td>Tenant GRC Operations</td><td class="caps"><strong>implementations · documents · risk</strong> · reports</td></tr>
+            <tr><td><strong>Asset Owner</strong></td><td class="num">4</td><td>Tenant Asset Management</td><td class="caps">assets · <strong>risk</strong> · reports · tickets</td></tr>
+            <tr><td><strong>Vendor Owner</strong></td><td class="num">5</td><td>Tenant Third-Party Risk</td><td class="caps">vendors · <strong>risk · documents</strong> · reports</td></tr>
+            <tr><td><strong>Consultant</strong></td><td class="num">7</td><td>Consulting Partner / MSP</td><td class="caps">client workspaces · <strong>implementations · risk · audit · documents</strong> · reports</td></tr>
+            <tr><td><strong>Partner Owner</strong></td><td class="num">7</td><td>Partner</td><td class="caps">client workspaces · <strong>users · roles</strong> · subscriptions · tools · reports</td></tr>
+            <tr><td><strong>Engagement Manager</strong></td><td class="num">6</td><td>Partner</td><td class="caps">client workspaces · <strong>implementations · risk · documents</strong> · reports</td></tr>
+            <tr><td><strong>Pre-Sales Manager</strong></td><td class="num">6</td><td>Partner</td><td class="caps">plans · tools · <strong>tenants</strong> · subscriptions · reports</td></tr>
+            <tr><td><strong>Post-Sales CSM</strong></td><td class="num">5</td><td>Partner</td><td class="caps">client workspaces · <strong>resolve tickets</strong> · learning · reports</td></tr>
+            <tr><td><strong>Franchisor Admin</strong></td><td class="num">6</td><td>Franchise</td><td class="caps">franchise governance · <strong>users · standards</strong> · security services · reports</td></tr>
+            <tr><td><strong>Franchisee Admin</strong></td><td class="num">7</td><td>Franchise</td><td class="caps">franchise governance · <strong>users · implementations · risk</strong> · policy · reports</td></tr>
+            <tr><td><strong>Franchise Support Manager</strong></td><td class="num">5</td><td>Franchise</td><td class="caps"><strong>resolve tickets · users</strong> · workflows · reports</td></tr>
+            <tr><td><strong>Client Administrator</strong></td><td class="num">7</td><td>Client Workspace</td><td class="caps"><strong>users · transfers · roles · standards</strong> · client workspaces · reports</td></tr>
+            <tr><td><strong>Client Contributor</strong></td><td class="num">4</td><td>Client Workspace</td><td class="caps"><strong>implementations · documents</strong> · policy · tickets</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="traces">
+      <span class="sec-num">06</span>
+      <h2>The other workflows</h2>
+
+      <p class="lede">
+        The same actor-by-actor shape as the ticket trace, for the four other journeys that matter.
+      </p>
+
+      <h3>A policy from draft to acknowledged</h3>
+      <div class="trace">
+        <div class="trace-row">
+          <div class="trace-actor">Compliance Manager<span>documents</span></div>
+          <div class="trace-body"><strong>Drafts and submits</strong>
+          <p>Writes the policy, versions it, and sends it to the approval queue.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Compliance Approver<span>signing</span></div>
+          <div class="trace-body"><strong>Reviews and approves</strong>
+          <p>Picks it up from <em>To Do &amp; Approvals</em>. The author cannot approve their own document.</p>
+          <span class="trace-sys">SoD · dms-author-approver</span></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Staff Employee<span>policy</span></div>
+          <div class="trace-body"><strong>Acknowledges</strong>
+          <p>Sees it under <em>My Acknowledgements</em> and confirms having read it. This record is the
+          evidence a certification auditor asks for most often.</p></div>
+        </div>
+      </div>
+
+      <h3>A control from library to working</h3>
+      <div class="trace">
+        <div class="trace-row">
+          <div class="trace-actor">GRC Manager<span>standards</span></div>
+          <div class="trace-body"><strong>Enables the standard</strong>
+          <p>Turns on ISO 27001 for the tenant, making its clauses available for mapping.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">GRC Manager<span>implementations</span></div>
+          <div class="trace-body"><strong>Creates the implementation</strong>
+          <p>Assigns an owner and a review date. One control can satisfy clauses in several standards at once.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Control Owner<span>implementations</span></div>
+          <div class="trace-body"><strong>Operates it and attaches evidence</strong>
+          <p>Uploads what proves the control ran.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Someone else<span>implementations</span></div>
+          <div class="trace-body"><strong>Validates it</strong>
+          <p>Marks it Verified with an effectiveness rating. The owner cannot validate their own control.</p>
+          <span class="trace-sys">SoD · grc-implementer-validator</span></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>automatic</span></div>
+          <div class="trace-body"><strong>Lowers residual risk</strong>
+          <p>Every linked risk recalculates. Verified and Effective reduces likelihood by 2, PartiallyEffective by 1.</p></div>
+        </div>
+      </div>
+
+      <h3>A risk being accepted</h3>
+      <div class="trace">
+        <div class="trace-row">
+          <div class="trace-actor">Risk Manager<span>risk</span></div>
+          <div class="trace-body"><strong>Proposes acceptance</strong>
+          <p>Acceptance must be time-bound and reasoned — an open-ended acceptance is refused.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">System<span>appetite gate</span></div>
+          <div class="trace-body"><strong>Checks it against board appetite</strong>
+          <p>If residual exceeds the approved tolerance for that category, acceptance is refused outright —
+          the risk has to be treated down instead.</p>
+          <span class="trace-sys">BEYOND_RISK_TOLERANCE</span></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">A second person<span>risk</span></div>
+          <div class="trace-body"><strong>Approves it</strong>
+          <p>The risk owner cannot approve acceptance of their own risk.</p></div>
+        </div>
+      </div>
+
+      <h3>A finding from raised to closed</h3>
+      <div class="trace">
+        <div class="trace-row">
+          <div class="trace-actor">Internal Auditor<span>audit</span></div>
+          <div class="trace-body"><strong>Raises the finding</strong>
+          <p>Criterion, condition, cause and recommendation — all four required.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">Management<span>risk or implementations</span></div>
+          <div class="trace-body"><strong>Responds formally</strong>
+          <p>Agree, Partially Agree or Disagree, with their own action plan. The auditor who raised it
+          cannot write this response, and no corrective action can be assigned until it exists.</p>
+          <span class="trace-sys">NO_MANAGEMENT_RESPONSE · SOD_VIOLATION</span></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">CAP owner<span>implementations</span></div>
+          <div class="trace-body"><strong>Remediates and submits evidence</strong>
+          <p>An evidence note is mandatory — it states what was fixed and where the proof sits.</p></div>
+        </div>
+        <div class="trace-row">
+          <div class="trace-actor">A third person<span>audit</span></div>
+          <div class="trace-body"><strong>Validates and closes</strong>
+          <p>Neither the raiser nor the remediator. If nobody qualifies, that is the system telling you
+          the team is too small for independent assurance on this item.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="who">
+      <span class="sec-num">07</span>
+      <h2>Who checks whom</h2>
+
+      <p class="lede">
+        Every control in the platform needs a second person. This table answers "who signs this off?"
+        for each one.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Action</th><th>Done by</th><th>Checked by</th><th>Rule</th></tr></thead>
+          <tbody>
+            <tr><td>Publish a policy</td><td>Compliance Manager</td><td>Compliance Approver</td><td>Author ≠ approver</td></tr>
+            <tr><td>Grant access</td><td>Requester</td><td>Manager, then Security</td><td>Requester ≠ approver</td></tr>
+            <tr><td>Validate a control</td><td>Control Owner</td><td>Any other implementation holder</td><td>Operator ≠ validator</td></tr>
+            <tr><td>Accept a risk</td><td>Risk Owner proposes</td><td>Another risk holder, within appetite</td><td>Owner ≠ approver</td></tr>
+            <tr><td>Approve risk appetite</td><td>Risk Manager drafts</td><td>Organization Admin or Security Admin</td><td>Drafter ≠ approver</td></tr>
+            <tr><td>Approve the audit plan</td><td>Internal Auditor prepares</td><td>GRC Manager or Organization Admin</td><td>Preparer ≠ approver</td></tr>
+            <tr><td>Sign off a workpaper</td><td>Internal Auditor prepares</td><td>Another audit holder</td><td>Preparer ≠ reviewer</td></tr>
+            <tr><td>Answer a finding</td><td>Auditor raises</td><td>Management responds</td><td>Raiser ≠ responder</td></tr>
+            <tr><td>Close a finding</td><td>CAP owner remediates</td><td>An independent audit holder</td><td>Raiser ≠ closer; remediator ≠ validator</td></tr>
+            <tr><td>Attest to a control (RCSA)</td><td>Assigned respondent only</td><td>Ineffective answers raise an issue</td><td>Only the respondent may attest</td></tr>
+            <tr><td>Approve an invoice adjustment</td><td>Submitter</td><td>A different finance holder</td><td>Submitter ≠ approver</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <section id="gaps">
+      <span class="sec-num">08</span>
+      <h2>Gaps to know about</h2>
+
+      <p class="lede">
+        One gap remains between what the role model implies and what the platform enforces. Two others
+        described in earlier versions of this manual have since been closed.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Open · two thirds of privileges are inert</span>
+        <p>
+          Twenty-one of the 34 privileges do not gate anything yet because their modules are unbuilt.
+          A role showing eight privileges may only have three that currently do something. When
+          demonstrating the role matrix, be clear that it describes the target design, not today's
+          enforcement.
+        </p>
+        <p>
+          This resolves itself as each module ships — the capability keys are already reserved and
+          assigned to the right roles, so nothing needs redesigning.
+        </p>
+      </div>
+
+      <h3>Closed</h3>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Was</th><th>Now</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Anyone could change any ticket.</strong> The update route accepted the create
+              privilege, which all 42 roles hold, with no check that you were the requester or assignee —
+              so any user could resolve or reassign anyone's ticket.</td>
+              <td>Managing a ticket requires the resolve privilege. A requester may cancel their own
+              ticket or comment on it; anything else returns
+              <code>REQUESTER_LIMITED</code>. Touching a ticket you did not raise, without the resolve
+              privilege, returns <code>NOT_YOUR_TICKET</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Nothing was pushed to anyone.</strong> No notifications existed, so approvers
+              never knew a request was waiting and requesters never knew their ticket was resolved.</td>
+              <td>In-app notifications on seven events — see section 3. Written in the same transaction
+              as the action, never sent to the person who performed it, and never carrying internal work
+              notes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    GRC Wisdom operations manual. Role and privilege data is read from the platform's own permission
+    matrix; workflow behaviour is described from the implementation. Verify against the running
+    application before relying on this for a customer commitment.
+  </footer>
+
+</div>

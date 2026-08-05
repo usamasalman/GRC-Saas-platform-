@@ -5,6 +5,7 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
 import { createIssueRecord } from '../services/issueFactory';
+import { notify } from '../services/notificationService';
 
 const SUBJ_ISSUE = 'Issue';
 
@@ -249,6 +250,15 @@ export const respondToIssue = async (req: AuthenticatedRequest, res: Response): 
         subjectType: SUBJ_ISSUE, subjectId: id,
         payload: { ref: issue.ref, responseType, status: nextStatus },
       });
+      await notify(tx, {
+        tenantId: issue.tenantId, recipientId: issue.raisedById, actorId: req.user!.id,
+        event: 'ISSUE_RESPONDED', subjectType: SUBJ_ISSUE, subjectId: id,
+        title: `Management ${responseType.toLowerCase()} on ${issue.ref}`,
+        body: responseType === 'Disagree'
+          ? 'Disputed — escalation is now the only route forward.'
+          : 'Accepted. A corrective action plan can be assigned.',
+        link: 'audits',
+      });
       return u;
     });
 
@@ -319,6 +329,13 @@ export const assignCap = async (req: AuthenticatedRequest, res: Response): Promi
         tenantId: issue.tenantId, actorId: req.user!.id, action: 'ISSUE_CAP_ASSIGNED',
         subjectType: SUBJ_ISSUE, subjectId: id,
         payload: { ref: issue.ref, capOwnerId: ownerId, capDueDate: dueDate },
+      });
+      await notify(tx, {
+        tenantId: issue.tenantId, recipientId: ownerId, actorId: req.user!.id,
+        event: 'ISSUE_CAP_ASSIGNED', subjectType: SUBJ_ISSUE, subjectId: id,
+        title: `You own the corrective action on ${issue.ref}`,
+        body: `${issue.title} — due ${dueDate.toISOString().slice(0, 10)}.`,
+        link: 'audits',
       });
       return u;
     });
@@ -426,6 +443,13 @@ export const closeIssue = async (req: AuthenticatedRequest, res: Response): Prom
         subjectType: SUBJ_ISSUE, subjectId: id,
         payload: { ref: issue.ref, note },
       });
+      await notify(tx, [issue.raisedById, issue.capOwnerId].map((rid) => ({
+        tenantId: issue.tenantId, recipientId: rid, actorId: req.user!.id,
+        event: 'ISSUE_CLOSED', subjectType: SUBJ_ISSUE, subjectId: id,
+        title: `${issue.ref} closed after independent validation`,
+        body: String(note).trim().slice(0, 160),
+        link: 'audits',
+      })));
       return u;
     });
 

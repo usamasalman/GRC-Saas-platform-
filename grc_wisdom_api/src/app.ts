@@ -12,6 +12,7 @@ import impersonationRoutes from './routes/impersonationRoutes';
 import iamRoutes from './routes/iamRoutes';
 import itsmRoutes from './routes/itsmRoutes';
 import grcRoutes from './routes/grcRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { SodViolation } from './services/sodEngine';
 import { resolveTenantScope, auditCrossTenantRead } from './services/scopeResolver';
@@ -100,6 +101,7 @@ app.use('/api/itsm', itsmRoutes);
 
 // Phase 4 GRC Core — standards, controls, implementations, evidence (TRD §7.2)
 app.use('/api/grc', grcRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {

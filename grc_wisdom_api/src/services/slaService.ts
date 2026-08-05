@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { notify } from './notificationService';
 
 /**
  * ITSM priority + SLA (TRD §7.3).
@@ -95,6 +96,13 @@ export async function runEscalationScan(): Promise<{ breached: number; escalated
         await tx.ticket.update({
           where: { id: t.id },
           data: { slaBreached: true, escalationLevel: t.escalationLevel + 1 },
+        });
+        await notify(tx, {
+          tenantId: t.tenantId, recipientId: t.assigneeId,
+          event: 'TICKET_SLA_BREACHED', subjectType: 'Ticket', subjectId: t.id,
+          title: `SLA breached on ${t.priority}: ${t.subject}`,
+          body: `Escalated to level ${t.escalationLevel + 1}.`,
+          link: 'sla',
         });
         await writeAudit(tx, {
           tenantId: t.tenantId,

@@ -5,6 +5,8 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { computePriority, computeSlaTargets, slaStateOf, DEFAULT_SLA, runEscalationScan } from '../services/slaService';
 import { startRun } from '../services/workflowEngine';
+import { hasCapability, CAP } from '../services/capabilityEngine';
+import { notify } from '../services/notificationService';
 
 const SUBJECT_TICKET = 'Ticket';
 const CLOSED = ['Resolved', 'Closed', 'Cancelled'];
@@ -230,6 +232,35 @@ export const updateTicket = async (req: AuthenticatedRequest, res: Response): Pr
     if (!ticket) { res.status(404).json({ status: 'error', message: 'Ticket not found' }); return; }
 
     const { status, assigneeId, assignedTeam, impact, urgency } = req.body || {};
+
+    // Managing a ticket belongs to the service desk. Everyone holds
+    // CREATE_TICKET, so without this a requester could resolve or reassign
+    // anyone's ticket — the route capability alone is not a sufficient gate.
+    const canResolve = await hasCapability(req.user!.id, CAP.RESOLVE_TICKETS);
+    if (!canResolve) {
+      if (ticket.requesterId !== req.user!.id) {
+        res.status(403).json({
+          status: 'error',
+          code: 'NOT_YOUR_TICKET',
+          message: 'Only the service desk can manage a ticket you did not raise.',
+        });
+        return;
+      }
+      // A requester may withdraw their own request, and nothing else. Anything
+      // further is a conversation for the comment thread.
+      const onlyCancelling = status === 'Cancelled'
+        && assigneeId === undefined && assignedTeam === undefined
+        && impact === undefined && urgency === undefined;
+      if (!onlyCancelling) {
+        res.status(403).json({
+          status: 'error',
+          code: 'REQUESTER_LIMITED',
+          message: 'You can cancel your own ticket or add a comment. Only the service desk can change its status, priority or assignment.',
+        });
+        return;
+      }
+    }
+
     const data: any = {};
 
     if (assigneeId !== undefined) data.assigneeId = assigneeId || null;
@@ -268,6 +299,29 @@ export const updateTicket = async (req: AuthenticatedRequest, res: Response): Pr
         subjectType: SUBJECT_TICKET, subjectId: id,
         payload: { before: { status: ticket.status, priority: ticket.priority, assigneeId: ticket.assigneeId }, after: data },
       });
+
+      const alerts = [];
+      // Someone has just been given this ticket.
+      if (data.assigneeId && data.assigneeId !== ticket.assigneeId) {
+        alerts.push({
+          tenantId: ticket.tenantId, recipientId: data.assigneeId, actorId: req.user!.id,
+          event: 'TICKET_ASSIGNED', subjectType: SUBJECT_TICKET, subjectId: id,
+          title: `${u.priority} assigned to you: ${u.subject}`,
+          body: `Resolve by ${u.slaResolveAt ? u.slaResolveAt.toISOString().slice(0, 16).replace('T', ' ') : 'no deadline set'}.`,
+          link: 'itsm',
+        });
+      }
+      // The requester has been waiting for exactly this.
+      if (data.status && CLOSED.includes(data.status) && !CLOSED.includes(ticket.status)) {
+        alerts.push({
+          tenantId: ticket.tenantId, recipientId: ticket.requesterId, actorId: req.user!.id,
+          event: 'TICKET_RESOLVED', subjectType: SUBJECT_TICKET, subjectId: id,
+          title: `Your ticket is ${String(data.status).toLowerCase()}: ${u.subject}`,
+          body: 'Open the ticket to read the resolution and reply if it is not fixed.',
+          link: 'itsm',
+        });
+      }
+      await notify(tx, alerts);
       return u;
     });
 
@@ -308,6 +362,20 @@ export const addComment = async (req: AuthenticatedRequest, res: Response): Prom
         subjectType: SUBJECT_TICKET, subjectId: id,
         payload: { length: String(body).length },
       });
+
+      // Work notes stay inside the service desk; only public comments travel.
+      if (!isInternal) {
+        const isRequester = ticket.requesterId === req.user!.id;
+        await notify(tx, {
+          tenantId: ticket.tenantId,
+          recipientId: isRequester ? ticket.assigneeId : ticket.requesterId,
+          actorId: req.user!.id,
+          event: 'TICKET_COMMENT', subjectType: SUBJECT_TICKET, subjectId: id,
+          title: `New reply on ${ticket.subject}`,
+          body: String(body).trim().slice(0, 160),
+          link: 'itsm',
+        });
+      }
       return row;
     });
 

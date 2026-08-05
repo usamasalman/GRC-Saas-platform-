@@ -51,6 +51,7 @@ model Tenant {
   kris          Kri[]
   kriReadings   KriReading[]
   lossEvents    LossEvent[]
+  notifications Notification[]
   auditableEntities AuditableEntity[]
   auditPlans    AuditPlan[]
 }
@@ -118,6 +119,7 @@ model User {
   krisOwned               Kri[] @relation("KriOwner")
   kriReadingsRecorded     KriReading[] @relation("KriRecorder")
   lossEventsReported      LossEvent[] @relation("LossReporter")
+  notifications           Notification[] @relation("NotificationRecipient")
   entitiesOwned           AuditableEntity[] @relation("EntityOwner")
   plansPrepared           AuditPlan[] @relation("PlanPreparer")
   plansApproved           AuditPlan[] @relation("PlanApprover")
@@ -1624,4 +1626,33 @@ model LossEvent {
   @@unique([tenantId, ref])
   @@index([tenantId, status])
   @@index([tenantId, occurredAt])
+}
+
+
+/// In-app notification. Written inside the same transaction as the action that
+/// caused it, so a notification can never describe something that did not
+/// happen. Delivery is pull-based — the recipient reads their own inbox.
+model Notification {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  recipientId String
+  recipient   User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  /// Machine key, e.g. TICKET_ASSIGNED. Lets the UI group and filter.
+  event       String
+  subjectType String
+  subjectId   String
+
+  title       String
+  body        String?
+  /// Where the UI should send the reader, e.g. itsm or audits.
+  link        String?
+
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, readAt])
+  @@index([tenantId, createdAt])
 }
