@@ -1,0 +1,1233 @@
+<title>GRC Wisdom — Platform Guide</title>
+<style>
+  :root {
+    --ground:      #FBFAF8;
+    --ground-sunk: #F3F0EA;
+    --card:        #FFFFFF;
+    --ink:         #141A22;
+    --ink-soft:    #4A5260;
+    --ink-faint:   #7C8494;
+    --rule:        #DFD9CF;
+    --rule-soft:   #EBE6DE;
+    --accent:      #17456B;
+    --accent-soft: #E4EDF4;
+    --plum:        #6B3F5E;
+    --plum-soft:   #F1E7ED;
+    --ok:          #2E6B4F;
+    --ok-soft:     #E3EFE8;
+    --warn:        #8A6410;
+    --warn-soft:   #F6EEDC;
+    --crit:        #9B3024;
+    --crit-soft:   #F7E6E3;
+
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:      #12161C;
+      --ground-sunk: #171C24;
+      --card:        #1A2029;
+      --ink:         #E8E4DE;
+      --ink-soft:    #A8B0BD;
+      --ink-faint:   #78808D;
+      --rule:        #2B3340;
+      --rule-soft:   #232A34;
+      --accent:      #7FB2D9;
+      --accent-soft: #1B2A38;
+      --plum:        #C08FAE;
+      --plum-soft:   #2A1F27;
+      --ok:          #6FBF95;
+      --ok-soft:     #17281F;
+      --warn:        #D9A94A;
+      --warn-soft:   #2A2216;
+      --crit:        #E08076;
+      --crit-soft:   #2C1B19;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #12161C;
+    --ground-sunk: #171C24;
+    --card:        #1A2029;
+    --ink:         #E8E4DE;
+    --ink-soft:    #A8B0BD;
+    --ink-faint:   #78808D;
+    --rule:        #2B3340;
+    --rule-soft:   #232A34;
+    --accent:      #7FB2D9;
+    --accent-soft: #1B2A38;
+    --plum:        #C08FAE;
+    --plum-soft:   #2A1F27;
+    --ok:          #6FBF95;
+    --ok-soft:     #17281F;
+    --warn:        #D9A94A;
+    --warn-soft:   #2A2216;
+    --crit:        #E08076;
+    --crit-soft:   #2C1B19;
+  }
+
+  :root[data-theme="light"] {
+    --ground:      #FBFAF8;
+    --ground-sunk: #F3F0EA;
+    --card:        #FFFFFF;
+    --ink:         #141A22;
+    --ink-soft:    #4A5260;
+    --ink-faint:   #7C8494;
+    --rule:        #DFD9CF;
+    --rule-soft:   #EBE6DE;
+    --accent:      #17456B;
+    --accent-soft: #E4EDF4;
+    --plum:        #6B3F5E;
+    --plum-soft:   #F1E7ED;
+    --ok:          #2E6B4F;
+    --ok-soft:     #E3EFE8;
+    --warn:        #8A6410;
+    --warn-soft:   #F6EEDC;
+    --crit:        #9B3024;
+    --crit-soft:   #F7E6E3;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+  }
+
+  /* ── Masthead ───────────────────────────────────────────── */
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 28px;
+    margin-bottom: 48px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--plum);
+    margin: 0 0 18px;
+  }
+  .masthead h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(2.4rem, 5.5vw, 3.6rem);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-family: var(--serif);
+    font-size: clamp(1.05rem, 2vw, 1.25rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .masthead-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 26px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    letter-spacing: 0.03em;
+  }
+  .masthead-meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ── Contents rail ──────────────────────────────────────── */
+  .rail { position: sticky; top: 28px; }
+  .rail-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 12px;
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rail a {
+    display: block;
+    padding: 5px 0;
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    padding-left: 11px;
+    margin-left: -11px;
+    transition: color .12s, border-color .12s;
+  }
+  .rail a:hover, .rail a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .rail .rail-num {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    margin-right: 7px;
+  }
+
+  /* ── Content column ─────────────────────────────────────── */
+  main { min-width: 0; }
+
+  section { margin-bottom: 68px; scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(1.65rem, 3vw, 2.05rem);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--plum);
+    display: block;
+    margin-bottom: 10px;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-weight: 650;
+    font-size: 1.02rem;
+    letter-spacing: -0.005em;
+    margin: 36px 0 10px;
+    text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 26px 0 8px;
+  }
+  p { margin: 0 0 15px; max-width: var(--measure); }
+  .lede { font-size: 1.06rem; color: var(--ink-soft); max-width: var(--measure); }
+
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+  ul, ol { max-width: var(--measure); padding-left: 20px; margin: 0 0 15px; }
+  li { margin-bottom: 7px; }
+
+  strong { font-weight: 650; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.855em;
+    background: var(--ground-sunk);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: 1px 5px;
+    word-break: break-word;
+  }
+
+  /* ── Chips ──────────────────────────────────────────────── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .chip-ui   { background: var(--ok-soft);   color: var(--ok);   border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
+  .chip-api  { background: var(--warn-soft); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+  .chip-none { background: var(--crit-soft); color: var(--crit); border: 1px solid color-mix(in srgb, var(--crit) 30%, transparent); }
+
+  /* ── Module blocks ──────────────────────────────────────── */
+  .module {
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--card);
+    padding: 22px 24px;
+    margin-bottom: 16px;
+  }
+  .module-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .module-head h3 { margin: 0; font-size: 1.06rem; }
+  .module-who {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+    font-style: italic;
+  }
+  .module p:last-child, .module ul:last-child, .module ol:last-child { margin-bottom: 0; }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  .scroll { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--rule); border-radius: 5px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--ground-sunk);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { background: transparent; border: none; padding: 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ── Callouts ───────────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--plum);
+    background: var(--plum-soft);
+    padding: 14px 18px;
+    border-radius: 0 4px 4px 0;
+    margin: 0 0 20px;
+    max-width: var(--measure);
+  }
+  .note p { margin: 0; }
+  .note p + p { margin-top: 10px; }
+  .note-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--plum);
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  pre {
+    background: var(--ground-sunk);
+    border: 1px solid var(--rule-soft);
+    border-radius: 5px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 0 0 20px;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  /* ── Flow diagram ───────────────────────────────────────── */
+  .flow { display: flex; flex-direction: column; gap: 0; margin: 0 0 22px; }
+  .flow-step {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 16px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-mark {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .flow-body strong { display: block; margin-bottom: 2px; }
+  .flow-body p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+  .flow-gate {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--crit);
+    margin-top: 6px;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 40px 0;
+  }
+
+  .footer {
+    grid-column: 1 / -1;
+    border-top: 2px solid var(--ink);
+    padding-top: 20px;
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 20px 64px; }
+    .rail { position: static; margin-bottom: 44px; padding-bottom: 28px; border-bottom: 1px solid var(--rule); }
+    .rail ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0 20px; }
+    .masthead { padding-top: 40px; margin-bottom: 36px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Platform Guide · Governance, Risk &amp; Compliance</p>
+    <h1>GRC Wisdom</h1>
+    <p class="standfirst">
+      A multi-tenant assurance platform for organizations that have to prove — not merely assert — that
+      their controls work. This guide covers what the platform is for, which organizations it fits,
+      how each module is used, and exactly how much of it is built today.
+    </p>
+    <div class="masthead-meta">
+      <span><b>8</b> portals</span>
+      <span><b>42</b> roles</span>
+      <span><b>34</b> capabilities</span>
+      <span><b>7</b> tenancy shapes</span>
+      <span><b>4</b> seeded standards</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#what"><span class="rail-num">01</span>What it is</a></li>
+      <li><a href="#why"><span class="rail-num">02</span>Why an organization adopts it</a></li>
+      <li><a href="#shape"><span class="rail-num">03</span>Choosing your shape</a></li>
+      <li><a href="#portals"><span class="rail-num">04</span>Portals &amp; roles</a></li>
+      <li><a href="#start"><span class="rail-num">05</span>Getting started</a></li>
+      <li><a href="#modules"><span class="rail-num">06</span>The modules</a></li>
+      <li><a href="#thread"><span class="rail-num">07</span>The golden thread</a></li>
+      <li><a href="#defensible"><span class="rail-num">08</span>What makes it defensible</a></li>
+      <li><a href="#status"><span class="rail-num">09</span>Build status, honestly</a></li>
+      <li><a href="#api"><span class="rail-num">10</span>API quick reference</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="what">
+      <span class="sec-num">01</span>
+      <h2>What GRC Wisdom is</h2>
+
+      <p class="lede">
+        Most compliance work fails not because nobody did it, but because nobody can prove it later.
+        Evidence lives in a shared drive, the risk register is a spreadsheet somebody last opened in March,
+        and when the regulator asks who approved a control exception, the answer is an email thread.
+      </p>
+
+      <p>
+        GRC Wisdom replaces that with a system where every assurance activity leaves a record that
+        stands up to scrutiny. It holds your standards and controls, tracks who implemented what and
+        with which evidence, runs the internal audit lifecycle end to end, and funnels every issue —
+        wherever it came from — into one register with common ownership and aging.
+      </p>
+
+      <p>
+        It is built around three ideas that shape every screen:
+      </p>
+
+      <ul>
+        <li><strong>Separation of duties is enforced, not advised.</strong> The person who raises a finding
+          cannot close it. The person who remediates cannot validate their own remediation. These are
+          server-side rules that return an error, not guidance in a policy document.</li>
+        <li><strong>The audit trail is tamper-evident.</strong> Every consequential action writes a
+          hash-chained entry. Altering history breaks the chain visibly.</li>
+        <li><strong>Derived values are never client-supplied.</strong> Residual risk is computed from the
+          effectiveness of linked controls. A KRI's status is computed from its thresholds at write time.
+          Nobody can type in the answer they want.</li>
+      </ul>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="why">
+      <span class="sec-num">02</span>
+      <h2>Why an organization adopts it</h2>
+
+      <p class="lede">
+        Four situations drive adoption. Most organizations arrive with one and discover the others.
+      </p>
+
+      <h3>You have to certify against a standard</h3>
+      <p>
+        ISO 27001, SOC 2, NCA Essential Cybersecurity Controls, Saudi PDPL — all four ship seeded, with
+        clause-level mapping. One control can satisfy clauses across several standards simultaneously, so
+        you implement once and report against each framework separately. When the auditor asks "show me
+        how you meet A.5.15", the platform answers with the control, its owner, its evidence, and its
+        last validation date.
+      </p>
+
+      <h3>A regulator, board or client demands independent assurance</h3>
+      <p>
+        The internal audit module implements the real lifecycle: a risk-scored audit universe, an annual
+        plan that must be justified by risk and approved by someone other than its author, fieldwork with
+        a risk-and-control matrix and sampled testing, working papers with independent review sign-off,
+        and findings that management must formally answer.
+      </p>
+
+      <h3>You operate across entities and need consolidated oversight</h3>
+      <p>
+        A holding group, a franchise network, a bank with regional branches, or a consultancy running
+        several client workspaces all need the same thing: local teams doing local work, with a group
+        view that aggregates without letting entities read each other. The tenancy model handles this
+        directly rather than through workarounds.
+      </p>
+
+      <h3>You want the risk picture to be evidence-based rather than anecdotal</h3>
+      <p>
+        Risk appetite set by the board actually blocks acceptance of risks beyond tolerance. Key risk
+        indicators raise issues automatically when they breach. Realised losses are recorded against the
+        risks that were supposed to prevent them — so you can check whether your register was ever
+        realistic.
+      </p>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="shape">
+      <span class="sec-num">03</span>
+      <h2>Choosing your shape</h2>
+
+      <p class="lede">
+        The first decision is your operating model. It determines what each user can see, and it is not
+        cosmetic — the scope resolver enforces it on every read.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Model</th><th>Who it fits</th><th>Visibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>SAAS</code></td>
+              <td>The platform operator itself</td>
+              <td>Every tenant. The control plane.</td>
+            </tr>
+            <tr>
+              <td><code>SAAS_UNIT</code></td>
+              <td>Internal business units of the operator — billing, marketplace, security services</td>
+              <td>Platform-wide, scoped to their function</td>
+            </tr>
+            <tr>
+              <td><code>HOLDING</code></td>
+              <td>A group with legally distinct subsidiaries</td>
+              <td>Itself and everything beneath it</td>
+            </tr>
+            <tr>
+              <td><code>MULTIBRANCH</code></td>
+              <td>One legal entity with branches or departments</td>
+              <td>Itself and its branches</td>
+            </tr>
+            <tr>
+              <td><code>BRANCH</code></td>
+              <td>A single site, region or department</td>
+              <td>Only itself</td>
+            </tr>
+            <tr>
+              <td><code>FRANCHISE</code></td>
+              <td>A franchisor mandating a baseline across independent franchisees</td>
+              <td>Network-wide, with exception workflows</td>
+            </tr>
+            <tr>
+              <td><code>PARTNER</code></td>
+              <td>Consultancies and MSPs running client workspaces</td>
+              <td>Their own portfolio of client tenants</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="note-label">Choose carefully</span>
+        <p>
+          The common mistake is picking <code>HOLDING</code> when you mean <code>MULTIBRANCH</code>.
+          Use <code>HOLDING</code> only when the subsidiaries are separate legal entities that could be
+          sold independently. If they are branches of one company, use <code>MULTIBRANCH</code> — group
+          reporting works the same way, but the compliance boundary is drawn correctly.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="portals">
+      <span class="sec-num">04</span>
+      <h2>Portals &amp; roles</h2>
+
+      <p class="lede">
+        Users land in one of eight portals. The portal decides the navigation; the role decides what
+        actually works inside it.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Portal</th><th class="num">Roles</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>SaaS</strong></td><td class="num">7</td><td>Platform operations — tenants, billing, marketplace, security services</td></tr>
+            <tr><td><strong>Holding</strong></td><td class="num">6</td><td>Group oversight across subsidiaries</td></tr>
+            <tr><td><strong>Multibranch</strong></td><td class="num">7</td><td>Organization-level GRC with branch rollup</td></tr>
+            <tr><td><strong>Branch</strong></td><td class="num">4</td><td>Local execution — the people who actually operate controls</td></tr>
+            <tr><td><strong>Document</strong></td><td class="num">3</td><td>Policy lifecycle, approvals, acknowledgements, retention</td></tr>
+            <tr><td><strong>Auditor</strong></td><td class="num">1</td><td>Read-only external auditor access with cryptographic verification</td></tr>
+            <tr><td><strong>Partner</strong></td><td class="num">4</td><td>Consultancy portfolio and client workspaces</td></tr>
+            <tr><td><strong>Franchise</strong></td><td class="num">3</td><td>Network baseline and location scorecards</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A further 10 roles cover specialised tenant functions — Internal Auditor, Control Owner, Asset
+        Owner, Vendor Owner, Consultant, Client Administrator and Client Contributor among them.
+      </p>
+
+      <h3>How permission actually resolves</h3>
+      <p>
+        Every protected route names the capability it requires. A user's role grants a set of capability
+        keys; if the key is missing the request fails with <code>CAPABILITY_DENIED</code> and names the
+        capability, so the error tells an administrator exactly what to grant. Users with no role resolve
+        to an empty set — the system fails closed.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Worth knowing</span>
+        <p>
+          Capability and separation of duties are two different gates and both apply. Holding the right
+          capability does not exempt you from the conflict rules — a GRC Manager who holds both
+          <code>assess-and-treat-a-risk</code> and <code>plan-and-execute-an-audit</code> is still blocked
+          from validating a corrective action they themselves owned.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="start">
+      <span class="sec-num">05</span>
+      <h2>Getting started</h2>
+
+      <h4>Run the API</h4>
+      <pre><code>cd grc_wisdom_api
+npm install
+npx prisma generate
+npx tsx src/seed.ts     # builds the demo dataset
+npm run dev             # http://localhost:3000</code></pre>
+
+      <p>
+        The API needs a <code>.env</code> with <code>DATABASE_URL</code> and a <code>JWT_SECRET</code> of
+        at least 32 characters. Copy <code>.env.example</code> and generate a secret with
+        <code>node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code>. The server
+        refuses to start without one rather than falling back to a default key.
+      </p>
+
+      <h4>Run the web app</h4>
+      <pre><code>npm install
+npm run dev             # http://localhost:5173</code></pre>
+
+      <h4>Sign in</h4>
+      <p>
+        Open the portal directory at the root, pick a portal, and sign in. Every seeded user shares the
+        password <code>Demo@2026</code>. Useful starting points:
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Sign in as</th><th>Portal</th><th>Good for seeing</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>owner@grcwisdom.com</code></td><td>SaaS</td><td>Tenant provisioning, impersonation, the whole estate</td></tr>
+            <tr><td><code>group.admin@alnoor.com</code></td><td>Holding</td><td>Subsidiary rollup across a group</td></tr>
+            <tr><td><code>company.admin@omniops.me</code></td><td>Multibranch</td><td>Organization administration and role management</td></tr>
+            <tr><td><code>grc.manager@omniops.me</code></td><td>Multibranch</td><td>Standards, controls, implementations, audits</td></tr>
+            <tr><td><code>internal.audit@omniops.me</code></td><td>Multibranch</td><td>The internal audit lifecycle</td></tr>
+            <tr><td><code>risk.manager@omniops.me</code></td><td>Multibranch</td><td>Risk register, appetite, indicators, losses</td></tr>
+            <tr><td><code>franchisor.admin@retailco.com</code></td><td>Franchise</td><td>Network baseline across locations</td></tr>
+            <tr><td><code>partner.owner@grcconsulting.com</code></td><td>Partner</td><td>Client workspace portfolio</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        <strong>OmniOps</strong> and <strong>Al Noor Holding Group</strong> carry the richest seeded data —
+        risks, audits, control implementations, indicators and loss history. Start there.
+      </p>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="modules">
+      <span class="sec-num">06</span>
+      <h2>The modules</h2>
+
+      <p class="lede">
+        Each block below states what the module is for, who uses it, and how much of it you can reach
+        from the interface today.
+      </p>
+
+      <p>
+        <span class="chip chip-ui">In the UI</span> usable from the web app ·
+        <span class="chip chip-api">API only</span> built and tested, no screen yet ·
+        <span class="chip chip-none">Not built</span> navigation exists, behind it is placeholder data
+      </p>
+
+      <h3>Governance foundation</h3>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Document &amp; policy management</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Compliance Manager, Compliance Approver, Staff Employee</p>
+        <p>
+          Author policies, route them for approval, publish, and track who has acknowledged reading them.
+          Versions are retained; the audit log is immutable and hash-verifiable. Retention schedules and
+          legal hold prevent deletion of documents under investigation.
+        </p>
+        <p>
+          <strong>Use it when</strong> you need to demonstrate that staff were told about a policy and
+          confirmed it — the single most common evidence request in a certification audit.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Standards library</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">GRC Manager, Compliance Officer</p>
+        <p>
+          Enable the frameworks that apply to you. ISO 27001, NCA ECC, Saudi PDPL and SOC 2 ship with
+          28 clauses seeded between them. Enabling a standard for a tenant makes its clauses available
+          for control mapping and reporting.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Control library</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">GRC Manager, Control Owner</p>
+        <p>
+          20 seeded controls with 39 clause mappings. The mapping is many-to-many by design: control
+          <code>AC-01</code> satisfies <code>ISO27001:A.5.15</code>, <code>NCA-ECC:2-2-1</code> and
+          <code>SOC2:CC6.1</code> at once. This is what stops you rebuilding your whole control set for
+          each new framework.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Implementations &amp; evidence</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Control Owner, GRC Manager</p>
+        <p>
+          A control in the library is a template. An implementation is that control actually running in
+          your organization, with an owner, a status, an effectiveness rating, a next-review date, and
+          attached evidence. Effectiveness here is what drives residual risk everywhere else.
+        </p>
+      </div>
+
+      <h3>Risk</h3>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Risk register</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Risk Manager, Risk Owner</p>
+        <p>
+          5&times;5 scoring — likelihood by impact, giving 1 to 25. Inherent score is what you assess.
+          <strong>Residual is computed, never typed:</strong> each linked control that is Verified and
+          Effective reduces likelihood by 2, PartiallyEffective by 1, capped so residual never falls
+          below 1. Deleting your controls raises your residual risk automatically, which is the point.
+        </p>
+        <p>
+          Creating a risk triggers a mandatory duplicate search — the platform returns similar existing
+          risks and you must acknowledge them before it will create another. Acceptance is time-bound
+          and requires a reason, and the risk owner cannot approve acceptance of their own risk.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Risk appetite</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Board, Executive, Risk Manager</p>
+        <p>
+          The board sets, per risk category, an <strong>appetite threshold</strong> (carry it without
+          further approval) and a <strong>tolerance threshold</strong> (the absolute ceiling). Both sit on
+          the same 1–25 scale as residual scores. A statement stays a draft until someone other than its
+          author approves it — an unapproved appetite gates nothing.
+        </p>
+        <p>
+          Once approved it has teeth. Attempting to accept a risk scoring beyond tolerance fails:
+        </p>
+        <pre><code>BEYOND_RISK_TOLERANCE: RSK-006 has a residual score of 16,
+beyond the approved tolerance of 15 for Technology. A risk this
+far outside appetite must be treated down, not accepted.</code></pre>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Key risk indicators</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Risk Manager, Control Owner</p>
+        <p>
+          Metrics with amber and red thresholds, linked to the risks they signal. Each KRI declares
+          whether higher or lower is worse — stored explicitly, because inferring it silently inverts
+          every alert. Thresholds are validated against that direction, so a "higher is worse" indicator
+          cannot be saved with red below amber.
+        </p>
+        <p>
+          One reading per period, immutable once recorded, so the trend cannot be quietly rewritten.
+          A red reading raises an issue automatically. An indicator nobody acts on is decoration.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Loss events</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Risk Manager, Finance Manager</p>
+        <p>
+          Risks that actually materialised, in Basel operational-risk categories, with gross and recovered
+          amounts and both the date it happened and the date you found out. That gap — detection lag — is
+          itself a control-effectiveness signal, and the register reports the average.
+        </p>
+        <p>
+          A net loss at or above 50,000 raises an issue automatically so the control failure gets
+          remediated rather than absorbed.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Risk &amp; control self-assessment</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Control owners, first line of defence</p>
+        <p>
+          Periodic campaigns where control owners attest to their own controls. Draft the campaign, add
+          controls to scope, launch it, collect attestations, close it. Scope freezes at launch. Only the
+          assigned respondent can attest. Attestations are not revisable, and a campaign cannot close
+          while any response is outstanding.
+        </p>
+        <p>
+          A control self-reported as ineffective raises an issue automatically — the whole value of
+          self-assessment is that first-line admissions reach the register without waiting for an audit
+          to find them.
+        </p>
+      </div>
+
+      <h3>Internal audit</h3>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Audit universe &amp; annual plan</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Chief Audit Executive, Internal Auditor</p>
+        <p>
+          The universe is everything that could be audited, scored on six weighted factors: financial
+          materiality (25%), regulatory exposure (20%), complexity (15%), change volatility (15%), prior
+          findings (15%) and fraud exposure (10%). Entities never audited receive an uplift, as do
+          overdue ones — so neglect raises priority rather than hiding it.
+        </p>
+        <p>
+          The annual plan is built from that scoring and cannot be approved while a high-risk entity is
+          left uncovered. Capacity is checked against available hours. The preparer cannot approve their
+          own plan, and an approved plan is immutable — changes go through a documented deferral.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Fieldwork, testing &amp; working papers</h3>
+          <span class="chip chip-api">API only</span>
+        </div>
+        <p class="module-who">Internal Auditor, Audit Manager</p>
+        <p>
+          Each engagement carries a risk-and-control matrix: the risks in scope, the controls that address
+          them, and the procedures that test those controls — with sampling method, population and sample
+          size recorded.
+        </p>
+        <p>
+          Results are immutable once recorded, and the conclusion must be consistent with the evidence:
+          recording exceptions while concluding "Satisfactory" is rejected. Working papers require
+          independent review — the preparer cannot sign off their own, and review notes must be cleared
+          before sign-off. An engagement cannot reach Reporting until every paper is reviewed.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Audit programme</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Internal Auditor, GRC Manager</p>
+        <p>
+          Engagements through their lifecycle — Planned, Fieldwork, Reporting, Closed — with findings
+          raised in the IIA structure of criterion, condition, cause and recommendation, plus management
+          response and corrective action tracking.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Issue register</h3>
+          <span class="chip chip-ui">In the UI</span>
+          <span class="chip chip-api">Partly</span>
+        </div>
+        <p class="module-who">Everyone with something to fix</p>
+        <p>
+          One register for issues from all six sources: internal audit, external audit, regulators,
+          self-identification, incidents and risk assessment. Common aging, escalation and ownership
+          regardless of origin — a regulator finding has no audit engagement, so trapping findings inside
+          audits was the structural mistake this fixes.
+        </p>
+        <p>
+          Aging is derived, never stored, so it cannot go stale. Default remediation windows are 30 days
+          for High, 60 for Medium, 90 for Low, overridable per issue.
+        </p>
+        <p>
+          Audit-raised issues appear inside the Audit Programme screen with full response and closure
+          workflow. The standalone cross-source register — where you would log a regulator letter — is
+          API-only for now.
+        </p>
+      </div>
+
+      <h3>Operations</h3>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Service desk (ITSM)</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Everyone; managed by Support Coordinator</p>
+        <p>
+          Tickets with ITIL 3&times;3 priority derived from impact and urgency, service catalogue with
+          workflow routing, SLA policies with an escalation scanner that runs every five minutes, and a
+          knowledge base. Public comments and internal work notes are deliberately separate — the
+          customer sees one and not the other.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Users, teams &amp; access</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Organization Admin, HR Manager</p>
+        <p>
+          User directories per tier, team and department structure, the full 42-role permission matrix,
+          and lifecycle operations — joiners, movers, leavers, and transfers between branches or entities.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Tenants &amp; impersonation</h3>
+          <span class="chip chip-ui">In the UI</span>
+        </div>
+        <p class="module-who">Platform Super Admin</p>
+        <p>
+          Provision tenants, set their operating model, and manage the hierarchy. Support staff can
+          impersonate a tenant user to reproduce a problem — sessions are time-boxed, fully logged, and
+          <strong>strictly read-only</strong>: every write is rejected while impersonating, so support can
+          never act as a customer.
+        </p>
+      </div>
+
+      <div class="module">
+        <div class="module-head">
+          <h3>Security services, marketplace, billing, vendors</h3>
+          <span class="chip chip-none">Not built</span>
+        </div>
+        <p class="module-who">—</p>
+        <p>
+          Wisdom Eye attack-surface management, Eye Phish simulation, the module and open-source tool
+          marketplaces, subscriptions and invoicing, and third-party risk management all appear in the
+          navigation but are backed by placeholder data. Treat these as roadmap, not capability.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="thread">
+      <span class="sec-num">07</span>
+      <h2>The golden thread</h2>
+
+      <p class="lede">
+        The modules are not separate products. The value is in how a single problem travels through them —
+        this is the walkthrough worth doing on your first day.
+      </p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-mark">01</div>
+          <div class="flow-body">
+            <strong>A standard imposes a requirement</strong>
+            <p>ISO 27001 A.5.15 requires documented authorisation for privileged access.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">02</div>
+          <div class="flow-body">
+            <strong>A control answers it</strong>
+            <p>Control AC-01 is mapped to that clause — and simultaneously to NCA-ECC 2-2-1 and SOC 2 CC6.1.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">03</div>
+          <div class="flow-body">
+            <strong>Someone implements and owns it</strong>
+            <p>An implementation is created with an owner, evidence, and an effectiveness rating.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">04</div>
+          <div class="flow-body">
+            <strong>Risk residual moves on its own</strong>
+            <p>The unauthorised-access risk links to that control. Because it is Verified and Effective, residual likelihood drops by 2. Nobody typed that number.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">05</div>
+          <div class="flow-body">
+            <strong>Appetite decides whether you may live with it</strong>
+            <p>If residual still exceeds the board's approved tolerance for that category, acceptance is refused outright.</p>
+            <span class="flow-gate">gate · BEYOND_RISK_TOLERANCE</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">06</div>
+          <div class="flow-body">
+            <strong>Assurance tests whether it really works</strong>
+            <p>Three routes reach the same place: internal audit samples it during fieldwork, the control owner attests in an RCSA campaign, or a KRI breaches its red threshold.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">07</div>
+          <div class="flow-body">
+            <strong>An issue is raised — from whichever direction</strong>
+            <p>All three land in the one register, alongside regulator letters, external audit findings and incidents.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">08</div>
+          <div class="flow-body">
+            <strong>Management must formally answer</strong>
+            <p>Agree, Partially Agree or Disagree — with their own action plan. No corrective action can be assigned until they do, and the person who raised it cannot write the response.</p>
+            <span class="flow-gate">gate · NO_MANAGEMENT_RESPONSE</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">09</div>
+          <div class="flow-body">
+            <strong>Remediation, then independent validation</strong>
+            <p>The corrective action owner remediates and submits evidence. Someone who is neither the raiser nor the remediator validates and closes it.</p>
+            <span class="flow-gate">gate · SOD_VIOLATION</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-mark">10</div>
+          <div class="flow-body">
+            <strong>And if it did not hold</strong>
+            <p>Reopening voids the previous management response. Remediation failed, so management must go on record again before a new plan is accepted.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <span class="note-label">If management disagrees</span>
+        <p>
+          A Disagree response does not get a corrective action plan — it becomes Disputed and moves to
+          escalation instead. Two levels exist: executive management, then the audit committee. That is
+          the real route an auditor takes when management will not accept a risk the auditor considers
+          material, and pretending otherwise would make the register dishonest.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="defensible">
+      <span class="sec-num">08</span>
+      <h2>What makes it defensible</h2>
+
+      <p class="lede">
+        These are the mechanisms an external assessor will probe. All are enforced server-side and
+        return errors, not warnings.
+      </p>
+
+      <h4>Separation of duties</h4>
+      <p>Five data-driven rules ship enabled, plus explicit checks at each decision point:</p>
+      <ul>
+        <li>The author of a document cannot approve it</li>
+        <li>The requester of access cannot approve it</li>
+        <li>Whoever raised an issue cannot close it</li>
+        <li>The owner or operator of a control cannot independently validate it</li>
+        <li>Whoever submits an invoice adjustment cannot approve it</li>
+      </ul>
+      <p>
+        Beyond those: the corrective action owner cannot validate their own remediation, the preparer of
+        a working paper cannot sign it off, the drafter of a risk appetite cannot approve it, the risk
+        owner cannot approve acceptance of their own risk, and the auditor who raised a finding cannot
+        write management's response to it.
+      </p>
+
+      <h4>Tamper-evident audit trail</h4>
+      <p>
+        Every consequential action writes a hash-chained entry inside the same transaction as the change
+        itself — so the record and the action either both happen or neither does. The external auditor
+        portal can verify the chain cryptographically.
+      </p>
+
+      <h4>Immutability where it matters</h4>
+      <p>
+        Test results, KRI readings, RCSA attestations and closed issues cannot be edited. Approved audit
+        plans are frozen. This is what makes a historical trend or a testing conclusion worth anything.
+      </p>
+
+      <h4>Tenant isolation</h4>
+      <p>
+        Every query is scoped through the resolver before it runs. Cross-tenant reads by group-level roles
+        are legitimate but logged as such, so consolidated oversight never becomes silent access.
+      </p>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="status">
+      <span class="sec-num">09</span>
+      <h2>Build status, honestly</h2>
+
+      <p class="lede">
+        The backend is substantially ahead of the interface. This table is the difference between a demo
+        that lands and one that does not.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Area</th><th>Status</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Documents, approvals, acknowledgements, audit log</td><td><span class="chip chip-ui">In the UI</span></td><td>Complete</td></tr>
+            <tr><td>Tenants &amp; impersonation</td><td><span class="chip chip-ui">In the UI</span></td><td>Complete</td></tr>
+            <tr><td>Users, teams, roles, lifecycle</td><td><span class="chip chip-ui">In the UI</span></td><td>Complete</td></tr>
+            <tr><td>Service desk, queues, catalogue, SLA, knowledge base</td><td><span class="chip chip-ui">In the UI</span></td><td>Complete</td></tr>
+            <tr><td>Standards, controls, implementations, risk register</td><td><span class="chip chip-ui">In the UI</span></td><td>Complete</td></tr>
+            <tr><td>Audit programme &amp; findings</td><td><span class="chip chip-ui">In the UI</span></td><td>Includes management response and escalation</td></tr>
+            <tr><td>Audit universe &amp; annual plan</td><td><span class="chip chip-api">API only</span></td><td>Tested end to end</td></tr>
+            <tr><td>Risk &amp; control matrix, testing, working papers</td><td><span class="chip chip-api">API only</span></td><td>Tested end to end</td></tr>
+            <tr><td>Cross-source issue register</td><td><span class="chip chip-api">API only</span></td><td>Audit-sourced issues visible in Audit Programme</td></tr>
+            <tr><td>Risk appetite, RCSA, KRIs, loss events</td><td><span class="chip chip-api">API only</span></td><td>Tested end to end</td></tr>
+            <tr><td>Wisdom Eye ASM, Eye Phish</td><td><span class="chip chip-none">Not built</span></td><td>Navigation only</td></tr>
+            <tr><td>Marketplace, subscriptions, billing</td><td><span class="chip chip-none">Not built</span></td><td>Navigation only</td></tr>
+            <tr><td>Vendors &amp; third-party risk</td><td><span class="chip chip-none">Not built</span></td><td>Navigation only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="note-label">One known inconsistency</span>
+        <p>
+          The Audit Programme screen still offers a <em>Create Audit</em> button that bypasses the
+          risk-based plan gate the backend enforces. Until that screen is rebuilt around the annual plan,
+          engagements created that way skip the planning discipline described above.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <section id="api">
+      <span class="sec-num">10</span>
+      <h2>API quick reference</h2>
+
+      <p class="lede">
+        For the modules without screens. Authenticate first, then send the token as a bearer header.
+      </p>
+
+      <pre><code>curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"risk.manager@omniops.me","password":"Demo@2026"}'</code></pre>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Purpose</th><th>Endpoint</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Audit universe</td><td><code>GET/POST /api/grc/universe</code></td></tr>
+            <tr><td>Score an entity</td><td><code>PATCH /api/grc/universe/:id/score</code></td></tr>
+            <tr><td>Annual plans</td><td><code>GET/POST /api/grc/plans</code></td></tr>
+            <tr><td>Submit / approve a plan</td><td><code>POST /api/grc/plans/:id/submit</code> · <code>/approve</code></td></tr>
+            <tr><td>Create an engagement from a plan item</td><td><code>POST /api/grc/plan-items/:itemId/instantiate</code></td></tr>
+            <tr><td>Risk &amp; control matrix</td><td><code>GET/POST /api/grc/audits/:id/matrix</code></td></tr>
+            <tr><td>Test procedures &amp; results</td><td><code>POST /api/grc/matrix/:rowId/procedures</code> · <code>/procedures/:id/result</code></td></tr>
+            <tr><td>Working papers &amp; review</td><td><code>POST /api/grc/audits/:id/workpapers</code> · <code>/workpapers/:id/review</code></td></tr>
+            <tr><td>Issue register</td><td><code>GET/POST /api/grc/issues</code></td></tr>
+            <tr><td>Management response</td><td><code>POST /api/grc/issues/:id/respond</code></td></tr>
+            <tr><td>Corrective action &amp; closure</td><td><code>POST /api/grc/issues/:id/cap</code> · <code>/submit-closure</code> · <code>/close</code></td></tr>
+            <tr><td>Escalate a disputed issue</td><td><code>POST /api/grc/issues/:id/escalate</code></td></tr>
+            <tr><td>Risk appetite</td><td><code>GET/POST /api/grc/appetite</code> · <code>/appetite/:id/approve</code></td></tr>
+            <tr><td>Appetite posture across the register</td><td><code>GET /api/grc/appetite/posture</code></td></tr>
+            <tr><td>RCSA campaigns</td><td><code>GET/POST /api/grc/rcsa</code> · <code>/rcsa/:id/scope</code> · <code>/launch</code> · <code>/close</code></td></tr>
+            <tr><td>Submit an attestation</td><td><code>POST /api/grc/rcsa-assessments/:id/submit</code></td></tr>
+            <tr><td>Key risk indicators</td><td><code>GET/POST /api/grc/kris</code> · <code>/kris/:id/readings</code></td></tr>
+            <tr><td>Loss events</td><td><code>GET/POST /api/grc/loss-events</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Errors carry a machine-readable <code>code</code> and a message written for the person who hit it.
+        <code>CAPABILITY_DENIED</code> names the missing capability, <code>SOD_VIOLATION</code> explains
+        which conflict fired, and workflow gates such as <code>NO_MANAGEMENT_RESPONSE</code> or
+        <code>WORKPAPERS_UNREVIEWED</code> say what has to happen first.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    GRC Wisdom platform guide. Module status reflects the current build — verify against the running
+    application before using this for a customer commitment.
+  </footer>
+
+</div>

@@ -68,7 +68,8 @@
       "Bash(npm run *)",
       "Bash(grep -c \"grc_wisdom_api[\\\\\\\\/]src[\\\\\\\\/]\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")",
-      "Bash(curl -s \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")"
+      "Bash(curl -s \"http://localhost:5173/src/pages/grc/AuditProgramme.tsx\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }
