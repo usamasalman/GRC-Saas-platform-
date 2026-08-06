@@ -1,869 +1,872 @@
 {
- "capabilities": [
-  {
-   "key": "first-time-login-and-mfa",
-   "name": "First-time login and MFA",
-   "module": "Auth",
-   "number": 1,
-   "tenancySpecific": false
-  },
-  {
-   "key": "create-an-itsm-ticket",
-   "name": "Create an ITSM ticket",
-   "module": "ITSM",
-   "number": 2,
-   "tenancySpecific": false
-  },
-  {
-   "key": "create-or-manage-a-tenant",
-   "name": "Create or manage a tenant",
-   "module": "Platform",
-   "number": 3,
-   "tenancySpecific": false
-  },
-  {
-   "key": "add-a-user-with-role-based-access",
-   "name": "Add a user with role-based access",
-   "module": "IAM",
-   "number": 4,
-   "tenancySpecific": false
-  },
-  {
-   "key": "maintain-roles-and-permissions",
-   "name": "Maintain roles and permissions",
-   "module": "IAM",
-   "number": 5,
-   "tenancySpecific": false
-  },
-  {
-   "key": "transfer-a-user-between-branches-or-entities",
-   "name": "Transfer a user between branches or entities",
-   "module": "IAM",
-   "number": 6,
-   "tenancySpecific": false
-  },
-  {
-   "key": "publish-or-enable-a-module",
-   "name": "Publish or enable a module",
-   "module": "Platform",
-   "number": 7,
-   "tenancySpecific": false
-  },
-  {
-   "key": "govern-a-feature-flag",
-   "name": "Govern a feature flag",
-   "module": "Platform",
-   "number": 8,
-   "tenancySpecific": false
-  },
-  {
-   "key": "create-an-approval-or-automation-workflow",
-   "name": "Create an approval or automation workflow",
-   "module": "Workflow Engine",
-   "number": 9,
-   "tenancySpecific": false
-  },
-  {
-   "key": "configure-an-integration",
-   "name": "Configure an integration",
-   "module": "Integrations",
-   "number": 10,
-   "tenancySpecific": false
-  },
-  {
-   "key": "monitor-security-and-handle-incidents",
-   "name": "Monitor security and handle incidents",
-   "module": "Security",
-   "number": 11,
-   "tenancySpecific": false
-  },
-  {
-   "key": "create-or-select-a-commercial-plan",
-   "name": "Create or select a commercial plan",
-   "module": "Billing",
-   "number": 12,
-   "tenancySpecific": false
-  },
-  {
-   "key": "manage-a-subscription",
-   "name": "Manage a subscription",
-   "module": "Billing",
-   "number": 13,
-   "tenancySpecific": false
-  },
-  {
-   "key": "generate-or-review-an-invoice",
-   "name": "Generate or review an invoice",
-   "module": "Billing",
-   "number": 14,
-   "tenancySpecific": false
-  },
-  {
-   "key": "record-and-reconcile-a-payment",
-   "name": "Record and reconcile a payment",
-   "module": "Billing",
-   "number": 15,
-   "tenancySpecific": false
-  },
-  {
-   "key": "monitor-resource-usage-and-quotas",
-   "name": "Monitor resource usage and quotas",
-   "module": "Billing/Platform",
-   "number": 16,
-   "tenancySpecific": false
-  },
-  {
-   "key": "create-import-and-version-a-document",
-   "name": "Create, import and version a document",
-   "module": "DMS",
-   "number": 17,
-   "tenancySpecific": false
-  },
-  {
-   "key": "review-approve-and-digitally-sign-a-document",
-   "name": "Review, approve and digitally sign a document",
-   "module": "DMS",
-   "number": 18,
-   "tenancySpecific": false
-  },
-  {
-   "key": "acknowledge-or-monitor-a-policy",
-   "name": "Acknowledge or monitor a policy",
-   "module": "DMS",
-   "number": 19,
-   "tenancySpecific": false
-  },
-  {
-   "key": "apply-retention-and-legal-hold",
-   "name": "Apply retention and legal hold",
-   "module": "DMS",
-   "number": 20,
-   "tenancySpecific": false
-  },
-  {
-   "key": "import-or-enable-a-standard",
-   "name": "Import or enable a standard",
-   "module": "GRC Core",
-   "number": 21,
-   "tenancySpecific": false
-  },
-  {
-   "key": "manage-a-control-implementation-and-evidence",
-   "name": "Manage a control implementation and evidence",
-   "module": "GRC Core",
-   "number": 22,
-   "tenancySpecific": false
-  },
-  {
-   "key": "assess-and-treat-a-risk",
-   "name": "Assess and treat a risk",
-   "module": "GRC Core",
-   "number": 23,
-   "tenancySpecific": false
-  },
-  {
-   "key": "plan-and-execute-an-audit",
-   "name": "Plan and execute an audit",
-   "module": "GRC Core",
-   "number": 24,
-   "tenancySpecific": false
-  },
-  {
-   "key": "maintain-an-asset",
-   "name": "Maintain an asset",
-   "module": "GRC Core",
-   "number": 25,
-   "tenancySpecific": false
-  },
-  {
-   "key": "assess-and-remediate-a-vendor",
-   "name": "Assess and remediate a vendor",
-   "module": "TPRM",
-   "number": 26,
-   "tenancySpecific": false
-  },
-  {
-   "key": "generate-and-distribute-a-report",
-   "name": "Generate and distribute a report",
-   "module": "Reporting",
-   "number": 27,
-   "tenancySpecific": false
-  },
-  {
-   "key": "operate-wisdom-eye-and-eye-phish",
-   "name": "Operate Wisdom Eye and Eye Phish",
-   "module": "Security Services",
-   "number": 28,
-   "tenancySpecific": false
-  },
-  {
-   "key": "assign-or-complete-learning",
-   "name": "Assign or complete learning",
-   "module": "Learning",
-   "number": 29,
-   "tenancySpecific": false
-  },
-  {
-   "key": "onboard-or-purchase-an-open-source-tool",
-   "name": "Onboard or purchase an open-source tool",
-   "module": "Marketplace",
-   "number": 30,
-   "tenancySpecific": false
-  },
-  {
-   "key": "manage-and-resolve-support-tickets",
-   "name": "Manage and resolve support tickets",
-   "module": "ITSM",
-   "number": null,
-   "tenancySpecific": true
-  },
-  {
-   "key": "manage-group-or-regional-governance",
-   "name": "Manage group or regional governance",
-   "module": "Holding",
-   "number": null,
-   "tenancySpecific": true
-  },
-  {
-   "key": "manage-franchise-governance",
-   "name": "Manage franchise governance",
-   "module": "Franchise",
-   "number": null,
-   "tenancySpecific": true
-  },
-  {
-   "key": "manage-partner-client-workspaces-and-engagements",
-   "name": "Manage partner/client workspaces and engagements",
-   "module": "Partner/MSP",
-   "number": null,
-   "tenancySpecific": true
-  }
- ],
- "roles": [
-  {
-   "number": 1,
-   "key": "platform-super-admin",
-   "name": "Platform Super Admin",
-   "portal": "Saas",
-   "scopeDescription": "All tenants under break-glass",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "create-or-manage-a-tenant",
-    "add-a-user-with-role-based-access",
-    "maintain-roles-and-permissions",
-    "publish-or-enable-a-module",
-    "govern-a-feature-flag",
-    "create-an-approval-or-automation-workflow",
-    "configure-an-integration",
-    "monitor-security-and-handle-incidents"
-   ]
-  },
-  {
-   "number": 2,
-   "key": "platform-security-admin",
-   "name": "Platform Security Admin",
-   "portal": "Saas",
-   "scopeDescription": "Security configuration and logs",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "monitor-security-and-handle-incidents",
-    "maintain-roles-and-permissions",
-    "govern-a-feature-flag",
-    "configure-an-integration",
-    "create-an-approval-or-automation-workflow",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 3,
-   "key": "platform-billing-admin",
-   "name": "Platform Billing Admin",
-   "portal": "Saas",
-   "scopeDescription": "Subscriptions and finance",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "create-or-select-a-commercial-plan",
-    "manage-a-subscription",
-    "generate-or-review-an-invoice",
-    "record-and-reconcile-a-payment",
-    "monitor-resource-usage-and-quotas",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 4,
-   "key": "group-admin",
-   "name": "Group Admin",
-   "portal": "Holding",
-   "scopeDescription": "Assigned group tree",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-group-or-regional-governance",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "maintain-roles-and-permissions",
-    "import-or-enable-a-standard",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 5,
-   "key": "regional-admin",
-   "name": "Regional Admin",
-   "portal": "Holding",
-   "scopeDescription": "Selected entities",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-group-or-regional-governance",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "maintain-roles-and-permissions",
-    "assess-and-treat-a-risk",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 6,
-   "key": "organization-admin",
-   "name": "Organization Admin",
-   "portal": "Multibranch",
-   "scopeDescription": "Assigned organization",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "maintain-roles-and-permissions",
-    "import-or-enable-a-standard",
-    "publish-or-enable-a-module",
-    "onboard-or-purchase-an-open-source-tool",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 7,
-   "key": "branch-admin",
-   "name": "Branch Admin",
-   "portal": "Branch",
-   "scopeDescription": "Assigned branch",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "maintain-roles-and-permissions",
-    "manage-a-control-implementation-and-evidence",
-    "assess-and-treat-a-risk",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 8,
-   "key": "compliance-manager",
-   "name": "Compliance Manager",
-   "portal": "Document",
-   "scopeDescription": "Document owner and assigned frameworks",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "create-import-and-version-a-document",
-    "review-approve-and-digitally-sign-a-document",
-    "apply-retention-and-legal-hold",
-    "manage-a-control-implementation-and-evidence",
-    "acknowledge-or-monitor-a-policy",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 9,
-   "key": "compliance-approver",
-   "name": "Compliance Approver",
-   "portal": "Document",
-   "scopeDescription": "Approval queue and published policies",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "review-approve-and-digitally-sign-a-document",
-    "apply-retention-and-legal-hold",
-    "acknowledge-or-monitor-a-policy",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 10,
-   "key": "staff-employee",
-   "name": "Staff Employee",
-   "portal": "Document",
-   "scopeDescription": "Assigned acknowledgements",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "acknowledge-or-monitor-a-policy",
-    "assign-or-complete-learning"
-   ]
-  },
-  {
-   "number": 11,
-   "key": "external-auditor",
-   "name": "External Auditor",
-   "portal": "Auditor",
-   "scopeDescription": "Selected engagement, read-only",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "plan-and-execute-an-audit",
-    "review-approve-and-digitally-sign-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 12,
-   "key": "partner-owner",
-   "name": "Partner Owner",
-   "portal": "Partner",
-   "scopeDescription": "Partner and assigned clients",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-partner-client-workspaces-and-engagements",
-    "add-a-user-with-role-based-access",
-    "maintain-roles-and-permissions",
-    "manage-a-subscription",
-    "onboard-or-purchase-an-open-source-tool",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 13,
-   "key": "engagement-manager",
-   "name": "Engagement Manager",
-   "portal": "Partner",
-   "scopeDescription": "Assigned client engagements",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-partner-client-workspaces-and-engagements",
-    "manage-a-control-implementation-and-evidence",
-    "assess-and-treat-a-risk",
-    "create-import-and-version-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 14,
-   "key": "franchisor-admin",
-   "name": "Franchisor Admin",
-   "portal": "Franchise",
-   "scopeDescription": "Entire franchise network",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-franchise-governance",
-    "add-a-user-with-role-based-access",
-    "import-or-enable-a-standard",
-    "operate-wisdom-eye-and-eye-phish",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 15,
-   "key": "franchisee-admin",
-   "name": "Franchisee Admin",
-   "portal": "Franchise",
-   "scopeDescription": "Own franchise location",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-franchise-governance",
-    "add-a-user-with-role-based-access",
-    "manage-a-control-implementation-and-evidence",
-    "assess-and-treat-a-risk",
-    "acknowledge-or-monitor-a-policy",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 16,
-   "key": "platform-service-desk-manager",
-   "name": "Platform Service Desk Manager",
-   "portal": "Saas",
-   "scopeDescription": "All customer tickets and SLA queues",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-and-resolve-support-tickets",
-    "create-an-approval-or-automation-workflow",
-    "generate-and-distribute-a-report",
-    "add-a-user-with-role-based-access"
-   ]
-  },
-  {
-   "number": 17,
-   "key": "open-source-marketplace-curator",
-   "name": "Open Source Marketplace Curator",
-   "portal": "Saas",
-   "scopeDescription": "Tool review, publishing and tenant installations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "onboard-or-purchase-an-open-source-tool",
-    "publish-or-enable-a-module",
-    "configure-an-integration",
-    "monitor-security-and-handle-incidents",
-    "monitor-resource-usage-and-quotas"
-   ]
-  },
-  {
-   "number": 18,
-   "key": "customer-success-manager",
-   "name": "Customer Success Manager",
-   "portal": "Saas",
-   "scopeDescription": "Onboarding, adoption, renewals and escalations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "create-or-manage-a-tenant",
-    "manage-a-subscription",
-    "manage-and-resolve-support-tickets",
-    "assign-or-complete-learning",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 19,
-   "key": "wisdom-eye-security-analyst",
-   "name": "Wisdom Eye Security Analyst",
-   "portal": "Saas",
-   "scopeDescription": "Authorized tenant attack surfaces and findings",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "operate-wisdom-eye-and-eye-phish",
-    "monitor-security-and-handle-incidents",
-    "manage-and-resolve-support-tickets",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 20,
-   "key": "group-compliance-manager",
-   "name": "Group Compliance Manager",
-   "portal": "Holding",
-   "scopeDescription": "Group standards, controls and documents",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "import-or-enable-a-standard",
-    "manage-a-control-implementation-and-evidence",
-    "create-import-and-version-a-document",
-    "review-approve-and-digitally-sign-a-document",
-    "apply-retention-and-legal-hold",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 21,
-   "key": "group-risk-manager",
-   "name": "Group Risk Manager",
-   "portal": "Holding",
-   "scopeDescription": "Consolidated risk across assigned entities",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "assess-and-treat-a-risk",
-    "manage-a-control-implementation-and-evidence",
-    "manage-group-or-regional-governance",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 22,
-   "key": "group-hr-manager",
-   "name": "Group HR Manager",
-   "portal": "Holding",
-   "scopeDescription": "Group people operations and awareness",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "acknowledge-or-monitor-a-policy",
-    "assign-or-complete-learning",
-    "operate-wisdom-eye-and-eye-phish",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 23,
-   "key": "group-finance-manager",
-   "name": "Group Finance Manager",
-   "portal": "Holding",
-   "scopeDescription": "Group invoices, allocations and payments",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "generate-or-review-an-invoice",
-    "record-and-reconcile-a-payment",
-    "manage-a-subscription",
-    "monitor-resource-usage-and-quotas",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 24,
-   "key": "organization-grc-manager",
-   "name": "Organization GRC Manager",
-   "portal": "Multibranch",
-   "scopeDescription": "Organization-wide GRC operations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "import-or-enable-a-standard",
-    "manage-a-control-implementation-and-evidence",
-    "assess-and-treat-a-risk",
-    "plan-and-execute-an-audit",
-    "create-import-and-version-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 25,
-   "key": "risk-manager",
-   "name": "Risk Manager",
-   "portal": "Multibranch",
-   "scopeDescription": "Organization and assigned branches",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "assess-and-treat-a-risk",
-    "manage-a-control-implementation-and-evidence",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 26,
-   "key": "hr-manager",
-   "name": "HR Manager",
-   "portal": "Multibranch",
-   "scopeDescription": "Organization people operations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "acknowledge-or-monitor-a-policy",
-    "assign-or-complete-learning",
-    "operate-wisdom-eye-and-eye-phish",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 27,
-   "key": "finance-manager",
-   "name": "Finance Manager",
-   "portal": "Multibranch",
-   "scopeDescription": "Tenant billing, invoices and payments",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "generate-or-review-an-invoice",
-    "record-and-reconcile-a-payment",
-    "manage-a-subscription",
-    "onboard-or-purchase-an-open-source-tool",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 28,
-   "key": "organization-support-coordinator",
-   "name": "Organization Support Coordinator",
-   "portal": "Multibranch",
-   "scopeDescription": "Organization tickets and service requests",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-and-resolve-support-tickets",
-    "create-an-approval-or-automation-workflow",
-    "generate-and-distribute-a-report",
-    "add-a-user-with-role-based-access"
-   ]
-  },
-  {
-   "number": 29,
-   "key": "wisdom-eye-manager",
-   "name": "Wisdom Eye Manager",
-   "portal": "Multibranch",
-   "scopeDescription": "All authorized organization assets and phishing campaigns",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "operate-wisdom-eye-and-eye-phish",
-    "assign-or-complete-learning",
-    "manage-and-resolve-support-tickets",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 30,
-   "key": "branch-compliance-officer",
-   "name": "Branch Compliance Officer",
-   "portal": "Branch",
-   "scopeDescription": "Assigned branch controls and evidence",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-a-control-implementation-and-evidence",
-    "create-import-and-version-a-document",
-    "assess-and-treat-a-risk",
-    "plan-and-execute-an-audit",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 31,
-   "key": "branch-finance-user",
-   "name": "Branch Finance User",
-   "portal": "Branch",
-   "scopeDescription": "Branch allocations and invoice visibility",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "generate-or-review-an-invoice",
-    "record-and-reconcile-a-payment",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 32,
-   "key": "branch-hr-user",
-   "name": "Branch HR User",
-   "portal": "Branch",
-   "scopeDescription": "Branch staff, awareness and acknowledgements",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "acknowledge-or-monitor-a-policy",
-    "assign-or-complete-learning",
-    "operate-wisdom-eye-and-eye-phish",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 33,
-   "key": "pre-sales-manager",
-   "name": "Pre-Sales Manager",
-   "portal": "Partner",
-   "scopeDescription": "Solutions, proposals, demos and marketplace offers",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "create-or-select-a-commercial-plan",
-    "onboard-or-purchase-an-open-source-tool",
-    "create-or-manage-a-tenant",
-    "manage-a-subscription",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 34,
-   "key": "post-sales-customer-success-manager",
-   "name": "Post-Sales Customer Success Manager",
-   "portal": "Partner",
-   "scopeDescription": "Client onboarding, adoption, tickets and renewals",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-partner-client-workspaces-and-engagements",
-    "manage-and-resolve-support-tickets",
-    "assign-or-complete-learning",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 35,
-   "key": "franchise-support-manager",
-   "name": "Franchise Support Manager",
-   "portal": "Franchise",
-   "scopeDescription": "Network tickets, location onboarding and escalations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-and-resolve-support-tickets",
-    "create-an-approval-or-automation-workflow",
-    "generate-and-distribute-a-report",
-    "add-a-user-with-role-based-access"
-   ]
-  },
-  {
-   "number": 36,
-   "key": "internal-auditor",
-   "name": "Internal Auditor",
-   "portal": "Tenant Assurance",
-   "scopeDescription": "Assigned audit universe",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "plan-and-execute-an-audit",
-    "manage-a-control-implementation-and-evidence",
-    "create-import-and-version-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 37,
-   "key": "control-owner",
-   "name": "Control Owner",
-   "portal": "Tenant GRC Operations",
-   "scopeDescription": "Assigned controls and implementations",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-a-control-implementation-and-evidence",
-    "create-import-and-version-a-document",
-    "assess-and-treat-a-risk",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 38,
-   "key": "asset-owner",
-   "name": "Asset Owner",
-   "portal": "Tenant Asset Management",
-   "scopeDescription": "Assigned assets",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "maintain-an-asset",
-    "assess-and-treat-a-risk",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 39,
-   "key": "vendor-owner",
-   "name": "Vendor Owner",
-   "portal": "Tenant Third-Party Risk",
-   "scopeDescription": "Assigned vendors",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "assess-and-remediate-a-vendor",
-    "assess-and-treat-a-risk",
-    "create-import-and-version-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 40,
-   "key": "consultant",
-   "name": "Consultant",
-   "portal": "Consulting Partner / MSP",
-   "scopeDescription": "Assigned clients and tasks",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-partner-client-workspaces-and-engagements",
-    "manage-a-control-implementation-and-evidence",
-    "assess-and-treat-a-risk",
-    "plan-and-execute-an-audit",
-    "create-import-and-version-a-document",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 41,
-   "key": "client-administrator",
-   "name": "Client Administrator",
-   "portal": "Client Workspace",
-   "scopeDescription": "Own client workspace",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "add-a-user-with-role-based-access",
-    "transfer-a-user-between-branches-or-entities",
-    "maintain-roles-and-permissions",
-    "import-or-enable-a-standard",
-    "manage-partner-client-workspaces-and-engagements",
-    "generate-and-distribute-a-report"
-   ]
-  },
-  {
-   "number": 42,
-   "key": "client-contributor",
-   "name": "Client Contributor",
-   "portal": "Client Workspace",
-   "scopeDescription": "Assigned evidence and tasks",
-   "capabilities": [
-    "create-an-itsm-ticket",
-    "manage-a-control-implementation-and-evidence",
-    "create-import-and-version-a-document",
-    "acknowledge-or-monitor-a-policy"
-   ]
-  }
- ]
+  "capabilities": [
+    {
+      "key": "first-time-login-and-mfa",
+      "name": "First-time login and MFA",
+      "module": "Auth",
+      "number": 1,
+      "tenancySpecific": false
+    },
+    {
+      "key": "create-an-itsm-ticket",
+      "name": "Create an ITSM ticket",
+      "module": "ITSM",
+      "number": 2,
+      "tenancySpecific": false
+    },
+    {
+      "key": "create-or-manage-a-tenant",
+      "name": "Create or manage a tenant",
+      "module": "Platform",
+      "number": 3,
+      "tenancySpecific": false
+    },
+    {
+      "key": "add-a-user-with-role-based-access",
+      "name": "Add a user with role-based access",
+      "module": "IAM",
+      "number": 4,
+      "tenancySpecific": false
+    },
+    {
+      "key": "maintain-roles-and-permissions",
+      "name": "Maintain roles and permissions",
+      "module": "IAM",
+      "number": 5,
+      "tenancySpecific": false
+    },
+    {
+      "key": "transfer-a-user-between-branches-or-entities",
+      "name": "Transfer a user between branches or entities",
+      "module": "IAM",
+      "number": 6,
+      "tenancySpecific": false
+    },
+    {
+      "key": "publish-or-enable-a-module",
+      "name": "Publish or enable a module",
+      "module": "Platform",
+      "number": 7,
+      "tenancySpecific": false
+    },
+    {
+      "key": "govern-a-feature-flag",
+      "name": "Govern a feature flag",
+      "module": "Platform",
+      "number": 8,
+      "tenancySpecific": false
+    },
+    {
+      "key": "create-an-approval-or-automation-workflow",
+      "name": "Create an approval or automation workflow",
+      "module": "Workflow Engine",
+      "number": 9,
+      "tenancySpecific": false
+    },
+    {
+      "key": "configure-an-integration",
+      "name": "Configure an integration",
+      "module": "Integrations",
+      "number": 10,
+      "tenancySpecific": false
+    },
+    {
+      "key": "monitor-security-and-handle-incidents",
+      "name": "Monitor security and handle incidents",
+      "module": "Security",
+      "number": 11,
+      "tenancySpecific": false
+    },
+    {
+      "key": "create-or-select-a-commercial-plan",
+      "name": "Create or select a commercial plan",
+      "module": "Billing",
+      "number": 12,
+      "tenancySpecific": false
+    },
+    {
+      "key": "manage-a-subscription",
+      "name": "Manage a subscription",
+      "module": "Billing",
+      "number": 13,
+      "tenancySpecific": false
+    },
+    {
+      "key": "generate-or-review-an-invoice",
+      "name": "Generate or review an invoice",
+      "module": "Billing",
+      "number": 14,
+      "tenancySpecific": false
+    },
+    {
+      "key": "record-and-reconcile-a-payment",
+      "name": "Record and reconcile a payment",
+      "module": "Billing",
+      "number": 15,
+      "tenancySpecific": false
+    },
+    {
+      "key": "monitor-resource-usage-and-quotas",
+      "name": "Monitor resource usage and quotas",
+      "module": "Billing/Platform",
+      "number": 16,
+      "tenancySpecific": false
+    },
+    {
+      "key": "create-import-and-version-a-document",
+      "name": "Create, import and version a document",
+      "module": "DMS",
+      "number": 17,
+      "tenancySpecific": false
+    },
+    {
+      "key": "review-approve-and-digitally-sign-a-document",
+      "name": "Review, approve and digitally sign a document",
+      "module": "DMS",
+      "number": 18,
+      "tenancySpecific": false
+    },
+    {
+      "key": "acknowledge-or-monitor-a-policy",
+      "name": "Acknowledge or monitor a policy",
+      "module": "DMS",
+      "number": 19,
+      "tenancySpecific": false
+    },
+    {
+      "key": "apply-retention-and-legal-hold",
+      "name": "Apply retention and legal hold",
+      "module": "DMS",
+      "number": 20,
+      "tenancySpecific": false
+    },
+    {
+      "key": "import-or-enable-a-standard",
+      "name": "Import or enable a standard",
+      "module": "GRC Core",
+      "number": 21,
+      "tenancySpecific": false
+    },
+    {
+      "key": "manage-a-control-implementation-and-evidence",
+      "name": "Manage a control implementation and evidence",
+      "module": "GRC Core",
+      "number": 22,
+      "tenancySpecific": false
+    },
+    {
+      "key": "assess-and-treat-a-risk",
+      "name": "Assess and treat a risk",
+      "module": "GRC Core",
+      "number": 23,
+      "tenancySpecific": false
+    },
+    {
+      "key": "plan-and-execute-an-audit",
+      "name": "Plan and execute an audit",
+      "module": "GRC Core",
+      "number": 24,
+      "tenancySpecific": false
+    },
+    {
+      "key": "maintain-an-asset",
+      "name": "Maintain an asset",
+      "module": "GRC Core",
+      "number": 25,
+      "tenancySpecific": false
+    },
+    {
+      "key": "assess-and-remediate-a-vendor",
+      "name": "Assess and remediate a vendor",
+      "module": "TPRM",
+      "number": 26,
+      "tenancySpecific": false
+    },
+    {
+      "key": "generate-and-distribute-a-report",
+      "name": "Generate and distribute a report",
+      "module": "Reporting",
+      "number": 27,
+      "tenancySpecific": false
+    },
+    {
+      "key": "operate-wisdom-eye-and-eye-phish",
+      "name": "Operate Wisdom Eye and Eye Phish",
+      "module": "Security Services",
+      "number": 28,
+      "tenancySpecific": false
+    },
+    {
+      "key": "assign-or-complete-learning",
+      "name": "Assign or complete learning",
+      "module": "Learning",
+      "number": 29,
+      "tenancySpecific": false
+    },
+    {
+      "key": "onboard-or-purchase-an-open-source-tool",
+      "name": "Onboard or purchase an open-source tool",
+      "module": "Marketplace",
+      "number": 30,
+      "tenancySpecific": false
+    },
+    {
+      "key": "manage-and-resolve-support-tickets",
+      "name": "Manage and resolve support tickets",
+      "module": "ITSM",
+      "number": null,
+      "tenancySpecific": true
+    },
+    {
+      "key": "manage-group-or-regional-governance",
+      "name": "Manage group or regional governance",
+      "module": "Holding",
+      "number": null,
+      "tenancySpecific": true
+    },
+    {
+      "key": "manage-franchise-governance",
+      "name": "Manage franchise governance",
+      "module": "Franchise",
+      "number": null,
+      "tenancySpecific": true
+    },
+    {
+      "key": "manage-partner-client-workspaces-and-engagements",
+      "name": "Manage partner/client workspaces and engagements",
+      "module": "Partner/MSP",
+      "number": null,
+      "tenancySpecific": true
+    }
+  ],
+  "roles": [
+    {
+      "number": 1,
+      "key": "platform-super-admin",
+      "name": "Platform Super Admin",
+      "portal": "Saas",
+      "scopeDescription": "All tenants under break-glass",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "create-or-manage-a-tenant",
+        "add-a-user-with-role-based-access",
+        "maintain-roles-and-permissions",
+        "publish-or-enable-a-module",
+        "govern-a-feature-flag",
+        "create-an-approval-or-automation-workflow",
+        "configure-an-integration",
+        "monitor-security-and-handle-incidents"
+      ]
+    },
+    {
+      "number": 2,
+      "key": "platform-security-admin",
+      "name": "Platform Security Admin",
+      "portal": "Saas",
+      "scopeDescription": "Security configuration and logs",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "monitor-security-and-handle-incidents",
+        "maintain-roles-and-permissions",
+        "govern-a-feature-flag",
+        "configure-an-integration",
+        "create-an-approval-or-automation-workflow",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 3,
+      "key": "platform-billing-admin",
+      "name": "Platform Billing Admin",
+      "portal": "Saas",
+      "scopeDescription": "Subscriptions and finance",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "create-or-select-a-commercial-plan",
+        "manage-a-subscription",
+        "generate-or-review-an-invoice",
+        "record-and-reconcile-a-payment",
+        "monitor-resource-usage-and-quotas",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 4,
+      "key": "group-admin",
+      "name": "Group Admin",
+      "portal": "Holding",
+      "scopeDescription": "Assigned group tree",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-group-or-regional-governance",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "maintain-roles-and-permissions",
+        "import-or-enable-a-standard",
+        "generate-and-distribute-a-report",
+        "create-or-manage-a-tenant"
+      ]
+    },
+    {
+      "number": 5,
+      "key": "regional-admin",
+      "name": "Regional Admin",
+      "portal": "Holding",
+      "scopeDescription": "Selected entities",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-group-or-regional-governance",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "maintain-roles-and-permissions",
+        "assess-and-treat-a-risk",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 6,
+      "key": "organization-admin",
+      "name": "Organization Admin",
+      "portal": "Multibranch",
+      "scopeDescription": "Assigned organization",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "maintain-roles-and-permissions",
+        "import-or-enable-a-standard",
+        "publish-or-enable-a-module",
+        "onboard-or-purchase-an-open-source-tool",
+        "generate-and-distribute-a-report",
+        "create-or-manage-a-tenant"
+      ]
+    },
+    {
+      "number": 7,
+      "key": "branch-admin",
+      "name": "Branch Admin",
+      "portal": "Branch",
+      "scopeDescription": "Assigned branch",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "maintain-roles-and-permissions",
+        "manage-a-control-implementation-and-evidence",
+        "assess-and-treat-a-risk",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 8,
+      "key": "compliance-manager",
+      "name": "Compliance Manager",
+      "portal": "Document",
+      "scopeDescription": "Document owner and assigned frameworks",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "create-import-and-version-a-document",
+        "review-approve-and-digitally-sign-a-document",
+        "apply-retention-and-legal-hold",
+        "manage-a-control-implementation-and-evidence",
+        "acknowledge-or-monitor-a-policy",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 9,
+      "key": "compliance-approver",
+      "name": "Compliance Approver",
+      "portal": "Document",
+      "scopeDescription": "Approval queue and published policies",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "review-approve-and-digitally-sign-a-document",
+        "apply-retention-and-legal-hold",
+        "acknowledge-or-monitor-a-policy",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 10,
+      "key": "staff-employee",
+      "name": "Staff Employee",
+      "portal": "Document",
+      "scopeDescription": "Assigned acknowledgements",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "acknowledge-or-monitor-a-policy",
+        "assign-or-complete-learning"
+      ]
+    },
+    {
+      "number": 11,
+      "key": "external-auditor",
+      "name": "External Auditor",
+      "portal": "Auditor",
+      "scopeDescription": "Selected engagement, read-only",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "plan-and-execute-an-audit",
+        "review-approve-and-digitally-sign-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 12,
+      "key": "partner-owner",
+      "name": "Partner Owner",
+      "portal": "Partner",
+      "scopeDescription": "Partner and assigned clients",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-partner-client-workspaces-and-engagements",
+        "add-a-user-with-role-based-access",
+        "maintain-roles-and-permissions",
+        "manage-a-subscription",
+        "onboard-or-purchase-an-open-source-tool",
+        "generate-and-distribute-a-report",
+        "create-or-manage-a-tenant"
+      ]
+    },
+    {
+      "number": 13,
+      "key": "engagement-manager",
+      "name": "Engagement Manager",
+      "portal": "Partner",
+      "scopeDescription": "Assigned client engagements",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-partner-client-workspaces-and-engagements",
+        "manage-a-control-implementation-and-evidence",
+        "assess-and-treat-a-risk",
+        "create-import-and-version-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 14,
+      "key": "franchisor-admin",
+      "name": "Franchisor Admin",
+      "portal": "Franchise",
+      "scopeDescription": "Entire franchise network",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-franchise-governance",
+        "add-a-user-with-role-based-access",
+        "import-or-enable-a-standard",
+        "operate-wisdom-eye-and-eye-phish",
+        "generate-and-distribute-a-report",
+        "create-or-manage-a-tenant"
+      ]
+    },
+    {
+      "number": 15,
+      "key": "franchisee-admin",
+      "name": "Franchisee Admin",
+      "portal": "Franchise",
+      "scopeDescription": "Own franchise location",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-franchise-governance",
+        "add-a-user-with-role-based-access",
+        "manage-a-control-implementation-and-evidence",
+        "assess-and-treat-a-risk",
+        "acknowledge-or-monitor-a-policy",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 16,
+      "key": "platform-service-desk-manager",
+      "name": "Platform Service Desk Manager",
+      "portal": "Saas",
+      "scopeDescription": "All customer tickets and SLA queues",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-and-resolve-support-tickets",
+        "create-an-approval-or-automation-workflow",
+        "generate-and-distribute-a-report",
+        "add-a-user-with-role-based-access"
+      ]
+    },
+    {
+      "number": 17,
+      "key": "open-source-marketplace-curator",
+      "name": "Open Source Marketplace Curator",
+      "portal": "Saas",
+      "scopeDescription": "Tool review, publishing and tenant installations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "onboard-or-purchase-an-open-source-tool",
+        "publish-or-enable-a-module",
+        "configure-an-integration",
+        "monitor-security-and-handle-incidents",
+        "monitor-resource-usage-and-quotas"
+      ]
+    },
+    {
+      "number": 18,
+      "key": "customer-success-manager",
+      "name": "Customer Success Manager",
+      "portal": "Saas",
+      "scopeDescription": "Onboarding, adoption, renewals and escalations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "create-or-manage-a-tenant",
+        "manage-a-subscription",
+        "manage-and-resolve-support-tickets",
+        "assign-or-complete-learning",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 19,
+      "key": "wisdom-eye-security-analyst",
+      "name": "Wisdom Eye Security Analyst",
+      "portal": "Saas",
+      "scopeDescription": "Authorized tenant attack surfaces and findings",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "operate-wisdom-eye-and-eye-phish",
+        "monitor-security-and-handle-incidents",
+        "manage-and-resolve-support-tickets",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 20,
+      "key": "group-compliance-manager",
+      "name": "Group Compliance Manager",
+      "portal": "Holding",
+      "scopeDescription": "Group standards, controls and documents",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "import-or-enable-a-standard",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document",
+        "review-approve-and-digitally-sign-a-document",
+        "apply-retention-and-legal-hold",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 21,
+      "key": "group-risk-manager",
+      "name": "Group Risk Manager",
+      "portal": "Holding",
+      "scopeDescription": "Consolidated risk across assigned entities",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "assess-and-treat-a-risk",
+        "manage-a-control-implementation-and-evidence",
+        "manage-group-or-regional-governance",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 22,
+      "key": "group-hr-manager",
+      "name": "Group HR Manager",
+      "portal": "Holding",
+      "scopeDescription": "Group people operations and awareness",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "acknowledge-or-monitor-a-policy",
+        "assign-or-complete-learning",
+        "operate-wisdom-eye-and-eye-phish",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 23,
+      "key": "group-finance-manager",
+      "name": "Group Finance Manager",
+      "portal": "Holding",
+      "scopeDescription": "Group invoices, allocations and payments",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "generate-or-review-an-invoice",
+        "record-and-reconcile-a-payment",
+        "manage-a-subscription",
+        "monitor-resource-usage-and-quotas",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 24,
+      "key": "organization-grc-manager",
+      "name": "Organization GRC Manager",
+      "portal": "Multibranch",
+      "scopeDescription": "Organization-wide GRC operations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "import-or-enable-a-standard",
+        "manage-a-control-implementation-and-evidence",
+        "assess-and-treat-a-risk",
+        "plan-and-execute-an-audit",
+        "create-import-and-version-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 25,
+      "key": "risk-manager",
+      "name": "Risk Manager",
+      "portal": "Multibranch",
+      "scopeDescription": "Organization and assigned branches",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "assess-and-treat-a-risk",
+        "manage-a-control-implementation-and-evidence",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 26,
+      "key": "hr-manager",
+      "name": "HR Manager",
+      "portal": "Multibranch",
+      "scopeDescription": "Organization people operations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "acknowledge-or-monitor-a-policy",
+        "assign-or-complete-learning",
+        "operate-wisdom-eye-and-eye-phish",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 27,
+      "key": "finance-manager",
+      "name": "Finance Manager",
+      "portal": "Multibranch",
+      "scopeDescription": "Tenant billing, invoices and payments",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "generate-or-review-an-invoice",
+        "record-and-reconcile-a-payment",
+        "manage-a-subscription",
+        "onboard-or-purchase-an-open-source-tool",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 28,
+      "key": "organization-support-coordinator",
+      "name": "Organization Support Coordinator",
+      "portal": "Multibranch",
+      "scopeDescription": "Organization tickets and service requests",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-and-resolve-support-tickets",
+        "create-an-approval-or-automation-workflow",
+        "generate-and-distribute-a-report",
+        "add-a-user-with-role-based-access"
+      ]
+    },
+    {
+      "number": 29,
+      "key": "wisdom-eye-manager",
+      "name": "Wisdom Eye Manager",
+      "portal": "Multibranch",
+      "scopeDescription": "All authorized organization assets and phishing campaigns",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "operate-wisdom-eye-and-eye-phish",
+        "assign-or-complete-learning",
+        "manage-and-resolve-support-tickets",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 30,
+      "key": "branch-compliance-officer",
+      "name": "Branch Compliance Officer",
+      "portal": "Branch",
+      "scopeDescription": "Assigned branch controls and evidence",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document",
+        "assess-and-treat-a-risk",
+        "plan-and-execute-an-audit",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 31,
+      "key": "branch-finance-user",
+      "name": "Branch Finance User",
+      "portal": "Branch",
+      "scopeDescription": "Branch allocations and invoice visibility",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "generate-or-review-an-invoice",
+        "record-and-reconcile-a-payment",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 32,
+      "key": "branch-hr-user",
+      "name": "Branch HR User",
+      "portal": "Branch",
+      "scopeDescription": "Branch staff, awareness and acknowledgements",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "acknowledge-or-monitor-a-policy",
+        "assign-or-complete-learning",
+        "operate-wisdom-eye-and-eye-phish",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 33,
+      "key": "pre-sales-manager",
+      "name": "Pre-Sales Manager",
+      "portal": "Partner",
+      "scopeDescription": "Solutions, proposals, demos and marketplace offers",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "create-or-select-a-commercial-plan",
+        "onboard-or-purchase-an-open-source-tool",
+        "manage-a-subscription",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 34,
+      "key": "post-sales-customer-success-manager",
+      "name": "Post-Sales Customer Success Manager",
+      "portal": "Partner",
+      "scopeDescription": "Client onboarding, adoption, tickets and renewals",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-partner-client-workspaces-and-engagements",
+        "manage-and-resolve-support-tickets",
+        "assign-or-complete-learning",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 35,
+      "key": "franchise-support-manager",
+      "name": "Franchise Support Manager",
+      "portal": "Franchise",
+      "scopeDescription": "Network tickets, location onboarding and escalations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-and-resolve-support-tickets",
+        "create-an-approval-or-automation-workflow",
+        "generate-and-distribute-a-report",
+        "add-a-user-with-role-based-access"
+      ]
+    },
+    {
+      "number": 36,
+      "key": "internal-auditor",
+      "name": "Internal Auditor",
+      "portal": "Tenant Assurance",
+      "scopeDescription": "Assigned audit universe",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "plan-and-execute-an-audit",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 37,
+      "key": "control-owner",
+      "name": "Control Owner",
+      "portal": "Tenant GRC Operations",
+      "scopeDescription": "Assigned controls and implementations",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document",
+        "assess-and-treat-a-risk",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 38,
+      "key": "asset-owner",
+      "name": "Asset Owner",
+      "portal": "Tenant Asset Management",
+      "scopeDescription": "Assigned assets",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "maintain-an-asset",
+        "assess-and-treat-a-risk",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 39,
+      "key": "vendor-owner",
+      "name": "Vendor Owner",
+      "portal": "Tenant Third-Party Risk",
+      "scopeDescription": "Assigned vendors",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "assess-and-remediate-a-vendor",
+        "assess-and-treat-a-risk",
+        "create-import-and-version-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 40,
+      "key": "consultant",
+      "name": "Consultant",
+      "portal": "Consulting Partner / MSP",
+      "scopeDescription": "Assigned clients and tasks",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-partner-client-workspaces-and-engagements",
+        "manage-a-control-implementation-and-evidence",
+        "assess-and-treat-a-risk",
+        "plan-and-execute-an-audit",
+        "create-import-and-version-a-document",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 41,
+      "key": "client-administrator",
+      "name": "Client Administrator",
+      "portal": "Client Workspace",
+      "scopeDescription": "Own client workspace",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "add-a-user-with-role-based-access",
+        "transfer-a-user-between-branches-or-entities",
+        "maintain-roles-and-permissions",
+        "import-or-enable-a-standard",
+        "manage-partner-client-workspaces-and-engagements",
+        "generate-and-distribute-a-report"
+      ]
+    },
+    {
+      "number": 42,
+      "key": "client-contributor",
+      "name": "Client Contributor",
+      "portal": "Client Workspace",
+      "scopeDescription": "Assigned evidence and tasks",
+      "capabilities": [
+        "create-an-itsm-ticket",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document",
+        "acknowledge-or-monitor-a-policy"
+      ]
+    }
+  ]
 }

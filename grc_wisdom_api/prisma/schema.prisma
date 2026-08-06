@@ -87,6 +87,9 @@ model User {
 
   // Phase 0: Forced credential rotation after admin reset or first login
   mustChangePassword    Boolean  @default(false)
+  /// A temporary credential that is never used should stop working, not wait
+  /// indefinitely for whoever it was passed to.
+  tempPasswordExpiresAt DateTime?
 
   passwordResetRequests PasswordResetRequest[]
   impersonationsRequested ImpersonationSession[] @relation("ImpersonationRequester")

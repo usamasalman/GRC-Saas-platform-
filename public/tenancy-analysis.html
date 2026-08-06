@@ -1,0 +1,555 @@
+<title>GRC Wisdom — Tenancy &amp; Provisioning Analysis</title>
+<style>
+  :root {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --measure: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+      --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+      --rule:#2B3340; --rule-soft:#232A34;
+      --accent:#7FB2D9; --accent-soft:#1B2A38;
+      --plum:#C08FAE; --plum-soft:#2A1F27;
+      --ok:#6FBF95; --ok-soft:#17281F;
+      --warn:#D9A94A; --warn-soft:#2A2216;
+      --crit:#E08076; --crit-soft:#2C1B19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+    --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+    --rule:#2B3340; --rule-soft:#232A34;
+    --accent:#7FB2D9; --accent-soft:#1B2A38;
+    --plum:#C08FAE; --plum-soft:#2A1F27;
+    --ok:#6FBF95; --ok-soft:#17281F;
+    --warn:#D9A94A; --warn-soft:#2A2216;
+    --crit:#E08076; --crit-soft:#2C1B19;
+  }
+  :root[data-theme="light"] {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  }
+  .wrap {
+    max-width:1220px; margin:0 auto; padding:0 24px 96px;
+    display:grid; grid-template-columns:230px minmax(0,1fr); gap:56px; align-items:start;
+  }
+  .masthead { grid-column:1/-1; border-bottom:2px solid var(--ink); padding:56px 0 28px; margin-bottom:48px; }
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--plum); margin:0 0 18px; }
+  .masthead h1 {
+    font-family:var(--serif); font-weight:400; font-size:clamp(2.2rem,5vw,3.3rem);
+    line-height:1.08; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance;
+  }
+  .standfirst { font-family:var(--serif); font-size:clamp(1.05rem,2vw,1.22rem); line-height:1.5; color:var(--ink-soft); max-width:62ch; margin:0; }
+  .verdict {
+    margin-top:26px; display:flex; flex-wrap:wrap; gap:10px 26px;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.03em;
+  }
+  .verdict b { color:var(--ink-soft); font-weight:500; }
+
+  .rail { position:sticky; top:28px; }
+  .rail-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); padding-bottom:10px; border-bottom:1px solid var(--rule); margin-bottom:12px; }
+  .rail ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+  .rail a { display:block; padding:5px 0 5px 11px; margin-left:-11px; font-size:13.5px; line-height:1.4; color:var(--ink-soft); text-decoration:none; border-left:2px solid transparent; transition:color .12s,border-color .12s; }
+  .rail a:hover, .rail a:focus-visible { color:var(--accent); border-left-color:var(--accent); }
+  .rail a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+  .rail-num { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-right:7px; }
+
+  main { min-width:0; }
+  section { margin-bottom:72px; scroll-margin-top:24px; }
+  h2 { font-family:var(--serif); font-weight:400; font-size:clamp(1.6rem,3vw,2rem); line-height:1.2; letter-spacing:-.01em; margin:0 0 10px; text-wrap:balance; }
+  .sec-num { font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--plum); display:block; margin-bottom:10px; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1.02rem; margin:34px 0 10px; text-wrap:balance; }
+  h4 { font-family:var(--mono); font-weight:500; font-size:11.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-faint); margin:26px 0 8px; }
+  p { margin:0 0 15px; max-width:var(--measure); }
+  .lede { font-size:1.06rem; color:var(--ink-soft); max-width:var(--measure); }
+  a { color:var(--accent); }
+  a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+  ul, ol { max-width:var(--measure); padding-left:20px; margin:0 0 15px; }
+  li { margin-bottom:7px; }
+  strong { font-weight:650; }
+  code { font-family:var(--mono); font-size:.855em; background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:3px; padding:1px 5px; word-break:break-word; }
+
+  pre { background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:5px; padding:14px 16px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.6; margin:0 0 22px; }
+  pre code { background:none; border:none; padding:0; font-size:inherit; }
+
+  .scroll { overflow-x:auto; margin:0 0 22px; border:1px solid var(--rule); border-radius:5px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; background:var(--card); }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); font-weight:500; background:var(--ground-sunk); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+
+  /* Steps */
+  .steps { display:flex; flex-direction:column; gap:0; margin:0 0 24px; border:1px solid var(--rule); border-radius:5px; background:var(--card); overflow:hidden; }
+  .step { display:grid; grid-template-columns:34px minmax(0,1fr); gap:16px; padding:15px 18px; border-bottom:1px solid var(--rule-soft); }
+  .step:last-child { border-bottom:none; }
+  .step-n { font-family:var(--mono); font-size:11px; color:var(--accent); padding-top:3px; font-variant-numeric:tabular-nums; }
+  .step-b strong { display:block; margin-bottom:3px; }
+  .step-b p { margin:0; font-size:14.5px; color:var(--ink-soft); }
+  .step-b pre { margin:9px 0 0; font-size:11.5px; }
+
+  /* Findings */
+  .finding { border:1px solid var(--rule); border-radius:5px; background:var(--card); margin-bottom:16px; overflow:hidden; }
+  .finding-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:14px 18px 0; }
+  .finding-head h3 { margin:0; font-size:1.04rem; flex:1 1 auto; }
+  .finding-body { padding:8px 18px 18px; }
+  .finding-body p:last-child { margin-bottom:0; }
+  .sev { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:3px; white-space:nowrap; }
+  .sev-crit { background:var(--crit-soft); color:var(--crit); border:1px solid color-mix(in srgb,var(--crit) 32%,transparent); }
+  .sev-high { background:var(--warn-soft); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 32%,transparent); }
+  .sev-med  { background:var(--accent-soft); color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); }
+  .tag-v { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 32%,transparent); background:var(--ok-soft); padding:3px 8px; border-radius:3px; }
+
+  .evidence { background:var(--ground-sunk); border-left:3px solid var(--ok); border-radius:0 4px 4px 0; padding:12px 16px; margin:12px 0 0; }
+  .evidence-label { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ok); display:block; margin-bottom:6px; }
+  .evidence pre { background:none; border:none; padding:0; margin:0; font-size:11.5px; }
+
+  .note { border-left:3px solid var(--plum); background:var(--plum-soft); padding:14px 18px; border-radius:0 4px 4px 0; margin:0 0 22px; max-width:var(--measure); }
+  .note.alert { border-left-color:var(--crit); background:var(--crit-soft); }
+  .note p { margin:0; }
+  .note p + p { margin-top:10px; }
+  .note-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); display:block; margin-bottom:5px; }
+  .note.alert .note-label { color:var(--crit); }
+
+  /* Chain */
+  .chain { display:flex; flex-direction:column; gap:8px; margin:0 0 22px; max-width:var(--measure); }
+  .link { display:grid; grid-template-columns:26px minmax(0,1fr); gap:14px; align-items:start; border:1px solid var(--rule); border-left:3px solid var(--crit); background:var(--card); border-radius:0 5px 5px 0; padding:12px 16px; }
+  .link-n { font-family:var(--mono); font-size:11px; color:var(--crit); padding-top:2px; }
+  .link p { margin:0; font-size:14.5px; }
+  .link code { font-size:11.5px; }
+
+  .footer { grid-column:1/-1; border-top:2px solid var(--ink); padding-top:20px; font-size:13.5px; color:var(--ink-faint); max-width:var(--measure); }
+
+  @media (max-width:900px) {
+    .wrap { grid-template-columns:1fr; gap:0; padding:0 20px 64px; }
+    .rail { position:static; margin-bottom:44px; padding-bottom:28px; border-bottom:1px solid var(--rule); }
+    .rail ol { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:0 20px; }
+    .masthead { padding-top:40px; margin-bottom:36px; }
+    .step, .link { grid-template-columns:1fr; gap:6px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Analysis · Tenancy, Onboarding &amp; Privilege</p>
+    <h1>Who can create an organization, and who can let themselves in</h1>
+    <p class="standfirst">
+      How a Super Admin onboards a holding group, franchise network or single branch today — what the
+      platform actually does, what it does not do, and five gaps found by testing the running system
+      rather than reading the design.
+    </p>
+    <div class="verdict">
+      <span><b>7</b> gaps</span>
+      <span><b>1</b> critical chain</span>
+      <span><b>5</b> verified live</span>
+      <span><b>0</b> tenant roles can create sub-entities</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#today"><span class="rail-num">01</span>Onboarding today</a></li>
+      <li><a href="#shapes"><span class="rail-num">02</span>What each shape needs</a></li>
+      <li><a href="#chain"><span class="rail-num">03</span>The escalation chain</a></li>
+      <li><a href="#gaps"><span class="rail-num">04</span>All seven gaps</a></li>
+      <li><a href="#fix"><span class="rail-num">05</span>What to change</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ══════════════════════════════════════════════ -->
+    <section id="today">
+      <span class="sec-num">01</span>
+      <h2>Onboarding an organization today</h2>
+
+      <p class="lede">
+        There is no "onboard an organization" operation. There are two unrelated API calls that a
+        Super Admin performs in sequence, and nothing binds them together.
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">01</div>
+          <div class="step-b">
+            <strong>Create the tenant</strong>
+            <p>Name, operating model, optional parent, optional plan. The materialized path is built
+            from the parent so the hierarchy is queryable. A subscription row is created if a plan is
+            named.</p>
+            <pre><code>POST /api/tenants
+{ "name": "Al Noor Holding Group", "type": "HOLDING", "planId": "…" }
+requires: create-or-manage-a-tenant</code></pre>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-n">02</div>
+          <div class="step-b">
+            <strong>Create their first administrator</strong>
+            <p>A separate call. Generates a random temporary password, hashes it with bcrypt, sets
+            <code>mustChangePassword</code>, and returns the plaintext once so the operator can pass it
+            to the customer by some other channel.</p>
+            <pre><code>POST /api/iam/users/invite
+{ "email": "…", "name": "…", "roleId": "…", "tenantId": "…" }
+requires: add-a-user-with-role-based-access</code></pre>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-n">03</div>
+          <div class="step-b">
+            <strong>They sign in and are forced to rotate</strong>
+            <p>The temporary password works exactly once for a login; every protected route then
+            returns <code>428</code> until the password is changed.</p>
+          </div>
+        </div>
+      </div>
+
+      <p>
+        What the platform does well here: the password is never stored in plaintext, rotation is
+        compulsory, the invite is tenant-scope-checked, and both actions are written to the immutable
+        audit trail.
+      </p>
+
+      <div class="note">
+        <span class="note-label">The join is missing</span>
+        <p>
+          Nothing links step 1 to step 2. Creating a tenant produces an <em>empty</em> organization with
+          no users and no way in. If the operator stops there — or the second call fails — the tenant
+          exists, bills, and appears in every list, but nobody can log into it. There is no check
+          anywhere that a tenant has at least one administrator.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════ -->
+    <section id="shapes">
+      <span class="sec-num">02</span>
+      <h2>What each shape needs after onboarding</h2>
+
+      <p class="lede">
+        This is where the model breaks down. Every shape below expects to grow its own structure —
+        and none of them can.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Once onboarded, they need to…</th><th>Admin role</th><th>Can they?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Holding group adds a subsidiary</td><td>Group Admin</td><td><strong>No</strong> — lacks the privilege</td></tr>
+            <tr><td>Franchisor adds a franchisee location</td><td>Franchisor Admin</td><td><strong>No</strong></td></tr>
+            <tr><td>Company adds a branch</td><td>Organization Admin</td><td><strong>No</strong></td></tr>
+            <tr><td>Consultancy adds a client workspace</td><td>Partner Owner</td><td><strong>No</strong></td></tr>
+            <tr><td>Regional office adds an entity</td><td>Regional Admin</td><td><strong>No</strong></td></tr>
+            <tr><td>Add users to their own entity</td><td>All of the above</td><td>Yes</td></tr>
+            <tr><td>Assign and change roles</td><td>All of the above</td><td>Yes — without limit, see §3</td></tr>
+            <tr><td>Move users between entities</td><td>All of the above</td><td>Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The privilege <code>create-or-manage-a-tenant</code> is held by exactly three roles, all of them
+        on the operator's side of the relationship: <strong>Platform Super Admin</strong>,
+        <strong>Customer Success Manager</strong>, and — oddly — <strong>Pre-Sales Manager</strong> in
+        the Partner portal.
+      </p>
+
+      <p>
+        So a bank that onboards with three regions and later opens a fourth cannot create it. A
+        franchisor signing its fiftieth location cannot add it. Every structural change becomes a
+        support request to you. That is a viable model for a white-glove pilot and an untenable one at
+        scale — it makes your revenue growth linear in your own support headcount.
+      </p>
+    </section>
+
+    <!-- ══════════════════════════════════════════════ -->
+    <section id="chain">
+      <span class="sec-num">03</span>
+      <h2>The escalation chain</h2>
+
+      <p class="lede">
+        The most serious finding. Each link is individually defensible; together they let the lowest-tier
+        administrator on the platform reach every tenant's data. I ran this against the running system.
+      </p>
+
+      <div class="chain">
+        <div class="link">
+          <div class="link-n">1</div>
+          <p>A <strong>Branch Admin</strong> — scoped to one branch, the smallest admin role — holds
+          <code>maintain-roles-and-permissions</code> so they can manage their own team.</p>
+        </div>
+        <div class="link">
+          <div class="link-n">2</div>
+          <p>The role-assignment endpoint checks tenant scope and blocks self-promotion, but has
+          <strong>no privilege ceiling</strong>. It never asks whether the assigner holds what they are
+          granting.</p>
+        </div>
+        <div class="link">
+          <div class="link-n">3</div>
+          <p>So they assign <strong>Platform Super Admin</strong> to a colleague in their own branch.
+          The call succeeds.</p>
+        </div>
+        <div class="link">
+          <div class="link-n">4</div>
+          <p>That colleague now holds <code>monitor-security-and-handle-incidents</code>, which is the
+          only gate on the database console.</p>
+        </div>
+        <div class="link">
+          <div class="link-n">5</div>
+          <p>The database console performs <strong>raw table access with no tenant scoping</strong>. It
+          reads — and writes, and deletes — every row on the platform.</p>
+        </div>
+      </div>
+
+      <div class="evidence">
+        <span class="evidence-label">Verified against the running system</span>
+        <pre><code>3. ESCALATION A — promote them straight to Platform Super Admin:
+   Role changed to "Platform Super Admin"
+
+=== escalated Branch user reading the User table via DB console ===
+   READ 67 user rows spanning 8 tenant(s)</code></pre>
+      </div>
+
+      <p>
+        One nuance worth stating precisely, because it limits the damage: tenant <em>scope</em> is
+        resolved from the user's tenant <strong>type</strong>, not their role. The promoted user's normal
+        API calls still resolve to <code>SELF</code> — they see one tenant through
+        <code>/api/tenants</code>. The breach is not through the scoped API. It is the database console,
+        which bypasses the scope resolver entirely.
+      </p>
+
+      <p>
+        There is a second, independent route to the same place: role <em>creation</em> has no ceiling
+        either. A Branch Admin can mint a custom role granting
+        <code>create-or-manage-a-tenant</code>, <code>govern-a-feature-flag</code> and
+        <code>monitor-security-and-handle-incidents</code> — none of which they hold — and assign it.
+        Closing only the assignment path would leave this one open.
+      </p>
+
+      <div class="note alert">
+        <span class="note-label">Why this matters commercially</span>
+        <p>
+          A multi-tenant GRC platform sells on the promise that one customer cannot see another's
+          control failures. This chain breaks that promise, and it is reachable by a role you would hand
+          to a branch office manager without a second thought. Any prospect's security review will test
+          exactly this.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════ -->
+    <section id="gaps">
+      <span class="sec-num">04</span>
+      <h2>All seven gaps</h2>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-crit">Critical</span>
+          <h3>Role assignment has no privilege ceiling</h3>
+          <span class="tag-v">verified</span>
+        </div>
+        <div class="finding-body">
+          <p>
+            Any holder of <code>maintain-roles-and-permissions</code> can assign any system role,
+            including Platform Super Admin, to any user in their scope. Eight roles hold this privilege,
+            down to Branch Admin. Scope and self-promotion are checked; the grant itself is not.
+          </p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-crit">Critical</span>
+          <h3>Role creation has no capability ceiling</h3>
+          <span class="tag-v">verified</span>
+        </div>
+        <div class="finding-body">
+          <p>
+            Custom roles are validated for <em>existence</em> of capability keys, never for whether the
+            creator holds them. A Branch Admin successfully created a role granting three privileges
+            they do not have.
+          </p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-crit">Critical</span>
+          <h3>The database console is not tenant-scoped</h3>
+          <span class="tag-v">verified</span>
+        </div>
+        <div class="finding-body">
+          <p>
+            Every other read passes through the scope resolver. The console does not — it is direct
+            table access gated on a single capability, with full write and delete. It is what turns a
+            role-assignment mistake into a platform-wide data breach.
+          </p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-high">High</span>
+          <h3>Tenant creation never checks the parent is yours</h3>
+          <span class="tag-v">verified</span>
+        </div>
+        <div class="finding-body">
+          <p>
+            Listing, reading and deleting tenants all resolve scope first. Creating one does not — it
+            validates that the parent exists and stops there. A Pre-Sales Manager in one organization
+            successfully created a tenant underneath an unrelated holding group, which then appears
+            inside that group's hierarchy and rolls up into its reporting.
+          </p>
+          <div class="evidence">
+            <span class="evidence-label">Verified</span>
+            <pre><code>=== a real Pre-Sales Manager creating a tenant under someone else's group ===
+   CREATED under Al Noor — parentId never scope-checked</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-high">High</span>
+          <h3>No customer can grow their own hierarchy</h3>
+          <span class="tag-v">verified</span>
+        </div>
+        <div class="finding-body">
+          <p>
+            No tenant-level role holds <code>create-or-manage-a-tenant</code>. Holding groups,
+            franchisors, organizations and partners must all raise a request with you to add a
+            subsidiary, location, branch or client workspace. This is the gap you asked about, and it is
+            a product limitation rather than a defect — but it caps how far the platform can scale
+            without your staff in the loop.
+          </p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-med">Medium</span>
+          <h3>Onboarding is not atomic</h3>
+        </div>
+        <div class="finding-body">
+          <p>
+            Tenant, subscription and first administrator are three independent calls. A failure between
+            them leaves an orphaned tenant that nobody can enter and nothing detects. There is no
+            "tenant has no administrator" check anywhere in the platform.
+          </p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="sev sev-med">Medium</span>
+          <h3>Credential delivery is manual</h3>
+        </div>
+        <div class="finding-body">
+          <p>
+            The temporary password is returned in the API response for the operator to convey
+            out-of-band. That is a defensible design — it is certainly better than emailing a password —
+            but it is a human step with no expiry on the credential and no record of whether it was ever
+            delivered. A brand-new user also cannot receive the in-app notification that now exists,
+            because they have not logged in yet.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════ -->
+    <section id="fix">
+      <span class="sec-num">05</span>
+      <h2>What to change</h2>
+
+      <p class="lede">
+        In priority order. The first three are small and close the critical chain; the fourth is the
+        product change that lets the platform scale.
+      </p>
+
+      <h3>1 · Cap what an administrator can grant</h3>
+      <p>
+        On both role assignment and role creation, reject any capability the actor does not themselves
+        hold. This single rule closes two of the three critical findings, and it is the standard
+        expectation in any RBAC system — you cannot give away more than you have.
+      </p>
+
+      <h3>2 · Scope the database console</h3>
+      <p>
+        Either run its queries through the tenant scope resolver like every other read, or restrict it
+        to the platform tenant so no customer-side role can reach it however they were promoted. The
+        second is simpler and probably correct: it is an operator tool, not a customer feature.
+      </p>
+
+      <h3>3 · Scope-check <code>parentId</code> on tenant creation</h3>
+      <p>
+        Three lines, mirroring what update and delete already do: resolve the actor's scope and reject a
+        parent outside it. Also worth reconsidering whether Pre-Sales Manager should hold tenant
+        creation at all — a demo tenant and a production subsidiary are the same operation today.
+      </p>
+
+      <h3>4 · Let customers grow their own hierarchy</h3>
+      <p>
+        Grant tenant creation to Group Admin, Franchisor Admin, Organization Admin and Partner Owner —
+        but only once fix 3 is in, so they can only create <em>beneath themselves</em>. Constrain it
+        further by shape, so the tree stays meaningful:
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>An admin of…</th><th>May create beneath themselves</th></tr></thead>
+          <tbody>
+            <tr><td>HOLDING</td><td>MULTIBRANCH, BRANCH</td></tr>
+            <tr><td>MULTIBRANCH</td><td>BRANCH</td></tr>
+            <tr><td>FRANCHISE</td><td>BRANCH (a location)</td></tr>
+            <tr><td>PARTNER</td><td>Client workspace tenants</td></tr>
+            <tr><td>BRANCH</td><td>Nothing — a leaf stays a leaf</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Pair it with a plan-based ceiling on entity count, and hierarchy growth becomes a self-service
+        upsell rather than a support ticket.
+      </p>
+
+      <h3>5 · Make onboarding one operation</h3>
+      <p>
+        A single call that creates the tenant, its subscription and its first administrator in one
+        transaction, returning the temporary credential. Nothing half-created, and no tenant that
+        nobody can enter.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Tenancy and provisioning analysis. Findings marked <em>verified</em> were reproduced against the
+    running application; the test data created during those checks has been removed and the database
+    reseeded.
+  </footer>
+
+</div>

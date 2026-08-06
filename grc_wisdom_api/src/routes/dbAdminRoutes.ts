@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth } from '../middlewares/authMiddleware';
+import { requireAuth, requirePlatformTenant } from '../middlewares/authMiddleware';
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   getTableRecords,
@@ -14,6 +14,9 @@ const router = Router();
 
 router.use(requireAuth);
 // Raw table access is a security-monitoring capability, not a name match.
+// Two independent gates: the tool is operator-only regardless of how a
+// capability was acquired, AND still needs the security capability.
+router.use(requirePlatformTenant);
 router.use(requireCapability(CAP.MONITOR_SECURITY));
 
 // Table operations

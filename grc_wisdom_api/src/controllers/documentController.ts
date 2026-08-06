@@ -53,12 +53,20 @@ function processFileUpload(fileData?: string, fileName?: string, fileType?: stri
 export const listDocuments = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const tenantId = req.user!.tenantId;
-    const { status, category, classification, search } = req.query as Record<string, string | undefined>;
+    const userId = req.user!.id;
+    const { status, category, classification, search, pendingForMe } =
+      req.query as Record<string, string | undefined>;
 
     const where: any = { tenantId };
     if (status) where.status = status;
     if (category) where.category = category;
     if (classification) where.classification = classification;
+    // An approval queue is personal: only documents actually awaiting *this*
+    // signature. Listing every in-review document offers a signature the
+    // server will refuse, because approval requires an assigned queue row.
+    if (pendingForMe === 'true') {
+      where.approvals = { some: { approverId: userId, status: 'PENDING' } };
+    }
     if (search) {
       where.OR = [
         { title: { contains: search } },
@@ -72,13 +80,36 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
       where,
       include: {
         owner: { select: { id: true, name: true, email: true, role: true } },
-        approvals: { include: { approver: { select: { name: true, email: true } } } },
+        approvals: {
+          include: { approver: { select: { id: true, name: true, email: true } } },
+          orderBy: { sequenceOrder: 'asc' },
+        },
         _count: { select: { versions: true, acknowledgements: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
-    res.json({ status: 'success', count: documents.length, documents });
+    // Tell the caller where they stand, so the UI can present the right action
+    // rather than guessing and being rejected.
+    const enriched = documents.map((d) => {
+      const mine = d.approvals.find((a) => a.approverId === userId && a.status === 'PENDING');
+      const blockedBy = mine
+        ? d.approvals.find((a) => a.status === 'PENDING' && a.sequenceOrder < mine.sequenceOrder)
+        : undefined;
+      return {
+        ...d,
+        myApproval: mine
+          ? {
+              id: mine.id,
+              sequenceOrder: mine.sequenceOrder,
+              canSignNow: !blockedBy,
+              waitingOn: blockedBy ? blockedBy.approver.name : null,
+            }
+          : null,
+      };
+    });
+
+    res.json({ status: 'success', count: enriched.length, documents: enriched });
   } catch (error: any) {
     console.error('[Document List Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch documents' });

@@ -169,3 +169,40 @@ export function requireAnyCapability(...capabilities: string[]) {
     }
   };
 }
+
+// ─── Delegation ceiling ────────────────────────────────────────────────────
+
+/**
+ * An administrator may only hand out privileges they themselves hold.
+ *
+ * Without this rule, any holder of `maintain-roles-and-permissions` — a set
+ * that reaches down to Branch Admin — can assign Platform Super Admin to a
+ * colleague, or mint a custom role granting privileges they lack. Both are
+ * escalation to platform level from inside a single branch.
+ *
+ * Platform-scope operators are exempt: they are the root of trust and must be
+ * able to provision a customer's Billing Admin without holding billing rights
+ * themselves. Every tenant-scoped actor is bound by the ceiling.
+ */
+export async function excessCapabilities(
+  actorId: string,
+  actorTenantId: string,
+  requested: string[],
+): Promise<string[]> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: actorTenantId },
+    select: { type: true },
+  });
+  // SAAS and SAAS_UNIT operate the platform itself.
+  if (tenant && (tenant.type === 'SAAS' || tenant.type === 'SAAS_UNIT')) return [];
+
+  const eff = await getEffectivePermissions(actorId);
+  const held = new Set(eff.capabilities);
+  return [...new Set(requested)].filter((c) => !held.has(c));
+}
+
+/** Capability keys a role grants, tolerating malformed stored JSON. */
+export function capabilitiesOfRole(role: { capabilityGrants: string } | null): string[] {
+  if (!role) return [];
+  return parseGrants(role.capabilityGrants);
+}

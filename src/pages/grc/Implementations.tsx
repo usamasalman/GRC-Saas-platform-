@@ -196,7 +196,10 @@ const Implementations: React.FC = () => {
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                     {i.status === 'NotStarted' && <button onClick={() => setStatus(i.id, 'InProgress')} style={linkBtn('#93c5fd')}>start</button>}
                     {i.status === 'InProgress' && <button onClick={() => setStatus(i.id, 'Implemented')} style={linkBtn('#93c5fd')}>submit</button>}
-                    {i.awaitingValidation && <button onClick={() => validate(i.id)} style={linkBtn('#86efac')}>validate</button>}
+                    {i.canValidate && <button onClick={() => validate(i.id)} style={linkBtn('#86efac')}>validate</button>}
+                    {i.awaitingValidation && !i.canValidate && (
+                      <span style={{ fontSize: 11, color: '#fbbf24' }}>awaiting independent validation</span>
+                    )}
                   </td>
                 </tr>
               ))}

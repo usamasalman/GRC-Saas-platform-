@@ -9,6 +9,13 @@ interface DocumentItem {
   version: string;
   owner?: { id: string; name: string; email: string };
   approvals?: any[];
+  /** Present only when this document awaits the current user's signature. */
+  myApproval?: {
+    id: string;
+    sequenceOrder: number;
+    canSignNow: boolean;
+    waitingOn: string | null;
+  } | null;
 }
 
 export default function ApprovalQueue() {
@@ -28,8 +35,12 @@ export default function ApprovalQueue() {
     setLoading(true);
     setError('');
     try {
-      // Fetch documents in IN_REVIEW status
-      const res = await apiClient.get('/api/documents', { params: { status: 'IN_REVIEW' } });
+      // Only documents awaiting THIS user's signature. Listing every in-review
+      // document offered a Sign & Approve the server then refused, because
+      // approval comes from an assigned queue row, not from holding the role.
+      const res = await apiClient.get('/api/documents', {
+        params: { status: 'IN_REVIEW', pendingForMe: 'true' },
+      });
       if (res.data.status === 'success') {
         setDocuments(res.data.documents || []);
       }
@@ -132,20 +143,27 @@ export default function ApprovalQueue() {
                   <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>v{doc.version}</td>
                   <td style={{ padding: '12px 16px', color: '#94a3b8' }}>{doc.owner?.name || 'Unknown'}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => openApproveModal(doc)}
-                        style={{ background: '#059669', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
-                      >
-                        ✓ Sign & Approve
-                      </button>
-                      <button
-                        onClick={() => handleRejectSubmit(doc)}
-                        style={{ background: '#dc2626', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-                      >
-                        ✕ Reject
-                      </button>
-                    </div>
+                    {/* Approvals are sequenced: an earlier signatory must go first. */}
+                    {doc.myApproval && !doc.myApproval.canSignNow ? (
+                      <span style={{ fontSize: '12px', color: '#fbbf24' }}>
+                        Waiting on {doc.myApproval.waitingOn}
+                      </span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => openApproveModal(doc)}
+                          style={{ background: '#059669', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                        >
+                          ✓ Sign &amp; Approve
+                        </button>
+                        <button
+                          onClick={() => handleRejectSubmit(doc)}
+                          style={{ background: '#dc2626', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          ✕ Reject
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

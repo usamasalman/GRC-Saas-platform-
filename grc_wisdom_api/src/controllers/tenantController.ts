@@ -1,7 +1,11 @@
 import { Response } from 'express';
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
+import { excessCapabilities, capabilitiesOfRole } from '../services/capabilityEngine';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { checkChildShape, allowedChildTypes } from '../services/tenantProvisioning';
 import { generateMaterializedPath } from '../utils/treeUtils';
 import {
   resolveTenantScope,
@@ -153,11 +157,48 @@ export const createTenant = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const isPlatform = scope.kind === 'PLATFORM';
+
     let parentPath: string | null = null;
     if (parentId) {
-      const parent = await prisma.tenant.findUnique({ where: { id: parentId }, select: { path: true } });
+      const parent = await prisma.tenant.findUnique({
+        where: { id: parentId }, select: { path: true, type: true, name: true },
+      });
       if (!parent) { res.status(400).json({ status: 'error', message: 'parentId does not exist' }); return; }
+
+      // Creating was the one tenant operation that never checked scope, so a
+      // customer admin could graft an entity into someone else's hierarchy.
+      if (!scope.tenantIds.includes(parentId)) {
+        res.status(403).json({
+          status: 'error',
+          code: 'PARENT_OUTSIDE_SCOPE',
+          message: 'You can only create an entity beneath one you already administer.',
+        });
+        return;
+      }
+
+      // Keep the tree a shape the scope resolver was designed to walk.
+      const shapeError = checkChildShape(parent.type, type);
+      if (shapeError) {
+        res.status(400).json({
+          status: 'error',
+          code: 'INVALID_HIERARCHY',
+          message: shapeError,
+          allowedChildTypes: allowedChildTypes(parent.type),
+        });
+        return;
+      }
       parentPath = parent.path;
+    } else if (!isPlatform) {
+      // A root tenant has no parent to contain it, so only the operator may
+      // create one. A customer admin must nest beneath themselves.
+      res.status(403).json({
+        status: 'error',
+        code: 'PARENT_REQUIRED',
+        message: 'Only the platform operator can create a root organization. Specify a parentId within your own hierarchy.',
+      });
+      return;
     }
 
     const tenant = await prisma.$transaction(async (tx) => {
@@ -371,5 +412,150 @@ export const distributePolicy = async (req: AuthenticatedRequest, res: Response)
   } catch (error: any) {
     console.error('[Distribute Policy Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to distribute policy' });
+  }
+};
+
+/**
+ * Onboard an organization in one operation.
+ *
+ * Creating a tenant and creating its first administrator were two unrelated
+ * calls, so a failure between them left an organization nobody could enter and
+ * nothing detected. Here they either both land or neither does.
+ */
+export const onboardTenant = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { name, type, parentId, planId, admin } = req.body || {};
+    if (!name || !type) {
+      res.status(400).json({ status: 'error', message: 'name and type are required' });
+      return;
+    }
+    if (!VALID_TYPES.includes(type)) {
+      res.status(400).json({ status: 'error', message: `type must be one of: ${VALID_TYPES.join(', ')}` });
+      return;
+    }
+    if (!admin?.email || !admin?.name || !admin?.roleId) {
+      res.status(400).json({
+        status: 'error',
+        code: 'ADMIN_REQUIRED',
+        message: 'admin.email, admin.name and admin.roleId are required — an organization with no administrator cannot be entered.',
+      });
+      return;
+    }
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const isPlatform = scope.kind === 'PLATFORM';
+
+    let parentPath: string | null = null;
+    if (parentId) {
+      const parent = await prisma.tenant.findUnique({
+        where: { id: parentId }, select: { path: true, type: true },
+      });
+      if (!parent) { res.status(400).json({ status: 'error', message: 'parentId does not exist' }); return; }
+      if (!scope.tenantIds.includes(parentId)) {
+        res.status(403).json({
+          status: 'error',
+          code: 'PARENT_OUTSIDE_SCOPE',
+          message: 'You can only create an entity beneath one you already administer.',
+        });
+        return;
+      }
+      const shapeError = checkChildShape(parent.type, type);
+      if (shapeError) {
+        res.status(400).json({
+          status: 'error', code: 'INVALID_HIERARCHY', message: shapeError,
+          allowedChildTypes: allowedChildTypes(parent.type),
+        });
+        return;
+      }
+      parentPath = parent.path;
+    } else if (!isPlatform) {
+      res.status(403).json({
+        status: 'error',
+        code: 'PARENT_REQUIRED',
+        message: 'Only the platform operator can create a root organization.',
+      });
+      return;
+    }
+
+    if (await prisma.tenant.findFirst({ where: { name } })) {
+      res.status(409).json({ status: 'error', message: `A tenant named "${name}" already exists` });
+      return;
+    }
+    const cleanEmail = String(admin.email).trim().toLowerCase();
+    if (await prisma.user.findFirst({ where: { email: cleanEmail } })) {
+      res.status(409).json({ status: 'error', message: 'A user with the administrator email already exists' });
+      return;
+    }
+    const role = await prisma.role.findUnique({ where: { id: admin.roleId } });
+    if (!role) { res.status(400).json({ status: 'error', message: 'admin.roleId does not exist' }); return; }
+
+    // The delegation ceiling applies here as it does everywhere else.
+    const excess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilitiesOfRole(role));
+    if (excess.length > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'GRANT_EXCEEDS_YOUR_OWN',
+        message: `"${role.name}" grants privileges you do not hold: ${excess.join(', ')}.`,
+      });
+      return;
+    }
+
+    const tempPassword = crypto.randomBytes(9).toString('base64url');
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+    const tempPasswordExpiresAt = new Date(Date.now() + 7 * 86_400_000);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const created = await tx.tenant.create({ data: { name, type, parentId: parentId || null } });
+      const tenant = await tx.tenant.update({
+        where: { id: created.id },
+        data: { path: generateMaterializedPath(parentPath, created.id) },
+      });
+
+      if (planId) {
+        const plan = await tx.plan.findUnique({ where: { id: planId } });
+        if (plan) {
+          await tx.subscription.create({
+            data: { tenantId: tenant.id, planId, status: 'ACTIVE', startDate: new Date() },
+          });
+        }
+      }
+
+      const user = await tx.user.create({
+        data: {
+          email: cleanEmail,
+          name: String(admin.name).trim(),
+          passwordHash,
+          tenantId: tenant.id,
+          role: role.name,
+          roleId: role.id,
+          context: tenant.name,
+          status: 'Active',
+          mustChangePassword: true,
+          tempPasswordExpiresAt,
+        },
+      });
+
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId,
+        actorId: req.user!.id,
+        action: 'TENANT_ONBOARDED',
+        subjectType: SUBJECT_TENANT,
+        subjectId: tenant.id,
+        payload: { name, type, parentId: parentId || null, planId: planId || null, adminEmail: cleanEmail, adminRole: role.name },
+      });
+      return { tenant, user };
+    });
+
+    res.status(201).json({
+      status: 'success',
+      message: `${name} onboarded with ${result.user.email} as ${role.name}. Communicate the temporary password out-of-band; it expires in 7 days.`,
+      tenant: result.tenant,
+      administrator: { id: result.user.id, email: result.user.email, name: result.user.name, role: result.user.role },
+      temporaryPassword: tempPassword,
+      temporaryPasswordExpiresAt: tempPasswordExpiresAt,
+    });
+  } catch (error: any) {
+    console.error('[Tenant Onboard Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to onboard organization' });
   }
 };

@@ -350,7 +350,7 @@ async function main() {
   console.log(`  invoices: ${invCount}`);
 
   // ── 6. Documents ────────────────────────────────────────────────────────
-  let docCount = 0;
+  let docCount = 0, approvalCount = 0;
   for (const d of seed.SEED_DOCS || []) {
     const ownerId = userIdByName[d.owner] || Object.values(userIdByName)[0];
     if (!ownerId) continue;
@@ -385,9 +385,38 @@ async function main() {
         createdById: ownerId,
       },
     });
+
+    // A document in review must have someone to review it. Without the queue
+    // rows the assigned approver is refused at signing time, because approval
+    // is granted by an ApprovalQueue row rather than by role alone.
+    if (status === 'IN_REVIEW') {
+      const approvers = await prisma.user.findMany({
+        where: {
+          tenantId: owner.tenantId,
+          id: { not: ownerId },
+          status: 'Active',
+          // Approving is a signing act — pick people whose role reflects that
+          // rather than whoever happens to come first in the table.
+          role: { in: ['Compliance Approver', 'Compliance Manager', 'Organization GRC Manager'] },
+        },
+        select: { id: true },
+        take: 2,
+      });
+      if (approvers.length > 0) {
+        await prisma.approvalQueue.createMany({
+          data: approvers.map((a, idx) => ({
+            documentId: doc.id,
+            approverId: a.id,
+            sequenceOrder: idx + 1,
+            status: 'PENDING',
+          })),
+        });
+        approvalCount += approvers.length;
+      }
+    }
     docCount++;
   }
-  console.log(`  documents: ${docCount}`);
+  console.log(`  documents: ${docCount} (${approvalCount} pending approval${approvalCount === 1 ? '' : 's'})`);
 
   // ── 7. Tickets ──────────────────────────────────────────────────────────
   let ticketCount = 0;

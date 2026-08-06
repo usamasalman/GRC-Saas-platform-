@@ -168,3 +168,41 @@ export const enforceTenantIsolation = (req: AuthenticatedRequest, res: Response,
 
   next();
 };
+
+/**
+ * Restricts a route to the platform operator's own tenants.
+ *
+ * Capability alone is not a sufficient gate for tooling that bypasses the
+ * tenant scope resolver — the database console reads and writes every table
+ * directly, so a customer-side role that acquires the capability by any means
+ * would otherwise reach every tenant's data.
+ */
+export const requirePlatformTenant = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.tenantId) {
+      res.status(401).json({ status: 'error', message: 'Authentication required' });
+      return;
+    }
+    // Lazy import, matching the rest of this file — avoids a middleware ↔ db cycle.
+    const { prisma } = await import('../db');
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user.tenantId },
+      select: { type: true },
+    });
+    if (!tenant || (tenant.type !== 'SAAS' && tenant.type !== 'SAAS_UNIT')) {
+      res.status(403).json({
+        status: 'error',
+        code: 'PLATFORM_ONLY',
+        message: 'This is a platform operations tool and is not available to tenant accounts.',
+      });
+      return;
+    }
+    next();
+  } catch {
+    res.status(500).json({ status: 'error', message: 'Authorization check failed' });
+  }
+};

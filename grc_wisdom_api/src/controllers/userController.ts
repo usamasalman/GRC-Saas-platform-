@@ -5,6 +5,10 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { excessCapabilities, capabilitiesOfRole } from '../services/capabilityEngine';
+
+/** How long an unused invitation credential stays valid. */
+const TEMP_CREDENTIAL_DAYS = 7;
 
 const SUBJECT_USER = 'User';
 const BCRYPT_ROUNDS = 10;
@@ -180,11 +184,25 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
+    // The same ceiling as role assignment — inviting is just granting on
+    // creation, and would otherwise be the open door beside a locked one.
+    const inviteExcess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilitiesOfRole(role));
+    if (inviteExcess.length > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'GRANT_EXCEEDS_YOUR_OWN',
+        message: `"${role.name}" grants ${inviteExcess.length} privilege(s) you do not hold, so you cannot issue it: ${inviteExcess.join(', ')}.`,
+      });
+      return;
+    }
+
     const tenant = await prisma.tenant.findUnique({ where: { id: targetTenantId }, select: { name: true } });
 
-    // Temporary credential; mustChangePassword forces rotation at first login.
+    // Temporary credential; mustChangePassword forces rotation at first login,
+    // and the credential itself stops working if it is never used.
     const tempPassword = crypto.randomBytes(9).toString('base64url');
     const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+    const tempPasswordExpiresAt = new Date(Date.now() + TEMP_CREDENTIAL_DAYS * 86_400_000);
 
     const user = await prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -201,6 +219,7 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
           profile: profile || null,
           status: 'Active',
           mustChangePassword: true,
+          tempPasswordExpiresAt,
         },
       });
       await writeAudit(tx, {
@@ -216,8 +235,9 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
 
     res.status(201).json({
       status: 'success',
-      message: 'User created. Communicate the temporary password out-of-band; they must change it at first login.',
+      message: `User created. Communicate the temporary password out-of-band; it expires in ${TEMP_CREDENTIAL_DAYS} days and must be changed at first login.`,
       temporaryPassword: tempPassword,
+      temporaryPasswordExpiresAt: tempPasswordExpiresAt,
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
   } catch (error: any) {
@@ -253,6 +273,18 @@ export const assignRole = async (req: AuthenticatedRequest, res: Response): Prom
     if (!role) { res.status(400).json({ status: 'error', message: 'roleId does not exist' }); return; }
     if (role.tenantId && role.tenantId !== user.tenantId) {
       res.status(400).json({ status: 'error', message: 'That custom role belongs to a different tenant' });
+      return;
+    }
+
+    // You cannot give away more than you hold. Without this a Branch Admin can
+    // assign Platform Super Admin and escalate straight out of their branch.
+    const excess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilitiesOfRole(role));
+    if (excess.length > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'GRANT_EXCEEDS_YOUR_OWN',
+        message: `"${role.name}" grants ${excess.length} privilege(s) you do not hold, so you cannot assign it: ${excess.join(', ')}.`,
+      });
       return;
     }
 

@@ -183,6 +183,11 @@ export const listImplementations = async (req: AuthenticatedRequest, res: Respon
       isOverdue: !!i.nextDueDate && i.nextDueDate.getTime() < now && i.status !== 'Verified',
       mappedStandards: [...new Set(i.control.clauseLinks.map((l) => l.clause.standard.code))],
       awaitingValidation: i.status === 'Implemented' && !!i.submittedAt && !i.validatedAt,
+      // Same rule the validate endpoint enforces, surfaced so the UI can offer
+      // the action only to someone who may actually take it.
+      canValidate:
+        i.status === 'Implemented' && !!i.submittedAt && !i.validatedAt
+        && i.ownerId !== req.user!.id && i.operatorId !== req.user!.id,
     }));
 
     res.json({

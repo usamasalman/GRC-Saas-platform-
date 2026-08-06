@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { excessCapabilities } from '../services/capabilityEngine';
 import { getEffectivePermissions } from '../services/capabilityEngine';
 
 const SUBJECT_ROLE = 'Role';
@@ -139,6 +140,18 @@ export const createRole = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
+    // A role is a bundle of privileges; minting one you could not otherwise
+    // grant is the same escalation as assigning it directly.
+    const excess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilities);
+    if (excess.length > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'GRANT_EXCEEDS_YOUR_OWN',
+        message: `You cannot grant privileges you do not hold: ${excess.join(', ')}.`,
+      });
+      return;
+    }
+
     const key = slug(name);
     const clash = await prisma.role.findFirst({ where: { tenantId: targetTenantId, key } });
     if (clash) {
@@ -221,6 +234,16 @@ export const updateRole = async (req: AuthenticatedRequest, res: Response): Prom
       const unknown = capabilities.filter((c: string) => !knownKeys.has(c));
       if (unknown.length > 0) {
         res.status(400).json({ status: 'error', message: `Unknown capability keys: ${unknown.join(', ')}` });
+        return;
+      }
+      // Editing a role is another way to grant — the ceiling applies here too.
+      const excess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilities);
+      if (excess.length > 0) {
+        res.status(403).json({
+          status: 'error',
+          code: 'GRANT_EXCEEDS_YOUR_OWN',
+          message: `You cannot grant privileges you do not hold: ${excess.join(', ')}.`,
+        });
         return;
       }
       data.capabilityGrants = JSON.stringify([...new Set(capabilities)]);

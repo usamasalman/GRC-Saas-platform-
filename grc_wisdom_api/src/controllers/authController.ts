@@ -95,6 +95,18 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // An invitation credential that was never used stops working. Otherwise a
+    // temporary password handed out months ago is still a valid way in.
+    if (user.mustChangePassword && user.tempPasswordExpiresAt
+        && user.tempPasswordExpiresAt.getTime() < Date.now()) {
+      res.status(401).json({
+        status: 'error',
+        code: 'TEMP_CREDENTIAL_EXPIRED',
+        message: 'This temporary password has expired. Ask an administrator to reissue your invitation.',
+      });
+      return;
+    }
+
     // If MFA is enabled, issue a short-lived challenge token instead of a full session.
     if (user.mfaEnabled && user.mfaSecret) {
       const mfaToken = jwt.sign(

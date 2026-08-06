@@ -1,0 +1,452 @@
+<title>GRC Wisdom — Provisioning Architecture</title>
+<style>
+  :root {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --measure: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+      --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+      --rule:#2B3340; --rule-soft:#232A34;
+      --accent:#7FB2D9; --accent-soft:#1B2A38;
+      --plum:#C08FAE; --plum-soft:#2A1F27;
+      --ok:#6FBF95; --ok-soft:#17281F;
+      --warn:#D9A94A; --warn-soft:#2A2216;
+      --crit:#E08076; --crit-soft:#2C1B19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+    --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+    --rule:#2B3340; --rule-soft:#232A34;
+    --accent:#7FB2D9; --accent-soft:#1B2A38;
+    --plum:#C08FAE; --plum-soft:#2A1F27;
+    --ok:#6FBF95; --ok-soft:#17281F;
+    --warn:#D9A94A; --warn-soft:#2A2216;
+    --crit:#E08076; --crit-soft:#2C1B19;
+  }
+  :root[data-theme="light"] {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1220px; margin:0 auto; padding:0 24px 96px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:56px; align-items:start; }
+  .masthead { grid-column:1/-1; border-bottom:2px solid var(--ink); padding:56px 0 28px; margin-bottom:48px; }
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--plum); margin:0 0 18px; }
+  .masthead h1 { font-family:var(--serif); font-weight:400; font-size:clamp(2.2rem,5vw,3.3rem); line-height:1.08; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; }
+  .standfirst { font-family:var(--serif); font-size:clamp(1.05rem,2vw,1.22rem); line-height:1.5; color:var(--ink-soft); max-width:62ch; margin:0; }
+  .verdict { margin-top:26px; display:flex; flex-wrap:wrap; gap:10px 26px; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.03em; }
+  .verdict b { color:var(--ink-soft); font-weight:500; }
+  .rail { position:sticky; top:28px; }
+  .rail-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); padding-bottom:10px; border-bottom:1px solid var(--rule); margin-bottom:12px; }
+  .rail ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+  .rail a { display:block; padding:5px 0 5px 11px; margin-left:-11px; font-size:13.5px; line-height:1.4; color:var(--ink-soft); text-decoration:none; border-left:2px solid transparent; transition:color .12s,border-color .12s; }
+  .rail a:hover, .rail a:focus-visible { color:var(--accent); border-left-color:var(--accent); }
+  .rail a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+  .rail-num { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-right:7px; }
+  main { min-width:0; }
+  section { margin-bottom:72px; scroll-margin-top:24px; }
+  h2 { font-family:var(--serif); font-weight:400; font-size:clamp(1.6rem,3vw,2rem); line-height:1.2; letter-spacing:-.01em; margin:0 0 10px; text-wrap:balance; }
+  .sec-num { font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--plum); display:block; margin-bottom:10px; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1.02rem; margin:34px 0 10px; text-wrap:balance; }
+  p { margin:0 0 15px; max-width:var(--measure); }
+  .lede { font-size:1.06rem; color:var(--ink-soft); max-width:var(--measure); }
+  a { color:var(--accent); }
+  a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+  ul, ol { max-width:var(--measure); padding-left:20px; margin:0 0 15px; }
+  li { margin-bottom:7px; }
+  strong { font-weight:650; }
+  code { font-family:var(--mono); font-size:.855em; background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:3px; padding:1px 5px; word-break:break-word; }
+  pre { background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:5px; padding:14px 16px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.6; margin:0 0 22px; }
+  pre code { background:none; border:none; padding:0; font-size:inherit; }
+  .scroll { overflow-x:auto; margin:0 0 22px; border:1px solid var(--rule); border-radius:5px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; background:var(--card); }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); font-weight:500; background:var(--ground-sunk); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+
+  .inv { border:1px solid var(--rule); border-left:3px solid var(--accent); background:var(--card); border-radius:0 5px 5px 0; padding:18px 20px; margin-bottom:16px; }
+  .inv-tag { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:6px; }
+  .inv h3 { margin:0 0 8px; font-size:1.06rem; }
+  .inv p:last-child { margin-bottom:0; }
+
+  .gates { display:flex; flex-direction:column; gap:0; border:1px solid var(--rule); border-radius:5px; background:var(--card); overflow:hidden; margin:0 0 22px; }
+  .gate { display:grid; grid-template-columns:64px minmax(0,1fr); gap:16px; padding:14px 18px; border-bottom:1px solid var(--rule-soft); }
+  .gate:last-child { border-bottom:none; }
+  .gate-n { font-family:var(--mono); font-size:10.5px; color:var(--accent); padding-top:3px; text-transform:uppercase; letter-spacing:.06em; }
+  .gate-b strong { display:block; margin-bottom:2px; }
+  .gate-b p { margin:0; font-size:14.5px; color:var(--ink-soft); }
+  .gate-b code { font-size:11.5px; }
+
+  .evidence { background:var(--ground-sunk); border-left:3px solid var(--ok); border-radius:0 4px 4px 0; padding:12px 16px; margin:0 0 22px; }
+  .evidence-label { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ok); display:block; margin-bottom:6px; }
+  .evidence pre { background:none; border:none; padding:0; margin:0; font-size:11.5px; }
+
+  .note { border-left:3px solid var(--plum); background:var(--plum-soft); padding:14px 18px; border-radius:0 4px 4px 0; margin:0 0 22px; max-width:var(--measure); }
+  .note p { margin:0; }
+  .note p + p { margin-top:10px; }
+  .note-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); display:block; margin-bottom:5px; }
+
+  .tree { font-family:var(--mono); font-size:12.5px; line-height:1.9; background:var(--card); border:1px solid var(--rule); border-radius:5px; padding:16px 20px; overflow-x:auto; margin:0 0 22px; }
+  .tree .t-leaf { color:var(--ink-faint); }
+  .tree .t-node { color:var(--accent); font-weight:500; }
+
+  .footer { grid-column:1/-1; border-top:2px solid var(--ink); padding-top:20px; font-size:13.5px; color:var(--ink-faint); max-width:var(--measure); }
+  @media (max-width:900px) {
+    .wrap { grid-template-columns:1fr; gap:0; padding:0 20px 64px; }
+    .rail { position:static; margin-bottom:44px; padding-bottom:28px; border-bottom:1px solid var(--rule); }
+    .rail ol { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:0 20px; }
+    .masthead { padding-top:40px; margin-bottom:36px; }
+    .gate { grid-template-columns:1fr; gap:6px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">System Design · Tenancy &amp; Privilege · Implemented</p>
+    <h1>Delegation, not duplication</h1>
+    <p class="standfirst">
+      The provisioning model that closes all seven gaps: an administrator may hand out only what they
+      themselves hold, only inside the hierarchy they own, and only in shapes the platform can reason
+      about. Three invariants, enforced server-side, verified against the running system.
+    </p>
+    <div class="verdict">
+      <span><b>3</b> invariants</span>
+      <span><b>7</b> gaps closed</span>
+      <span><b>13</b> checks passing</span>
+      <span><b>4</b> roles gain self-service</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#model"><span class="rail-num">01</span>The model</a></li>
+      <li><a href="#i1"><span class="rail-num">02</span>I1 · Capability ceiling</a></li>
+      <li><a href="#i2"><span class="rail-num">03</span>I2 · Containment</a></li>
+      <li><a href="#i3"><span class="rail-num">04</span>I3 · Scope uniformity</a></li>
+      <li><a href="#onboard"><span class="rail-num">05</span>Atomic onboarding</a></li>
+      <li><a href="#result"><span class="rail-num">06</span>What changed</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="model">
+      <span class="sec-num">01</span>
+      <h2>The model</h2>
+
+      <p class="lede">
+        Every gap in the analysis reduced to one missing idea: the platform had no concept of
+        <em>delegation</em>. It checked whether you could perform an action, never whether you were
+        entitled to pass that power on.
+      </p>
+
+      <p>
+        An administrator is not a category of person. They are a holder of a bounded set of privileges
+        over a bounded part of the tree, and everything they do to another account must stay inside both
+        bounds. Three invariants express that, and every provisioning route is now built from them.
+      </p>
+
+      <div class="inv">
+        <span class="inv-tag">Invariant 1</span>
+        <h3>You cannot give away more than you hold</h3>
+        <p>Any privilege granted must already be held by the grantor. Applies wherever privilege moves:
+        assigning a role, inviting a user, creating a role, editing a role, onboarding an organization.</p>
+      </div>
+      <div class="inv">
+        <span class="inv-tag">Invariant 2</span>
+        <h3>You can only build beneath yourself</h3>
+        <p>A new entity must hang from one you already administer, and its shape must be legal beneath
+        its parent's shape.</p>
+      </div>
+      <div class="inv">
+        <span class="inv-tag">Invariant 3</span>
+        <h3>Nothing bypasses the scope resolver</h3>
+        <p>Every data path resolves tenant scope the same way. Tooling that cannot — because it reads
+        raw tables — is restricted to the operator's own tenants instead.</p>
+      </div>
+
+      <div class="note">
+        <span class="note-label">Why all three, together</span>
+        <p>
+          Each invariant alone leaves a hole. Without I1 a branch administrator promotes themselves to
+          platform power. Without I2 that power grafts entities into other customers' trees. Without I3
+          the promotion reaches every tenant's raw data regardless. They were designed and shipped as
+          one change.
+        </p>
+      </div>
+    </section>
+
+    <section id="i1">
+      <span class="sec-num">02</span>
+      <h2>I1 · Capability ceiling</h2>
+
+      <p class="lede">
+        One function, five call sites. The rule is a set comparison: the privileges a role grants must
+        be a subset of the privileges the grantor holds.
+      </p>
+
+      <pre><code>excessCapabilities(actorId, actorTenantId, requested) → string[]
+  platform-scope actor (SAAS / SAAS_UNIT) → []        // root of trust
+  otherwise                                → requested \ held</code></pre>
+
+      <p>
+        Platform operators are exempt by design. They must be able to provision a customer's Billing
+        Admin without holding billing rights themselves — that is the job. Every tenant-scoped actor is
+        bound, and the exemption is decided by tenant <em>type</em>, which a role change cannot alter.
+      </p>
+
+      <p>
+        That last detail is what makes the rule airtight. An attacker who somehow acquired a powerful
+        role would still sit in a <code>BRANCH</code> tenant, and so would still be measured against the
+        ceiling.
+      </p>
+
+      <h3>Enforced at every point privilege moves</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Route</th><th>Was</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/iam/users/:id/role</code></td><td>Any system role assignable, including Platform Super Admin</td></tr>
+            <tr><td><code>POST /api/iam/users/invite</code></td><td>Same hole on creation rather than change</td></tr>
+            <tr><td><code>POST /api/iam/roles</code></td><td>Custom role could grant anything that existed</td></tr>
+            <tr><td><code>PATCH /api/iam/roles/:id</code></td><td>Editing was an unguarded second path to the same thing</td></tr>
+            <tr><td><code>POST /api/tenants/onboard</code></td><td>New route — ceiling applied from the start</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="evidence">
+        <span class="evidence-label">Verified — Branch Admin, the lowest-tier administrator</span>
+        <pre><code>1. promotes a colleague to Platform Super Admin:
+   GRANT_EXCEEDS_YOUR_OWN: "Platform Super Admin" grants 6 privilege(s)
+   you do not hold, so you cannot assign it: create-or-manage-a-tenant,
+   publish-or-enable-a-module, govern-a-feature-flag, …
+
+2. mints a role with privileges they lack:
+   GRANT_EXCEEDS_YOUR_OWN: You cannot grant privileges you do not hold
+
+3. invites a new user AS Platform Super Admin:
+   GRANT_EXCEEDS_YOUR_OWN: … you cannot issue it
+
+4. creates a role within their own privileges:
+   success — legitimate delegation still works</code></pre>
+      </div>
+
+      <p>
+        Check 4 matters as much as the refusals. A security rule that blocks the ordinary case is a rule
+        people route around.
+      </p>
+    </section>
+
+    <section id="i2">
+      <span class="sec-num">03</span>
+      <h2>I2 · Structural containment</h2>
+
+      <p class="lede">
+        Tenant creation was the one hierarchy operation that never resolved scope. It now checks both
+        that the parent is yours and that the resulting shape makes sense.
+      </p>
+
+      <div class="gates">
+        <div class="gate">
+          <div class="gate-n">Gate A</div>
+          <div class="gate-b">
+            <strong>Is the parent inside your scope?</strong>
+            <p>Resolved the same way list, read and delete already did.</p>
+            <code>PARENT_OUTSIDE_SCOPE</code>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-n">Gate B</div>
+          <div class="gate-b">
+            <strong>Is this shape legal beneath that parent?</strong>
+            <p>The lattice below. The error names what <em>is</em> allowed.</p>
+            <code>INVALID_HIERARCHY</code>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-n">Gate C</div>
+          <div class="gate-b">
+            <strong>Root entities are operator-only</strong>
+            <p>A tenant with no parent has nothing containing it, so only the platform can create one.</p>
+            <code>PARENT_REQUIRED</code>
+          </div>
+        </div>
+      </div>
+
+      <h3>The shape lattice</h3>
+      <div class="tree"><span class="t-node">SAAS</span>          → HOLDING · MULTIBRANCH · BRANCH · FRANCHISE · PARTNER · SAAS_UNIT
+<span class="t-node">HOLDING</span>       → MULTIBRANCH · BRANCH
+<span class="t-node">MULTIBRANCH</span>   → BRANCH
+<span class="t-node">FRANCHISE</span>     → BRANCH          <span class="t-leaf">(a location)</span>
+<span class="t-node">PARTNER</span>       → MULTIBRANCH · BRANCH   <span class="t-leaf">(client workspaces)</span>
+<span class="t-leaf">SAAS_UNIT     → nothing        (an internal function owns no customers)</span>
+<span class="t-leaf">BRANCH        → nothing        (a leaf stays a leaf)</span></div>
+
+      <h3>Self-service, now that it is safe</h3>
+      <p>
+        With both gates in place, <code>create-or-manage-a-tenant</code> was granted to <strong>Group
+        Admin</strong>, <strong>Organization Admin</strong>, <strong>Franchisor Admin</strong> and
+        <strong>Partner Owner</strong>. A holding group adds its own subsidiaries; a franchisor adds its
+        own locations. Neither can touch anyone else's tree.
+      </p>
+      <p>
+        It was also <strong>removed</strong> from Pre-Sales Manager. Spinning up a demo and provisioning
+        a production subsidiary were the same operation, held by a commercial role — the wrong default.
+      </p>
+
+      <div class="evidence">
+        <span class="evidence-label">Verified</span>
+        <pre><code>Group Admin → BRANCH under their own group:      success
+Group Admin → BRANCH under a different company: PARENT_OUTSIDE_SCOPE
+Group Admin → HOLDING under HOLDING:            INVALID_HIERARCHY
+   "A HOLDING entity may contain MULTIBRANCH or BRANCH, not HOLDING."
+Group Admin → root tenant, no parent:           PARENT_REQUIRED</code></pre>
+      </div>
+    </section>
+
+    <section id="i3">
+      <span class="sec-num">04</span>
+      <h2>I3 · Scope uniformity</h2>
+
+      <p class="lede">
+        The database console reads and writes every table directly. It cannot pass through the scope
+        resolver, so it is restricted by tenant type instead — the one property a role change cannot
+        touch.
+      </p>
+
+      <p>
+        It now sits behind two independent gates: the caller's tenant must be <code>SAAS</code> or
+        <code>SAAS_UNIT</code>, <em>and</em> they must hold the security capability. Either alone was
+        insufficient — capability was the gate that the escalation chain walked straight through.
+      </p>
+
+      <div class="evidence">
+        <span class="evidence-label">Verified</span>
+        <pre><code>Branch Admin → /api/admin/db/table/User
+   PLATFORM_ONLY: This is a platform operations tool and is not
+   available to tenant accounts.
+
+Platform Super Admin → same route
+   operator still has access (67 rows)</code></pre>
+      </div>
+
+      <p>
+        Before this change, the same request from an escalated branch account returned 67 user rows
+        spanning 8 tenants.
+      </p>
+    </section>
+
+    <section id="onboard">
+      <span class="sec-num">05</span>
+      <h2>Atomic onboarding</h2>
+
+      <p class="lede">
+        Creating an organization and creating its first administrator were two unrelated calls. They are
+        now one transaction that cannot half-succeed.
+      </p>
+
+      <pre><code>POST /api/tenants/onboard
+{
+  "name": "Najd Industrial",
+  "type": "MULTIBRANCH",
+  "parentId": "…",              // optional; required for non-operators
+  "planId": "…",                // optional
+  "admin": { "email": "…", "name": "…", "roleId": "…" }
+}</code></pre>
+
+      <p>
+        The administrator block is mandatory — omitting it returns <code>ADMIN_REQUIRED</code>, because
+        an organization nobody can enter is not an outcome worth supporting. Entity, subscription, first
+        administrator and the audit record either all land or none do.
+      </p>
+
+      <h3>Credential lifecycle</h3>
+      <p>
+        The temporary password is generated with a CSPRNG, hashed with bcrypt, returned exactly once for
+        out-of-band delivery, and now <strong>expires after seven days</strong>. An invitation that was
+        never taken up stops being a way in.
+      </p>
+      <p>
+        Expiry is checked only after the password itself verifies, so the response never reveals whether
+        an account exists to someone guessing.
+      </p>
+
+      <div class="evidence">
+        <span class="evidence-label">Verified</span>
+        <pre><code>onboard without an admin block:        ADMIN_REQUIRED
+onboard complete organization:        success, one transaction
+new admin logs in with temp password: logged in, mustChangePassword=1
+same credential, expiry backdated:    TEMP_CREDENTIAL_EXPIRED</code></pre>
+      </div>
+    </section>
+
+    <section id="result">
+      <span class="sec-num">06</span>
+      <h2>What changed</h2>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Gap</th><th>Closed by</th></tr></thead>
+          <tbody>
+            <tr><td>Role assignment had no ceiling</td><td>I1 at <code>assignRole</code></td></tr>
+            <tr><td>Role creation had no ceiling</td><td>I1 at <code>createRole</code> and <code>updateRole</code></td></tr>
+            <tr><td>Database console not tenant-scoped</td><td>I3 — operator tenants only</td></tr>
+            <tr><td>Tenant creation ignored parent scope</td><td>I2 Gate A</td></tr>
+            <tr><td>Customers could not grow their hierarchy</td><td>I2 + capability granted to four admin roles</td></tr>
+            <tr><td>Onboarding was not atomic</td><td><code>POST /api/tenants/onboard</code></td></tr>
+            <tr><td>Temporary credentials never expired</td><td>Seven-day expiry, checked at login</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>New source</h3>
+      <ul>
+        <li><code>services/tenantProvisioning.ts</code> — the shape lattice</li>
+        <li><code>excessCapabilities()</code> in <code>services/capabilityEngine.ts</code> — the ceiling</li>
+        <li><code>requirePlatformTenant</code> in <code>middlewares/authMiddleware.ts</code></li>
+        <li><code>onboardTenant()</code> in <code>controllers/tenantController.ts</code></li>
+        <li><code>scripts/verify/tenancy-test.sh</code> — the 13 checks quoted above</li>
+      </ul>
+
+      <div class="note">
+        <span class="note-label">Still open</span>
+        <p>
+          Plan-based entity limits are not implemented. Self-service hierarchy growth is currently
+          unbounded — a customer can add as many entities as they like without it touching their
+          subscription. That is the natural next step, and it turns this from a cost centre into an
+          upsell.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Provisioning architecture as implemented. Every quoted result was reproduced against the running
+    application; test data was removed and the database reseeded afterwards.
+  </footer>
+
+</div>

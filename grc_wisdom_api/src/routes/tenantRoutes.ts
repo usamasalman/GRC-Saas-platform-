@@ -6,6 +6,7 @@ import {
   getEntityTree,
   getTenant,
   createTenant,
+  onboardTenant,
   updateTenant,
   deleteTenant,
   distributePolicy,
@@ -25,6 +26,9 @@ router.get('/:id', getTenant);
 
 // Writes gated by the RBAC capability engine (TRD §3.1) — 3 of 42 roles hold this.
 router.post('/', requireCapability(CAP.MANAGE_TENANT), createTenant);
+// One transaction: entity, subscription and first administrator together, so
+// there is never an organization nobody can enter.
+router.post('/onboard', requireCapability(CAP.MANAGE_TENANT), onboardTenant);
 router.patch('/:id', requireCapability(CAP.MANAGE_TENANT), updateTenant);
 router.delete('/:id', requireCapability(CAP.MANAGE_TENANT), deleteTenant);
 router.post('/distribute', requireCapability(CAP.VERSION_DOCUMENT), distributePolicy);

@@ -151,7 +151,13 @@ const AuditProgramme: React.FC = () => {
   };
 
   const closeFinding = async (f: any) => {
+    // Independence cuts both ways: whoever raised it and whoever remediated
+    // it are both barred from validating the fix.
     if (f.raisedBy?.id === me?.id) { window.alert('SoD: the auditor who raised a finding cannot close it.'); return; }
+    if (f.capOwner?.id === me?.id || f.respondedBy?.id === me?.id) {
+      window.alert('SoD: you cannot validate remediation you owned or accepted. A third person must close it.');
+      return;
+    }
     const note = window.prompt('Closure note (validation evidence — required):');
     if (!note) return;
     try {
