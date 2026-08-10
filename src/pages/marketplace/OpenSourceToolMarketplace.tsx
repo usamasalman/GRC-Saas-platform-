@@ -238,6 +238,14 @@ const OpenSourceToolMarketplace: React.FC = () => {
                   style={S.input}
                 />
               </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Deployment Mode</label>
+                <select value={toolDeployment} onChange={(e) => setToolDeployment(e.target.value)} style={S.input}>
+                  <option value="Managed GRC Wisdom Integration">Managed GRC Wisdom Integration</option>
+                  <option value="Customer-Managed Connector">Customer-Managed Connector</option>
+                  <option value="Dedicated OCI Environment">Dedicated OCI Environment</option>
+                </select>
+              </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Description &amp; Use Case</label>
                 <textarea

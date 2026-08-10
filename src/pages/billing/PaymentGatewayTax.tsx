@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, apiError } from '../iam/iamStyles';
 
 interface GatewayConfig {
   provider: string;

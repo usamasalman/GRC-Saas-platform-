@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
+import { S, StatStrip, ghostBtn, pill, apiError } from '../iam/iamStyles';
 
 interface Payment {
   id: string;
@@ -25,6 +25,7 @@ const PaymentsReconciliation: React.FC = () => {
     try {
       const res = await apiClient.get('/api/billing/payments');
       setPayments(res.data?.payments || []);
+      setNotice('Payment records updated.');
     } catch (err: any) {
       setError(apiError(err, 'Failed to load payment transactions'));
     } finally {
