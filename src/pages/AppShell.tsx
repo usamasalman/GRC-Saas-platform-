@@ -35,6 +35,20 @@ import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
 
+// Real Modules & Entitlements Components
+import GrcModuleMarketplace from './marketplace/GrcModuleMarketplace';
+import OpenSourceToolMarketplace from './marketplace/OpenSourceToolMarketplace';
+import ToolReviewApproval from './marketplace/ToolReviewApproval';
+import TenantToolInstallations from './marketplace/TenantToolInstallations';
+import FeatureFlagsManager from './marketplace/FeatureFlagsManager';
+
+// Real Subscriptions & Billing Components
+import SubscriptionManagement from './billing/SubscriptionManagement';
+import PlansCatalogue from './billing/PlansCatalogue';
+import InvoiceManagement from './billing/InvoiceManagement';
+import PaymentsReconciliation from './billing/PaymentsReconciliation';
+import PaymentGatewayTax from './billing/PaymentGatewayTax';
+
 /**
  * Persistent warning bar shown whenever a read-only impersonation session is
  * active. Exiting clears the impersonation token and reloads as the operator.
@@ -105,21 +119,24 @@ const NAV: Record<string, any[]> = {
     ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
-    ['Services & Billing', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments']]]
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
+    ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
     ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
-    ['Services & Billing', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments']]]
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
+    ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
     ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
-    ['Services', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace']]]
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
+    ['Subscriptions & Billing', [['invoices', '▤', 'Branch Invoices'], ['payments', '▣', 'Branch Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   document: [
     ['Document Lifecycle', [['dashboard', '▦', 'Document Dashboard'], ['library', '≡', 'Document Library'], ['tasks', '✓', 'To Do & Approvals'], ['acknowledgements', '☑', 'My Acknowledgements']]],
@@ -136,14 +153,16 @@ const NAV: Record<string, any[]> = {
     ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
-    ['Services & Billing', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['wholesale-billing', '▤', 'Wholesale Invoices'], ['workspace-transfer', '⇄', 'Workspace Transfer']]]
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Client Tool Installations'], ['standard-repository', '§', 'Partner Standard Repository']]],
+    ['Subscriptions & Billing', [['subscriptions', '¤', 'Client Subscriptions'], ['plans', '◇', 'Wholesale Rate Cards & Plans'], ['wholesale-billing', '▤', 'Wholesale Invoices'], ['payments', '▣', 'Payments & Receipts'], ['workspace-transfer', '⇄', 'Workspace Transfer']]]
   ],
   franchise: [
     ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards'], ['exceptions', '⇄', 'Exception Workflows']]],
     ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Network Risk'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Network Teams'], ['user-admin', '♙', 'Users & Location Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
-    ['Services & Billing', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments']]]
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Location Standard Enablement']]],
+    ['Subscriptions & Billing', [['subscriptions', '¤', 'Franchise Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ]
 };
 
@@ -275,7 +294,7 @@ const AppShell = () => {
       return <KnowledgeBase key={`${account.id}-${currentPage}`} />;
     }
     // GRC Core — Holding, Multibranch, Branch, Franchise, Partner
-    if (currentPage === 'standards') {
+    if (currentPage === 'standards' || currentPage === 'standard-repository' || currentPage === 'tenant-standards') {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'controls') {
@@ -290,7 +309,42 @@ const AppShell = () => {
     if (currentPage === 'audits') {
       return <AuditProgramme key={`${account.id}-${currentPage}`} />;
     }
-    if (currentPage === 'library' || currentPage === 'partner-library' || currentPage === 'standard-repository' || currentPage === 'tenant-standards' || currentPage === 'doc-library') {
+
+    // Modules & Entitlements — present across entitled portals
+    if (currentPage === 'marketplace') {
+      return <GrcModuleMarketplace key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'tool-marketplace') {
+      return <OpenSourceToolMarketplace key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'tool-review') {
+      return <ToolReviewApproval key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'tool-installations') {
+      return <TenantToolInstallations key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'feature-flags') {
+      return <FeatureFlagsManager key={`${account.id}-${currentPage}`} />;
+    }
+
+    // Subscriptions & Billing — real functional components across all portals
+    if (currentPage === 'subscriptions') {
+      return <SubscriptionManagement key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'plans') {
+      return <PlansCatalogue key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'invoices' || currentPage === 'wholesale-billing' || currentPage === 'billing-center') {
+      return <InvoiceManagement key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'payments') {
+      return <PaymentsReconciliation key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'payment-gateway') {
+      return <PaymentGatewayTax key={`${account.id}-${currentPage}`} />;
+    }
+
+    if (currentPage === 'library' || currentPage === 'partner-library' || currentPage === 'doc-library') {
       return <DocumentLibrary key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'tasks') {
