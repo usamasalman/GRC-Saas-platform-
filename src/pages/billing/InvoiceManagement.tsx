@@ -106,8 +106,8 @@ const InvoiceManagement: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Invoice Management &amp; ZATCA Compliance</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Invoice Management &amp; ZATCA Compliance</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
             ZATCA Phase 2 tax invoices, 15% VAT calculation, ECDSA signing hashes, QR validation and payment clearing.
           </p>
         </div>
@@ -119,20 +119,20 @@ const InvoiceManagement: React.FC = () => {
 
       <StatStrip items={[
         ['Total Invoices', invoices.length],
-        ['Paid &amp; Reconciled', <span style={{ color: '#86efac' }}>{paidCount}</span>],
-        ['Pending Payment', <span style={{ color: '#fbbf24' }}>{unpaidCount}</span>],
+        ['Paid &amp; Reconciled', <span style={{ color: 'var(--success)' }}>{paidCount}</span>],
+        ['Pending Payment', <span style={{ color: 'var(--warning)' }}>{unpaidCount}</span>],
         ['Total Volume', `SAR ${totalInvoiced.toLocaleString()}`],
       ]} />
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
-        <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
           {notice}
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading invoices...</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading invoices...</div>
       ) : (
         <div style={S.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -150,33 +150,33 @@ const InvoiceManagement: React.FC = () => {
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-muted)' }}>
                     No invoices recorded for this tenant scope. Click "+ Generate Tax Invoice" to create one!
                   </td>
                 </tr>
               ) : (
                 invoices.map((inv) => (
                   <tr key={inv.id} style={S.bodyRow}>
-                    <td style={{ ...S.td, fontFamily: 'monospace', color: '#38bdf8' }}>{inv.id}</td>
+                    <td style={{ ...S.td, fontFamily: 'monospace', color: 'var(--info)' }}>{inv.id}</td>
                     <td style={S.td}>
-                      <strong style={{ color: '#f1f5f9' }}>{inv.tenant?.name || 'Your Organization'}</strong>
+                      <strong style={{ color: 'var(--ink)' }}>{inv.tenant?.name || 'Your Organization'}</strong>
                     </td>
-                    <td style={{ ...S.td, fontWeight: 600, color: '#f8fafc' }}>
+                    <td style={{ ...S.td, fontWeight: 600, color: 'var(--ink)' }}>
                       SAR {Number(inv.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </td>
                     <td style={S.td}>
                       {inv.status === 'PAID' ? (
-                        <span style={pill('#86efac', '#15803d')}>PAID</span>
+                        <span style={pill('var(--success)', 'var(--success-line)')}>PAID</span>
                       ) : (
-                        <span style={pill('#fbbf24', '#b45309')}>UNPAID</span>
+                        <span style={pill('var(--warning)', 'var(--warning-line)')}>UNPAID</span>
                       )}
                     </td>
                     <td style={S.td}>
-                      <span style={{ fontSize: 11, color: inv.isCleared ? '#86efac' : '#94a3b8' }}>
+                      <span style={{ fontSize: 11, color: inv.isCleared ? 'var(--success)' : 'var(--ink-muted)' }}>
                         {inv.isCleared ? '✓ ZATCA Cleared' : 'Pending Payment'}
                       </span>
                     </td>
-                    <td style={{ ...S.td, color: '#94a3b8' }}>
+                    <td style={{ ...S.td, color: 'var(--ink-muted)' }}>
                       {new Date(inv.createdAt).toLocaleDateString()}
                     </td>
                     <td style={S.td}>
@@ -209,10 +209,10 @@ const InvoiceManagement: React.FC = () => {
       {genModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 460, padding: 24 }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: '#f1f5f9' }}>Generate ZATCA Tax Invoice</h3>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: 'var(--ink)' }}>Generate ZATCA Tax Invoice</h3>
             <form onSubmit={handleGenerateInvoice}>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Subtotal Amount (SAR, excl. VAT)</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Subtotal Amount (SAR, excl. VAT)</label>
                 <input
                   type="number"
                   required
@@ -220,12 +220,12 @@ const InvoiceManagement: React.FC = () => {
                   onChange={(e) => setAmount(Number(e.target.value))}
                   style={S.input}
                 />
-                <div style={{ fontSize: 11, color: '#86efac', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 4 }}>
                   + 15% Saudi VAT = <strong>SAR {(amount * 1.15).toLocaleString()} Total</strong>
                 </div>
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>PO / Contract Reference</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>PO / Contract Reference</label>
                 <input
                   type="text"
                   value={poNumber}
@@ -251,32 +251,32 @@ const InvoiceManagement: React.FC = () => {
           <div style={{ ...S.card, width: '100%', maxWidth: 520, padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 18, color: '#f1f5f9' }}>TAX INVOICE</h3>
-                <div style={{ fontSize: 12, color: '#38bdf8', fontFamily: 'monospace' }}>{selectedInvoice.id}</div>
+                <h3 style={{ margin: 0, fontSize: 18, color: 'var(--ink)' }}>TAX INVOICE</h3>
+                <div style={{ fontSize: 12, color: 'var(--info)', fontFamily: 'monospace' }}>{selectedInvoice.id}</div>
               </div>
-              <span style={pill(selectedInvoice.status === 'PAID' ? '#86efac' : '#fbbf24', selectedInvoice.status === 'PAID' ? '#15803d' : '#b45309')}>
+              <span style={pill(selectedInvoice.status === 'PAID' ? 'var(--success)' : 'var(--warning)', selectedInvoice.status === 'PAID' ? 'var(--success)' : '#b45309')}>
                 {selectedInvoice.status}
               </span>
             </div>
 
-            <div style={{ background: '#0b1220', padding: 12, borderRadius: 6, border: '1px solid #1e293b', marginBottom: 14, fontSize: 12 }}>
-              <div>Customer: <strong style={{ color: '#f1f5f9' }}>{selectedInvoice.tenant?.name || 'Your Organization'}</strong></div>
-              <div>Issue Date: <span style={{ color: '#cbd5e1' }}>{new Date(selectedInvoice.createdAt).toLocaleDateString()}</span></div>
-              <div>Currency: <span style={{ color: '#cbd5e1' }}>{selectedInvoice.currency}</span></div>
+            <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 6, border: '1px solid var(--line)', marginBottom: 14, fontSize: 12 }}>
+              <div>Customer: <strong style={{ color: 'var(--ink)' }}>{selectedInvoice.tenant?.name || 'Your Organization'}</strong></div>
+              <div>Issue Date: <span style={{ color: 'var(--ink-body)' }}>{new Date(selectedInvoice.createdAt).toLocaleDateString()}</span></div>
+              <div>Currency: <span style={{ color: 'var(--ink-body)' }}>{selectedInvoice.currency}</span></div>
             </div>
 
-            <div style={{ background: '#090d16', padding: 12, borderRadius: 6, border: '1px solid #1e293b', marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>ZATCA PHASE 2 CRYPTOGRAPHIC PROOF</div>
-              <div style={{ fontSize: 11, color: '#a5f3fc', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8 }}>
+            <div style={{ background: 'var(--surface-sunk)', padding: 12, borderRadius: 6, border: '1px solid var(--line)', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>ZATCA PHASE 2 CRYPTOGRAPHIC PROOF</div>
+              <div style={{ fontSize: 11, color: 'var(--info)', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8 }}>
                 Hash: {selectedInvoice.zatcaHash || 'SHA256-PENDING'}
               </div>
-              <div style={{ fontSize: 11, color: '#86efac', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+              <div style={{ fontSize: 11, color: 'var(--success)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
                 QR Code: {selectedInvoice.zatcaQr || 'ZATCA-QR-PENDING'}
               </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 16, color: '#f8fafc', fontWeight: 700 }}>
+              <div style={{ fontSize: 16, color: 'var(--ink)', fontWeight: 700 }}>
                 Total: SAR {Number(selectedInvoice.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <button onClick={() => setSelectedInvoice(null)} style={primaryBtn()}>Close Sheet</button>

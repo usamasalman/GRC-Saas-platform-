@@ -14,11 +14,11 @@ interface ResetRequest {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string; border: string }> = {
-  PENDING:  { bg: '#3a2d0a', fg: '#fbbf24', border: '#78350f' },
-  APPROVED: { bg: '#0e2a1e', fg: '#86efac', border: '#14532d' },
-  USED:     { bg: '#0b1e2f', fg: '#93c5fd', border: '#1e3a8a' },
-  DENIED:   { bg: '#3f1618', fg: '#fca5a5', border: '#7f1d1d' },
-  EXPIRED:  { bg: '#1e293b', fg: '#94a3b8', border: '#334155' },
+  PENDING:  { bg: 'var(--warning-bg)', fg: 'var(--warning)', border: 'var(--warning-line)' },
+  APPROVED: { bg: 'var(--success-bg)', fg: 'var(--success)', border: 'var(--success-line)' },
+  USED:     { bg: 'var(--surface-sunk)', fg: 'var(--info)', border: 'var(--info-line)' },
+  DENIED:   { bg: 'var(--danger-bg)', fg: 'var(--danger)', border: 'var(--danger-line)' },
+  EXPIRED:  { bg: 'var(--surface-sunk)', fg: 'var(--ink-muted)', border: 'var(--line)' },
 };
 
 const AdminPasswordResets: React.FC = () => {
@@ -73,16 +73,16 @@ const AdminPasswordResets: React.FC = () => {
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#090d16', color: '#cbd5e1',
+      minHeight: '100vh', background: 'var(--surface-sunk)', color: 'var(--ink-body)',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace", padding: 24,
     }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        borderBottom: '1px solid #1e293b', paddingBottom: 16, marginBottom: 24,
+        borderBottom: '1px solid var(--line)', paddingBottom: 16, marginBottom: 24,
       }}>
         <div>
           <h1 style={{ fontSize: 22, margin: 0 }}>Password Reset Requests</h1>
-          <p style={{ color: '#64748b', fontSize: 13, margin: '4px 0 0' }}>
+          <p style={{ color: 'var(--ink-muted)', fontSize: 13, margin: '4px 0 0' }}>
             Verify the requester out-of-band before approving. The reset code is shown once.
           </p>
         </div>
@@ -90,13 +90,13 @@ const AdminPasswordResets: React.FC = () => {
           <button
             onClick={load}
             style={{
-              padding: '8px 14px', background: 'transparent', color: '#94a3b8',
-              border: '1px solid #334155', borderRadius: 6, cursor: 'pointer',
+              padding: '8px 14px', background: 'transparent', color: 'var(--ink-muted)',
+              border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 13,
             }}
           >↻ Refresh</button>
           <Link to="/db-console" style={{
-            padding: '8px 14px', background: '#1e293b', color: '#cbd5e1',
+            padding: '8px 14px', background: 'var(--surface-sunk)', color: 'var(--ink-body)',
             borderRadius: 6, textDecoration: 'none', fontSize: 13,
           }}>← Back to console</Link>
         </div>
@@ -104,24 +104,24 @@ const AdminPasswordResets: React.FC = () => {
 
       {issuedCode && (
         <div style={{
-          background: '#0e2a1e', border: '1px solid #14532d', borderRadius: 8,
+          background: 'var(--success-bg)', border: '1px solid var(--success-line)', borderRadius: 8,
           padding: 20, marginBottom: 20,
         }}>
-          <div style={{ color: '#86efac', fontSize: 14, marginBottom: 12 }}>
+          <div style={{ color: 'var(--success)', fontSize: 14, marginBottom: 12 }}>
             ✓ Approved. Communicate this code to the user out-of-band (phone, in-person).
             It will not be shown again. Expires: {new Date(issuedCode.expiresAt).toLocaleString()}
           </div>
           <div style={{
-            fontSize: 32, letterSpacing: '0.3em', textAlign: 'center', color: '#f1f5f9',
-            background: '#020617', padding: 20, borderRadius: 6, fontWeight: 700,
+            fontSize: 32, letterSpacing: '0.3em', textAlign: 'center', color: 'var(--ink)',
+            background: 'var(--surface-sunk)', padding: 20, borderRadius: 6, fontWeight: 700,
           }}>
             {issuedCode.code}
           </div>
           <button
             onClick={() => setIssuedCode(null)}
             style={{
-              marginTop: 12, background: 'transparent', border: '1px solid #14532d',
-              color: '#86efac', padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+              marginTop: 12, background: 'transparent', border: '1px solid var(--success-line)',
+              color: 'var(--success)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 12,
             }}
           >I have delivered the code — dismiss</button>
@@ -130,15 +130,15 @@ const AdminPasswordResets: React.FC = () => {
 
       {error && (
         <div style={{
-          background: '#3f1618', border: '1px solid #7f1d1d', padding: 12,
-          borderRadius: 6, color: '#fca5a5', marginBottom: 16, fontSize: 13,
+          background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', padding: 12,
+          borderRadius: 6, color: 'var(--danger)', marginBottom: 16, fontSize: 13,
         }}>{error}</div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748b' }}>Loading…</div>
+        <div style={{ color: 'var(--ink-muted)' }}>Loading…</div>
       ) : requests.length === 0 ? (
-        <div style={{ color: '#64748b', padding: 40, textAlign: 'center', border: '1px dashed #334155', borderRadius: 8 }}>
+        <div style={{ color: 'var(--ink-muted)', padding: 40, textAlign: 'center', border: '1px dashed var(--line)', borderRadius: 8 }}>
           No reset requests yet.
         </div>
       ) : (
@@ -147,24 +147,24 @@ const AdminPasswordResets: React.FC = () => {
             const color = STATUS_COLORS[r.status] || STATUS_COLORS.PENDING;
             return (
               <div key={r.id} style={{
-                background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: 16,
+                background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: 16,
                 display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center',
               }}>
                 <div>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
-                    <strong style={{ color: '#e2e8f0' }}>{r.user.name}</strong>
-                    <span style={{ color: '#64748b', fontSize: 13 }}>{r.user.email}</span>
+                    <strong style={{ color: 'var(--ink-body)' }}>{r.user.name}</strong>
+                    <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{r.user.email}</span>
                     <span style={{
                       background: color.bg, color: color.fg, border: `1px solid ${color.border}`,
                       padding: '2px 8px', borderRadius: 4, fontSize: 11,
                     }}>{r.status}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
                     Role: {r.user.role} · Requested {new Date(r.requestedAt).toLocaleString()}
                     {r.requestedIp && ` · from ${r.requestedIp}`}
                   </div>
                   {r.reviewedAt && (
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
                       Reviewed {new Date(r.reviewedAt).toLocaleString()}
                       {r.reviewNote && ` — "${r.reviewNote}"`}
                     </div>
@@ -176,7 +176,7 @@ const AdminPasswordResets: React.FC = () => {
                       onClick={() => approve(r.id)}
                       disabled={busy === r.id}
                       style={{
-                        background: '#14532d', color: '#86efac', border: 'none',
+                        background: 'var(--success-bg)', color: 'var(--success)', border: 'none',
                         padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
                         fontFamily: 'inherit', fontSize: 13,
                       }}
@@ -185,7 +185,7 @@ const AdminPasswordResets: React.FC = () => {
                       onClick={() => deny(r.id)}
                       disabled={busy === r.id}
                       style={{
-                        background: 'transparent', color: '#fca5a5', border: '1px solid #7f1d1d',
+                        background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger-line)',
                         padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
                         fontFamily: 'inherit', fontSize: 13,
                       }}

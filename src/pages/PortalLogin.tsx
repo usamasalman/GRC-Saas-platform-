@@ -319,9 +319,9 @@ const PortalLogin = () => {
             </button>
 
             <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12 }}>
-              <Link to="/forgot-password" style={{ color: '#93c5fd' }}>Forgot password?</Link>
-              <span style={{ margin: '0 8px', color: '#334155' }}>·</span>
-              <Link to="/reset-password" style={{ color: '#93c5fd' }}>I have a reset code</Link>
+              <Link to="/forgot-password" style={{ color: 'var(--info)' }}>Forgot password?</Link>
+              <span style={{ margin: '0 8px', color: 'var(--ink-body)' }}>·</span>
+              <Link to="/reset-password" style={{ color: 'var(--info)' }}>I have a reset code</Link>
             </div>
           </form>
 
@@ -331,19 +331,19 @@ const PortalLogin = () => {
               display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
             }}>
               <div style={{
-                background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12,
+                background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: 12,
                 padding: 32, width: '100%', maxWidth: 400,
-                fontFamily: "'JetBrains Mono', monospace", color: '#cbd5e1',
+                fontFamily: "'JetBrains Mono', monospace", color: 'var(--ink-body)',
               }}>
                 <h2 style={{ fontSize: 18, marginBottom: 8 }}>Two-Factor Authentication</h2>
-                <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 20, lineHeight: 1.5 }}>
                   Enter the 6-digit code from your authenticator app.
                 </p>
                 <form onSubmit={handleMfaSubmit}>
                   {error && (
                     <div style={{
-                      background: '#3f1618', border: '1px solid #7f1d1d', padding: 10,
-                      borderRadius: 6, color: '#fca5a5', marginBottom: 14, fontSize: 13,
+                      background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', padding: 10,
+                      borderRadius: 6, color: 'var(--danger)', marginBottom: 14, fontSize: 13,
                     }}>{error}</div>
                   )}
                   <input
@@ -353,8 +353,8 @@ const PortalLogin = () => {
                     placeholder="000000" maxLength={6} inputMode="numeric"
                     style={{
                       width: '100%', padding: '12px', boxSizing: 'border-box',
-                      background: '#0b1220', border: '1px solid #1e293b', borderRadius: 6,
-                      color: '#e2e8f0', fontFamily: 'inherit', fontSize: 24,
+                      background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6,
+                      color: 'var(--ink-body)', fontFamily: 'inherit', fontSize: 24,
                       textAlign: 'center', letterSpacing: '0.3em', marginBottom: 16,
                     }}
                   />
@@ -362,7 +362,7 @@ const PortalLogin = () => {
                     type="submit" disabled={submitting || mfaCode.length !== 6}
                     style={{
                       width: '100%', padding: '12px', border: 'none', borderRadius: 6,
-                      background: submitting ? '#334155' : '#2563eb', color: 'white',
+                      background: submitting ? 'var(--ink-body)' : 'var(--info)', color: 'white',
                       fontFamily: 'inherit', cursor: submitting ? 'not-allowed' : 'pointer',
                     }}
                   >
@@ -373,8 +373,8 @@ const PortalLogin = () => {
                     onClick={() => { setMfaToken(null); setMfaCode(''); setError(''); }}
                     style={{
                       width: '100%', marginTop: 10, padding: '10px',
-                      background: 'transparent', border: '1px solid #334155', borderRadius: 6,
-                      color: '#94a3b8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+                      background: 'transparent', border: '1px solid var(--line)', borderRadius: 6,
+                      color: 'var(--ink-muted)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
                     }}
                   >
                     Cancel

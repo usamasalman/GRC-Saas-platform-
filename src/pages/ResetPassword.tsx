@@ -49,30 +49,30 @@ const ResetPassword: React.FC = () => {
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '10px 12px', boxSizing: 'border-box',
-    background: '#0b1220', border: '1px solid #1e293b', borderRadius: 6,
-    color: '#e2e8f0', fontFamily: 'inherit', marginBottom: 14,
+    background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6,
+    color: 'var(--ink-body)', fontFamily: 'inherit', marginBottom: 14,
   };
 
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#090d16', color: '#cbd5e1',
+      background: 'var(--surface-sunk)', color: 'var(--ink-body)',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace", padding: 24,
     }}>
       <div style={{
-        width: '100%', maxWidth: 480, background: '#0f172a', border: '1px solid #1e293b',
+        width: '100%', maxWidth: 480, background: 'var(--surface-sunk)', border: '1px solid var(--line)',
         borderRadius: 12, padding: 32,
       }}>
         <h1 style={{ fontSize: 22, marginBottom: 8 }}>Reset Password</h1>
-        <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--ink-muted)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
           Enter your email, the one-time code your administrator gave you,
           and choose a new password (min 8 characters).
         </p>
 
         {success ? (
           <div style={{
-            background: '#0e2a1e', border: '1px solid #14532d', padding: 16,
-            borderRadius: 8, color: '#86efac',
+            background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 16,
+            borderRadius: 8, color: 'var(--success)',
           }}>
             ✓ Password reset. Redirecting to login…
           </div>
@@ -80,8 +80,8 @@ const ResetPassword: React.FC = () => {
           <form onSubmit={handleSubmit}>
             {error && (
               <div style={{
-                background: '#3f1618', border: '1px solid #7f1d1d', padding: 12, borderRadius: 6,
-                color: '#fca5a5', marginBottom: 16, fontSize: 13,
+                background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', padding: 12, borderRadius: 6,
+                color: 'var(--danger)', marginBottom: 16, fontSize: 13,
               }}>{error}</div>
             )}
             <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>Email address</label>
@@ -106,7 +106,7 @@ const ResetPassword: React.FC = () => {
                 type="button" onClick={() => setShowPassword((s) => !s)}
                 style={{
                   position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                  background: 'transparent', border: 'none', color: '#94a3b8',
+                  background: 'transparent', border: 'none', color: 'var(--ink-muted)',
                   cursor: 'pointer', fontSize: 12, padding: '4px 8px',
                 }}
               >
@@ -125,7 +125,7 @@ const ResetPassword: React.FC = () => {
               type="submit" disabled={submitting}
               style={{
                 width: '100%', padding: '12px', border: 'none', borderRadius: 6,
-                background: submitting ? '#334155' : '#2563eb', color: 'white',
+                background: submitting ? 'var(--ink-body)' : 'var(--info)', color: 'white',
                 fontFamily: 'inherit', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14,
               }}
             >
@@ -135,7 +135,7 @@ const ResetPassword: React.FC = () => {
         )}
 
         <div style={{ marginTop: 24, textAlign: 'center', fontSize: 13 }}>
-          <Link to="/" style={{ color: '#93c5fd' }}>← Back to login</Link>
+          <Link to="/" style={{ color: 'var(--info)' }}>← Back to login</Link>
         </div>
       </div>
     </div>

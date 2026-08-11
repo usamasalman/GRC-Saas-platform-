@@ -46,13 +46,13 @@ const LoginGateway = () => {
         <main className="dir-grid">
           <form className="login-form" style={{background: '#1a1a2e', padding: '24px', borderRadius: '12px'}} onSubmit={handleLogin}>
             <h2 style={{color: '#fff', marginBottom: '16px'}}>Gateway Login</h2>
-            {errorMsg && <div style={{color: '#ef4444', marginBottom: '12px', fontSize: '14px'}}>{errorMsg}</div>}
+            {errorMsg && <div style={{color: 'var(--danger)', marginBottom: '12px', fontSize: '14px'}}>{errorMsg}</div>}
             <div className="field">
-              <label style={{color: '#94a3b8'}}>Email address</label>
+              <label style={{color: 'var(--ink-muted)'}}>Email address</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
             </div>
             <div className="field">
-              <label style={{color: '#94a3b8'}}>Password</label>
+              <label style={{color: 'var(--ink-muted)'}}>Password</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
             </div>
             <button className="login-submit" type="submit" style={{width: '100%', marginTop: '12px'}}>

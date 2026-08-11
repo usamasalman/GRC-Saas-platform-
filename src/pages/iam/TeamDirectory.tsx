@@ -52,9 +52,9 @@ const TeamDirectory: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Teams &amp; departments</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-            Departmental structure per entity. Scope: <strong style={{ color: '#93c5fd' }}>{scope || '—'}</strong>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Teams &amp; departments</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
+            Departmental structure per entity. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <button onClick={load} style={ghostBtn}>↻ Refresh</button>
@@ -64,7 +64,7 @@ const TeamDirectory: React.FC = () => {
         ['Entities', teams.length],
         ['Departments', totalDepts],
         ['People', totalMembers],
-        ['Unassigned', <span style={{ color: unassigned > 0 ? '#fbbf24' : '#f1f5f9' }}>{unassigned}</span>],
+        ['Unassigned', <span style={{ color: unassigned > 0 ? 'var(--warning)' : 'var(--ink)' }}>{unassigned}</span>],
       ]} />
 
       <input placeholder="Search a person, email or role across all entities…" value={search}
@@ -73,9 +73,9 @@ const TeamDirectory: React.FC = () => {
       {error && <div style={S.error}>{error}</div>}
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading team directory…</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading team directory…</div>
       ) : visible.length === 0 ? (
-        <div style={{ ...S.card, padding: 40, textAlign: 'center', color: '#64748b', borderStyle: 'dashed' }}>
+        <div style={{ ...S.card, padding: 40, textAlign: 'center', color: 'var(--ink-muted)', borderStyle: 'dashed' }}>
           {search ? 'Nobody matches that search.' : 'No users in your scope.'}
         </div>
       ) : (
@@ -89,36 +89,36 @@ const TeamDirectory: React.FC = () => {
                   style={{
                     width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     background: 'transparent', border: 'none', padding: '14px 16px', cursor: 'pointer',
-                    color: '#e2e8f0', fontFamily: 'inherit', fontSize: 14, textAlign: 'left',
+                    color: 'var(--ink-body)', fontFamily: 'inherit', fontSize: 14, textAlign: 'left',
                   }}
                 >
                   <span>{isOpen ? '▾' : '▸'} {t.tenantName}</span>
-                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
                     {t.departments.length} dept · {t.departments.reduce((a, d) => a + d.members.length, 0)} people
                   </span>
                 </button>
 
                 {isOpen && (
-                  <div style={{ borderTop: '1px solid #1e293b', padding: '12px 16px' }}>
+                  <div style={{ borderTop: '1px solid var(--line)', padding: '12px 16px' }}>
                     {t.departments.map((d) => (
                       <div key={d.name} style={{ marginBottom: 16 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                          <strong style={{ fontSize: 12, color: d.name === 'Unassigned' ? '#fbbf24' : '#cbd5e1' }}>{d.name}</strong>
-                          <span style={{ fontSize: 11, color: '#64748b' }}>{d.members.length}</span>
+                          <strong style={{ fontSize: 12, color: d.name === 'Unassigned' ? 'var(--warning)' : 'var(--ink-body)' }}>{d.name}</strong>
+                          <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{d.members.length}</span>
                           {d.branches.map((b) => (
-                            <span key={b} style={pill('#93c5fd', '#1e3a8a')}>{b}</span>
+                            <span key={b} style={pill('var(--info)', 'var(--info-line)')}>{b}</span>
                           ))}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))', gap: 8 }}>
                           {d.members.map((m) => (
-                            <div key={m.id} style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: '8px 10px' }}>
+                            <div key={m.id} style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 10px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                                <span style={{ fontSize: 12, color: '#e2e8f0' }}>{m.name}</span>
+                                <span style={{ fontSize: 12, color: 'var(--ink-body)' }}>{m.name}</span>
                                 <span style={STATUS_PILL[m.status] || STATUS_PILL.Inactive}>{m.status}</span>
                               </div>
-                              <div style={{ fontSize: 10, color: '#64748b', marginTop: 3 }}>{m.role}</div>
-                              <div style={{ fontSize: 10, color: '#475569' }}>
-                                {m.email}{m.mfaEnabled && <span style={{ color: '#86efac' }}> · MFA</span>}
+                              <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 3 }}>{m.role}</div>
+                              <div style={{ fontSize: 10, color: 'var(--ink-body)' }}>
+                                {m.email}{m.mfaEnabled && <span style={{ color: 'var(--success)' }}> · MFA</span>}
                               </div>
                             </div>
                           ))}

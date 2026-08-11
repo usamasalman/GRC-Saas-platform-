@@ -5,7 +5,6 @@ import apiClient from '../api/apiClient';
 import { renderMockView } from '../utils/appMockEngine.js';
 
 // Real Document Components
-import DocumentDashboard from './documents/DocumentDashboard';
 import DocumentLibrary from './documents/DocumentLibrary';
 import ApprovalQueue from './documents/ApprovalQueue';
 import AcknowledgementTracker from './documents/AcknowledgementTracker';
@@ -49,6 +48,20 @@ import InvoiceManagement from './billing/InvoiceManagement';
 import PaymentsReconciliation from './billing/PaymentsReconciliation';
 import PaymentGatewayTax from './billing/PaymentGatewayTax';
 
+// Real Usage & Automation Components
+import ResourceUsageQuotas from './usage/ResourceUsageQuotas';
+import RulesJobsExecution from './usage/RulesJobsExecution';
+import ImportsMigration from './usage/ImportsMigration';
+
+// Real System & Infrastructure Components
+import SystemHealthStatus from './system/SystemHealthStatus';
+import PlatformSecurity from './system/PlatformSecurity';
+import OciRiyadhArchitecture from './system/OciRiyadhArchitecture';
+import BrdTraceability from './system/BrdTraceability';
+
+// Realtime Dashboard Component
+import RealtimeDashboardPage from './dashboard/RealtimeDashboardPage';
+
 /**
  * Persistent warning bar shown whenever a read-only impersonation session is
  * active. Exiting clears the impersonation token and reloads as the operator.
@@ -83,7 +96,7 @@ const ImpersonationBanner = () => {
   return (
     <div style={{
       position: 'sticky', top: 0, zIndex: 800,
-      background: '#7f1d1d', color: '#fff', padding: '10px 18px',
+      background: 'var(--danger-bg)', color: '#fff', padding: '10px 18px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       gap: 14, flexWrap: 'wrap',
       fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 12,
@@ -94,7 +107,7 @@ const ImpersonationBanner = () => {
         {meta.minutesRemaining !== null && ` Expires in ${meta.minutesRemaining} min.`} All writes are blocked.
       </span>
       <button onClick={endAndExit} style={{
-        background: '#fff', color: '#7f1d1d', border: 'none', padding: '6px 14px',
+        background: 'var(--surface)', color: 'var(--danger)', border: 'none', padding: '6px 14px',
         borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, whiteSpace: 'nowrap',
       }}>
         End session &amp; exit
@@ -201,7 +214,7 @@ const AppShell = () => {
       return;
     }
 
-    setAccount({ ...user, color: user.color || '#2563eb' });
+    setAccount({ ...user, color: user.color || 'var(--info)' });
     setTokenReady(true);
   }, [navigate]);
 
@@ -248,7 +261,7 @@ const AppShell = () => {
   // Render Real Document Components for DMS routes across ALL portals
   const renderRealComponent = () => {
     if (!tokenReady) {
-      return <div style={{ padding: '24px', color: '#94a3b8' }}>Authenticating session...</div>;
+      return <div style={{ padding: '24px', color: 'var(--ink-muted)' }}>Authenticating session...</div>;
     }
 
     // Tenant provisioning + hierarchy (SaaS control plane, holding, franchise)
@@ -344,6 +357,31 @@ const AppShell = () => {
       return <PaymentGatewayTax key={`${account.id}-${currentPage}`} />;
     }
 
+    // Usage & Automation — real functional components
+    if (currentPage === 'quotas') {
+      return <ResourceUsageQuotas key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'automation') {
+      return <RulesJobsExecution key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'imports') {
+      return <ImportsMigration key={`${account.id}-${currentPage}`} />;
+    }
+
+    // System & Infrastructure — real functional components
+    if (currentPage === 'health') {
+      return <SystemHealthStatus key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'security') {
+      return <PlatformSecurity key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'architecture') {
+      return <OciRiyadhArchitecture key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'brd') {
+      return <BrdTraceability key={`${account.id}-${currentPage}`} />;
+    }
+
     if (currentPage === 'library' || currentPage === 'partner-library' || currentPage === 'doc-library') {
       return <DocumentLibrary key={`${account.id}-${currentPage}`} />;
     }
@@ -356,8 +394,8 @@ const AppShell = () => {
     if (currentPage === 'logs' || currentPage === 'hash-check' || currentPage === 'retention' || currentPage === 'legal-hold') {
       return <AuditLogViewer key={`${account.id}-${currentPage}`} />;
     }
-    if (account.portal === 'document' && currentPage === 'dashboard') {
-      return <DocumentDashboard key={`${account.id}-${currentPage}`} />;
+    if (currentPage === 'dashboard') {
+      return <RealtimeDashboardPage key={`${account.id}-${currentPage}`} account={account} />;
     }
     return null;
   };
@@ -365,8 +403,14 @@ const AppShell = () => {
   const realComp = renderRealComponent();
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${!menuOpen ? 'sidebar-collapsed' : ''}`}>
       <ImpersonationBanner />
+      {menuOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`} id="sidebar">
         <div className="side-brand">
           <div className="brand">
@@ -398,7 +442,10 @@ const AppShell = () => {
                 <button
                   key={item[0]}
                   className={`nav-item ${currentPage === item[0] ? 'active' : ''}`}
-                  onClick={() => setCurrentPage(item[0])}
+                  onClick={() => {
+                    setCurrentPage(item[0]);
+                    setMenuOpen(false);
+                  }}
                 >
                   <span className="nav-ico">{item[1]}</span>
                   <span>{item[2]}</span>

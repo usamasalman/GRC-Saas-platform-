@@ -11,7 +11,7 @@ const SaasPortal = () => {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Navbar />
         
-        <main className="main" style={{ padding: '24px', background: '#0f172a', flex: 1 }}>
+        <main className="main" style={{ padding: '24px', background: 'var(--surface-sunk)', flex: 1 }}>
           <div className="content">
             <h2 style={{color: '#fff', marginBottom: '16px'}}>SaaS Admin Control Plane</h2>
             
@@ -22,9 +22,9 @@ const SaasPortal = () => {
               <StatCard label="Critical Errors" value="3" sub="Needs attention" trend="down" variant="danger" />
             </div>
 
-            <div style={{ background: '#1e293b', padding: '24px', borderRadius: '12px', color: '#fff' }}>
+            <div style={{ background: 'var(--surface-sunk)', padding: '24px', borderRadius: '12px', color: '#fff' }}>
               <h3>Global Tenants Directory</h3>
-              <p style={{color: '#94a3b8', marginTop: '8px'}}>Manage all provisioned organizations and their billing plans.</p>
+              <p style={{color: 'var(--ink-muted)', marginTop: '8px'}}>Manage all provisioned organizations and their billing plans.</p>
               {/* Data table would go here */}
             </div>
           </div>

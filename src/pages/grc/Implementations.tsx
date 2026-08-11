@@ -3,16 +3,16 @@ import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 
 const STATUS_PILL: Record<string, React.CSSProperties> = {
-  Verified: pill('#86efac', '#15803d'),
-  Implemented: pill('#93c5fd', '#1e3a8a'),
-  InProgress: pill('#fbbf24', '#78350f'),
-  NotStarted: pill('#94a3b8', '#334155'),
+  Verified: pill('var(--success)', 'var(--success-line)'),
+  Implemented: pill('var(--info)', 'var(--info-line)'),
+  InProgress: pill('var(--warning)', 'var(--warning-line)'),
+  NotStarted: pill('var(--ink-muted)', 'var(--line)'),
 };
 const EFFECT_COLOR: Record<string, string> = {
-  Effective: '#86efac', PartiallyEffective: '#fbbf24', Ineffective: '#fca5a5', NotAssessed: '#64748b',
+  Effective: 'var(--success)', PartiallyEffective: 'var(--warning)', Ineffective: 'var(--danger)', NotAssessed: 'var(--ink-muted)',
 };
 const JUDGE_COLOR: Record<string, string> = {
-  Yes: '#86efac', Partial: '#fbbf24', No: '#fca5a5', NotAssessed: '#475569',
+  Yes: 'var(--success)', Partial: 'var(--warning)', No: 'var(--danger)', NotAssessed: 'var(--ink-body)',
 };
 
 const Implementations: React.FC = () => {
@@ -131,9 +131,9 @@ const Implementations: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Implementations &amp; evidence</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-            Verified status is reached only through independent validation. Scope: <strong style={{ color: '#93c5fd' }}>{scope || '—'}</strong>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Implementations &amp; evidence</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
+            Verified status is reached only through independent validation. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -143,11 +143,11 @@ const Implementations: React.FC = () => {
       </div>
 
       <StatStrip items={[
-        ['Verified coverage', <span style={{ color: coverage >= 80 ? '#86efac' : coverage >= 50 ? '#fbbf24' : '#fca5a5' }}>{coverage}%</span>],
+        ['Verified coverage', <span style={{ color: coverage >= 80 ? 'var(--success)' : coverage >= 50 ? 'var(--warning)' : 'var(--danger)' }}>{coverage}%</span>],
         ['Total', totals.total ?? 0],
-        ['Verified', <span style={{ color: '#86efac' }}>{totals.verified ?? 0}</span>],
-        ['Awaiting validation', <span style={{ color: (totals.awaitingValidation ?? 0) > 0 ? '#fbbf24' : '#f1f5f9' }}>{totals.awaitingValidation ?? 0}</span>],
-        ['Overdue', <span style={{ color: (totals.overdue ?? 0) > 0 ? '#fca5a5' : '#f1f5f9' }}>{totals.overdue ?? 0}</span>],
+        ['Verified', <span style={{ color: 'var(--success)' }}>{totals.verified ?? 0}</span>],
+        ['Awaiting validation', <span style={{ color: (totals.awaitingValidation ?? 0) > 0 ? 'var(--warning)' : 'var(--ink)' }}>{totals.awaitingValidation ?? 0}</span>],
+        ['Overdue', <span style={{ color: (totals.overdue ?? 0) > 0 ? 'var(--danger)' : 'var(--ink)' }}>{totals.overdue ?? 0}</span>],
       ]} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -160,13 +160,13 @@ const Implementations: React.FC = () => {
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
-        <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>
-          {notice} <button onClick={() => setNotice('')} style={linkBtn('#86efac')}>dismiss</button>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
+          {notice} <button onClick={() => setNotice('')} style={linkBtn('var(--success)')}>dismiss</button>
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading implementations…</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading implementations…</div>
       ) : (
         <div style={{ ...S.card, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -179,32 +179,32 @@ const Implementations: React.FC = () => {
               {visible.map((i) => (
                 <tr key={i.id} style={S.bodyRow}>
                   <td style={S.td}>
-                    <button onClick={() => openDetail(i.id)} style={{ ...linkBtn('#e2e8f0'), fontSize: 12, padding: 0, textAlign: 'left' }}>
+                    <button onClick={() => openDetail(i.id)} style={{ ...linkBtn('var(--ink-body)'), fontSize: 12, padding: 0, textAlign: 'left' }}>
                       <strong>{i.control.code}</strong> — {i.title}
                     </button>
                     <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
-                      {i.mappedStandards.map((s: string) => <span key={s} style={pill('#93c5fd', '#1e3a8a')}>{s}</span>)}
-                      {i.isOverdue && <span style={pill('#fca5a5', '#7f1d1d')}>overdue</span>}
+                      {i.mappedStandards.map((s: string) => <span key={s} style={pill('var(--info)', 'var(--info-line)')}>{s}</span>)}
+                      {i.isOverdue && <span style={pill('var(--danger)', 'var(--danger-line)')}>overdue</span>}
                     </div>
                   </td>
-                  <td style={{ ...S.td, color: '#64748b' }}>{i.tenant.name}</td>
-                  <td style={{ ...S.td, color: '#94a3b8' }}>{i.owner.name}</td>
-                  <td style={{ ...S.td, color: '#64748b' }}>{i.frequency}</td>
+                  <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{i.tenant.name}</td>
+                  <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{i.owner.name}</td>
+                  <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{i.frequency}</td>
                   <td style={S.td}><span style={STATUS_PILL[i.status] || STATUS_PILL.NotStarted}>{i.status}</span></td>
-                  <td style={{ ...S.td, color: EFFECT_COLOR[i.effectiveness] || '#64748b' }}>{i.effectiveness}</td>
-                  <td style={{ ...S.td, color: i._count.evidence === 0 ? '#fbbf24' : '#cbd5e1' }}>{i._count.evidence}</td>
+                  <td style={{ ...S.td, color: EFFECT_COLOR[i.effectiveness] || 'var(--ink-muted)' }}>{i.effectiveness}</td>
+                  <td style={{ ...S.td, color: i._count.evidence === 0 ? 'var(--warning)' : 'var(--ink-body)' }}>{i._count.evidence}</td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                    {i.status === 'NotStarted' && <button onClick={() => setStatus(i.id, 'InProgress')} style={linkBtn('#93c5fd')}>start</button>}
-                    {i.status === 'InProgress' && <button onClick={() => setStatus(i.id, 'Implemented')} style={linkBtn('#93c5fd')}>submit</button>}
-                    {i.canValidate && <button onClick={() => validate(i.id)} style={linkBtn('#86efac')}>validate</button>}
+                    {i.status === 'NotStarted' && <button onClick={() => setStatus(i.id, 'InProgress')} style={linkBtn('var(--info)')}>start</button>}
+                    {i.status === 'InProgress' && <button onClick={() => setStatus(i.id, 'Implemented')} style={linkBtn('var(--info)')}>submit</button>}
+                    {i.canValidate && <button onClick={() => validate(i.id)} style={linkBtn('var(--success)')}>validate</button>}
                     {i.awaitingValidation && !i.canValidate && (
-                      <span style={{ fontSize: 11, color: '#fbbf24' }}>awaiting independent validation</span>
+                      <span style={{ fontSize: 11, color: 'var(--warning)' }}>awaiting independent validation</span>
                     )}
                   </td>
                 </tr>
               ))}
               {visible.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: '#64748b' }}>No implementations match the filter.</td></tr>
+                <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: 'var(--ink-muted)' }}>No implementations match the filter.</td></tr>
               )}
             </tbody>
           </table>
@@ -214,21 +214,21 @@ const Implementations: React.FC = () => {
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 480, padding: 26, borderRadius: 12 }}>
-            <h3 style={{ margin: '0 0 18px', fontSize: 17, color: '#f1f5f9' }}>Implement a control</h3>
+            <h3 style={{ margin: '0 0 18px', fontSize: 17, color: 'var(--ink)' }}>Implement a control</h3>
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}>{formErr}</div>}
             <form onSubmit={submitNew}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Library control</label>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Library control</label>
               <select required value={form.controlId} onChange={(e) => setForm({ ...form, controlId: e.target.value })} style={{ ...S.input, marginBottom: 12 }}>
                 <option value="">— select —</option>
                 {controls.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.title}</option>)}
               </select>
 
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Frequency</label>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Frequency</label>
               <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} style={{ ...S.input, marginBottom: 12 }}>
                 {['Continuous', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual'].map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
 
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Success criteria</label>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Success criteria</label>
               <textarea required rows={3} value={form.successCriteria} onChange={(e) => setForm({ ...form, successCriteria: e.target.value })}
                 placeholder="What evidence would prove this control operated effectively?"
                 style={{ ...S.input, marginBottom: 20, resize: 'vertical' }} />
@@ -248,57 +248,57 @@ const Implementations: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 720, padding: 26, borderRadius: 12, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: '#f1f5f9' }}>{detail.control.code} — {detail.title}</h3>
-              <button onClick={() => setDetail(null)} style={linkBtn('#94a3b8')}>✕</button>
+              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>{detail.control.code} — {detail.title}</h3>
+              <button onClick={() => setDetail(null)} style={linkBtn('var(--ink-muted)')}>✕</button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 14 }}>
               {detail.tenant.name} · owner {detail.owner.name}
               {detail.operator && ` · operator ${detail.operator.name}`} · {detail.frequency}
               <span style={{ marginLeft: 8 }}><span style={STATUS_PILL[detail.status]}>{detail.status}</span></span>
             </div>
 
-            <div style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 12, marginBottom: 8, fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>CONTROL OBJECTIVE</div>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 8, fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-body)', marginBottom: 4 }}>CONTROL OBJECTIVE</div>
               {detail.control.objective}
             </div>
-            <div style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>SUCCESS CRITERIA</div>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-body)', marginBottom: 4 }}>SUCCESS CRITERIA</div>
               {detail.successCriteria}
             </div>
 
             {detail.validatedBy && (
-              <div style={{ background: '#0e2a1e', border: '1px solid #14532d', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: '#86efac' }}>
+              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: 'var(--success)' }}>
                 ✓ Independently validated by {detail.validatedBy.name} as{' '}
                 <strong style={{ color: EFFECT_COLOR[detail.effectiveness] }}>{detail.effectiveness}</strong>
-                {detail.validationNote && <div style={{ color: '#64748b', marginTop: 4 }}>{detail.validationNote}</div>}
+                {detail.validationNote && <div style={{ color: 'var(--ink-muted)', marginTop: 4 }}>{detail.validationNote}</div>}
               </div>
             )}
 
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 8 }}>
               Evidence ({detail.evidence.length})
             </div>
             {detail.evidence.map((e: any) => (
-              <div key={e.id} style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 12, marginBottom: 8 }}>
+              <div key={e.id} style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: '#e2e8f0' }}>{e.title}</span>
-                  <span style={{ fontSize: 10, color: '#475569' }}>{e.uploadedBy.name}</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-body)' }}>{e.title}</span>
+                  <span style={{ fontSize: 10, color: 'var(--ink-body)' }}>{e.uploadedBy.name}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10 }}>
                   {(['relevance', 'sufficiency', 'authenticity', 'currency'] as const).map((k) => (
-                    <span key={k} style={{ color: JUDGE_COLOR[e[k]] || '#475569' }}>
+                    <span key={k} style={{ color: JUDGE_COLOR[e[k]] || 'var(--ink-body)' }}>
                       {k}: {e[k]}
                     </span>
                   ))}
                 </div>
                 {e.reviewedBy
-                  ? <div style={{ fontSize: 10, color: '#64748b', marginTop: 5 }}>reviewed by {e.reviewedBy.name}</div>
+                  ? <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 5 }}>reviewed by {e.reviewedBy.name}</div>
                   : e.uploadedBy.id !== me?.id && (
-                    <button onClick={() => reviewEvidence(e.id)} style={{ ...linkBtn('#93c5fd'), marginTop: 5, padding: 0 }}>review evidence</button>
+                    <button onClick={() => reviewEvidence(e.id)} style={{ ...linkBtn('var(--info)'), marginTop: 5, padding: 0 }}>review evidence</button>
                   )}
               </div>
             ))}
             {detail.evidence.length === 0 && (
-              <div style={{ color: '#fbbf24', fontSize: 12, marginBottom: 10 }}>
+              <div style={{ color: 'var(--warning)', fontSize: 12, marginBottom: 10 }}>
                 No evidence attached — validation is blocked until at least one item exists.
               </div>
             )}

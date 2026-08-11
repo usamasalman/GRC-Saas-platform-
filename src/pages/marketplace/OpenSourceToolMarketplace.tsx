@@ -134,8 +134,8 @@ const OpenSourceToolMarketplace: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Open Source Tool Marketplace</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Open Source Tool Marketplace</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
             Discover approved tools, connectors and managed open-source security services available for your tenant.
           </p>
         </div>
@@ -147,14 +147,14 @@ const OpenSourceToolMarketplace: React.FC = () => {
 
       <StatStrip items={[
         ['Total Tools', tools.length],
-        ['Approved & Ready', <span style={{ color: '#86efac' }}>{approvedCount}</span>],
-        ['Under Security Review', <span style={{ color: '#fbbf24' }}>{underReviewCount}</span>],
+        ['Approved & Ready', <span style={{ color: 'var(--success)' }}>{approvedCount}</span>],
+        ['Under Security Review', <span style={{ color: 'var(--warning)' }}>{underReviewCount}</span>],
         ['Open Source Licenses', 'MIT / Apache / GPL'],
       ]} />
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
-        <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
           {notice}
         </div>
       )}
@@ -179,34 +179,34 @@ const OpenSourceToolMarketplace: React.FC = () => {
       </div>
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading open source tools...</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading open source tools...</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 14 }}>
           {tools.map((t) => (
             <div key={t.id} style={{ ...S.card, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, color: '#38bdf8', background: '#0c4a6e', padding: '2px 6px', borderRadius: 4 }}>{t.category}</span>
+                  <span style={{ fontSize: 10, color: 'var(--info)', background: 'var(--info-bg)', padding: '2px 6px', borderRadius: 4 }}>{t.category}</span>
                   {t.maturity === 'Approved' ? (
-                    <span style={pill('#86efac', '#15803d')}>Approved</span>
+                    <span style={pill('var(--success)', 'var(--success-line)')}>Approved</span>
                   ) : (
-                    <span style={pill('#fbbf24', '#b45309')}>Under Review</span>
+                    <span style={pill('var(--warning)', 'var(--warning-line)')}>Under Review</span>
                   )}
                 </div>
-                <h3 style={{ margin: '0 0 4px', fontSize: 15, color: '#f8fafc' }}>{t.name}</h3>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                  License: {t.license} · Risk: <span style={{ color: t.risk === 'Low' ? '#86efac' : t.risk === 'High' ? '#fca5a5' : '#fde047' }}>{t.risk}</span>
+                <h3 style={{ margin: '0 0 4px', fontSize: 15, color: 'var(--ink)' }}>{t.name}</h3>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 8 }}>
+                  License: {t.license} · Risk: <span style={{ color: t.risk === 'Low' ? 'var(--success)' : t.risk === 'High' ? 'var(--danger)' : '#fde047' }}>{t.risk}</span>
                 </div>
-                <p style={{ margin: '0 0 12px', fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>{t.description}</p>
+                <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.5 }}>{t.description}</p>
               </div>
 
               <div>
-                <div style={{ fontSize: 11, color: '#64748b', background: '#0b1220', padding: 8, borderRadius: 6, marginBottom: 12 }}>
-                  Deployment: <strong style={{ color: '#cbd5e1' }}>{t.deployment}</strong>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', background: 'var(--surface)', padding: 8, borderRadius: 6, marginBottom: 12 }}>
+                  Deployment: <strong style={{ color: 'var(--ink-body)' }}>{t.deployment}</strong>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: 10 }}>
-                  <span style={{ fontSize: 13, color: '#f1f5f9', fontWeight: 600 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                  <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
                     {t.annualPrice > 0 ? `SAR ${Number(t.annualPrice).toLocaleString()}/yr` : 'Free / Community'}
                   </span>
                   {t.maturity === 'Approved' ? (
@@ -217,7 +217,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                       Buy &amp; Install
                     </button>
                   ) : (
-                    <span style={{ fontSize: 11, color: '#64748b' }}>Pending Review</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>Pending Review</span>
                   )}
                 </div>
               </div>
@@ -230,10 +230,10 @@ const OpenSourceToolMarketplace: React.FC = () => {
       {submitModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 480, padding: 24 }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: '#f1f5f9' }}>Submit Open Source Tool for Review</h3>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: 'var(--ink)' }}>Submit Open Source Tool for Review</h3>
             <form onSubmit={handleSubmitTool}>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Tool Name</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Tool Name</label>
                 <input
                   type="text"
                   required
@@ -244,7 +244,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                 />
               </div>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Category</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Category</label>
                 <select value={toolCategory} onChange={(e) => setToolCategory(e.target.value)} style={S.input}>
                   <option value="Vulnerability Management">Vulnerability Management</option>
                   <option value="SCA / Supply Chain">SCA / Supply Chain</option>
@@ -254,7 +254,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                 </select>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>License</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>License</label>
                 <input
                   type="text"
                   value={toolLicense}
@@ -263,7 +263,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                 />
               </div>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Deployment Mode</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Deployment Mode</label>
                 <select value={toolDeployment} onChange={(e) => setToolDeployment(e.target.value)} style={S.input}>
                   <option value="Managed GRC Wisdom Integration">Managed GRC Wisdom Integration</option>
                   <option value="Customer-Managed Connector">Customer-Managed Connector</option>
@@ -271,7 +271,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                 </select>
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Description &amp; Use Case</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Description &amp; Use Case</label>
                 <textarea
                   rows={3}
                   value={toolDesc}
@@ -295,14 +295,14 @@ const OpenSourceToolMarketplace: React.FC = () => {
       {buyModalOpen && selectedTool && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 480, padding: 24 }}>
-            <h3 style={{ margin: '0 0 6px', fontSize: 16, color: '#f1f5f9' }}>Buy &amp; Install {selectedTool.name}</h3>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, color: 'var(--ink)' }}>Buy &amp; Install {selectedTool.name}</h3>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 14 }}>
               Category: {selectedTool.category} · Price: {selectedTool.annualPrice > 0 ? `SAR ${Number(selectedTool.annualPrice).toLocaleString()}/yr` : 'Included'}
             </div>
 
             <form onSubmit={handleBuyTool}>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Installation Mode</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Installation Mode</label>
                 <select value={installationMode} onChange={(e) => setInstallationMode(e.target.value)} style={S.input}>
                   <option value="Managed GRC Wisdom Integration">Managed GRC Wisdom Integration</option>
                   <option value="Customer-Managed Connector">Customer-Managed Connector</option>
@@ -310,7 +310,7 @@ const OpenSourceToolMarketplace: React.FC = () => {
                 </select>
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Business Justification</label>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Business Justification</label>
                 <textarea
                   rows={3}
                   value={justification}

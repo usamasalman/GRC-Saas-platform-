@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 
-const RATING_COLOR: Record<string, string> = { High: '#f87171', Medium: '#fbbf24', Low: '#86efac' };
+const RATING_COLOR: Record<string, string> = { High: 'var(--danger)', Medium: 'var(--warning)', Low: 'var(--success)' };
 const STATUS_PILL: Record<string, React.CSSProperties> = {
-  Open: pill('#fbbf24', '#78350f'),
-  UnderTreatment: pill('#93c5fd', '#1e3a8a'),
-  Accepted: pill('#c4b5fd', '#5b21b6'),
-  Closed: pill('#86efac', '#15803d'),
+  Open: pill('var(--warning)', 'var(--warning-line)'),
+  UnderTreatment: pill('var(--info)', 'var(--info-line)'),
+  Accepted: pill('var(--violet)', 'var(--violet)'),
+  Closed: pill('var(--success)', 'var(--success-line)'),
 };
 
 function ratingOf(score: number) { return score >= 15 ? 'High' : score >= 8 ? 'Medium' : 'Low'; }
@@ -139,9 +139,9 @@ const RiskRegister: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Risk register</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-            Residual score is computed from linked-control effectiveness. Scope: <strong style={{ color: '#93c5fd' }}>{scope || '—'}</strong>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Risk register</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
+            Residual score is computed from linked-control effectiveness. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -152,10 +152,10 @@ const RiskRegister: React.FC = () => {
 
       <StatStrip items={[
         ['Total', totals.total ?? 0],
-        ['High residual', <span style={{ color: (totals.highResidual ?? 0) > 0 ? '#f87171' : '#f1f5f9' }}>{totals.highResidual ?? 0}</span>],
+        ['High residual', <span style={{ color: (totals.highResidual ?? 0) > 0 ? 'var(--danger)' : 'var(--ink)' }}>{totals.highResidual ?? 0}</span>],
         ['Under treatment', totals.underTreatment ?? 0],
         ['Accepted', totals.accepted ?? 0],
-        ['Overdue actions', <span style={{ color: (totals.overdueTreatments ?? 0) > 0 ? '#fca5a5' : '#f1f5f9' }}>{totals.overdueTreatments ?? 0}</span>],
+        ['Overdue actions', <span style={{ color: (totals.overdueTreatments ?? 0) > 0 ? 'var(--danger)' : 'var(--ink)' }}>{totals.overdueTreatments ?? 0}</span>],
       ]} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 16, alignItems: 'start' }}>
@@ -170,13 +170,13 @@ const RiskRegister: React.FC = () => {
 
           {error && <div style={S.error}>{error}</div>}
           {notice && (
-            <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>
-              {notice} <button onClick={() => setNotice('')} style={linkBtn('#86efac')}>dismiss</button>
+            <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
+              {notice} <button onClick={() => setNotice('')} style={linkBtn('var(--success)')}>dismiss</button>
             </div>
           )}
 
           {loading ? (
-            <div style={{ color: '#64748b', padding: 30 }}>Loading risks…</div>
+            <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading risks…</div>
           ) : (
             <div style={{ ...S.card, overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -189,33 +189,33 @@ const RiskRegister: React.FC = () => {
                   {visible.map((r) => (
                     <tr key={r.id} style={S.bodyRow}>
                       <td style={S.td}>
-                        <button onClick={() => setDetail(r)} style={{ ...linkBtn('#e2e8f0'), fontSize: 12, padding: 0, textAlign: 'left' }}>
+                        <button onClick={() => setDetail(r)} style={{ ...linkBtn('var(--ink-body)'), fontSize: 12, padding: 0, textAlign: 'left' }}>
                           <strong>{r.ref}</strong> — {r.title}
                         </button>
                         <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
-                          <span style={pill('#94a3b8', '#334155')}>{r.category}</span>
-                          {r.linkedControls.map((c: string) => <span key={c} style={pill('#93c5fd', '#1e3a8a')}>{c}</span>)}
-                          {r.acceptanceExpired && <span style={pill('#fca5a5', '#7f1d1d')}>acceptance expired</span>}
+                          <span style={pill('var(--ink-muted)', 'var(--line)')}>{r.category}</span>
+                          {r.linkedControls.map((c: string) => <span key={c} style={pill('var(--info)', 'var(--info-line)')}>{c}</span>)}
+                          {r.acceptanceExpired && <span style={pill('var(--danger)', 'var(--danger-line)')}>acceptance expired</span>}
                         </div>
                       </td>
-                      <td style={{ ...S.td, color: '#94a3b8' }}>{r.owner.name}</td>
-                      <td style={{ ...S.td, color: RATING_COLOR[r.inherentRating] }}>{r.inherentScore} <span style={{ color: '#475569', fontSize: 10 }}>({r.inherentLikelihood}×{r.inherentImpact})</span></td>
+                      <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{r.owner.name}</td>
+                      <td style={{ ...S.td, color: RATING_COLOR[r.inherentRating] }}>{r.inherentScore} <span style={{ color: 'var(--ink-body)', fontSize: 10 }}>({r.inherentLikelihood}×{r.inherentImpact})</span></td>
                       <td style={{ ...S.td, color: RATING_COLOR[r.residualRating], fontWeight: 500 }}>
-                        {r.residualScore} <span style={{ color: '#475569', fontSize: 10 }}>({r.residualLikelihood}×{r.residualImpact})</span>
-                        {r.residualScore < r.inherentScore && <span style={{ color: '#86efac', fontSize: 10 }}> ▼</span>}
+                        {r.residualScore} <span style={{ color: 'var(--ink-body)', fontSize: 10 }}>({r.residualLikelihood}×{r.residualImpact})</span>
+                        {r.residualScore < r.inherentScore && <span style={{ color: 'var(--success)', fontSize: 10 }}> ▼</span>}
                       </td>
-                      <td style={{ ...S.td, color: '#64748b' }}>{r.treatmentType}</td>
+                      <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{r.treatmentType}</td>
                       <td style={S.td}><span style={STATUS_PILL[r.status] || STATUS_PILL.Open}>{r.status}</span></td>
                       <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                        <button onClick={() => linkControls(r)} style={linkBtn('#93c5fd')}>controls</button>
+                        <button onClick={() => linkControls(r)} style={linkBtn('var(--info)')}>controls</button>
                         {r.status !== 'Accepted' && r.status !== 'Closed' && (
-                          <button onClick={() => accept(r)} style={linkBtn('#c4b5fd')}>accept</button>
+                          <button onClick={() => accept(r)} style={linkBtn('var(--violet)')}>accept</button>
                         )}
                       </td>
                     </tr>
                   ))}
                   {visible.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: 30, textAlign: 'center', color: '#64748b' }}>No risks match the filter.</td></tr>
+                    <tr><td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--ink-muted)' }}>No risks match the filter.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -225,9 +225,9 @@ const RiskRegister: React.FC = () => {
 
         {/* 5×5 residual heatmap */}
         <div style={{ ...S.card, padding: 14, minWidth: 210 }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Residual heatmap</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 8 }}>Residual heatmap</div>
           <div style={{ display: 'flex', gap: 3 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', fontSize: 9, color: '#475569', paddingRight: 2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', fontSize: 9, color: 'var(--ink-body)', paddingRight: 2 }}>
               {[5, 4, 3, 2, 1].map((n) => <div key={n} style={{ height: 30, display: 'flex', alignItems: 'center' }}>{n}</div>)}
             </div>
             <div>
@@ -236,53 +236,53 @@ const RiskRegister: React.FC = () => {
                   [1, 2, 3, 4, 5].map((lik) => {
                     const cell = heat[`${lik}-${impact}`] || [];
                     const score = lik * impact;
-                    const bg = score >= 15 ? '#7f1d1d' : score >= 8 ? '#78350f' : '#14532d';
+                    const bg = score >= 15 ? 'var(--danger)' : score >= 8 ? 'var(--warning)' : 'var(--success)';
                     return (
                       <div key={`${lik}-${impact}`} title={`L${lik} × I${impact} = ${score}`}
-                        style={{ background: cell.length ? bg : '#0b1220', border: '1px solid #16202f', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: cell.length ? '#f1f5f9' : '#334155' }}>
+                        style={{ background: cell.length ? bg : 'var(--surface)', border: '1px solid var(--line)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: cell.length ? 'var(--ink)' : 'var(--ink-body)' }}>
                         {cell.length || ''}
                       </div>
                     );
                   })
                 )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,30px)', gap: 3, fontSize: 9, color: '#475569', marginTop: 2 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,30px)', gap: 3, fontSize: 9, color: 'var(--ink-body)', marginTop: 2 }}>
                 {[1, 2, 3, 4, 5].map((n) => <div key={n} style={{ textAlign: 'center' }}>{n}</div>)}
               </div>
             </div>
           </div>
-          <div style={{ fontSize: 9, color: '#475569', marginTop: 6 }}>Likelihood → · Impact ↑</div>
+          <div style={{ fontSize: 9, color: 'var(--ink-body)', marginTop: 6 }}>Likelihood → · Impact ↑</div>
         </div>
       </div>
 
       {showNew && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 500, padding: 26, borderRadius: 12, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 18px', fontSize: 17, color: '#f1f5f9' }}>New risk</h3>
+            <h3 style={{ margin: '0 0 18px', fontSize: 17, color: 'var(--ink)' }}>New risk</h3>
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}>{formErr}</div>}
             {dupes && (
-              <div style={{ background: '#1c1508', border: '1px solid #78350f', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12 }}>
-                <div style={{ color: '#fbbf24', marginBottom: 8 }}>Similar risks already exist — review before creating a duplicate:</div>
-                {dupes.map((d) => <div key={d.id} style={{ color: '#94a3b8', marginBottom: 3 }}>{d.ref} — {d.title} <span style={{ color: '#475569' }}>({d.status})</span></div>)}
-                <button onClick={(e) => submitNew(e as any, true)} style={{ ...linkBtn('#fca5a5'), marginTop: 6 }}>Create anyway</button>
+              <div style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-line)', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12 }}>
+                <div style={{ color: 'var(--warning)', marginBottom: 8 }}>Similar risks already exist — review before creating a duplicate:</div>
+                {dupes.map((d) => <div key={d.id} style={{ color: 'var(--ink-muted)', marginBottom: 3 }}>{d.ref} — {d.title} <span style={{ color: 'var(--ink-body)' }}>({d.status})</span></div>)}
+                <button onClick={(e) => submitNew(e as any, true)} style={{ ...linkBtn('var(--danger)'), marginTop: 6 }}>Create anyway</button>
               </div>
             )}
             <form onSubmit={(e) => submitNew(e)}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Title</label>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Title</label>
               <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ ...S.input, marginBottom: 12 }} />
 
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Description (cause → event → impact)</label>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Description (cause → event → impact)</label>
               <textarea required rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...S.input, marginBottom: 12, resize: 'vertical' }} />
 
               <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Category</label>
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Category</label>
                   <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={S.input}>
                     {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Treatment</label>
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Treatment</label>
                   <select value={form.treatmentType} onChange={(e) => setForm({ ...form, treatmentType: e.target.value })} style={S.input}>
                     {['Mitigate', 'Accept', 'Transfer', 'Avoid'].map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -291,11 +291,11 @@ const RiskRegister: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Likelihood (1–5)</label>
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Likelihood (1–5)</label>
                   <input type="number" min={1} max={5} value={form.likelihood} onChange={(e) => setForm({ ...form, likelihood: Number(e.target.value) })} style={S.input} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: '#94a3b8' }}>Impact (1–5)</label>
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Impact (1–5)</label>
                   <input type="number" min={1} max={5} value={form.impact} onChange={(e) => setForm({ ...form, impact: Number(e.target.value) })} style={S.input} />
                 </div>
               </div>
@@ -316,47 +316,47 @@ const RiskRegister: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 640, padding: 26, borderRadius: 12, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: '#f1f5f9' }}>{detail.ref} — {detail.title}</h3>
-              <button onClick={() => setDetail(null)} style={linkBtn('#94a3b8')}>✕</button>
+              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>{detail.ref} — {detail.title}</h3>
+              <button onClick={() => setDetail(null)} style={linkBtn('var(--ink-muted)')}>✕</button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 14 }}>
               {detail.category} · owner {detail.owner.name} · treatment {detail.treatmentType}
               <span style={{ marginLeft: 8 }}><span style={STATUS_PILL[detail.status]}>{detail.status}</span></span>
             </div>
-            <div style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.6 }}>
               {detail.description}
             </div>
             <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
-              <div><span style={{ fontSize: 10, color: '#475569' }}>INHERENT</span><div style={{ color: RATING_COLOR[detail.inherentRating], fontSize: 18 }}>{detail.inherentScore}</div></div>
-              <div style={{ alignSelf: 'center', color: '#334155' }}>→</div>
-              <div><span style={{ fontSize: 10, color: '#475569' }}>RESIDUAL</span><div style={{ color: RATING_COLOR[detail.residualRating], fontSize: 18 }}>{detail.residualScore}</div></div>
-              <div style={{ alignSelf: 'center', fontSize: 11, color: '#64748b' }}>
+              <div><span style={{ fontSize: 10, color: 'var(--ink-body)' }}>INHERENT</span><div style={{ color: RATING_COLOR[detail.inherentRating], fontSize: 18 }}>{detail.inherentScore}</div></div>
+              <div style={{ alignSelf: 'center', color: 'var(--ink-body)' }}>→</div>
+              <div><span style={{ fontSize: 10, color: 'var(--ink-body)' }}>RESIDUAL</span><div style={{ color: RATING_COLOR[detail.residualRating], fontSize: 18 }}>{detail.residualScore}</div></div>
+              <div style={{ alignSelf: 'center', fontSize: 11, color: 'var(--ink-muted)' }}>
                 {detail.linkedControls.length} control(s) linked
               </div>
             </div>
 
             {detail.acceptedBy && (
-              <div style={{ background: '#1a1229', border: '1px solid #5b21b6', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 12, color: '#c4b5fd' }}>
+              <div style={{ background: '#1a1229', border: '1px solid var(--violet)', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 12, color: 'var(--violet)' }}>
                 Accepted by {detail.acceptedBy.name} until {detail.acceptedUntil?.slice(0, 10)} — {detail.acceptanceReason}
               </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>Treatment actions ({detail.treatments.length})</span>
-              <button onClick={() => addTreatment(detail.id)} style={linkBtn('#93c5fd')}>+ add action</button>
+              <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>Treatment actions ({detail.treatments.length})</span>
+              <button onClick={() => addTreatment(detail.id)} style={linkBtn('var(--info)')}>+ add action</button>
             </div>
             {detail.treatments.map((t: any) => (
-              <div key={t.id} style={{ background: '#0b1220', border: '1px solid #16202f', borderRadius: 6, padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div key={t.id} style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: 10, marginBottom: 6, display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                 <div>
-                  <span style={{ fontSize: 12, color: t.status === 'Done' ? '#64748b' : '#e2e8f0', textDecoration: t.status === 'Done' ? 'line-through' : 'none' }}>{t.title}</span>
-                  {t.dueDate && <span style={{ fontSize: 10, color: '#475569', marginLeft: 8 }}>due {t.dueDate.slice(0, 10)}</span>}
+                  <span style={{ fontSize: 12, color: t.status === 'Done' ? 'var(--ink-muted)' : 'var(--ink-body)', textDecoration: t.status === 'Done' ? 'line-through' : 'none' }}>{t.title}</span>
+                  {t.dueDate && <span style={{ fontSize: 10, color: 'var(--ink-body)', marginLeft: 8 }}>due {t.dueDate.slice(0, 10)}</span>}
                 </div>
                 {t.status === 'Open'
-                  ? <button onClick={() => completeTreatment(t.id, detail.id)} style={linkBtn('#86efac')}>complete</button>
-                  : <span style={pill('#86efac', '#15803d')}>done</span>}
+                  ? <button onClick={() => completeTreatment(t.id, detail.id)} style={linkBtn('var(--success)')}>complete</button>
+                  : <span style={pill('var(--success)', 'var(--success-line)')}>done</span>}
               </div>
             ))}
-            {detail.treatments.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>No treatment actions yet.</div>}
+            {detail.treatments.length === 0 && <div style={{ color: 'var(--ink-body)', fontSize: 12 }}>No treatment actions yet.</div>}
           </div>
         </div>
       )}

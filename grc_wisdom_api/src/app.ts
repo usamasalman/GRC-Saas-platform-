@@ -15,6 +15,8 @@ import grcRoutes from './routes/grcRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import marketplaceRoutes from './routes/marketplaceRoutes';
 import billingRoutes from './routes/billingRoutes';
+import usageRoutes from './routes/usageRoutes';
+import systemRoutes from './routes/systemRoutes';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { SodViolation } from './services/sodEngine';
 import { resolveTenantScope, auditCrossTenantRead } from './services/scopeResolver';
@@ -110,6 +112,12 @@ app.use('/api/marketplace', marketplaceRoutes);
 
 // Subscriptions & Billing (Subscriptions, Plans, Invoices, Payments, Gateway)
 app.use('/api/billing', billingRoutes);
+
+// Usage & Automation (Quotas, Rules Engine, Imports & Migration)
+app.use('/api/usage', usageRoutes);
+
+// System & Infrastructure (Health & Jobs, Platform Security, OCI Architecture, BRD Traceability)
+app.use('/api/system', systemRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {

@@ -50,41 +50,41 @@ export default function AuditLogViewer() {
   };
 
   return (
-    <div style={{ padding: '24px', color: '#e2e8f0' }}>
+    <div style={{ padding: '24px', color: 'var(--ink-body)' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#f8fafc' }}>Immutable WORM Audit Trail</h1>
-          <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '14px' }}>
+          <h1 style={{ margin: 0, fontSize: '24px', color: 'var(--ink)' }}>Immutable WORM Audit Trail</h1>
+          <p style={{ margin: '4px 0 0', color: 'var(--ink-muted)', fontSize: '14px' }}>
             Cryptographically hash-chained Write-Once-Read-Many (WORM) system action record.
           </p>
         </div>
         <button
           onClick={handleVerifyChain}
-          style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+          style={{ background: 'var(--info)', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
         >
           🔗 Verify Hash Chain
         </button>
       </header>
 
       {verifyStatus && (
-        <div style={{ background: verifyStatus.includes('INTACT') ? '#064e3b' : '#1e293b', border: '1px solid #334155', color: verifyStatus.includes('INTACT') ? '#a7f3d0' : '#38bdf8', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
+        <div style={{ background: verifyStatus.includes('INTACT') ? '#064e3b' : 'var(--ink)', border: '1px solid var(--line)', color: verifyStatus.includes('INTACT') ? 'var(--success)' : 'var(--info)', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
           {verifyStatus}
         </div>
       )}
 
-      {error && <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', color: '#fca5a5', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{error}</div>}
+      {error && <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{error}</div>}
 
       {loading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading audit trail...</div>
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--ink-muted)' }}>Loading audit trail...</div>
       ) : logs.length === 0 ? (
-        <div style={{ background: '#1e293b', padding: '32px', textAlign: 'center', color: '#94a3b8', borderRadius: '8px', border: '1px solid #334155' }}>
+        <div style={{ background: 'var(--surface-sunk)', padding: '32px', textAlign: 'center', color: 'var(--ink-muted)', borderRadius: '8px', border: '1px solid var(--line)' }}>
           No audit log entries recorded yet.
         </div>
       ) : (
-        <div style={{ background: '#1e293b', borderRadius: '8px', border: '1px solid #334155', overflowX: 'auto' }}>
+        <div style={{ background: 'var(--surface-sunk)', borderRadius: '8px', border: '1px solid var(--line)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px', fontFamily: 'monospace' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+              <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--ink-muted)' }}>
                 <th style={{ padding: '12px 16px' }}>Timestamp</th>
                 <th style={{ padding: '12px 16px' }}>Action</th>
                 <th style={{ padding: '12px 16px' }}>Actor</th>
@@ -94,12 +94,12 @@ export default function AuditLogViewer() {
             </thead>
             <tbody>
               {logs.map((log) => (
-                <tr key={log.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                  <td style={{ padding: '12px 16px', color: '#94a3b8' }}>{new Date(log.timestamp).toLocaleString()}</td>
-                  <td style={{ padding: '12px 16px', fontWeight: 'bold', color: '#38bdf8' }}>{log.action}</td>
-                  <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>{log.actor?.name || 'System'}</td>
-                  <td style={{ padding: '12px 16px', color: '#34d399' }}>{log.currentHash.substring(0, 24)}...</td>
-                  <td style={{ padding: '12px 16px', color: '#a78bfa' }}>{log.wormLocked ? '🔒 Locked' : 'Unlocked'}</td>
+                <tr key={log.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-muted)' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                  <td style={{ padding: '12px 16px', fontWeight: 'bold', color: 'var(--info)' }}>{log.action}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>{log.actor?.name || 'System'}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--success)' }}>{log.currentHash.substring(0, 24)}...</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--violet)' }}>{log.wormLocked ? '🔒 Locked' : 'Unlocked'}</td>
                 </tr>
               ))}
             </tbody>

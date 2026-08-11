@@ -105,27 +105,27 @@ export default function ApprovalQueue() {
   };
 
   return (
-    <div style={{ padding: '24px', color: '#e2e8f0' }}>
+    <div style={{ padding: '24px', color: 'var(--ink-body)' }}>
       <header style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: 0, fontSize: '24px', color: '#f8fafc' }}>Approval Queue</h1>
-        <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '14px' }}>
+        <h1 style={{ margin: 0, fontSize: '24px', color: 'var(--ink)' }}>Approval Queue</h1>
+        <p style={{ margin: '4px 0 0', color: 'var(--ink-muted)', fontSize: '14px' }}>
           Review and digitally sign pending compliance document submissions with SoD protection.
         </p>
       </header>
 
-      {error && <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', color: '#fca5a5', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{error}</div>}
+      {error && <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{error}</div>}
 
       {loading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading pending approvals...</div>
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--ink-muted)' }}>Loading pending approvals...</div>
       ) : documents.length === 0 ? (
-        <div style={{ background: '#1e293b', padding: '32px', textAlign: 'center', color: '#94a3b8', borderRadius: '8px', border: '1px solid #334155' }}>
+        <div style={{ background: 'var(--surface-sunk)', padding: '32px', textAlign: 'center', color: 'var(--ink-muted)', borderRadius: '8px', border: '1px solid var(--line)' }}>
           ✓ No documents currently pending your review or approval.
         </div>
       ) : (
-        <div style={{ background: '#1e293b', borderRadius: '8px', border: '1px solid #334155', overflowX: 'auto' }}>
+        <div style={{ background: 'var(--surface-sunk)', borderRadius: '8px', border: '1px solid var(--line)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+              <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--ink-muted)' }}>
                 <th style={{ padding: '12px 16px' }}>Code</th>
                 <th style={{ padding: '12px 16px' }}>Title</th>
                 <th style={{ padding: '12px 16px' }}>Category</th>
@@ -136,29 +136,29 @@ export default function ApprovalQueue() {
             </thead>
             <tbody>
               {documents.map((doc) => (
-                <tr key={doc.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                  <td style={{ padding: '12px 16px', fontWeight: 'bold', color: '#38bdf8' }}>{doc.code}</td>
-                  <td style={{ padding: '12px 16px', color: '#f8fafc' }}>{doc.title}</td>
-                  <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>{doc.category}</td>
-                  <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>v{doc.version}</td>
-                  <td style={{ padding: '12px 16px', color: '#94a3b8' }}>{doc.owner?.name || 'Unknown'}</td>
+                <tr key={doc.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                  <td style={{ padding: '12px 16px', fontWeight: 'bold', color: 'var(--info)' }}>{doc.code}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink)' }}>{doc.title}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>{doc.category}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>v{doc.version}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-muted)' }}>{doc.owner?.name || 'Unknown'}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                     {/* Approvals are sequenced: an earlier signatory must go first. */}
                     {doc.myApproval && !doc.myApproval.canSignNow ? (
-                      <span style={{ fontSize: '12px', color: '#fbbf24' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--warning)' }}>
                         Waiting on {doc.myApproval.waitingOn}
                       </span>
                     ) : (
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                         <button
                           onClick={() => openApproveModal(doc)}
-                          style={{ background: '#059669', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                          style={{ background: 'var(--brand)', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
                         >
                           ✓ Sign &amp; Approve
                         </button>
                         <button
                           onClick={() => handleRejectSubmit(doc)}
-                          style={{ background: '#dc2626', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          style={{ background: 'var(--danger)', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                         >
                           ✕ Reject
                         </button>
@@ -175,47 +175,47 @@ export default function ApprovalQueue() {
       {/* Digital Signature & Step-up Re-Auth Modal */}
       {signingDoc && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <form onSubmit={handleApproveSubmit} style={{ background: '#0f172a', border: '1px solid #059669', borderRadius: '8px', width: '500px', maxWidth: '90vw', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleApproveSubmit} style={{ background: 'var(--surface-sunk)', border: '1px solid var(--success-line)', borderRadius: '8px', width: '500px', maxWidth: '90vw', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <span style={{ color: '#34d399', fontSize: '12px', fontWeight: 'bold' }}>STEP-UP DIGITAL SIGNATURE RE-AUTHENTICATION</span>
-              <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: '#f8fafc' }}>
+              <span style={{ color: 'var(--success)', fontSize: '12px', fontWeight: 'bold' }}>STEP-UP DIGITAL SIGNATURE RE-AUTHENTICATION</span>
+              <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: 'var(--ink)' }}>
                 Approve {signingDoc.code} — {signingDoc.title}
               </h2>
             </div>
 
-            {actionError && <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', color: '#fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '13px' }}>{actionError}</div>}
+            {actionError && <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '8px 12px', borderRadius: '4px', fontSize: '13px' }}>{actionError}</div>}
 
             {signatureHash ? (
-              <div style={{ background: '#064e3b', border: '1px solid #059669', color: '#a7f3d0', padding: '16px', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', color: 'var(--success)', padding: '16px', borderRadius: '6px', textAlign: 'center' }}>
                 <div style={{ fontSize: '18px', marginBottom: '8px' }}>✓ Digital Signature Recorded</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', background: '#022c22', padding: '8px', borderRadius: '4px' }}>
+                <div style={{ fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all', background: 'var(--success-bg)', padding: '8px', borderRadius: '4px' }}>
                   SHA-256: {signatureHash}
                 </div>
               </div>
             ) : (
               <>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>Approval Notes / Decision</label>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--ink-muted)', marginBottom: '4px' }}>Approval Notes / Decision</label>
                   <input
                     type="text"
                     value={decision}
                     onChange={(e) => setDecision(e.target.value)}
                     placeholder="e.g. Approved following review"
-                    style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
+                    style={{ width: '100%', background: 'var(--surface-sunk)', border: '1px solid var(--line)', color: 'var(--ink-body)', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#f59e0b', marginBottom: '4px' }}>Re-enter Password to Confirm Digital Signature *</label>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--warning)', marginBottom: '4px' }}>Re-enter Password to Confirm Digital Signature *</label>
                   <input
                     type="password"
                     required
                     placeholder="Enter your account password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    style={{ width: '100%', background: '#1e293b', border: '1px solid #f59e0b', color: '#e2e8f0', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
+                    style={{ width: '100%', background: 'var(--surface-sunk)', border: '1px solid var(--warning-line)', color: 'var(--ink-body)', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
                   />
-                  <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--ink-muted)', marginTop: '4px', display: 'block' }}>
                     Signing generates an immutable SHA-256 cryptographic hash chained into the audit log.
                   </span>
                 </div>
@@ -224,14 +224,14 @@ export default function ApprovalQueue() {
                   <button
                     type="button"
                     onClick={() => setSigningDoc(null)}
-                    style={{ background: '#334155', color: '#e2e8f0', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+                    style={{ background: 'var(--surface-sunk)', color: 'var(--ink-body)', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    style={{ background: '#059669', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+                    style={{ background: 'var(--brand)', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
                   >
                     {submitting ? 'Verifying & Signing...' : 'Confirm Digital Signature'}
                   </button>

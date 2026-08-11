@@ -54,6 +54,9 @@ model Tenant {
   notifications Notification[]
   auditableEntities AuditableEntity[]
   auditPlans    AuditPlan[]
+  resourceQuotas ResourceQuota[]
+  automationRules AutomationRule[]
+  importJobs    ImportJob[]
 }
 
 model User {
@@ -1658,4 +1661,102 @@ model Notification {
 
   @@index([recipientId, readAt])
   @@index([tenantId, createdAt])
+}
+
+// ----------------------------------------------------------------------
+// USAGE & AUTOMATION — QUOTAS, RULES ENGINE, IMPORTS / MIGRATION
+// ----------------------------------------------------------------------
+
+/// Per-tenant resource consumption vs. configured limits.
+model ResourceQuota {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Users | Storage | Documents | ApiCalls | Workflows | Integrations
+  resourceType  String
+  used          Int      @default(0)
+  limitValue    Int
+  /// Under | Warning | Over
+  status        String   @default("Under")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, resourceType])
+  @@index([tenantId, status])
+}
+
+/// A scheduled or event-driven automation rule.
+model AutomationRule {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name          String
+  description   String?
+  /// Scheduled | Event | Manual
+  triggerType   String   @default("Scheduled")
+  /// cron expression for Scheduled, or event key for Event
+  triggerConfig String?
+  /// JSON: the action template to execute
+  actionConfig  String   @default("{}")
+
+  /// Active | Paused | Disabled | Failed
+  status        String   @default("Active")
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  runCount      Int      @default(0)
+  failCount     Int      @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  executions    AutomationExecution[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+/// One execution of an automation rule.
+model AutomationExecution {
+  id            String   @id @default(uuid())
+  ruleId        String
+  rule          AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  /// Running | Completed | Failed
+  status        String   @default("Running")
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  durationMs    Int?
+  outcome       String?
+  errorMessage  String?
+
+  @@index([ruleId, startedAt])
+}
+
+/// Bulk data import / migration job.
+model ImportJob {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// CsvUpload | ApiSync | TenantMigration
+  importType    String
+  source        String
+  targetDesc    String?
+  totalRecords  Int      @default(0)
+  processedRecords Int   @default(0)
+  failedRecords Int      @default(0)
+  /// Queued | Processing | Completed | Failed | Partial
+  status        String   @default("Queued")
+  errorLog      String?
+
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
 }

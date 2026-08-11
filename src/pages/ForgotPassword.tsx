@@ -28,28 +28,28 @@ const ForgotPassword: React.FC = () => {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#090d16', color: '#cbd5e1',
+      background: 'var(--surface-sunk)', color: 'var(--ink-body)',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace", padding: 24,
     }}>
       <div style={{
         width: '100%', maxWidth: 480,
-        background: '#0f172a', border: '1px solid #1e293b',
+        background: 'var(--surface-sunk)', border: '1px solid var(--line)',
         borderRadius: 12, padding: 32,
       }}>
         <h1 style={{ fontSize: 22, marginBottom: 8 }}>Forgot Password</h1>
-        <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
           Enter your account email. A platform administrator will review the request
           and issue a one-time reset code, which they will communicate to you directly.
         </p>
 
         {submitted ? (
           <div style={{
-            background: '#0e2a1e', border: '1px solid #14532d',
-            padding: 16, borderRadius: 8, color: '#86efac',
+            background: 'var(--success-bg)', border: '1px solid var(--success-line)',
+            padding: 16, borderRadius: 8, color: 'var(--success)',
           }}>
             ✓ If the account exists, an administrator will review your reset request shortly.
             <div style={{ marginTop: 16 }}>
-              <Link to="/reset-password" style={{ color: '#93c5fd' }}>
+              <Link to="/reset-password" style={{ color: 'var(--info)' }}>
                 → I already have a reset code
               </Link>
             </div>
@@ -58,8 +58,8 @@ const ForgotPassword: React.FC = () => {
           <form onSubmit={handleSubmit}>
             {error && (
               <div style={{
-                background: '#3f1618', border: '1px solid #7f1d1d',
-                padding: 12, borderRadius: 6, color: '#fca5a5', marginBottom: 16, fontSize: 13,
+                background: 'var(--danger-bg)', border: '1px solid var(--danger-line)',
+                padding: 12, borderRadius: 6, color: 'var(--danger)', marginBottom: 16, fontSize: 13,
               }}>{error}</div>
             )}
             <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>Email address</label>
@@ -68,15 +68,15 @@ const ForgotPassword: React.FC = () => {
               onChange={(e) => setEmail(e.target.value)}
               style={{
                 width: '100%', padding: '10px 12px', boxSizing: 'border-box',
-                background: '#0b1220', border: '1px solid #1e293b', borderRadius: 6,
-                color: '#e2e8f0', fontFamily: 'inherit', marginBottom: 20,
+                background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6,
+                color: 'var(--ink-body)', fontFamily: 'inherit', marginBottom: 20,
               }}
             />
             <button
               type="submit" disabled={submitting}
               style={{
                 width: '100%', padding: '12px', border: 'none', borderRadius: 6,
-                background: submitting ? '#334155' : '#2563eb', color: 'white',
+                background: submitting ? 'var(--ink-body)' : 'var(--info)', color: 'white',
                 fontFamily: 'inherit', cursor: submitting ? 'not-allowed' : 'pointer',
                 fontSize: 14,
               }}
@@ -87,9 +87,9 @@ const ForgotPassword: React.FC = () => {
         )}
 
         <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-          <Link to="/" style={{ color: '#93c5fd' }}>← Back to login</Link>
+          <Link to="/" style={{ color: 'var(--info)' }}>← Back to login</Link>
           {!submitted && (
-            <Link to="/reset-password" style={{ color: '#93c5fd' }}>Have a code?</Link>
+            <Link to="/reset-password" style={{ color: 'var(--info)' }}>Have a code?</Link>
           )}
         </div>
       </div>

@@ -76,7 +76,17 @@
       "Bash(grep -vE \"^\\\\s*$\")",
       "Bash(curl -s -o /dev/null -w \"  /operations-manual.html -> HTTP %{http_code}\\\\n\" http://localhost:5173/operations-manual.html)",
       "Bash(curl -s -o /dev/null -w \"  /platform-guide.html    -> HTTP %{http_code}\\\\n\" http://localhost:5173/platform-guide.html)",
-      "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_notify.py\")"
+      "Bash(python \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/patch_notify.py\")",
+      "Bash(cp -r src \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/src-backup-pre-tokenise\")",
+      "Bash(node \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/tokenise.js\")",
+      "Bash(node \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/tokenise2.js\")",
+      "Bash(grep -nE \"var\\\\\\(--|#[0-9a-f]{3,8}\" src/pages/iam/iamStyles.tsx)",
+      "Bash(grep -nE \"#[0-9a-fA-F]{3,8}\" src/pages/iam/iamStyles.tsx)",
+      "Bash(grep -c DocumentDashboard __TRACKED_VAR__/pages/AppShell.tsx)",
+      "Bash(node \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/tokenise-css.js\")",
+      "Bash(sed -n '/\\\\.nav-item\\\\.active {/,/}/p' src/index.css)",
+      "Bash(sed -n '/^\\\\.app-shell/,/}/p' src/index.css)",
+      "Bash(sed -n '/^\\\\.topbar/,/}/p' src/index.css)"
     ]
   }
 }

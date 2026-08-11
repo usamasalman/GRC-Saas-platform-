@@ -46,9 +46,9 @@ const StandardsLibrary: React.FC = () => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>Standards &amp; frameworks</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-            Enable a framework to bring its clauses into scope. Scope: <strong style={{ color: '#93c5fd' }}>{scope || '—'}</strong>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Standards &amp; frameworks</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
+            Enable a framework to bring its clauses into scope. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <button onClick={load} style={ghostBtn}>↻ Refresh</button>
@@ -56,43 +56,43 @@ const StandardsLibrary: React.FC = () => {
 
       <StatStrip items={[
         ['Frameworks', standards.length],
-        ['Enabled here', <span style={{ color: enabledCount > 0 ? '#86efac' : '#fbbf24' }}>{enabledCount}</span>],
+        ['Enabled here', <span style={{ color: enabledCount > 0 ? 'var(--success)' : 'var(--warning)' }}>{enabledCount}</span>],
         ['Clauses in library', standards.reduce((a, s) => a + s.clauseCount, 0)],
         ['Entity enablements', standards.reduce((a, s) => a + s.enabledFor.length, 0)],
       ]} />
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
-        <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>{notice}</div>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>{notice}</div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading standards…</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading standards…</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 12 }}>
           {standards.map((s) => (
-            <div key={s.id} style={{ ...S.card, padding: 16, borderColor: s.isEnabledHere ? '#15803d' : '#1e293b' }}>
+            <div key={s.id} style={{ ...S.card, padding: 16, borderColor: s.isEnabledHere ? 'var(--success)' : 'var(--ink)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                <strong style={{ fontSize: 14, color: '#e2e8f0' }}>{s.code}</strong>
+                <strong style={{ fontSize: 14, color: 'var(--ink-body)' }}>{s.code}</strong>
                 {s.isEnabledHere
-                  ? <span style={pill('#86efac', '#15803d')}>enabled</span>
-                  : <span style={pill('#64748b', '#334155')}>not enabled</span>}
+                  ? <span style={pill('var(--success)', 'var(--success-line)')}>enabled</span>
+                  : <span style={pill('var(--ink-muted)', 'var(--line)')}>not enabled</span>}
               </div>
-              <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 6 }}>{s.title}</div>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-body)', marginBottom: 6 }}>{s.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10 }}>
                 {s.authority} · v{s.version} · {s.clauseCount} clauses
               </div>
               {s.description && (
-                <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6, marginBottom: 12 }}>{s.description}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', lineHeight: 1.6, marginBottom: 12 }}>{s.description}</div>
               )}
 
               {s.enabledFor.length > 0 && (
-                <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, color: '#475569', marginBottom: 5 }}>ENABLED FOR</div>
+                <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, color: 'var(--ink-body)', marginBottom: 5 }}>ENABLED FOR</div>
                   {s.enabledFor.map((e) => (
-                    <div key={e.tenantId} style={{ fontSize: 11, color: '#94a3b8', marginBottom: 3 }}>
-                      {e.tenantName} <span style={{ color: '#475569' }}>· {e.applicability}</span>
-                      {e.owner && <span style={{ color: '#475569' }}> · {e.owner.name}</span>}
+                    <div key={e.tenantId} style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 3 }}>
+                      {e.tenantName} <span style={{ color: 'var(--ink-body)' }}>· {e.applicability}</span>
+                      {e.owner && <span style={{ color: 'var(--ink-body)' }}> · {e.owner.name}</span>}
                     </div>
                   ))}
                 </div>

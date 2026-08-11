@@ -1,104 +1,157 @@
 import React from 'react';
 
-/** Shared visual language for the IAM pages. */
+/** Premium, aligned executive light visual language for pages across the application. */
 export const S = {
   page: {
-    padding: 24,
-    color: '#cbd5e1',
-    fontFamily: "'JetBrains Mono','Fira Code',monospace",
+    padding: '24px',
+    color: 'var(--ink-body)',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, sans-serif',
+    background: 'var(--surface-sunk)',
+    minHeight: '100vh',
   } as React.CSSProperties,
+
   card: {
-    background: '#0f172a',
-    border: '1px solid #1e293b',
-    borderRadius: 10,
+    background: 'var(--surface)',
+    border: '1px solid var(--line)',
+    borderRadius: 12,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02)',
   } as React.CSSProperties,
+
   input: {
     width: '100%',
-    padding: '9px 11px',
+    padding: '10px 14px',
     boxSizing: 'border-box',
-    background: '#0b1220',
-    border: '1px solid #1e293b',
-    borderRadius: 6,
-    color: '#e2e8f0',
+    background: 'var(--surface)',
+    border: '1px solid var(--field-line)',
+    borderRadius: 8,
+    color: 'var(--ink)',
     fontFamily: 'inherit',
     fontSize: 13,
+    outline: 'none',
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
   } as React.CSSProperties,
+
   th: {
     textAlign: 'left',
-    padding: '10px 12px',
-    fontWeight: 400,
-    borderBottom: '1px solid #1e293b',
+    padding: '12px 14px',
+    fontWeight: 600,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'var(--ink-body)',
+    borderBottom: '1px solid var(--line)',
     whiteSpace: 'nowrap',
   } as React.CSSProperties,
-  td: { padding: '10px 12px' } as React.CSSProperties,
-  headRow: { background: '#0b1220', color: '#64748b' } as React.CSSProperties,
-  bodyRow: { borderBottom: '1px solid #16202f' } as React.CSSProperties,
-  error: {
-    background: '#3f1618',
-    border: '1px solid #7f1d1d',
-    padding: 12,
-    borderRadius: 6,
-    color: '#fca5a5',
-    marginBottom: 14,
+
+  td: {
+    padding: '12px 14px',
     fontSize: 13,
+    color: 'var(--ink-body)',
+    verticalAlign: 'middle',
+  } as React.CSSProperties,
+
+  headRow: {
+    background: 'var(--surface-sunk)',
+  } as React.CSSProperties,
+
+  bodyRow: {
+    borderBottom: '1px solid var(--line-soft)',
+    transition: 'background 0.15s ease',
+  } as React.CSSProperties,
+
+  error: {
+    background: 'var(--danger-bg)',
+    border: '1px solid var(--danger-line)',
+    padding: 14,
+    borderRadius: 'var(--radius)',
+    color: 'var(--danger)',
+    marginBottom: 16,
+    fontSize: 13,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
   } as React.CSSProperties,
 };
 
+/** Primary action. Solid brand fill — corporate products do not gradient. */
 export const primaryBtn = (disabled = false): React.CSSProperties => ({
-  background: disabled ? '#334155' : '#2563eb',
-  color: '#fff',
-  border: 'none',
-  padding: '8px 14px',
-  borderRadius: 6,
+  background: disabled ? 'var(--surface-hover)' : 'var(--brand)',
+  color: disabled ? 'var(--ink-faint)' : '#fff',
+  border: `1px solid ${disabled ? 'var(--line)' : 'var(--brand)'}`,
+  padding: '9px 16px',
+  borderRadius: 'var(--radius)',
   cursor: disabled ? 'not-allowed' : 'pointer',
   fontFamily: 'inherit',
   fontSize: 13,
+  fontWeight: 600,
+  boxShadow: disabled ? 'none' : 'var(--shadow-sm)',
+  transition: 'background 0.15s ease, box-shadow 0.15s ease',
 });
 
 export const ghostBtn: React.CSSProperties = {
-  background: 'transparent',
-  color: '#94a3b8',
-  border: '1px solid #334155',
+  background: 'var(--surface)',
+  color: 'var(--ink-body)',
+  border: '1px solid var(--field-line)',
   padding: '8px 14px',
-  borderRadius: 6,
+  borderRadius: 'var(--radius)',
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 13,
+  fontWeight: 500,
+  boxShadow: 'var(--shadow-sm)',
+  transition: 'background 0.15s ease, border-color 0.15s ease',
 };
 
 export const linkBtn = (fg: string): React.CSSProperties => ({
   background: 'transparent',
   color: fg,
   border: 'none',
-  padding: '4px 7px',
-  borderRadius: 4,
+  padding: '4px 8px',
+  borderRadius: 'var(--radius-sm)',
   cursor: 'pointer',
   fontFamily: 'inherit',
-  fontSize: 11,
+  fontSize: 12,
+  fontWeight: 600,
 });
 
+/**
+ * Status pill. The tint is derived from the border colour with `color-mix`
+ * rather than by appending an alpha suffix to a hex string — that trick breaks
+ * the moment the colour arrives as a custom property.
+ */
 export const pill = (fg: string, br: string): React.CSSProperties => ({
-  fontSize: 10,
-  padding: '2px 7px',
-  borderRadius: 4,
+  fontSize: 11,
+  fontWeight: 600,
+  padding: '3px 9px',
+  borderRadius: 'var(--radius-sm)',
   border: `1px solid ${br}`,
   color: fg,
+  background: `color-mix(in srgb, ${br} 22%, var(--surface))`,
   whiteSpace: 'nowrap',
+  display: 'inline-flex',
+  alignItems: 'center',
+  letterSpacing: '0.01em',
 });
 
 export const STATUS_PILL: Record<string, React.CSSProperties> = {
-  Active: pill('#86efac', '#15803d'),
-  Suspended: pill('#fca5a5', '#7f1d1d'),
-  Inactive: pill('#94a3b8', '#334155'),
+  Active: pill('var(--success)', 'var(--success-line)'),
+  Suspended: pill('var(--danger)', 'var(--danger-line)'),
+  Inactive: pill('var(--ink-muted)', 'var(--line)'),
 };
 
-/** KPI strip used at the top of each IAM page. */
+/** High-grade StatStrip KPI banner component. */
 export const StatStrip: React.FC<{ items: [string, React.ReactNode][] }> = ({ items }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginBottom: 18 }}>
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
     {items.map(([label, value]) => (
-      <div key={label} style={{ ...S.card, padding: 14 }}>
-        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>{label}</div>
-        <div style={{ fontSize: 22, color: '#f1f5f9' }}>{value}</div>
+      <div key={label} style={{
+        ...S.card,
+        padding: '16px 18px',
+        position: 'relative',
+        overflow: 'hidden',
+        borderTop: '3px solid var(--info-line)',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--ink-muted)', marginBottom: 6 }}>{label}</div>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', color: 'var(--ink)' }}>{value}</div>
       </div>
     ))}
   </div>

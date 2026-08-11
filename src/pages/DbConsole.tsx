@@ -194,15 +194,15 @@ let toastCounter = 0;
 // ─── Styles ─────────────────────────────────────────────────────────────────
 const S = {
   page: {
-    background: '#090d16',
-    color: '#cbd5e1',
+    background: 'var(--surface-sunk)',
+    color: 'var(--ink-body)',
     minHeight: '100vh',
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
     padding: '24px',
     position: 'relative' as const,
   },
   header: {
-    borderBottom: '1px solid #1e293b',
+    borderBottom: '1px solid var(--line)',
     paddingBottom: '16px',
     marginBottom: '24px',
     display: 'flex',
@@ -222,8 +222,8 @@ const S = {
     gap: '6px',
   },
   main: {
-    background: '#0f172a',
-    border: '1px solid #1e293b',
+    background: 'var(--surface-sunk)',
+    border: '1px solid var(--line)',
     borderRadius: '8px',
     padding: '20px',
     overflowX: 'auto' as const,
@@ -231,7 +231,7 @@ const S = {
   th: {
     textAlign: 'left' as const,
     padding: '10px 8px',
-    color: '#94a3b8',
+    color: 'var(--ink-muted)',
     fontSize: '11px',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
@@ -247,9 +247,9 @@ const S = {
     whiteSpace: 'nowrap' as const,
   },
   input: {
-    background: '#090d16',
-    color: '#e2e8f0',
-    border: '1px solid #334155',
+    background: 'var(--surface-sunk)',
+    color: 'var(--ink-body)',
+    border: '1px solid var(--line)',
     padding: '10px 12px',
     borderRadius: '6px',
     fontSize: '13px',
@@ -259,7 +259,7 @@ const S = {
   },
   label: {
     fontSize: '12px',
-    color: '#94a3b8',
+    color: 'var(--ink-muted)',
     marginBottom: '4px',
     display: 'block' as const,
   },
@@ -528,9 +528,9 @@ export default function DbConsole() {
               border: '1px solid',
               backdropFilter: 'blur(12px)',
               animation: 'slideIn 0.3s ease-out',
-              ...(t.type === 'success' ? { background: '#052e1640', borderColor: '#10b98140', color: '#6ee7b7' }
-                : t.type === 'error' ? { background: '#450a0a40', borderColor: '#ef444440', color: '#fca5a5' }
-                : { background: '#0c1a3d40', borderColor: '#3b82f640', color: '#93c5fd' }),
+              ...(t.type === 'success' ? { background: '#052e1640', borderColor: '#10b98140', color: 'var(--success)' }
+                : t.type === 'error' ? { background: '#450a0a40', borderColor: '#ef444440', color: 'var(--danger)' }
+                : { background: '#0c1a3d40', borderColor: '#3b82f640', color: 'var(--info)' }),
             }}
           >
             {t.type === 'success' ? '✓ ' : t.type === 'error' ? '✗ ' : 'ℹ '}{t.message}
@@ -552,33 +552,33 @@ export default function DbConsole() {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header style={S.header}>
         <div>
-          <h1 style={{ color: '#10b981', margin: 0, fontSize: '22px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ color: '#334155' }}>$</span> GRC_WISDOM_DB_CONSOLE
+          <h1 style={{ color: 'var(--success)', margin: 0, fontSize: '22px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ color: 'var(--ink-body)' }}>$</span> GRC_WISDOM_DB_CONSOLE
             <span style={{
-              fontSize: '10px', background: '#10b98120', color: '#10b981',
+              fontSize: '10px', background: '#10b98120', color: 'var(--success)',
               padding: '2px 8px', borderRadius: '4px', fontWeight: 'normal',
             }}>v2.0</span>
           </h1>
-          <p style={{ color: '#475569', margin: '4px 0 0', fontSize: '12px' }}>
+          <p style={{ color: 'var(--ink-body)', margin: '4px 0 0', fontSize: '12px' }}>
             Full CRUD operations · {MODEL_DEFS.length} models · SQLite backend
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button className="db-btn" onClick={handleVerifyIntegrity} style={{
-            background: '#0f172a', border: '1px solid #3b82f6', color: '#3b82f6',
+            background: 'var(--surface-sunk)', border: '1px solid var(--info-line)', color: 'var(--info)',
             padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
           }}>
             🔗 Verify WORM Chain
           </button>
           <button className="db-btn" onClick={handleResetDb} style={{
-            background: '#450a0a', border: '1px solid #dc2626', color: '#fca5a5',
+            background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)',
             padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
           }}>
             ⚠ Wipe & Seed
           </button>
           <Link to="/" className="db-btn" style={{
-            background: '#1e293b', border: '1px solid #475569', color: '#e2e8f0',
+            background: 'var(--surface-sunk)', border: '1px solid var(--line)', color: 'var(--ink-body)',
             padding: '8px 14px', borderRadius: '6px', textDecoration: 'none', fontSize: '12px',
             display: 'flex', alignItems: 'center',
           }}>
@@ -590,23 +590,23 @@ export default function DbConsole() {
       {/* ── WORM Verification Panel ──────────────────────────────── */}
       {verificationResult && (
         <section style={{
-          background: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px',
+          background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '8px',
           padding: '16px', marginBottom: '24px', animation: 'fadeIn 0.3s',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{
-              color: verificationResult.integrityVerified ? '#10b981' : '#ef4444',
+              color: verificationResult.integrityVerified ? 'var(--success)' : 'var(--danger)',
               margin: 0, fontSize: '14px',
             }}>
               {verificationResult.integrityVerified ? '🔒 CHAIN INTEGRITY: SECURE' : '🚨 CHAIN INTEGRITY: TAMPERED'}
             </h3>
             <button onClick={() => setVerificationResult(null)} style={{
-              background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '16px',
+              background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '16px',
             }}>✕</button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid #1e293b' }}>
+              <tr style={{ borderBottom: '1px solid var(--line)' }}>
                 <th style={S.th}>Tenant</th>
                 <th style={{ ...S.th, textAlign: 'center' }}>Logs</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Status</th>
@@ -619,7 +619,7 @@ export default function DbConsole() {
                   <td style={{ ...S.td, textAlign: 'center' }}>{r.logCount}</td>
                   <td style={{
                     ...S.td, textAlign: 'right', fontWeight: 'bold',
-                    color: r.status === 'VALID' ? '#10b981' : '#ef4444',
+                    color: r.status === 'VALID' ? 'var(--success)' : 'var(--danger)',
                   }}>{r.status}</td>
                 </tr>
               ))}
@@ -632,7 +632,7 @@ export default function DbConsole() {
       <div style={S.grid}>
         {/* ── Sidebar: Model Tabs ────────────────────────────────── */}
         <nav style={S.sidebar}>
-          <div style={{ fontSize: '10px', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '4px 12px', marginBottom: '4px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--ink-body)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '4px 12px', marginBottom: '4px' }}>
             Tables
           </div>
           {MODEL_DEFS.map((m, idx) => (
@@ -640,8 +640,8 @@ export default function DbConsole() {
               key={m.name}
               onClick={() => { setActiveModelIdx(idx); setSearchQuery(''); setDetailRecord(null); }}
               style={{
-                background: activeModelIdx === idx ? 'linear-gradient(135deg, #10b981, #059669)' : '#1e293b',
-                color: activeModelIdx === idx ? '#fff' : '#94a3b8',
+                background: activeModelIdx === idx ? 'linear-gradient(135deg, #10b981, #059669)' : 'var(--ink)',
+                color: activeModelIdx === idx ? '#fff' : 'var(--ink-muted)',
                 border: activeModelIdx === idx ? 'none' : '1px solid transparent',
                 padding: '10px 14px',
                 textAlign: 'left',
@@ -649,7 +649,7 @@ export default function DbConsole() {
                 cursor: 'pointer',
                 fontWeight: activeModelIdx === idx ? '700' : '500',
                 fontSize: '13px',
-                transition: 'all 0.15s',
+                transition: 'background-color 0.15s ease, border-color 0.15s ease',
               }}
             >
               <span style={{ opacity: 0.5, marginRight: '6px' }}>◆</span>{m.name}
@@ -659,13 +659,13 @@ export default function DbConsole() {
             </button>
           ))}
 
-          <div style={{ borderTop: '1px solid #1e293b', marginTop: '12px', paddingTop: '12px' }}>
+          <div style={{ borderTop: '1px solid var(--line)', marginTop: '12px', paddingTop: '12px' }}>
             <button
               className="db-btn"
               onClick={openCreateModal}
               style={{
                 width: '100%',
-                background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
+                background: 'linear-gradient(135deg, var(--info-bg), #3b82f6)',
                 color: '#fff',
                 border: 'none',
                 padding: '12px',
@@ -685,10 +685,10 @@ export default function DbConsole() {
           {/* Table header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ color: '#e2e8f0', margin: 0, fontSize: '16px' }}>
-                <span style={{ color: '#3b82f6' }}>SELECT * FROM</span> {model.endpoint}
+              <h2 style={{ color: 'var(--ink-body)', margin: 0, fontSize: '16px' }}>
+                <span style={{ color: 'var(--info)' }}>SELECT * FROM</span> {model.endpoint}
               </h2>
-              <p style={{ color: '#475569', margin: '2px 0 0', fontSize: '11px' }}>
+              <p style={{ color: 'var(--ink-body)', margin: '2px 0 0', fontSize: '11px' }}>
                 {filteredRecords.length} record{filteredRecords.length !== 1 ? 's' : ''}
                 {searchQuery && ` (filtered from ${records.length})`}
               </p>
@@ -703,7 +703,7 @@ export default function DbConsole() {
                 style={{ ...S.input, width: '200px', padding: '8px 12px', fontSize: '12px' }}
               />
               <button className="db-btn" onClick={() => fetchRecords(model.endpoint)} style={{
-                background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
+                background: 'var(--surface-sunk)', border: '1px solid var(--line)', color: 'var(--ink-muted)',
                 padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
               }}>
                 ↻ Refresh
@@ -713,16 +713,16 @@ export default function DbConsole() {
 
           {/* Table body */}
           {loading ? (
-            <div style={{ color: '#475569', padding: '40px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--ink-body)', padding: '40px', textAlign: 'center' }}>
               <div style={{ fontSize: '24px', marginBottom: '8px', animation: 'fadeIn 0.5s' }}>⏳</div>
               Executing query…
             </div>
           ) : error ? (
-            <div style={{ color: '#fca5a5', background: '#450a0a20', padding: '16px', borderRadius: '6px', border: '1px solid #450a0a' }}>
+            <div style={{ color: 'var(--danger)', background: '#450a0a20', padding: '16px', borderRadius: '6px', border: '1px solid #450a0a' }}>
               ✗ {error}
             </div>
           ) : filteredRecords.length === 0 ? (
-            <div style={{ color: '#475569', padding: '40px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--ink-body)', padding: '40px', textAlign: 'center' }}>
               <div style={{ fontSize: '32px', marginBottom: '8px' }}>∅</div>
               {searchQuery ? 'No records match your filter.' : 'Empty table. Click "+ Add" to create a record.'}
             </div>
@@ -730,7 +730,7 @@ export default function DbConsole() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ borderBottom: '2px solid #1e293b' }}>
+                  <tr style={{ borderBottom: '2px solid var(--line)' }}>
                     <th style={S.th}>ID</th>
                     {model.displayColumns.map(col => (
                       <th key={col} style={S.th}>{col}</th>
@@ -741,21 +741,21 @@ export default function DbConsole() {
                 <tbody>
                   {filteredRecords.map(r => (
                     <tr key={r.id} className="db-row" style={{ cursor: 'default' }}>
-                      <td style={{ ...S.td, color: '#475569', fontFamily: 'monospace' }}>
+                      <td style={{ ...S.td, color: 'var(--ink-body)', fontFamily: 'monospace' }}>
                         {r.id?.substring(0, 8)}…
                       </td>
                       {model.displayColumns.map(col => (
                         <td key={col} style={{
                           ...S.td,
                           color: col === 'status' ? (
-                            ['Active', 'PUBLISHED', 'Completed', 'VALID', 'Resolved', 'Closed'].includes(r[col]) ? '#10b981'
-                            : ['Inactive', 'Suspended', 'TAMPERED', 'Critical'].includes(r[col]) ? '#ef4444'
-                            : ['DRAFT', 'Pending', 'Scheduled', 'IN_REVIEW'].includes(r[col]) ? '#f59e0b'
-                            : '#cbd5e1'
-                          ) : col === 'email' ? '#38bdf8'
-                          : col === 'passwordHash' ? '#64748b'
-                          : col === 'score' ? (Number(r[col]) >= 70 ? '#ef4444' : Number(r[col]) >= 40 ? '#f59e0b' : '#10b981')
-                          : '#cbd5e1',
+                            ['Active', 'PUBLISHED', 'Completed', 'VALID', 'Resolved', 'Closed'].includes(r[col]) ? 'var(--success)'
+                            : ['Inactive', 'Suspended', 'TAMPERED', 'Critical'].includes(r[col]) ? 'var(--danger)'
+                            : ['DRAFT', 'Pending', 'Scheduled', 'IN_REVIEW'].includes(r[col]) ? 'var(--warning)'
+                            : 'var(--ink-body)'
+                          ) : col === 'email' ? 'var(--info)'
+                          : col === 'passwordHash' ? 'var(--ink-muted)'
+                          : col === 'score' ? (Number(r[col]) >= 70 ? 'var(--danger)' : Number(r[col]) >= 40 ? 'var(--warning)' : 'var(--success)')
+                          : 'var(--ink-body)',
                           fontWeight: ['name', 'subject', 'title', 'asset'].includes(col) ? 'bold' : 'normal',
                         }}>
                           {formatCell(r[col], col)}
@@ -767,7 +767,7 @@ export default function DbConsole() {
                           onClick={() => setDetailRecord(detailRecord?.id === r.id ? null : r)}
                           title="Inspect record"
                           style={{
-                            background: 'transparent', border: 'none', color: '#8b5cf6',
+                            background: 'transparent', border: 'none', color: 'var(--violet)',
                             cursor: 'pointer', fontSize: '12px', padding: '4px 6px',
                           }}
                         >
@@ -778,7 +778,7 @@ export default function DbConsole() {
                           onClick={() => openEditModal(r)}
                           title="Edit record"
                           style={{
-                            background: 'transparent', border: 'none', color: '#38bdf8',
+                            background: 'transparent', border: 'none', color: 'var(--info)',
                             cursor: 'pointer', fontSize: '12px', padding: '4px 6px',
                           }}
                         >
@@ -789,7 +789,7 @@ export default function DbConsole() {
                           onClick={() => handleDelete(r.id)}
                           title="Delete record"
                           style={{
-                            background: 'transparent', border: 'none', color: '#fca5a5',
+                            background: 'transparent', border: 'none', color: 'var(--danger)',
                             cursor: 'pointer', fontSize: '12px', padding: '4px 6px',
                           }}
                         >
@@ -806,29 +806,29 @@ export default function DbConsole() {
           {/* ── Detail Panel (Inspect Record) ───────────────────── */}
           {detailRecord && (
             <div style={{
-              marginTop: '20px', background: '#090d16', border: '1px solid #334155',
+              marginTop: '20px', background: 'var(--surface-sunk)', border: '1px solid var(--line)',
               borderRadius: '8px', padding: '16px', animation: 'scaleIn 0.2s',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '14px', color: '#8b5cf6' }}>
+                <h3 style={{ margin: 0, fontSize: '14px', color: 'var(--violet)' }}>
                   📋 Record Detail — {detailRecord.id?.substring(0, 12)}…
                 </h3>
                 <button onClick={() => setDetailRecord(null)} style={{
-                  background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '16px',
+                  background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '16px',
                 }}>✕</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
                 {Object.entries(detailRecord).map(([key, value]) => (
                   <div key={key} style={{
                     display: 'flex', gap: '8px', padding: '6px 8px', borderRadius: '4px',
-                    background: '#0f172a',
+                    background: 'var(--surface-sunk)',
                   }}>
-                    <span style={{ color: '#64748b', minWidth: '120px', flexShrink: 0 }}>{key}:</span>
+                    <span style={{ color: 'var(--ink-muted)', minWidth: '120px', flexShrink: 0 }}>{key}:</span>
                     <span style={{
-                      color: '#e2e8f0', wordBreak: 'break-all',
+                      color: 'var(--ink-body)', wordBreak: 'break-all',
                       maxHeight: '60px', overflow: 'auto',
                     }}>
-                      {value === null ? <span style={{ color: '#475569' }}>null</span> : String(value)}
+                      {value === null ? <span style={{ color: 'var(--ink-body)' }}>null</span> : String(value)}
                     </span>
                   </div>
                 ))}
@@ -853,17 +853,17 @@ export default function DbConsole() {
           <form
             onSubmit={handleSubmit}
             style={{
-              background: '#0f172a', border: '1px solid #334155',
+              background: 'var(--surface-sunk)', border: '1px solid var(--line)',
               borderRadius: '12px', padding: '28px', width: '520px',
               maxWidth: '100%', animation: 'scaleIn 0.2s',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, color: isEditing ? '#38bdf8' : '#10b981', fontSize: '16px' }}>
+              <h3 style={{ margin: 0, color: isEditing ? 'var(--info)' : 'var(--success)', fontSize: '16px' }}>
                 {isEditing ? `✏ Edit ${model.name}` : `+ Create ${model.name}`}
               </h3>
               <button type="button" onClick={() => setShowModal(false)} style={{
-                background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '20px',
+                background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '20px',
               }}>✕</button>
             </div>
 
@@ -874,7 +874,7 @@ export default function DbConsole() {
                   return (
                     <div key={f.name}>
                       <label style={S.label}>
-                        {f.label} {f.required && !isEditing && <span style={{ color: '#ef4444' }}>*</span>}
+                        {f.label} {f.required && !isEditing && <span style={{ color: 'var(--danger)' }}>*</span>}
                       </label>
                       <select
                         value={formData[f.name] || ''}
@@ -887,7 +887,7 @@ export default function DbConsole() {
                           <option key={t.id} value={t.id}>{t.name} ({t.type}) — {t.id.substring(0, 8)}…</option>
                         ))}
                       </select>
-                      {formErrors[f.name] && <span style={{ color: '#ef4444', fontSize: '11px' }}>{formErrors[f.name]}</span>}
+                      {formErrors[f.name] && <span style={{ color: 'var(--danger)', fontSize: '11px' }}>{formErrors[f.name]}</span>}
                     </div>
                   );
                 }
@@ -895,7 +895,7 @@ export default function DbConsole() {
                 return (
                   <div key={f.name}>
                     <label style={S.label}>
-                      {f.label} {f.required && !isEditing && <span style={{ color: '#ef4444' }}>*</span>}
+                      {f.label} {f.required && !isEditing && <span style={{ color: 'var(--danger)' }}>*</span>}
                     </label>
 
                     {f.type === 'select' ? (
@@ -946,7 +946,7 @@ export default function DbConsole() {
                       />
                     )}
 
-                    {formErrors[f.name] && <span style={{ color: '#ef4444', fontSize: '11px', marginTop: '2px', display: 'block' }}>{formErrors[f.name]}</span>}
+                    {formErrors[f.name] && <span style={{ color: 'var(--danger)', fontSize: '11px', marginTop: '2px', display: 'block' }}>{formErrors[f.name]}</span>}
                   </div>
                 );
               })}
@@ -960,7 +960,7 @@ export default function DbConsole() {
                 disabled={submitting}
                 style={{
                   flex: 1, padding: '12px',
-                  background: submitting ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+                  background: submitting ? 'var(--ink-body)' : 'linear-gradient(135deg, #10b981, #059669)',
                   color: '#fff', border: 'none', borderRadius: '6px',
                   cursor: submitting ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '13px',
                 }}
@@ -972,8 +972,8 @@ export default function DbConsole() {
                 type="button"
                 onClick={() => setShowModal(false)}
                 style={{
-                  flex: 1, background: '#1e293b', color: '#94a3b8',
-                  border: '1px solid #334155', padding: '12px', borderRadius: '6px',
+                  flex: 1, background: 'var(--surface-sunk)', color: 'var(--ink-muted)',
+                  border: '1px solid var(--line)', padding: '12px', borderRadius: '6px',
                   cursor: 'pointer', fontSize: '13px',
                 }}
               >

@@ -90,9 +90,9 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#f1f5f9' }}>{cfg.title}</h2>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-            {cfg.blurb} Scope: <strong style={{ color: '#93c5fd' }}>{scope || '—'}</strong>
+          <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>{cfg.title}</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
+            {cfg.blurb} Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <button onClick={load} style={ghostBtn}>↻ Refresh</button>
@@ -101,8 +101,8 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
       <StatStrip items={[
         ['In view', users.length],
         ['Active', totals.active ?? 0],
-        ['MFA enabled', <span style={{ color: (totals.mfaEnabled ?? 0) === 0 ? '#fbbf24' : '#f1f5f9' }}>{totals.mfaEnabled ?? 0}</span>],
-        ['No role linked', <span style={{ color: (totals.unlinkedRole ?? 0) > 0 ? '#fca5a5' : '#f1f5f9' }}>{totals.unlinkedRole ?? 0}</span>],
+        ['MFA enabled', <span style={{ color: (totals.mfaEnabled ?? 0) === 0 ? 'var(--warning)' : 'var(--ink)' }}>{totals.mfaEnabled ?? 0}</span>],
+        ['No role linked', <span style={{ color: (totals.unlinkedRole ?? 0) > 0 ? 'var(--danger)' : 'var(--ink)' }}>{totals.unlinkedRole ?? 0}</span>],
         ['Must change pw', totals.mustChangePassword ?? 0],
       ]} />
 
@@ -118,13 +118,13 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
-        <div style={{ background: '#0e2a1e', border: '1px solid #14532d', padding: 10, borderRadius: 6, color: '#86efac', marginBottom: 14, fontSize: 12 }}>
+        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
           {notice}
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748b', padding: 30 }}>Loading users…</div>
+        <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading users…</div>
       ) : (
         <div style={{ ...S.card, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -137,37 +137,37 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
               {visible.map((u) => (
                 <tr key={u.id} style={S.bodyRow}>
                   <td style={S.td}>
-                    <div style={{ color: '#e2e8f0' }}>{u.name}</div>
-                    <div style={{ color: '#475569', fontSize: 11 }}>{u.email}</div>
+                    <div style={{ color: 'var(--ink-body)' }}>{u.name}</div>
+                    <div style={{ color: 'var(--ink-body)', fontSize: 11 }}>{u.email}</div>
                   </td>
-                  <td style={{ ...S.td, color: '#94a3b8' }}>
+                  <td style={{ ...S.td, color: 'var(--ink-muted)' }}>
                     {u.tenantName}
-                    <div style={{ color: '#475569', fontSize: 10 }}>{u.tenantType}</div>
+                    <div style={{ color: 'var(--ink-body)', fontSize: 10 }}>{u.tenantType}</div>
                   </td>
                   <td style={S.td}>
-                    <span style={{ color: '#cbd5e1' }}>{u.roleName}</span>
-                    {!u.roleIsSystem && <span style={{ ...pill('#c4b5fd', '#5b21b6'), marginLeft: 6 }}>custom</span>}
-                    {u.roleNeedsReview && <span style={{ ...pill('#fbbf24', '#78350f'), marginLeft: 4 }}>review</span>}
-                    {!u.roleId && <span style={{ ...pill('#fca5a5', '#7f1d1d'), marginLeft: 6 }}>unlinked</span>}
+                    <span style={{ color: 'var(--ink-body)' }}>{u.roleName}</span>
+                    {!u.roleIsSystem && <span style={{ ...pill('var(--violet)', 'var(--violet)'), marginLeft: 6 }}>custom</span>}
+                    {u.roleNeedsReview && <span style={{ ...pill('var(--warning)', 'var(--warning-line)'), marginLeft: 4 }}>review</span>}
+                    {!u.roleId && <span style={{ ...pill('var(--danger)', 'var(--danger-line)'), marginLeft: 6 }}>unlinked</span>}
                   </td>
-                  <td style={{ ...S.td, color: u.capabilityCount === 0 ? '#fca5a5' : '#cbd5e1' }}>{u.capabilityCount}</td>
-                  <td style={{ ...S.td, color: '#64748b' }}>{u.department || '—'}</td>
+                  <td style={{ ...S.td, color: u.capabilityCount === 0 ? 'var(--danger)' : 'var(--ink-body)' }}>{u.capabilityCount}</td>
+                  <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{u.department || '—'}</td>
                   <td style={S.td}>
-                    <span style={u.mfaEnabled ? pill('#86efac', '#15803d') : pill('#64748b', '#334155')}>
+                    <span style={u.mfaEnabled ? pill('var(--success)', 'var(--success-line)') : pill('var(--ink-muted)', 'var(--line)')}>
                       {u.mfaEnabled ? 'on' : 'off'}
                     </span>
                   </td>
                   <td style={S.td}><span style={STATUS_PILL[u.status] || STATUS_PILL.Inactive}>{u.status}</span></td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                    <button onClick={() => changeRole(u)} style={linkBtn('#93c5fd')}>role</button>
-                    <button onClick={() => toggleStatus(u)} style={linkBtn(u.status === 'Active' ? '#fbbf24' : '#86efac')}>
+                    <button onClick={() => changeRole(u)} style={linkBtn('var(--info)')}>role</button>
+                    <button onClick={() => toggleStatus(u)} style={linkBtn(u.status === 'Active' ? 'var(--warning)' : 'var(--success)')}>
                       {u.status === 'Active' ? 'suspend' : 'activate'}
                     </button>
                   </td>
                 </tr>
               ))}
               {visible.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: '#64748b' }}>
+                <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: 'var(--ink-muted)' }}>
                   No users in this tier within your scope.
                 </td></tr>
               )}
