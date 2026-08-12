@@ -2,6 +2,12 @@ import { Router } from 'express';
 import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
 import { requireCapability, requireAnyCapability, CAP } from '../services/capabilityEngine';
 import {
+  createStandard, addClauses, updateStandard, deleteStandard, mapControlToClauses,
+} from '../controllers/standardsAuthoringController';
+import {
+  createControl, cloneControl, updateControl, deleteControl, listClauses,
+} from '../controllers/controlAuthoringController';
+import {
   listStandards, enableStandard,
   listControls,
   listImplementations, getImplementation, createImplementation,
@@ -48,8 +54,29 @@ router.use(rejectIfMustChangePassword);
 router.get('/standards', listStandards);
 router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableStandard);
 
+// ── Authoring your own framework ──────────────────────────────────────────
+// The capability is literally "import or enable a standard", so importing one
+// belongs to the same people who enable them.
+router.post('/standards', requireCapability(CAP.ENABLE_STANDARD), createStandard);
+router.post('/standards/:id/clauses', requireCapability(CAP.ENABLE_STANDARD), addClauses);
+router.patch('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), updateStandard);
+router.delete('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), deleteStandard);
+// Mapping a control to clauses is what makes the framework auditable.
+router.post('/controls/:controlId/clauses', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), mapControlToClauses);
+
 // ── Control library ───────────────────────────────────────────────────────
 router.get('/controls', listControls);
+// Clause picker for the authoring screens.
+router.get('/clauses', listClauses);
+
+// ── Authoring controls ────────────────────────────────────────────────────
+// A compliance manager or consultant owns this: writing the control set an
+// organisation will actually be assessed against.
+router.post('/controls', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), createControl);
+// Library controls are shared, so copying is the supported way to adapt one.
+router.post('/controls/:id/clone', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), cloneControl);
+router.patch('/controls/:id', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), updateControl);
+router.delete('/controls/:id', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), deleteControl);
 
 // ── Implementations + evidence ────────────────────────────────────────────
 router.get('/implementations', listImplementations);

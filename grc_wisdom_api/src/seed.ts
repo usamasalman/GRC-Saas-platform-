@@ -786,7 +786,7 @@ async function main() {
     const codes = ['ISO27001', 'PDPL'];
     if (!ctxName.startsWith('Global Bank')) codes.push('NCA-ECC');
     for (const code of codes) {
-      const std = await prisma.standard.findUnique({ where: { code } });
+      const std = await prisma.standard.findFirst({ where: { tenantId: null, code } });
       if (!std) continue;
       await prisma.tenantStandardEnablement.create({
         data: { tenantId: tid, standardId: std.id, applicability: 'Full', ownerId: tenantUsers[0].id },

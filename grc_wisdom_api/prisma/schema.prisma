@@ -39,6 +39,7 @@ model Tenant {
   slaPolicies   SlaPolicy[]
   knowledgeArticles KnowledgeArticle[]
   controls      Control[]
+  standards     Standard[]
   standardEnablements TenantStandardEnablement[]
   implementations ControlImplementation[]
   evidence      Evidence[]
@@ -246,11 +247,20 @@ model PasswordResetRequest {
 /// A published framework (ISO 27001, NCA ECC, Saudi PDPL, SOC 2…).
 model Standard {
   id          String   @id @default(uuid())
-  code        String   @unique
+
+  /// Null means a platform standard, published by the operator and available
+  /// to every tenant. Set means a framework this organisation authored for
+  /// itself — its own policy set, a customer contract schedule, a regulator
+  /// letter turned into auditable clauses. Mirrors how Role scopes itself.
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  code        String
   title       String
   authority   String
   version     String
   description String?
+  /// System standards are read-only: nobody edits the text of ISO 27001.
   isSystem    Boolean  @default(true)
 
   createdAt   DateTime @default(now())
@@ -258,6 +268,10 @@ model Standard {
 
   clauses     StandardClause[]
   enablements TenantStandardEnablement[]
+
+  /// Two organisations may both author a framework called POLICY-01.
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
 /// An individually addressable requirement inside a standard.

@@ -86,7 +86,10 @@
       "Bash(node \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/tokenise-css.js\")",
       "Bash(sed -n '/\\\\.nav-item\\\\.active {/,/}/p' src/index.css)",
       "Bash(sed -n '/^\\\\.app-shell/,/}/p' src/index.css)",
-      "Bash(sed -n '/^\\\\.topbar/,/}/p' src/index.css)"
+      "Bash(sed -n '/^\\\\.topbar/,/}/p' src/index.css)",
+      "Bash(sed -n '/^model Standard {/,/^}/p' prisma/schema.prisma)",
+      "Bash(sed -n '/^model StandardClause {/,/^}/p' prisma/schema.prisma)",
+      "Bash(cp \"C:/Users/Pablo/AppData/Local/Temp/claude/C--Users-Pablo-Downloads-grc-wisdom-web/b49052a3-74c6-4ad0-afff-09c72d60d963/scratchpad/standards-test.sh\" scripts/verify/standards-test.sh)"
     ]
   }
 }

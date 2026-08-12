@@ -20,6 +20,9 @@ export const listStandards = async (req: AuthenticatedRequest, res: Response): P
     const scope = await resolveTenantScope(req.user!.tenantId);
 
     const standards = await prisma.standard.findMany({
+      // Platform standards (tenantId null) plus any this organisation authored.
+      // A private framework must never surface in another tenant's library.
+      where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
       include: {
         _count: { select: { clauses: true } },
         enablements: {
@@ -41,6 +44,10 @@ export const listStandards = async (req: AuthenticatedRequest, res: Response): P
         id: s.id, code: s.code, title: s.title, authority: s.authority,
         version: s.version, description: s.description,
         clauseCount: s._count.clauses,
+        isSystem: s.isSystem,
+        // Tells the UI whether to offer edit controls at all.
+        isOwnedHere: s.tenantId !== null && scope.tenantIds.includes(s.tenantId),
+        publishedPlatformWide: s.tenantId === null,
         enabledFor: s.enablements.map((e) => ({
           tenantId: e.tenantId, tenantName: e.tenant.name,
           applicability: e.applicability, owner: e.owner, enabledAt: e.enabledAt,

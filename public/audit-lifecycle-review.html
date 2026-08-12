@@ -1,0 +1,408 @@
+<title>GRC Wisdom — Audit Lifecycle Plan Review</title>
+<style>
+  :root {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --measure: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+      --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+      --rule:#2B3340; --rule-soft:#232A34; --accent:#7FB2D9; --accent-soft:#1B2A38;
+      --plum:#C08FAE; --plum-soft:#2A1F27; --ok:#6FBF95; --ok-soft:#17281F;
+      --warn:#D9A94A; --warn-soft:#2A2216; --crit:#E08076; --crit-soft:#2C1B19; }
+  }
+  :root[data-theme="dark"] { --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+    --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+    --rule:#2B3340; --rule-soft:#232A34; --accent:#7FB2D9; --accent-soft:#1B2A38;
+    --plum:#C08FAE; --plum-soft:#2A1F27; --ok:#6FBF95; --ok-soft:#17281F;
+    --warn:#D9A94A; --warn-soft:#2A2216; --crit:#E08076; --crit-soft:#2C1B19; }
+  :root[data-theme="light"] { --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE; --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED; --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC; --crit:#9B3024; --crit-soft:#F7E6E3; }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1220px; margin:0 auto; padding:0 24px 96px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:56px; align-items:start; }
+  .masthead { grid-column:1/-1; border-bottom:2px solid var(--ink); padding:56px 0 28px; margin-bottom:48px; }
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--plum); margin:0 0 18px; }
+  .masthead h1 { font-family:var(--serif); font-weight:400; font-size:clamp(2.2rem,5vw,3.3rem); line-height:1.08; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; }
+  .standfirst { font-family:var(--serif); font-size:clamp(1.05rem,2vw,1.22rem); line-height:1.5; color:var(--ink-soft); max-width:62ch; margin:0; }
+  .verdict { margin-top:26px; display:flex; flex-wrap:wrap; gap:10px 26px; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.03em; }
+  .verdict b { color:var(--ink-soft); font-weight:500; }
+  .rail { position:sticky; top:28px; }
+  .rail-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); padding-bottom:10px; border-bottom:1px solid var(--rule); margin-bottom:12px; }
+  .rail ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+  .rail a { display:block; padding:5px 0 5px 11px; margin-left:-11px; font-size:13.5px; line-height:1.4; color:var(--ink-soft); text-decoration:none; border-left:2px solid transparent; transition:color .12s,border-color .12s; }
+  .rail a:hover, .rail a:focus-visible { color:var(--accent); border-left-color:var(--accent); }
+  .rail a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+  .rail-num { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-right:7px; }
+  main { min-width:0; }
+  section { margin-bottom:72px; scroll-margin-top:24px; }
+  h2 { font-family:var(--serif); font-weight:400; font-size:clamp(1.6rem,3vw,2rem); line-height:1.2; letter-spacing:-.01em; margin:0 0 10px; text-wrap:balance; }
+  .sec-num { font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--plum); display:block; margin-bottom:10px; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1.02rem; margin:34px 0 10px; text-wrap:balance; }
+  p { margin:0 0 15px; max-width:var(--measure); }
+  .lede { font-size:1.06rem; color:var(--ink-soft); max-width:var(--measure); }
+  a { color:var(--accent); }
+  ul, ol { max-width:var(--measure); padding-left:20px; margin:0 0 15px; }
+  li { margin-bottom:7px; }
+  strong { font-weight:650; }
+  code { font-family:var(--mono); font-size:.855em; background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:3px; padding:1px 5px; word-break:break-word; }
+  pre { background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:5px; padding:14px 16px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.6; margin:0 0 22px; }
+  pre code { background:none; border:none; padding:0; font-size:inherit; }
+  .scroll { overflow-x:auto; margin:0 0 22px; border:1px solid var(--rule); border-radius:5px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; background:var(--card); }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); font-weight:500; background:var(--ground-sunk); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  .chip { display:inline-flex; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:3px; white-space:nowrap; }
+  .c-done { background:var(--ok-soft); color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 30%,transparent); }
+  .c-part { background:var(--warn-soft); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); }
+  .c-gap  { background:var(--crit-soft); color:var(--crit); border:1px solid color-mix(in srgb,var(--crit) 30%,transparent); }
+  .note { border-left:3px solid var(--plum); background:var(--plum-soft); padding:14px 18px; border-radius:0 4px 4px 0; margin:0 0 22px; max-width:var(--measure); }
+  .note.alert { border-left-color:var(--crit); background:var(--crit-soft); }
+  .note p { margin:0; } .note p + p { margin-top:10px; }
+  .note-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); display:block; margin-bottom:5px; }
+  .note.alert .note-label { color:var(--crit); }
+  .evidence { background:var(--ground-sunk); border-left:3px solid var(--ok); border-radius:0 4px 4px 0; padding:12px 16px; margin:0 0 22px; }
+  .evidence-label { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ok); display:block; margin-bottom:6px; }
+  .evidence pre { background:none; border:none; padding:0; margin:0; font-size:11.5px; }
+  .footer { grid-column:1/-1; border-top:2px solid var(--ink); padding-top:20px; font-size:13.5px; color:var(--ink-faint); max-width:var(--measure); }
+  @media (max-width:900px) {
+    .wrap { grid-template-columns:1fr; gap:0; padding:0 20px 64px; }
+    .rail { position:static; margin-bottom:44px; padding-bottom:28px; border-bottom:1px solid var(--rule); }
+    .rail ol { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:0 20px; }
+    .masthead { padding-top:40px; margin-bottom:36px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Review · Audit Lifecycle Plan vs the Running System</p>
+    <h1>Most of this is already built. The gaps are elsewhere.</h1>
+    <p class="standfirst">
+      An assessment of the proposed Enterprise Audit Lifecycle plan against the code that actually
+      runs today — what already ships, what the plan misses, three miscited standards, and one
+      verified defect that undermines the plan's central premise.
+    </p>
+    <div class="verdict">
+      <span><b>6 of 7</b> phases already built</span>
+      <span><b>1</b> critical defect verified</span>
+      <span><b>5</b> mandatory IIA elements absent</span>
+      <span><b>3</b> standards miscited</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#verdict"><span class="rail-num">01</span>Verdict</a></li>
+      <li><a href="#defect"><span class="rail-num">02</span>The critical defect</a></li>
+      <li><a href="#citations"><span class="rail-num">03</span>Miscited standards</a></li>
+      <li><a href="#missing"><span class="rail-num">04</span>What the plan misses</a></li>
+      <li><a href="#platform"><span class="rail-num">05</span>Platform-specific gaps</a></li>
+      <li><a href="#sequence"><span class="rail-num">06</span>What I would do instead</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="verdict">
+      <span class="sec-num">01</span>
+      <h2>Verdict</h2>
+
+      <p class="lede">
+        The plan describes six of its seven phases as work to be done. Six of them shipped and are
+        covered by passing tests. Presenting them as proposals would mean rebuilding what already runs.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Phase</th><th>Status</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>1 · Universe &amp; risk scoring</td><td><span class="chip c-done">Built</span></td><td><code>/universe</code>, six weighted factors, never-audited uplift</td></tr>
+            <tr><td>2 · Annual risk-based plan</td><td><span class="chip c-done">Built</span></td><td><code>/plans/:id/approve</code>, preparer ≠ approver, capacity check, high-risk coverage gate</td></tr>
+            <tr><td>3 · Engagement scoping</td><td><span class="chip c-done">Built</span></td><td><code>/plan-items/:itemId/instantiate</code></td></tr>
+            <tr><td>4 · RCM, testing, workpapers</td><td><span class="chip c-done">Built</span></td><td><code>/matrix/:rowId/procedures</code>, <code>/workpapers/:wpId/review</code>, conclusion-consistency and open-note gates</td></tr>
+            <tr><td>5 · Findings &amp; management response</td><td><span class="chip c-done">Built</span></td><td><code>/issues/:id/respond</code>, auditor barred from responding</td></tr>
+            <tr><td>6 · CAP &amp; independent closure</td><td><span class="chip c-done">Built</span></td><td><code>/issues/:id/close</code>, raiser <em>and</em> remediator both barred</td></tr>
+            <tr><td>7 · Final report &amp; committee sign-off</td><td><span class="chip c-gap">Absent</span></td><td>No report endpoint, model, or opinion field anywhere</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The SoD matrix in the plan is accurate and matches what the server enforces — with one
+        understatement. The plan says closure bars the raiser and the CAP owner; the code also bars
+        whoever recorded the management response, which is the stricter and more defensible rule.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Where the real work is</span>
+        <p>
+          The backend is roughly four slices ahead of the interface. Phases 1, 2 and 4 have
+          <strong>no screens at all</strong> — no audit universe page, no annual plan page, no risk and
+          control matrix, no workpaper view. The plan's proposal to add five tabs to
+          <code>AuditProgramme.tsx</code> is the single most valuable item in it, and it is the only
+          frontend item.
+        </p>
+      </div>
+    </section>
+
+    <section id="defect">
+      <span class="sec-num">02</span>
+      <h2>The critical defect</h2>
+
+      <p class="lede">
+        The plan's premise is seven sequential phases. The engagement state machine does not enforce
+        sequence at all — it validates that a status is a member of a list, never that the transition
+        is legal.
+      </p>
+
+      <div class="evidence">
+        <span class="evidence-label">Reproduced against the running system</span>
+        <pre><code>created: AUD-2026-04 (Planned)
+
+Planned -> Closed, no fieldwork, no workpapers, no findings:
+   ALLOWED — now Closed  (workpaper gate bypassed)
+
+Closed -> Fieldwork:
+   ALLOWED — reopened to Fieldwork</code></pre>
+      </div>
+
+      <p>
+        The workpaper review gate is real, but it only fires when the target status is
+        <code>Reporting</code>. Set the status straight to <code>Closed</code> and the engagement
+        never passes through it. An audit can therefore be signed off with no evidence file, no
+        testing, and no review — which is precisely the failure mode the gate was written to prevent.
+      </p>
+
+      <p>
+        Closed engagements can also silently reopen. There is no record that it happened, no reason
+        captured, and no distinction between "reopened because the file was deficient" and a
+        mis-click.
+      </p>
+
+      <div class="note alert">
+        <span class="note-label">Why this outranks everything else in the plan</span>
+        <p>
+          Every other gate in the audit module is sound. This one hole makes them optional, because
+          the path around them is a single field update that the API accepts. Any external quality
+          assessment would test exactly this, and the plan does not mention it.
+        </p>
+      </div>
+
+      <p>
+        The fix is small: declare the legal transitions and reject the rest, requiring a reason and an
+        audit entry for any backwards move.
+      </p>
+      <pre><code>Planned    → Fieldwork | Cancelled
+Fieldwork  → Reporting | Cancelled
+Reporting  → Closed
+Closed     → (terminal; reopening is a new follow-up engagement)</code></pre>
+    </section>
+
+    <section id="citations">
+      <span class="sec-num">03</span>
+      <h2>Three miscited standards</h2>
+
+      <p class="lede">
+        Worth correcting before this reaches a customer. If you claim conformance with the 2024
+        Standards, an assessor will know these references.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Plan says</th><th>Actually</th><th>Correct reference</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Fieldwork &amp; workpapers = <strong>12.1–12.3</strong></td>
+              <td>Principle 12 is <em>Enhance Quality</em> — the quality assurance and improvement programme</td>
+              <td>Conducting engagement work is Principle 14; engagement documentation is <strong>14.5</strong></td>
+            </tr>
+            <tr>
+              <td>Engagement scoping = <strong>11.1</strong></td>
+              <td>Principle 11 is <em>Communicate Effectively</em> with stakeholders</td>
+              <td>Engagement planning is Principle 13 (<strong>13.1–13.6</strong>)</td>
+            </tr>
+            <tr>
+              <td>Findings = <strong>14.1</strong></td>
+              <td>14.1 is <em>Gather Information for Analysis and Evaluation</em></td>
+              <td>Communicating results is <strong>15.1</strong>; confirming implementation is <strong>15.2</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Phase 1 and 2 cite <strong>9.4</strong> for the risk-based plan, and that one is right.
+      </p>
+    </section>
+
+    <section id="missing">
+      <span class="sec-num">04</span>
+      <h2>What the plan misses</h2>
+
+      <p class="lede">
+        Five elements the 2024 Standards treat as mandatory, none of which appear in the plan or the
+        codebase. Two of them are prerequisites for claiming conformance at all.
+      </p>
+
+      <h3>Internal audit charter <span class="chip c-gap">Absent</span></h3>
+      <p>
+        Principle 6 requires a board-approved charter establishing the function's authority, scope and
+        reporting lines. It is the document an assessor asks for first. There is no model for it, no
+        approval workflow, and no link from engagements to the mandate authorising them.
+      </p>
+
+      <h3>Quality assurance and improvement programme <span class="chip c-gap">Absent</span></h3>
+      <p>
+        Principle 12 requires ongoing internal assessment, performance measurement, and an
+        <strong>external assessment at least every five years</strong>. A platform that hosts the audit
+        function but cannot evidence its own QAIP cannot support a conformance claim. This is the
+        largest single omission — and commercially the most interesting, because it is exactly what a
+        Chief Audit Executive is asked for by their board.
+      </p>
+
+      <h3>Auditor independence and conflict declarations <span class="chip c-gap">Absent</span></h3>
+      <p>
+        Domain II requires objectivity to be managed, not assumed. Nothing records that a lead auditor
+        declared no conflict with the entity under review — for instance, having previously worked in
+        it. The platform enforces separation of duties between individuals on a record, which is not
+        the same thing as engagement-level independence.
+      </p>
+
+      <h3>Engagement conclusion <span class="chip c-gap">Absent</span></h3>
+      <p>
+        Std 15.1 requires the final communication to state a conclusion. The <code>Audit</code> model
+        has objective, scope and criteria but <strong>no opinion or rating field</strong>. Findings
+        aggregate to counts, never to a judgement. An audit report that lists issues without concluding
+        whether the control environment is adequate is not a report.
+      </p>
+
+      <h3>Follow-up as a distinct activity <span class="chip c-part">Partial</span></h3>
+      <p>
+        Std 15.2 requires confirming that management acted. Reopening an issue exists, but there is no
+        follow-up engagement type and no scheduled re-test. Verification currently depends on someone
+        remembering to look.
+      </p>
+    </section>
+
+    <section id="platform">
+      <span class="sec-num">05</span>
+      <h2>Platform-specific gaps</h2>
+
+      <h3>No reporting layer at all</h3>
+      <p>
+        Phase 7 is entirely unbuilt: no report model, no draft-to-final workflow, no distribution list,
+        no export. The <code>generate-and-distribute-a-report</code> capability exists in the role
+        matrix and gates nothing. For an assurance product this is the most visible absence — the
+        report is the deliverable the customer actually pays for.
+      </p>
+
+      <h3>No audit committee</h3>
+      <p>
+        The plan names the audit committee as plan approver and report recipient. There is no committee
+        entity, no membership, and no board-reporting concept. Approval currently resolves to any user
+        holding a broad capability, which is not the same as a governing body accepting a plan.
+      </p>
+
+      <h3>Budget hours are planned but never consumed</h3>
+      <p>
+        <code>AuditPlanItem.budgetHours</code> and <code>AuditPlan.totalBudgetHours</code> exist and
+        capacity is checked at approval — but nothing records <em>actual</em> hours. Resource management
+        under Principle 10 needs planned against actual, and without it the following year's capacity
+        planning is guesswork.
+      </p>
+
+      <h3>Sampling is recorded, not evaluated</h3>
+      <p>
+        Sample size, population and method are captured, which is more than most systems do. Nothing
+        checks that the sample is defensible for the population, and nothing carries an exception rate
+        forward into a conclusion about the population as a whole.
+      </p>
+
+      <h3>External auditors cannot actually be scoped to an engagement</h3>
+      <p>
+        The External Auditor role exists and the portal is read-only, but access resolves through the
+        tenant scope resolver rather than an engagement grant. An external auditor either sees the
+        tenant or does not — you cannot admit a firm to one engagement's evidence and nothing else,
+        which is how external audit access is normally sold and controlled.
+      </p>
+    </section>
+
+    <section id="sequence">
+      <span class="sec-num">06</span>
+      <h2>What I would do instead</h2>
+
+      <p class="lede">
+        The plan's sequencing spends most of its effort re-verifying working code. This ordering fixes
+        what is broken, then builds what is missing, then makes it visible.
+      </p>
+
+      <h3>1 · Close the state machine <span class="chip c-part">hours</span></h3>
+      <p>
+        Declare legal transitions, reject the rest, require a reason for any backwards move. Without
+        this every other gate in the module is optional. Nothing else in the plan matters more.
+      </p>
+
+      <h3>2 · Engagement conclusion <span class="chip c-part">small</span></h3>
+      <p>
+        Add an opinion to the engagement — adequate, needs improvement, inadequate — required before
+        Reporting, with a narrative. Cheap, and it turns a list of findings into an audit.
+      </p>
+
+      <h3>3 · The five-tab interface <span class="chip c-part">the real work</span></h3>
+      <p>
+        This is the plan's best idea and I would keep it as written. It surfaces four slices of tested
+        backend that currently have no screens. One correction: the existing
+        <em>Create Audit</em> button bypasses the approved-plan gate the backend enforces, so the
+        Engagements tab should create only from plan items.
+      </p>
+
+      <h3>4 · Reporting and distribution <span class="chip c-gap">new build</span></h3>
+      <p>
+        Report model, draft to final workflow, recipient list, export. This is Phase 7 and it is the
+        customer-visible deliverable.
+      </p>
+
+      <h3>5 · Charter, QAIP, independence <span class="chip c-gap">new build</span></h3>
+      <p>
+        The conformance layer. Until these exist the platform supports doing internal audit but cannot
+        evidence that the function itself is run to the Standards — which is what a board asks for.
+      </p>
+
+      <div class="note">
+        <span class="note-label">On the verification plan</span>
+        <p>
+          The proposed <code>audit-test.sh</code> covers ground already covered. Scripts under
+          <code>scripts/verify/</code> already test finding closure, SoD rejection, independent
+          closure and reopening. Rather than re-testing those, the script worth writing asserts the
+          <em>illegal</em> transitions are refused — which is the thing that currently fails.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Review of the proposed audit lifecycle plan against the running application. Every "built" claim was
+    checked against routes and controllers; the state-machine defect was reproduced live and the test
+    data removed afterwards.
+  </footer>
+
+</div>

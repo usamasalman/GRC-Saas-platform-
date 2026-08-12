@@ -29,6 +29,7 @@ import KnowledgeBase from './itsm/KnowledgeBase';
 
 // Real GRC Core Components
 import StandardsLibrary from './grc/StandardsLibrary';
+import FrameworkAuthoring from './grc/FrameworkAuthoring';
 import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
@@ -129,7 +130,7 @@ const NAV: Record<string, any[]> = {
   ],
   holding: [
     ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['subsidiaries', '▥', 'Subsidiary Scorecards'], ['shared-services', '⇄', 'Shared Services']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -137,7 +138,7 @@ const NAV: Record<string, any[]> = {
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -145,7 +146,7 @@ const NAV: Record<string, any[]> = {
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
@@ -163,7 +164,7 @@ const NAV: Record<string, any[]> = {
   ],
   partner: [
     ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
-    ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards']]],
+    ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards'], ['framework-authoring', '✎', 'Framework Authoring']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Client Tool Installations'], ['standard-repository', '§', 'Partner Standard Repository']]],
@@ -171,7 +172,7 @@ const NAV: Record<string, any[]> = {
   ],
   franchise: [
     ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards'], ['exceptions', '⇄', 'Exception Workflows']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Network Risk'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Network Risk'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Network Teams'], ['user-admin', '♙', 'Users & Location Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Location Standard Enablement']]],
@@ -307,7 +308,13 @@ const AppShell = () => {
       return <KnowledgeBase key={`${account.id}-${currentPage}`} />;
     }
     // GRC Core — Holding, Multibranch, Branch, Franchise, Partner
-    if (currentPage === 'standards' || currentPage === 'standard-repository' || currentPage === 'tenant-standards') {
+    // Authoring the framework itself: standards, clauses, controls, mapping.
+    // The Standard Repository is where that catalogue is maintained, so it
+    // opens the authoring workspace rather than the read-only library.
+    if (currentPage === 'framework-authoring' || currentPage === 'standard-repository') {
+      return <FrameworkAuthoring key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'standards' || currentPage === 'tenant-standards') {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'controls') {
