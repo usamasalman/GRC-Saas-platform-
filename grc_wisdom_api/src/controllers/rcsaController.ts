@@ -4,10 +4,18 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { createIssueRecord } from '../services/issueFactory';
+import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
 const SUBJ_CAMPAIGN = 'RcsaCampaign';
 const SUBJ_ASSESSMENT = 'RcsaAssessment';
 const EFFECTIVENESS = ['Effective', 'PartiallyEffective', 'Ineffective'];
+
+/// Ordered worst-to-best so a self-assessment can be tested for "is this a
+/// downgrade?" — first line may lower a rating on its own word, but raising
+/// one back needs independent validation.
+const RANK: Record<string, number> = {
+  Ineffective: 0, PartiallyEffective: 1, NotAssessed: 2, Effective: 3,
+};
 
 async function nextCampaignRef(tenantId: string): Promise<string> {
   const count = await prisma.rcsaCampaign.count({ where: { tenantId } });
@@ -281,7 +289,7 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
       where: { id: assessmentId, tenantId: { in: scope.tenantIds } },
       include: {
         campaign: { select: { id: true, ref: true, status: true, dueDate: true } },
-        implementation: { select: { id: true, ownerId: true, control: { select: { code: true, title: true } } } },
+        implementation: { select: { id: true, ownerId: true, effectiveness: true, control: { select: { code: true, title: true } } } },
       },
     });
     if (!assessment) { res.status(404).json({ status: 'error', message: 'Assessment not found' }); return; }
@@ -333,7 +341,37 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
           recommendation: `Remediate ${assessment.implementation.control.code} — ${assessment.implementation.control.title}.`,
           riskRating: designRating === 'Ineffective' && operatingRating === 'Ineffective' ? 'High' : 'Medium',
           raisedById: req.user!.id,
+          implementationId: assessment.implementation.id,
         });
+      }
+
+      // First line has attested that the control does not work. Carrying that
+      // verdict onto the control itself is what lets it reach the register —
+      // previously the attestation stopped at the assessment row and every
+      // risk relying on this control kept its old, better score.
+      //
+      // Operating effectiveness governs: a well-designed control that is not
+      // operating gives no assurance. Self-assessment can only downgrade —
+      // upgrading to Effective still requires independent validation, which is
+      // the whole point of the second line.
+      let moved: { ref: string; from: number; to: number }[] = [];
+      const selfRating = operatingRating === 'Ineffective' || designRating === 'Ineffective'
+        ? 'Ineffective'
+        : operatingRating === 'PartiallyEffective' || designRating === 'PartiallyEffective'
+          ? 'PartiallyEffective'
+          : null;
+
+      if (selfRating && selfRating !== assessment.implementation.effectiveness) {
+        const downgrade = RANK[selfRating] < RANK[assessment.implementation.effectiveness ?? 'NotAssessed'];
+        if (downgrade) {
+          await tx.controlImplementation.update({
+            where: { id: assessment.implementation.id },
+            data: { effectiveness: selfRating, lastReviewedAt: new Date() },
+          });
+          moved = await recomputeRisksForImplementations(
+            tx, [assessment.implementation.id], 'SelfAssessed',
+          );
+        }
       }
 
       const u = await tx.rcsaAssessment.update({
@@ -352,18 +390,20 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
         payload: {
           campaign: assessment.campaign.ref, control: assessment.implementation.control.code,
           designRating, operatingRating, issueRaised: issue?.ref ?? null,
+          risksRerated: moved.map((r) => ({ ref: r.ref, from: r.from, to: r.to })),
         },
       });
-      return { assessment: u, issue };
+      return { assessment: u, issue, moved };
     });
 
     res.json({
       status: 'success',
       message: result.issue
-        ? `Attestation recorded — ${result.issue.ref} raised automatically for the ineffective control.`
+        ? `Attestation recorded — ${result.issue.ref} raised automatically for the ineffective control. ${describeMovement(result.moved)}`
         : 'Attestation recorded.',
       assessment: result.assessment,
       issue: result.issue,
+      risksRerated: result.moved,
     });
   } catch (error: any) {
     console.error('[RCSA Submit Error]:', error);

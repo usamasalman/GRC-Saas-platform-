@@ -4,10 +4,12 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
+import {
+  AUDIT_STATUSES, AUDIT_CONCLUSIONS, checkTransition, allowedNextStatuses,
+} from '../services/auditLifecycle';
 
 const SUBJ_AUDIT = 'Audit';
 const SUBJ_ISSUE = 'Issue';
-const AUDIT_STATUSES = ['Planned', 'Fieldwork', 'Reporting', 'Closed'];
 const RATINGS = ['High', 'Medium', 'Low'];
 
 async function nextAuditRef(tenantId: string): Promise<string> {
@@ -98,11 +100,28 @@ export const getAudit = async (req: AuthenticatedRequest, res: Response): Promis
   }
 };
 
+/**
+ * Create an engagement that is *not* in the approved annual plan.
+ *
+ * The sanctioned route is `POST /plan-items/:itemId/instantiate`, which carries
+ * the risk rationale and budget that justified the engagement. This endpoint is
+ * the special-engagement route — a board request, a fraud investigation — which
+ * IIA Std 9.4 permits but expects the CAE to be able to explain, so a written
+ * reason is mandatory and the engagement is permanently marked as unplanned.
+ */
 export const createAudit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { title, objective, scope: auditScope, criteria, leadAuditorId, startDate, endDate, tenantId } = req.body || {};
+    const { title, objective, scope: auditScope, criteria, leadAuditorId, startDate, endDate, tenantId, unplannedReason } = req.body || {};
     if (!title || !objective || !auditScope || !criteria) {
       res.status(400).json({ status: 'error', message: 'title, objective, scope and criteria are required' });
+      return;
+    }
+    if (!unplannedReason || String(unplannedReason).trim().length < 10) {
+      res.status(400).json({
+        status: 'error',
+        code: 'UNPLANNED_REASON_REQUIRED',
+        message: 'This engagement is not in the approved annual plan. Start it from a plan item instead, or record why it is being run outside the plan (at least 10 characters).',
+      });
       return;
     }
 
@@ -127,12 +146,13 @@ export const createAudit = async (req: AuthenticatedRequest, res: Response): Pro
           status: 'Planned',
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
+          unplannedReason: String(unplannedReason).trim(),
         },
       });
       await writeAudit(tx, {
-        tenantId: target, actorId: req.user!.id, action: 'AUDIT_CREATED',
+        tenantId: target, actorId: req.user!.id, action: 'AUDIT_CREATED_OUTSIDE_PLAN',
         subjectType: SUBJ_AUDIT, subjectId: created.id,
-        payload: { ref, title, criteria },
+        payload: { ref, title, criteria, unplannedReason: String(unplannedReason).trim() },
       });
       return created;
     });
@@ -154,7 +174,10 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
     });
     if (!audit) { res.status(404).json({ status: 'error', message: 'Audit not found' }); return; }
 
-    const { status, title, objective, scope: auditScope, criteria, leadAuditorId, startDate, endDate } = req.body || {};
+    const {
+      status, title, objective, scope: auditScope, criteria, leadAuditorId,
+      startDate, endDate, conclusion, conclusionNarrative, cancellationReason,
+    } = req.body || {};
     const data: any = {};
     if (title) data.title = title;
     if (objective) data.objective = objective;
@@ -164,10 +187,66 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
     if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
 
+    // The conclusion can be recorded at any point while the engagement is open.
+    if (conclusion !== undefined) {
+      if (!AUDIT_CONCLUSIONS.includes(conclusion)) {
+        res.status(400).json({
+          status: 'error',
+          message: `conclusion must be one of: ${AUDIT_CONCLUSIONS.join(', ')}`,
+        });
+        return;
+      }
+      if (!conclusionNarrative) {
+        res.status(400).json({
+          status: 'error',
+          code: 'CONCLUSION_NARRATIVE_REQUIRED',
+          message: 'A conclusion needs a narrative explaining what it is based on.',
+        });
+        return;
+      }
+      if (['Closed', 'Cancelled'].includes(audit.status)) {
+        res.status(409).json({
+          status: 'error',
+          message: `The conclusion on a ${audit.status.toLowerCase()} engagement is part of the record and cannot be rewritten.`,
+        });
+        return;
+      }
+      data.conclusion = conclusion;
+      data.conclusionNarrative = String(conclusionNarrative).trim();
+      data.concludedById = req.user!.id;
+      data.concludedAt = new Date();
+    }
+
     if (status) {
       if (!AUDIT_STATUSES.includes(status)) {
         res.status(400).json({ status: 'error', message: `status must be one of: ${AUDIT_STATUSES.join(', ')}` });
         return;
+      }
+
+      // Every gate below was already here. What was missing was any check that
+      // the engagement was entitled to make this move at all.
+      const illegal = checkTransition(audit.status, status);
+      if (illegal) {
+        res.status(409).json({
+          status: 'error',
+          code: 'INVALID_TRANSITION',
+          message: illegal,
+          currentStatus: audit.status,
+          allowedNext: allowedNextStatuses(audit.status),
+        });
+        return;
+      }
+
+      if (status === 'Cancelled') {
+        if (!cancellationReason) {
+          res.status(400).json({
+            status: 'error',
+            code: 'CANCELLATION_REASON_REQUIRED',
+            message: 'Abandoning an engagement has to be explained — it is part of the assurance record.',
+          });
+          return;
+        }
+        data.cancellationReason = String(cancellationReason).trim();
       }
       // IIA Std 14.5: the engagement file must be complete and independently
       // reviewed before results are communicated.
@@ -193,6 +272,17 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
           });
           return;
         }
+        // IIA Std 15.1: communicating results means stating a conclusion. A
+        // report that lists findings without judging the control environment
+        // is not a report.
+        if (!audit.conclusion && !data.conclusion) {
+          res.status(409).json({
+            status: 'error',
+            code: 'CONCLUSION_REQUIRED',
+            message: `Record an overall conclusion (${AUDIT_CONCLUSIONS.join(', ')}) with its narrative before moving to Reporting.`,
+          });
+          return;
+        }
       }
       // An audit cannot close while any finding stays open.
       if (status === 'Closed') {
@@ -210,17 +300,52 @@ export const updateAudit = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, coverage } = await prisma.$transaction(async (tx) => {
       const u = await tx.audit.update({ where: { id }, data });
+
+      // Closing an engagement is the event that proves coverage, so it is the
+      // event that should stamp it. `lastAuditedAt` used to be settable only by
+      // hand on the entity form, which meant a just-completed entity still read
+      // as "never audited" and kept climbing the plan on a +0.75 uplift until
+      // someone remembered to edit it.
+      let cov: { entity: string; at: Date } | null = null;
+      if (data.status === 'Closed' && audit.planItemId) {
+        const item = await tx.auditPlanItem.findUnique({
+          where: { id: audit.planItemId },
+          select: { id: true, auditableEntityId: true, auditableEntity: { select: { name: true } } },
+        });
+        if (item) {
+          const at = new Date();
+          await tx.auditableEntity.update({
+            where: { id: item.auditableEntityId },
+            data: { lastAuditedAt: at },
+          });
+          await tx.auditPlanItem.update({ where: { id: item.id }, data: { status: 'Completed' } });
+          cov = { entity: item.auditableEntity.name, at };
+        }
+      }
+
       await writeAudit(tx, {
-        tenantId: audit.tenantId, actorId: req.user!.id, action: 'AUDIT_UPDATED',
+        tenantId: audit.tenantId, actorId: req.user!.id,
+        action: data.status ? 'AUDIT_STATUS_CHANGED' : 'AUDIT_UPDATED',
         subjectType: SUBJ_AUDIT, subjectId: id,
-        payload: { before: { status: audit.status }, after: data },
+        payload: {
+          ref: audit.ref,
+          before: { status: audit.status, conclusion: audit.conclusion },
+          after: data,
+          coverageStamped: cov?.entity ?? null,
+        },
       });
-      return u;
+      return { updated: u, coverage: cov };
     });
 
-    res.json({ status: 'success', audit: updated });
+    res.json({
+      status: 'success',
+      message: coverage
+        ? `Engagement closed. ${coverage.entity} marked as audited — its coverage uplift is cleared and the plan item is complete.`
+        : undefined,
+      audit: updated,
+    });
   } catch (error: any) {
     console.error('[Audit Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update audit' });

@@ -5,6 +5,14 @@ import {
   createStandard, addClauses, updateStandard, deleteStandard, mapControlToClauses,
 } from '../controllers/standardsAuthoringController';
 import {
+  uploadImport, listImports, getImport, reviewCandidate,
+  acceptClean, commitImport, discardImport,
+} from '../controllers/frameworkImportController';
+import {
+  exportRcm, exportAuditReport, exportIssueRegister,
+  exportFrameworkCoverage, exportAnnualPlan,
+} from '../controllers/reportController';
+import {
   createControl, cloneControl, updateControl, deleteControl, listClauses,
 } from '../controllers/controlAuthoringController';
 import {
@@ -17,6 +25,7 @@ import {
 import {
   listRisks, createRisk, updateRisk, setRiskControls,
   addTreatment, completeTreatment, acceptRisk,
+  setRiskEntities, linkRelatedRisk, reviewRisk, riskAnalytics,
 } from '../controllers/riskController';
 import {
   listAudits, getAudit, createAudit, updateAudit, raiseFinding,
@@ -64,6 +73,25 @@ router.delete('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), deleteSt
 // Mapping a control to clauses is what makes the framework auditable.
 router.post('/controls/:controlId/clauses', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), mapControlToClauses);
 
+// ── Importing a framework from a file ─────────────────────────────────────
+// Extraction stages candidates; only commit writes to the library.
+router.get('/imports', listImports);
+router.get('/imports/:id', getImport);
+router.post('/imports', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), uploadImport);
+router.patch('/import-candidates/:candidateId', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), reviewCandidate);
+router.post('/imports/:id/accept-clean', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), acceptClean);
+router.post('/imports/:id/commit', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), commitImport);
+router.post('/imports/:id/discard', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), discardImport);
+
+// ── Reports ───────────────────────────────────────────────────────────────
+// This is what generate-and-distribute-a-report was reserved for; until now
+// the capability gated nothing.
+router.get('/audits/:id/export/rcm', requireCapability(CAP.REPORT), exportRcm);
+router.get('/audits/:id/export/report', requireCapability(CAP.REPORT), exportAuditReport);
+router.get('/plans/:id/export', requireCapability(CAP.REPORT), exportAnnualPlan);
+router.get('/reports/issues', requireCapability(CAP.REPORT), exportIssueRegister);
+router.get('/reports/framework-coverage', requireCapability(CAP.REPORT), exportFrameworkCoverage);
+
 // ── Control library ───────────────────────────────────────────────────────
 router.get('/controls', listControls);
 // Clause picker for the authoring screens.
@@ -95,6 +123,12 @@ router.post('/risks/:id/links', requireCapability(CAP.ASSESS_RISK), setRiskContr
 router.post('/risks/:id/treatments', requireCapability(CAP.ASSESS_RISK), addTreatment);
 router.post('/treatments/:id/complete', requireCapability(CAP.ASSESS_RISK), completeTreatment);
 router.post('/risks/:id/accept', requireCapability(CAP.ASSESS_RISK), acceptRisk);
+// The linkage spine: where a risk sits in the audit universe, what it causes,
+// and confirming it has been looked at.
+router.post('/risks/:id/entities', requireCapability(CAP.ASSESS_RISK), setRiskEntities);
+router.post('/risks/:id/related', requireCapability(CAP.ASSESS_RISK), linkRelatedRisk);
+router.post('/risks/:id/review', requireCapability(CAP.ASSESS_RISK), reviewRisk);
+router.get('/risk-analytics', riskAnalytics);
 
 // ── Risk appetite ─────────────────────────────────────────────────────────
 // Setting appetite is a governance act; approving it must be a second person.
@@ -156,7 +190,10 @@ router.post('/issues', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEM
 router.post('/issues/:id/respond', requireAnyCapability(CAP.MANAGE_IMPLEMENTATION, CAP.ASSESS_RISK, CAP.MANAGE_TENANT), respondToIssue);
 // CAP owners are often control owners, not auditors — allow either capability.
 router.post('/issues/:id/cap', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION), assignCap);
-router.post('/issues/:id/submit-closure', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION), submitForClosure);
+// No capability gate: a corrective action is owned by the accountable business
+// manager, who typically holds none. The controller authorises by ownership and
+// falls back to the audit/compliance capabilities for everyone else.
+router.post('/issues/:id/submit-closure', submitForClosure);
 router.post('/issues/:id/close', requireCapability(CAP.EXECUTE_AUDIT), closeIssue);
 router.post('/issues/:id/reopen', requireCapability(CAP.EXECUTE_AUDIT), reopenIssue);
 router.post('/issues/:id/escalate', requireCapability(CAP.EXECUTE_AUDIT), escalateIssue);

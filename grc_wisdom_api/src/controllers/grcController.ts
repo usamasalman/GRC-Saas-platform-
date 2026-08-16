@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
+import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
 const SUBJ_IMPL = 'ControlImplementation';
 const SUBJ_EVIDENCE = 'Evidence';
@@ -406,7 +407,7 @@ export const validateImplementation = async (req: AuthenticatedRequest, res: Res
       return;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, moved } = await prisma.$transaction(async (tx) => {
       await checkSod(tx, {
         tenantId: impl.tenantId,
         actorId: req.user!.id,
@@ -426,15 +427,31 @@ export const validateImplementation = async (req: AuthenticatedRequest, res: Res
           lastReviewedAt: new Date(),
         },
       });
+
+      // Close the loop: every risk relying on this control is re-rated in the
+      // same transaction. Without this the register keeps the score it was
+      // given when the control was last linked, however long ago that was.
+      const m = await recomputeRisksForImplementations(
+        tx, [id], 'ControlEffectivenessChanged',
+      );
+
       await writeAudit(tx, {
         tenantId: impl.tenantId, actorId: req.user!.id, action: 'CONTROL_VALIDATED',
         subjectType: SUBJ_IMPL, subjectId: id,
-        payload: { effectiveness, note: note || null, evidenceCount: impl._count.evidence },
+        payload: {
+          effectiveness, note: note || null, evidenceCount: impl._count.evidence,
+          risksRerated: m.map((r) => ({ ref: r.ref, from: r.from, to: r.to })),
+        },
       });
-      return u;
+      return { updated: u, moved: m };
     });
 
-    res.json({ status: 'success', message: `Validated as ${effectiveness}`, implementation: updated });
+    res.json({
+      status: 'success',
+      message: `Validated as ${effectiveness}. ${describeMovement(moved)}`,
+      implementation: updated,
+      risksRerated: moved,
+    });
   } catch (error: any) {
     if (error instanceof SodViolation) {
       res.status(403).json({ status: 'error', code: error.code, rule: error.ruleKey, message: error.message });

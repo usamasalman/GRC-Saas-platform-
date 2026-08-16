@@ -58,6 +58,7 @@ model Tenant {
   resourceQuotas ResourceQuota[]
   automationRules AutomationRule[]
   importJobs    ImportJob[]
+  frameworkImports FrameworkImport[]
 }
 
 model User {
@@ -115,6 +116,8 @@ model User {
   risksAccepted           Risk[] @relation("RiskAcceptor")
   treatmentsOwned         RiskTreatmentAction[] @relation("TreatmentOwner")
   auditsLed               Audit[] @relation("AuditLead")
+  auditsConcluded         Audit[] @relation("AuditConcluder")
+  frameworkImports        FrameworkImport[] @relation("ImportUploader")
   issuesRaised            Issue[] @relation("IssueRaiser")
   issuesCapOwned          Issue[] @relation("IssueCapOwner")
   issuesResponded         Issue[] @relation("IssueResponder")
@@ -268,6 +271,7 @@ model Standard {
 
   clauses     StandardClause[]
   enablements TenantStandardEnablement[]
+  imports     FrameworkImport[]
 
   /// Two organisations may both author a framework called POLICY-01.
   @@unique([tenantId, code])
@@ -380,6 +384,8 @@ model ControlImplementation {
   riskLinks       RiskControlLink[]
   engagementRisks EngagementRisk[]
   rcsaAssessments RcsaAssessment[]
+  /// Deficiencies raised against this control, from any source.
+  issues          Issue[]
 
   @@index([tenantId, status])
   @@index([nextDueDate])
@@ -436,13 +442,39 @@ model Risk {
   description        String
   category           String
 
+  /// ISO 31000 defines risk as the effect of uncertainty on objectives — an
+  /// effect being "a positive or negative deviation from what is expected".
+  /// A register that can only hold threats implements half the standard.
+  /// Threat | Opportunity
+  direction          String   @default("Threat")
+
   ownerId            String
   owner              User     @relation("RiskOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
   /// Open | UnderTreatment | Accepted | Closed
   status             String   @default("Open")
-  /// Accept | Mitigate | Transfer | Avoid
+  /// Threats: Accept | Mitigate | Transfer | Avoid
+  /// Opportunities: Exploit | Enhance | Share | Ignore
   treatmentType      String   @default("Mitigate")
+
+  /// How this risk came to be known. Without provenance nobody can ask whether
+  /// the register is still being fed, or notice when it stops.
+  /// Workshop | RCSA | Incident | InternalAudit | ExternalAudit | Regulator | KRI | LossEvent | Scan
+  identifiedVia      String   @default("Workshop")
+  identifiedSource   String?
+
+  // ── Monitoring and review (ISO 31000 clause 6.6) ────────────────────
+  /// A risk with no review date goes stale in silence — the laminated
+  /// register problem. Cadence drives nextReviewDate on every assessment.
+  reviewCadenceMonths Int     @default(6)
+  lastReviewedAt      DateTime?
+  nextReviewDate      DateTime?
+
+  /// When this risk is actually expected to bite. Null means always-on.
+  /// A register that cannot express "dormant now, critical in Q3" forces
+  /// management attention to be spent uniformly across the year.
+  horizonStart        DateTime?
+  horizonEnd          DateTime?
 
   inherentLikelihood Int
   inherentImpact     Int
@@ -466,8 +498,56 @@ model Risk {
   kris               Kri[]
   lossEvents         LossEvent[]
 
+  // ── The linkage spine ────────────────────────────────────────────────
+  /// Which parts of the audit universe this risk lives in. This is what lets
+  /// the annual audit plan be driven by the register rather than beside it.
+  entityLinks        RiskEntityLink[]
+  /// Every issue that evidences this risk, whatever raised it.
+  issues             Issue[]
+  /// Engagement RCM rows that reference this register risk instead of
+  /// retyping it as prose.
+  engagementRisks    EngagementRisk[]
+  /// Risks this one causes, and risks that cause it. Flat likelihood x impact
+  /// cannot see concentration; the network can.
+  causes             RiskLink[] @relation("RiskCause")
+  effects            RiskLink[] @relation("RiskEffect")
+  snapshots          RiskScoreSnapshot[]
+
   @@unique([tenantId, ref])
   @@index([tenantId, status])
+  @@index([tenantId, nextReviewDate])
+}
+
+/// Which auditable entities a risk sits in. Many-to-many: one risk can span
+/// several processes, and one process carries many risks.
+model RiskEntityLink {
+  id                String   @id @default(uuid())
+  riskId            String
+  risk              Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  auditableEntityId String
+  auditableEntity   AuditableEntity @relation(fields: [auditableEntityId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+
+  @@unique([riskId, auditableEntityId])
+  @@index([auditableEntityId])
+}
+
+/// A directed edge between two risks. The paper's argument for network-based
+/// ranking: several medium risks sharing one failed control is a different
+/// picture from several unrelated mediums, and a flat score cannot show it.
+model RiskLink {
+  id        String   @id @default(uuid())
+  causeId   String
+  cause     Risk     @relation("RiskCause", fields: [causeId], references: [id], onDelete: Cascade)
+  effectId  String
+  effect    Risk     @relation("RiskEffect", fields: [effectId], references: [id], onDelete: Cascade)
+  /// Causes | Amplifies | SharesControl
+  nature    String   @default("Causes")
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([causeId, effectId])
+  @@index([effectId])
 }
 
 /// Join table so "which risks does this control mitigate" stays queryable.
@@ -545,6 +625,11 @@ model AuditableEntity {
   updatedAt     DateTime @updatedAt
 
   planItems     AuditPlanItem[]
+  /// Register risks that live in this entity — what makes the plan risk-based
+  /// in the sense IIA Standard 9.4 means it.
+  riskLinks     RiskEntityLink[]
+  /// Findings raised here. priorFindings is derived from this, not typed.
+  issues        Issue[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, riskTier])
@@ -638,10 +723,28 @@ model Audit {
   planItemId     String?  @unique
   planItem       AuditPlanItem? @relation(fields: [planItemId], references: [id], onDelete: SetNull)
 
-  /// Planned | Fieldwork | Reporting | Closed
+  /// Special engagements outside the approved plan are legitimate — a board
+  /// request, a fraud investigation — but the CAE must be able to explain the
+  /// impact on plan coverage. Required whenever there is no planItemId, so an
+  /// unplanned engagement can never be indistinguishable from a planned one.
+  unplannedReason String?
+
+  /// Planned | Fieldwork | Reporting | Closed | Cancelled
   status         String   @default("Planned")
   startDate      DateTime?
   endDate        DateTime?
+
+  /// IIA Std 15.1 — the final communication must state a conclusion. A list of
+  /// findings without an overall judgement is not an audit report.
+  /// Adequate | NeedsImprovement | Inadequate
+  conclusion          String?
+  conclusionNarrative String?
+  concludedById       String?
+  concludedBy         User?    @relation("AuditConcluder", fields: [concludedById], references: [id], onDelete: SetNull)
+  concludedAt         DateTime?
+
+  /// Why an engagement was abandoned. Required to reach Cancelled.
+  cancellationReason  String?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -677,6 +780,22 @@ model Issue {
   /// Only audit-sourced issues link to an engagement.
   auditId        String?
   audit          Audit?   @relation(fields: [auditId], references: [id], onDelete: SetNull)
+
+  /// The register risk this issue evidences. An issue is a gap in the
+  /// organisation; naming the risk it belongs to is what makes the register
+  /// answer "how do we know this risk is real?".
+  riskId         String?
+  risk           Risk?    @relation(fields: [riskId], references: [id], onDelete: SetNull)
+
+  /// The control that failed. A control deficiency without a control cannot
+  /// be traced back to what it weakens.
+  implementationId String?
+  implementation   ControlImplementation? @relation(fields: [implementationId], references: [id], onDelete: SetNull)
+
+  /// Where in the audit universe this issue landed — the basis for deriving
+  /// prior-finding density instead of asking someone to type it.
+  auditableEntityId String?
+  auditableEntity   AuditableEntity? @relation(fields: [auditableEntityId], references: [id], onDelete: SetNull)
 
   title          String
 
@@ -734,6 +853,8 @@ model Issue {
   @@index([tenantId, status])
   @@index([tenantId, source])
   @@index([auditId])
+  @@index([riskId])
+  @@index([auditableEntityId])
 }
 
 // ----------------------------------------------------------------------
@@ -751,6 +872,13 @@ model EngagementRisk {
   ref         String
   title       String
   description String
+
+  /// The register risk this row tests. Optional, because an engagement can
+  /// legitimately surface a risk the register has not caught yet — but when
+  /// it is set, the RCM stops being retyped prose and the test result can
+  /// flow back to the register.
+  riskId      String?
+  risk        Risk?    @relation(fields: [riskId], references: [id], onDelete: SetNull)
 
   /// High | Medium | Low — the risk to the engagement objective.
   riskRating  String   @default("Medium")
@@ -1446,17 +1574,25 @@ model DocumentChunk {
   createdAt     DateTime @default(now())
 }
 
+/// Score history. `riskId` was a bare string with no foreign key, so history
+/// dangled after a risk was deleted and could not be joined; it is a real
+/// relation now.
 model RiskScoreSnapshot {
   id            String   @id @default(uuid())
   tenantId      String
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   score         Float    // 0.0 to 100.0
   riskId        String?
+  risk          Risk?    @relation(fields: [riskId], references: [id], onDelete: Cascade)
   inherentScore Float?
   residualScore Float?
+  /// Why the score moved, so a trend line can be read rather than guessed.
+  /// Created | Rescored | ControlsRelinked | ControlEffectivenessChanged |
+  /// TestFailed | SelfAssessed | Reviewed
+  reason        String   @default("Rescored")
   recordedAt    DateTime @default(now())
 
-  @@index([riskId])
+  @@index([riskId, recordedAt])
 }
 
 
@@ -1773,4 +1909,82 @@ model ImportJob {
   updatedAt     DateTime @updatedAt
 
   @@index([tenantId, status])
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Framework import — a staging area, deliberately not a shortcut
+//
+// Extraction from a spreadsheet or document is never perfectly reliable. A
+// misparsed clause that entered the library silently would become the
+// criterion an auditor tests against, and every finding raised under it would
+// inherit the error — an evidence trail that looks complete and is wrong.
+// Nothing here is read by any assessment path until a person commits it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model FrameworkImport {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Clause | Control — what the file is understood to contain.
+  kind         String
+  fileName     String
+  fileUrl      String
+  /// xlsx | csv | pdf | docx
+  fileType     String
+
+  /// Extracted | Committed | Discarded
+  status       String   @default("Extracted")
+
+  /// Where accepted clauses will land. Null means a new standard is created
+  /// at commit time from the details captured on upload.
+  targetStandardId String?
+  targetStandard   Standard? @relation(fields: [targetStandardId], references: [id], onDelete: SetNull)
+  /// Held until commit so a new standard can be built from them.
+  newStandardCode      String?
+  newStandardTitle     String?
+  newStandardAuthority String?
+  newStandardVersion   String?
+
+  extractedCount Int    @default(0)
+  committedCount Int    @default(0)
+
+  uploadedById String
+  uploadedBy   User     @relation("ImportUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  committedAt  DateTime?
+
+  candidates   ImportCandidate[]
+
+  @@index([tenantId, status])
+}
+
+model ImportCandidate {
+  id         String   @id @default(uuid())
+  importId   String
+  import     FrameworkImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  /// Where it came from in the source, so a reviewer can go and look.
+  rowNumber  Int
+
+  /// Clause reference, or control code.
+  ref        String
+  title      String
+  /// Clause text, or control objective.
+  body       String?
+  /// Control domain. Unused for clauses.
+  extra      String?
+
+  /// High | Medium | Low — how sure the parser is, so review starts where it
+  /// is least confident rather than at row one.
+  confidence String   @default("High")
+  /// Pending | Accepted | Rejected
+  status     String   @default("Pending")
+  /// Why this row cannot be accepted as it stands.
+  issue      String?
+
+  createdAt  DateTime @default(now())
+
+  @@index([importId, status])
 }

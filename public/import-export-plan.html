@@ -1,0 +1,397 @@
+<title>GRC Wisdom — Import & Reporting Implementation Plan</title>
+<style>
+  :root {
+    --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE;
+    --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED;
+    --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC;
+    --crit:#9B3024; --crit-soft:#F7E6E3;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --measure: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+      --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+      --rule:#2B3340; --rule-soft:#232A34; --accent:#7FB2D9; --accent-soft:#1B2A38;
+      --plum:#C08FAE; --plum-soft:#2A1F27; --ok:#6FBF95; --ok-soft:#17281F;
+      --warn:#D9A94A; --warn-soft:#2A2216; --crit:#E08076; --crit-soft:#2C1B19; }
+  }
+  :root[data-theme="dark"] { --ground:#12161C; --ground-sunk:#171C24; --card:#1A2029;
+    --ink:#E8E4DE; --ink-soft:#A8B0BD; --ink-faint:#78808D;
+    --rule:#2B3340; --rule-soft:#232A34; --accent:#7FB2D9; --accent-soft:#1B2A38;
+    --plum:#C08FAE; --plum-soft:#2A1F27; --ok:#6FBF95; --ok-soft:#17281F;
+    --warn:#D9A94A; --warn-soft:#2A2216; --crit:#E08076; --crit-soft:#2C1B19; }
+  :root[data-theme="light"] { --ground:#FBFAF8; --ground-sunk:#F3F0EA; --card:#FFFFFF;
+    --ink:#141A22; --ink-soft:#4A5260; --ink-faint:#7C8494;
+    --rule:#DFD9CF; --rule-soft:#EBE6DE; --accent:#17456B; --accent-soft:#E4EDF4;
+    --plum:#6B3F5E; --plum-soft:#F1E7ED; --ok:#2E6B4F; --ok-soft:#E3EFE8;
+    --warn:#8A6410; --warn-soft:#F6EEDC; --crit:#9B3024; --crit-soft:#F7E6E3; }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1220px; margin:0 auto; padding:0 24px 96px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:56px; align-items:start; }
+  .masthead { grid-column:1/-1; border-bottom:2px solid var(--ink); padding:56px 0 28px; margin-bottom:48px; }
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--plum); margin:0 0 18px; }
+  .masthead h1 { font-family:var(--serif); font-weight:400; font-size:clamp(2.2rem,5vw,3.3rem); line-height:1.08; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; }
+  .standfirst { font-family:var(--serif); font-size:clamp(1.05rem,2vw,1.22rem); line-height:1.5; color:var(--ink-soft); max-width:62ch; margin:0; }
+  .verdict { margin-top:26px; display:flex; flex-wrap:wrap; gap:10px 26px; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.03em; }
+  .verdict b { color:var(--ink-soft); font-weight:500; }
+  .rail { position:sticky; top:28px; }
+  .rail-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); padding-bottom:10px; border-bottom:1px solid var(--rule); margin-bottom:12px; }
+  .rail ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+  .rail a { display:block; padding:5px 0 5px 11px; margin-left:-11px; font-size:13.5px; line-height:1.4; color:var(--ink-soft); text-decoration:none; border-left:2px solid transparent; transition:color .12s,border-color .12s; }
+  .rail a:hover, .rail a:focus-visible { color:var(--accent); border-left-color:var(--accent); }
+  .rail a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+  .rail-num { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-right:7px; }
+  main { min-width:0; }
+  section { margin-bottom:72px; scroll-margin-top:24px; }
+  h2 { font-family:var(--serif); font-weight:400; font-size:clamp(1.6rem,3vw,2rem); line-height:1.2; letter-spacing:-.01em; margin:0 0 10px; text-wrap:balance; }
+  .sec-num { font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--plum); display:block; margin-bottom:10px; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1.02rem; margin:34px 0 10px; text-wrap:balance; }
+  p { margin:0 0 15px; max-width:var(--measure); }
+  .lede { font-size:1.06rem; color:var(--ink-soft); max-width:var(--measure); }
+  a { color:var(--accent); }
+  ul, ol { max-width:var(--measure); padding-left:20px; margin:0 0 15px; }
+  li { margin-bottom:7px; }
+  strong { font-weight:650; }
+  code { font-family:var(--mono); font-size:.855em; background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:3px; padding:1px 5px; word-break:break-word; }
+  pre { background:var(--ground-sunk); border:1px solid var(--rule-soft); border-radius:5px; padding:14px 16px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.6; margin:0 0 22px; }
+  pre code { background:none; border:none; padding:0; font-size:inherit; }
+  .scroll { overflow-x:auto; margin:0 0 22px; border:1px solid var(--rule); border-radius:5px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; background:var(--card); }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); font-weight:500; background:var(--ground-sunk); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  .chip { display:inline-flex; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:3px; white-space:nowrap; }
+  .c-done { background:var(--ok-soft); color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 30%,transparent); }
+  .c-new  { background:var(--accent-soft); color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); }
+  .c-fix  { background:var(--crit-soft); color:var(--crit); border:1px solid color-mix(in srgb,var(--crit) 30%,transparent); }
+  .note { border-left:3px solid var(--plum); background:var(--plum-soft); padding:14px 18px; border-radius:0 4px 4px 0; margin:0 0 22px; max-width:var(--measure); }
+  .note.alert { border-left-color:var(--crit); background:var(--crit-soft); }
+  .note p { margin:0; } .note p + p { margin-top:10px; }
+  .note-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); display:block; margin-bottom:5px; }
+  .note.alert .note-label { color:var(--crit); }
+  .flow { border:1px solid var(--rule); border-radius:5px; background:var(--card); overflow:hidden; margin:0 0 22px; }
+  .fstep { display:grid; grid-template-columns:30px minmax(0,1fr); gap:16px; padding:14px 18px; border-bottom:1px solid var(--rule-soft); }
+  .fstep:last-child { border-bottom:none; }
+  .fn { font-family:var(--mono); font-size:11px; color:var(--accent); padding-top:3px; }
+  .fb strong { display:block; margin-bottom:2px; }
+  .fb p { margin:0; font-size:14.5px; color:var(--ink-soft); }
+  .footer { grid-column:1/-1; border-top:2px solid var(--ink); padding-top:20px; font-size:13.5px; color:var(--ink-faint); max-width:var(--measure); }
+  @media (max-width:900px) {
+    .wrap { grid-template-columns:1fr; gap:0; padding:0 20px 64px; }
+    .rail { position:static; margin-bottom:44px; padding-bottom:28px; border-bottom:1px solid var(--rule); }
+    .rail ol { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:0 20px; }
+    .masthead { padding-top:40px; margin-bottom:36px; }
+    .fstep { grid-template-columns:1fr; gap:6px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Implementation Plan · Awaiting Approval</p>
+    <h1>Document import, extraction and multi-format reporting</h1>
+    <p class="standfirst">
+      How framework import and report export fit into the audit lifecycle already built — sequenced
+      against the review's priority order, with the one architectural decision that matters for
+      audit defensibility stated up front.
+    </p>
+    <div class="verdict">
+      <span><b>0</b> code changes made</span>
+      <span><b>5</b> libraries installed</span>
+      <span><b>3</b> import formats</span>
+      <span><b>3</b> export formats</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Contents">
+    <div class="rail-label">Contents</div>
+    <ol>
+      <li><a href="#fit"><span class="rail-num">01</span>How this fits</a></li>
+      <li><a href="#decision"><span class="rail-num">02</span>The decision to make</a></li>
+      <li><a href="#import"><span class="rail-num">03</span>Import architecture</a></li>
+      <li><a href="#export"><span class="rail-num">04</span>Export architecture</a></li>
+      <li><a href="#changes"><span class="rail-num">05</span>What changes where</a></li>
+      <li><a href="#order"><span class="rail-num">06</span>Proposed order</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="fit">
+      <span class="sec-num">01</span>
+      <h2>How this fits the lifecycle</h2>
+
+      <p class="lede">
+        Your two requests land on opposite ends of the lifecycle: import feeds Phase 1, and reporting
+        <em>is</em> Phase 7 — the only phase the review found genuinely absent.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Capability</th><th>Lifecycle position</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Add controls and standards manually</td><td>Feeds Phases 1 and 4</td><td><span class="chip c-done">Already built</span></td></tr>
+            <tr><td>Map controls to clauses</td><td>Makes a framework auditable</td><td><span class="chip c-done">Already built</span></td></tr>
+            <tr><td>Upload PDF / DOCX / Excel and extract</td><td>Accelerates the same Phase 1 entry</td><td><span class="chip c-new">To build</span></td></tr>
+            <tr><td>Export RCM</td><td>Phase 4 working paper</td><td><span class="chip c-new">To build</span></td></tr>
+            <tr><td>Export audit report</td><td>Phase 7 — the missing phase</td><td><span class="chip c-new">To build</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Manual authoring and mapping already work end to end at <strong>Assurance → Framework
+        Authoring</strong>. Import does not replace that — it is a faster path to the same records,
+        and it produces exactly the same objects the manual form does.
+      </p>
+
+      <div class="note">
+        <span class="note-label">One thing still outranks both</span>
+        <p>
+          The review found the engagement state machine accepts any transition —
+          <code>Planned → Closed</code> succeeds and bypasses the workpaper review gate entirely. Until
+          that is closed, an exported audit report can attest to an engagement that never had
+          fieldwork. I would fix it in the same pass, because reporting is what makes it visible to a
+          customer.
+        </p>
+      </div>
+    </section>
+
+    <section id="decision">
+      <span class="sec-num">02</span>
+      <h2>The decision to make</h2>
+
+      <p class="lede">
+        Extraction from a PDF is never perfectly reliable. What matters is what the platform does with
+        an imperfect result, and there are two defensible answers.
+      </p>
+
+      <h3>Option A · Staged review before commit <span class="chip c-new">recommended</span></h3>
+      <p>
+        Extraction produces <em>candidates</em> in a staging area. Nothing enters the standards library
+        until a person accepts each clause — editing refs and titles where the parse went wrong. The
+        commit is a deliberate act, attributed and audit-logged.
+      </p>
+      <p>
+        The reason this matters is specific to your product: a misparsed clause that silently enters
+        the library becomes the criterion an auditor tests against, and every finding raised under it
+        inherits the error. The evidence trail would look complete and be wrong. Staging keeps a human
+        accountable for what the framework says.
+      </p>
+
+      <h3>Option B · Direct import</h3>
+      <p>
+        Extraction writes straight into the standard, and the user corrects mistakes afterwards in the
+        authoring screen. Faster for clean documents, and the audit trail still records who imported
+        what. The risk is that nobody reads 93 clauses after the fact, so errors persist unnoticed.
+      </p>
+
+      <p>
+        I recommend A. It is roughly a day more work and it is the difference between a convenience
+        feature and one that survives an external quality assessment.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Not proposed: LLM extraction</span>
+        <p>
+          It would parse messy layouts better than patterns can, but it adds per-document cost, a
+          non-deterministic result that two runs may disagree on, and an external data path for
+          documents that are often confidential. Deterministic parsing plus human review is the more
+          defensible starting point. If clause detection proves too weak on real documents, an
+          optional model-assisted pass is a clean addition later — behind the same staging gate.
+        </p>
+      </div>
+    </section>
+
+    <section id="import">
+      <span class="sec-num">03</span>
+      <h2>Import architecture</h2>
+
+      <div class="flow">
+        <div class="fstep"><div class="fn">01</div><div class="fb">
+          <strong>Upload</strong>
+          <p>Base64 in JSON, matching the pattern <code>documentController</code> already uses — no new
+          multipart handling, and the file lands in the existing <code>uploads/</code> directory.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">02</div><div class="fb">
+          <strong>Extract text</strong>
+          <p>PDF via <code>pdf-parse</code>, DOCX via <code>mammoth</code>, Excel and CSV via
+          <code>exceljs</code>. Spreadsheets are the easy case — columns map directly to fields.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">03</div><div class="fb">
+          <strong>Detect clauses</strong>
+          <p>Pattern matching tuned to how real standards number themselves —
+          <code>A.5.15</code>, <code>1.2.1</code>, <code>CC6.1</code>, <code>Art. 11</code>,
+          <code>2-2-1</code>. Each candidate carries a confidence derived from which pattern matched
+          and whether a plausible title followed it.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">04</div><div class="fb">
+          <strong>Review</strong>
+          <p>Accept, edit or reject each candidate. Low-confidence rows surface first, because those
+          are where a parse goes wrong. Nothing has entered the library yet.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">05</div><div class="fb">
+          <strong>Commit</strong>
+          <p>Accepted candidates become clauses on a new or existing standard, in one transaction, with
+          an audit entry naming the source file. Duplicate refs are refused, exactly as the manual path
+          already refuses them.</p>
+        </div></div>
+      </div>
+
+      <p>
+        Controls import the same way, with a different candidate shape — code, title, objective,
+        domain — and the same staging and commit steps. A spreadsheet with a clause-reference column
+        can additionally propose mappings, which the reviewer confirms.
+      </p>
+
+      <h3>New models</h3>
+      <pre><code>FrameworkImport      file, type, status, counts, uploader, target standard
+ImportCandidate      ref, title, text, confidence, status, edited values</code></pre>
+      <p>
+        Both are staging tables. Neither is read by any assessment path, so a half-finished import
+        cannot affect an audit.
+      </p>
+    </section>
+
+    <section id="export">
+      <span class="sec-num">04</span>
+      <h2>Export architecture</h2>
+
+      <p class="lede">
+        One report service, three renderers. The content of a report is decided once; the format is a
+        presentation choice made at the end.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Report</th><th>Contents</th><th>Formats</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Risk &amp; Control Matrix</strong></td><td>Engagement risks, linked controls, procedures, sampling, results, exceptions</td><td>Excel · PDF · DOCX</td></tr>
+            <tr><td><strong>Audit report</strong></td><td>Objective, scope, criteria, conclusion, findings in IIA structure, management responses, CAP status</td><td>PDF · DOCX · Excel</td></tr>
+            <tr><td><strong>Issue register</strong></td><td>Cross-source issues, aging, escalation, ownership</td><td>Excel · PDF</td></tr>
+            <tr><td><strong>Standard &amp; control library</strong></td><td>Clauses, mapped controls, coverage gaps</td><td>Excel · PDF</td></tr>
+            <tr><td><strong>Annual plan</strong></td><td>Universe scores, plan items, capacity, approval record</td><td>Excel · PDF</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Excel is the working format — auditors live in spreadsheets, and an RCM exported to Excel is
+        immediately useful. PDF is the issued artefact. DOCX is for reports that go on to be edited
+        before committee.
+      </p>
+
+      <h3>Two things the exports must carry</h3>
+      <ul>
+        <li><strong>Provenance.</strong> Every export is stamped with who generated it, when, from
+          which tenant, and the engagement status at that moment. A report printed from a
+          <code>Fieldwork</code> engagement must say so rather than looking final.</li>
+        <li><strong>The capability finally used.</strong> <code>generate-and-distribute-a-report</code>
+          exists in the role matrix and currently gates nothing. These endpoints are what it is for,
+          which removes one of the twenty-one inert privileges.</li>
+      </ul>
+
+      <div class="note alert">
+        <span class="note-label">Export is a disclosure path</span>
+        <p>
+          Every export is scope-resolved before rendering. A group role exporting an issue register
+          gets its subtree and nothing wider, and the cross-tenant read is logged as one — the same
+          rule every other read already follows. Without that, export becomes the way around tenant
+          isolation.
+        </p>
+      </div>
+    </section>
+
+    <section id="changes">
+      <span class="sec-num">05</span>
+      <h2>What changes where</h2>
+
+      <div class="scroll">
+        <table>
+          <thead><tr><th>File</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td><code>services/frameworkExtractor.ts</code></td><td><span class="chip c-new">new</span> text extraction per format, clause and control detection, confidence scoring</td></tr>
+            <tr><td><code>services/reportBuilder.ts</code></td><td><span class="chip c-new">new</span> assembles report content, scope-resolved, format-agnostic</td></tr>
+            <tr><td><code>services/renderers/{xlsx,pdf,docx}.ts</code></td><td><span class="chip c-new">new</span> one renderer per format</td></tr>
+            <tr><td><code>controllers/frameworkImportController.ts</code></td><td><span class="chip c-new">new</span> upload, review, commit, discard</td></tr>
+            <tr><td><code>controllers/reportController.ts</code></td><td><span class="chip c-new">new</span> five report endpoints, format via query</td></tr>
+            <tr><td><code>controllers/auditProgrammeController.ts</code></td><td><span class="chip c-fix">fix</span> ordered state transitions; add engagement conclusion</td></tr>
+            <tr><td><code>prisma/schema.prisma</code></td><td><span class="chip c-new">new</span> two staging models; <code>conclusion</code> on <code>Audit</code></td></tr>
+            <tr><td><code>routes/grcRoutes.ts</code></td><td>wire both controllers, gate exports on <code>REPORT</code></td></tr>
+            <tr><td><code>pages/grc/FrameworkAuthoring.tsx</code></td><td>upload panel and candidate review table</td></tr>
+            <tr><td><code>pages/grc/AuditProgramme.tsx</code></td><td>export menu; conclusion field</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Libraries</h3>
+      <p>
+        Five are installed already — <code>pdf-parse</code>, <code>mammoth</code>,
+        <code>exceljs</code>, <code>pdfkit</code>, <code>docx</code>. All are pure JavaScript with no
+        native build step, which matters on Windows. I chose <code>exceljs</code> over SheetJS
+        deliberately: the npm build of <code>xlsx</code> carries prototype-pollution and ReDoS
+        advisories, which is not a dependency a compliance product should ship.
+      </p>
+    </section>
+
+    <section id="order">
+      <span class="sec-num">06</span>
+      <h2>Proposed order</h2>
+
+      <p class="lede">
+        Sequenced so each step is independently verifiable, and so the defect that undermines reporting
+        is closed before reports exist.
+      </p>
+
+      <div class="flow">
+        <div class="fstep"><div class="fn">01</div><div class="fb">
+          <strong>Ordered state machine + engagement conclusion</strong>
+          <p>Hours. Closes the review's critical defect and gives the audit report something to
+          conclude. Everything after this is safe to export.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">02</div><div class="fb">
+          <strong>Excel import and export</strong>
+          <p>The highest value per hour. Spreadsheets are unambiguous to parse, and an RCM in Excel is
+          what an auditor actually wants. Proves both pipelines end to end.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">03</div><div class="fb">
+          <strong>PDF and DOCX extraction with staged review</strong>
+          <p>The harder parsing, behind the review gate. Includes the candidate review interface.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">04</div><div class="fb">
+          <strong>PDF and DOCX report rendering</strong>
+          <p>The issued artefacts, with provenance stamping and the capability gate.</p>
+        </div></div>
+        <div class="fstep"><div class="fn">05</div><div class="fb">
+          <strong>The five-tab audit interface</strong>
+          <p>From the original lifecycle plan — surfaces four slices of tested backend that still have
+          no screens, and is where the export buttons naturally live.</p>
+        </div></div>
+      </div>
+
+      <div class="note">
+        <span class="note-label">Awaiting your decision</span>
+        <p>
+          Two questions before I start: <strong>staged review or direct import</strong>, and whether to
+          begin at step 1 as proposed or go straight to the import and export work you asked for. I
+          will not touch the code until you say.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Implementation plan only. No application code has been modified; the five libraries named above
+    were installed before this plan was written and can be removed if you prefer another approach.
+  </footer>
+
+</div>

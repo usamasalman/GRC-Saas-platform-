@@ -63,6 +63,10 @@ import BrdTraceability from './system/BrdTraceability';
 // Realtime Dashboard Component
 import RealtimeDashboardPage from './dashboard/RealtimeDashboardPage';
 
+// User Guide Components
+import { UserGuideModal } from '../components/UserGuideModal';
+import { UserGuideToast } from '../components/UserGuideToast';
+
 /**
  * Persistent warning bar shown whenever a read-only impersonation session is
  * active. Exiting clears the impersonation token and reloads as the operator.
@@ -188,6 +192,19 @@ const AppShell = () => {
   const [apiData, setApiData] = useState<any>(null);
   const [isRtl, setIsRtl] = useState(false);
   const [tokenReady, setTokenReady] = useState(false);
+  const [showUserGuide, setShowUserGuide] = useState(false);
+
+  // Global keyboard shortcut to open User Guide (Shift + ? or F1)
+  useEffect(() => {
+    const handleGuideShortcut = (e: KeyboardEvent) => {
+      if ((e.key === '?' && (e.shiftKey || e.metaKey || e.ctrlKey)) || e.key === 'F1') {
+        e.preventDefault();
+        setShowUserGuide((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGuideShortcut);
+    return () => window.removeEventListener('keydown', handleGuideShortcut);
+  }, []);
 
   // Restore the session established at login. The JWT and the user object are
   // written to localStorage by PortalLogin; there is no separate /api/data feed.
@@ -462,9 +479,9 @@ const AppShell = () => {
           ))}
         </nav>
         <div className="side-footer">
-          <button className="nav-item" id="helpBtn">
-            <span className="nav-ico">?</span>
-            <span>Help Center</span>
+          <button className="nav-item" id="helpBtn" onClick={() => setShowUserGuide(true)} title="Open Comprehensive User Guide & Feature Manual">
+            <span className="nav-ico">📖</span>
+            <span>User Guide &amp; Help</span>
           </button>
           <button className="nav-item" id="switchBtn" onClick={() => navigate('/')}>
             <span className="nav-ico">⇄</span>
@@ -492,6 +509,29 @@ const AppShell = () => {
           />
         </div>
         <div className="top-actions">
+          <button
+            className="guide-topbar-btn"
+            id="guideTopBtn"
+            onClick={() => setShowUserGuide(true)}
+            title="Open Interactive User Guide (Shift + ?)"
+            style={{
+              background: 'var(--brand-tint)',
+              color: 'var(--brand-strong)',
+              border: '1px solid var(--brand-line)',
+              borderRadius: 6,
+              padding: '6px 12px',
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span>📖</span>
+            <span>User Guide</span>
+          </button>
           <button className="icon-btn" id="langBtn" onClick={toggleLanguage} title="English / العربية">
             {isRtl ? 'AR' : 'EN'}
           </button>
@@ -532,6 +572,23 @@ const AppShell = () => {
           />
         )}
       </main>
+
+      {/* Floating Context Notification / Toast on Every Tab */}
+      <UserGuideToast
+        activeTabId={currentPage}
+        onOpenFullGuide={() => setShowUserGuide(true)}
+      />
+
+      {/* Comprehensive Platform User Guide & Feature Explorer Modal */}
+      <UserGuideModal
+        isOpen={showUserGuide}
+        onClose={() => setShowUserGuide(false)}
+        activeTabId={currentPage}
+        onNavigateTab={(tabId) => {
+          setCurrentPage(tabId);
+        }}
+        account={account}
+      />
     </div>
   );
 };

@@ -4,40 +4,24 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { evaluateAppetite } from '../services/riskThresholds';
+import {
+  computeResidual, scoreOf as scoreRisk, nextReviewFrom, ratingOf,
+} from '../services/riskScoring';
+import {
+  checkRiskTransition, allowedNextRiskStatuses, treatmentsFor,
+  RISK_DIRECTIONS, THREAT_TREATMENTS, OPPORTUNITY_TREATMENTS,
+} from '../services/riskLifecycle';
 
 const SUBJ_RISK = 'Risk';
-const TREATMENTS = ['Accept', 'Mitigate', 'Transfer', 'Avoid'];
+const TREATMENTS = [...THREAT_TREATMENTS, ...OPPORTUNITY_TREATMENTS];
 const CATEGORIES = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Technology', 'Third-Party', 'People'];
 
-/** 5×5 platform default; rating bands derived from the product L×I. */
-export function scoreOf(likelihood: number, impact: number) {
-  const l = Math.min(5, Math.max(1, Math.round(likelihood)));
-  const i = Math.min(5, Math.max(1, Math.round(impact)));
-  const score = l * i;
-  const rating = score >= 15 ? 'High' : score >= 8 ? 'Medium' : 'Low';
-  return { l, i, score, rating };
-}
-
 /**
- * Residual is derived from linked-control effectiveness (TRD §7.2), never
- * client-supplied: each linked Effective control reduces likelihood by 2,
- * PartiallyEffective by 1, capped so residual never drops below 1.
+ * Scoring and residual derivation now live in services/riskScoring so that
+ * every path which can change control effectiveness recomputes the same way.
+ * Re-exported here because other modules import `scoreOf` from this controller.
  */
-async function computeResidual(riskId: string, inherentL: number, inherentI: number) {
-  const links = await prisma.riskControlLink.findMany({
-    where: { riskId },
-    include: { implementation: { select: { effectiveness: true, status: true } } },
-  });
-  let reduction = 0;
-  for (const link of links) {
-    if (link.implementation.status !== 'Verified') continue;
-    if (link.implementation.effectiveness === 'Effective') reduction += 2;
-    else if (link.implementation.effectiveness === 'PartiallyEffective') reduction += 1;
-  }
-  const residualL = Math.max(1, inherentL - Math.min(reduction, 3));
-  const { score } = scoreOf(residualL, inherentI);
-  return { residualLikelihood: residualL, residualImpact: inherentI, residualScore: score };
-}
+export const scoreOf = scoreRisk;
 
 async function nextRef(tenantId: string): Promise<string> {
   const count = await prisma.risk.count({ where: { tenantId } });
@@ -68,27 +52,86 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
         tenant: { select: { id: true, name: true } },
         controlLinks: { include: { implementation: { include: { control: { select: { code: true } } } } } },
         treatments: { orderBy: { createdAt: 'asc' } },
+        entityLinks: { include: { auditableEntity: { select: { id: true, name: true, type: true } } } },
+        issues: { select: { id: true, ref: true, status: true, riskRating: true, source: true } },
+        causes: { select: { effectId: true, nature: true } },
+        effects: { select: { causeId: true, nature: true } },
+        _count: { select: { kris: true, lossEvents: true } },
       },
       orderBy: [{ residualScore: 'desc' }],
       take: 500,
     });
 
+    // Board-set appetite is per category, so one lookup covers the whole page
+    // and every risk can be banded without an N+1.
+    const appetites = await prisma.riskAppetite.findMany({
+      where: { tenantId: { in: scope.tenantIds }, status: 'Approved' },
+    });
+    const appetiteByCategory = new Map(appetites.map((a) => [a.category, a]));
+
     const now = Date.now();
-    const enriched = risks.map((r) => ({
-      ...r,
-      inherentRating: scoreOf(r.inherentLikelihood, r.inherentImpact).rating,
-      residualRating: scoreOf(r.residualLikelihood, r.residualImpact).rating,
-      linkedControls: r.controlLinks.map((l) => l.implementation.control.code),
-      openTreatments: r.treatments.filter((t) => t.status === 'Open').length,
-      overdueTreatments: r.treatments.filter((t) => t.status === 'Open' && t.dueDate && t.dueDate.getTime() < now).length,
-      acceptanceExpired: r.status === 'Accepted' && !!r.acceptedUntil && r.acceptedUntil.getTime() < now,
-    }));
+    const enriched = risks.map((r) => {
+      const appetite = appetiteByCategory.get(r.category);
+      const openIssues = r.issues.filter((i) => i.status !== 'Closed');
+      return {
+        ...r,
+        inherentRating: ratingOf(r.inherentScore),
+        residualRating: ratingOf(r.residualScore),
+        linkedControls: r.controlLinks.map((l) => l.implementation.control.code),
+        effectiveControls: r.controlLinks.filter(
+          (l) => l.implementation.status === 'Verified' && l.implementation.effectiveness === 'Effective',
+        ).length,
+        openTreatments: r.treatments.filter((t) => t.status === 'Open').length,
+        overdueTreatments: r.treatments.filter((t) => t.status === 'Open' && t.dueDate && t.dueDate.getTime() < now).length,
+        acceptanceExpired: r.status === 'Accepted' && !!r.acceptedUntil && r.acceptedUntil.getTime() < now,
+
+        // Where this risk sits against board appetite — the second heatmap.
+        appetiteBand: appetite ? evaluateAppetite(r.residualScore, appetite) : 'NoAppetiteSet',
+        appetiteThreshold: appetite?.appetiteThreshold ?? null,
+        toleranceThreshold: appetite?.toleranceThreshold ?? null,
+
+        // Review state (ISO 31000 6.6).
+        reviewOverdue: !!r.nextReviewDate && r.nextReviewDate.getTime() < now && r.status !== 'Closed',
+        daysUntilReview: r.nextReviewDate
+          ? Math.round((r.nextReviewDate.getTime() - now) / 86_400_000)
+          : null,
+
+        // Whether the risk is in its manifestation window right now.
+        inHorizon: !r.horizonStart || !r.horizonEnd
+          ? true
+          : r.horizonStart.getTime() <= now && r.horizonEnd.getTime() >= now,
+
+        entities: r.entityLinks.map((l) => l.auditableEntity),
+        issueRefs: r.issues.map((i) => i.ref),
+        openIssueCount: openIssues.length,
+        // Connectedness — the paper's argument for ranking by network position
+        // rather than by a flat product of two guesses.
+        degree: r.causes.length + r.effects.length,
+        causesCount: r.causes.length,
+        causedByCount: r.effects.length,
+        kriCount: r._count.kris,
+        lossEventCount: r._count.lossEvents,
+      };
+    });
+
+    const byCategory: Record<string, { total: number; high: number; beyondTolerance: number }> = {};
+    for (const r of enriched) {
+      const c = (byCategory[r.category] ||= { total: 0, high: 0, beyondTolerance: 0 });
+      c.total++;
+      if (r.residualRating === 'High') c.high++;
+      if (r.appetiteBand === 'BeyondTolerance') c.beyondTolerance++;
+    }
 
     res.json({
       status: 'success',
       scope: scope.kind,
       count: enriched.length,
       categories: CATEGORIES,
+      directions: RISK_DIRECTIONS,
+      treatmentsByDirection: {
+        Threat: THREAT_TREATMENTS,
+        Opportunity: OPPORTUNITY_TREATMENTS,
+      },
       totals: {
         total: enriched.length,
         open: enriched.filter((r) => r.status === 'Open').length,
@@ -97,7 +140,26 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
         highResidual: enriched.filter((r) => r.residualRating === 'High').length,
         overdueTreatments: enriched.reduce((a, r) => a + r.overdueTreatments, 0),
         expiredAcceptances: enriched.filter((r) => r.acceptanceExpired).length,
+        beyondTolerance: enriched.filter((r) => r.appetiteBand === 'BeyondTolerance').length,
+        reviewOverdue: enriched.filter((r) => r.reviewOverdue).length,
+        opportunities: enriched.filter((r) => r.direction === 'Opportunity').length,
+        unmitigated: enriched.filter((r) => r.linkedControls.length === 0).length,
+        // How much of the register's inherent exposure the control environment
+        // is actually removing. The single number a board asks for.
+        mitigationRate: enriched.length > 0
+          ? Math.round(
+            (1 - enriched.reduce((a, r) => a + r.residualScore, 0)
+              / Math.max(1, enriched.reduce((a, r) => a + r.inherentScore, 0))) * 100,
+          )
+          : 0,
       },
+      byCategory,
+      appetites: appetites.map((a) => ({
+        category: a.category,
+        appetiteThreshold: a.appetiteThreshold,
+        toleranceThreshold: a.toleranceThreshold,
+        statement: a.statement,
+      })),
       risks: enriched,
     });
   } catch (error: any) {
@@ -110,13 +172,28 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
 
 export const createRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { title, description, category, likelihood, impact, treatmentType, ownerId, force } = req.body || {};
+    const {
+      title, description, category, likelihood, impact, treatmentType, ownerId, force,
+      direction, identifiedVia, identifiedSource, reviewCadenceMonths,
+      horizonStart, horizonEnd, auditableEntityIds,
+    } = req.body || {};
     if (!title || !description || !likelihood || !impact) {
       res.status(400).json({ status: 'error', message: 'title, description, likelihood and impact are required' });
       return;
     }
-    if (treatmentType && !TREATMENTS.includes(treatmentType)) {
-      res.status(400).json({ status: 'error', message: `treatmentType must be one of: ${TREATMENTS.join(', ')}` });
+
+    // ISO 31000 treats risk as the effect of uncertainty in either direction,
+    // and the treatment vocabulary differs by direction: you mitigate a threat
+    // and exploit an opportunity. Mixing them produces nonsense like an
+    // "Avoided opportunity".
+    const dir = RISK_DIRECTIONS.includes(direction) ? direction : 'Threat';
+    const allowedTreatments = treatmentsFor(dir);
+    if (treatmentType && !allowedTreatments.includes(treatmentType)) {
+      res.status(400).json({
+        status: 'error',
+        code: 'TREATMENT_DIRECTION_MISMATCH',
+        message: `For a ${dir.toLowerCase()}, treatmentType must be one of: ${allowedTreatments.join(', ')}.`,
+      });
       return;
     }
 
@@ -154,8 +231,15 @@ export const createRisk = async (req: AuthenticatedRequest, res: Response): Prom
           title: String(title).trim(),
           description: String(description).trim(),
           category: CATEGORIES.includes(category) ? category : 'Operational',
+          direction: dir,
           ownerId: ownerId || req.user!.id,
-          treatmentType: treatmentType || 'Mitigate',
+          treatmentType: treatmentType || (dir === 'Opportunity' ? 'Enhance' : 'Mitigate'),
+          identifiedVia: identifiedVia || 'Workshop',
+          identifiedSource: identifiedSource || null,
+          reviewCadenceMonths: Number(reviewCadenceMonths) || 6,
+          nextReviewDate: nextReviewFrom(Number(reviewCadenceMonths) || 6),
+          horizonStart: horizonStart ? new Date(horizonStart) : null,
+          horizonEnd: horizonEnd ? new Date(horizonEnd) : null,
           inherentLikelihood: l,
           inherentImpact: i,
           inherentScore: score,
@@ -166,12 +250,36 @@ export const createRisk = async (req: AuthenticatedRequest, res: Response): Prom
         },
       });
       await tx.riskScoreSnapshot.create({
-        data: { tenantId, riskId: created.id, score, inherentScore: score, residualScore: score },
+        data: {
+          tenantId, riskId: created.id, score,
+          inherentScore: score, residualScore: score, reason: 'Created',
+        },
       });
+
+      // Place the risk in the audit universe at birth. This is the join that
+      // lets the annual plan be driven by the register rather than by a
+      // parallel set of hand-typed factors.
+      const entityIds: string[] = Array.isArray(auditableEntityIds) ? auditableEntityIds : [];
+      if (entityIds.length > 0) {
+        const owned = await tx.auditableEntity.findMany({
+          where: { id: { in: entityIds }, tenantId },
+          select: { id: true },
+        });
+        for (const e of owned) {
+          await tx.riskEntityLink.create({
+            data: { riskId: created.id, auditableEntityId: e.id },
+          });
+        }
+      }
+
       await writeAudit(tx, {
         tenantId, actorId: req.user!.id, action: 'RISK_CREATED',
         subjectType: SUBJ_RISK, subjectId: created.id,
-        payload: { ref, title, likelihood: l, impact: i, score },
+        payload: {
+          ref, title, likelihood: l, impact: i, score,
+          direction: dir, identifiedVia: identifiedVia || 'Workshop',
+          entitiesLinked: entityIds.length,
+        },
       });
       return created;
     });
@@ -206,8 +314,18 @@ export const updateRisk = async (req: AuthenticatedRequest, res: Response): Prom
       data.treatmentType = treatmentType;
     }
     if (status) {
-      if (!['Open', 'UnderTreatment', 'Closed'].includes(status)) {
-        res.status(400).json({ status: 'error', message: 'status must be Open, UnderTreatment or Closed. Accepted is set via /accept.' });
+      // The lifecycle is declared in services/riskLifecycle, the same way the
+      // audit domain declares its own. Previously only the target value was
+      // checked, so any status could follow any other.
+      const illegal = checkRiskTransition(risk.status, status);
+      if (illegal) {
+        res.status(409).json({
+          status: 'error',
+          code: 'ILLEGAL_RISK_TRANSITION',
+          message: illegal,
+          currentStatus: risk.status,
+          allowedNext: allowedNextRiskStatuses(risk.status),
+        });
         return;
       }
       data.status = status;
@@ -216,11 +334,15 @@ export const updateRisk = async (req: AuthenticatedRequest, res: Response): Prom
     let scoresChanged = false;
     if (likelihood || impact) {
       const { l, i, score } = scoreOf(Number(likelihood ?? risk.inherentLikelihood), Number(impact ?? risk.inherentImpact));
-      const residual = await computeResidual(id, l, i);
+      const residual = await computeResidual(prisma, id, l, i);
       Object.assign(data, {
         inherentLikelihood: l, inherentImpact: i, inherentScore: score, ...residual,
       });
       scoresChanged = true;
+      // Rescoring a risk is a review of it. Recording that here is what keeps
+      // the review clock honest without asking for a second action.
+      data.lastReviewedAt = new Date();
+      data.nextReviewDate = nextReviewFrom(risk.reviewCadenceMonths);
     }
 
     if (Object.keys(data).length === 0) {
@@ -232,7 +354,11 @@ export const updateRisk = async (req: AuthenticatedRequest, res: Response): Prom
       const u = await tx.risk.update({ where: { id }, data });
       if (scoresChanged) {
         await tx.riskScoreSnapshot.create({
-          data: { tenantId: risk.tenantId, riskId: id, score: u.residualScore, inherentScore: u.inherentScore, residualScore: u.residualScore },
+          data: {
+            tenantId: risk.tenantId, riskId: id, score: u.residualScore,
+            inherentScore: u.inherentScore, residualScore: u.residualScore,
+            reason: 'Rescored',
+          },
         });
       }
       await writeAudit(tx, {
@@ -275,10 +401,14 @@ export const setRiskControls = async (req: AuthenticatedRequest, res: Response):
       for (const v of valid) {
         await tx.riskControlLink.create({ data: { riskId: id, implementationId: v.id } });
       }
-      const residual = await computeResidual(id, risk.inherentLikelihood, risk.inherentImpact);
+      const residual = await computeResidual(tx, id, risk.inherentLikelihood, risk.inherentImpact);
       const u = await tx.risk.update({ where: { id }, data: residual });
       await tx.riskScoreSnapshot.create({
-        data: { tenantId: risk.tenantId, riskId: id, score: u.residualScore, inherentScore: u.inherentScore, residualScore: u.residualScore },
+        data: {
+          tenantId: risk.tenantId, riskId: id, score: u.residualScore,
+          inherentScore: u.inherentScore, residualScore: u.residualScore,
+          reason: 'ControlsRelinked',
+        },
       });
       await writeAudit(tx, {
         tenantId: risk.tenantId, actorId: req.user!.id, action: 'RISK_CONTROLS_LINKED',
@@ -439,5 +569,237 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
   } catch (error: any) {
     console.error('[Risk Accept Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to accept risk' });
+  }
+};
+
+// ─── Link auditable entities ───────────────────────────────────────────────
+
+export const setRiskEntities = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const { auditableEntityIds, entityIds } = req.body || {};
+    const ids: string[] = Array.isArray(auditableEntityIds) ? auditableEntityIds : (Array.isArray(entityIds) ? entityIds : []);
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    if (!risk) {
+      res.status(404).json({ status: 'error', message: 'Risk not found' });
+      return;
+    }
+
+    const validEntities = await prisma.auditableEntity.findMany({
+      where: { id: { in: ids }, tenantId: risk.tenantId },
+      select: { id: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.riskEntityLink.deleteMany({ where: { riskId: id } });
+      for (const e of validEntities) {
+        await tx.riskEntityLink.create({
+          data: { riskId: id, auditableEntityId: e.id },
+        });
+      }
+      await writeAudit(tx, {
+        tenantId: risk.tenantId,
+        actorId: req.user!.id,
+        action: 'RISK_ENTITIES_SET',
+        subjectType: SUBJ_RISK,
+        subjectId: id,
+        payload: { linked: validEntities.length },
+      });
+    });
+
+    res.json({
+      status: 'success',
+      message: `${validEntities.length} entity/entities linked to ${risk.ref}.`,
+    });
+  } catch (error: any) {
+    console.error('[Set Risk Entities Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to set risk entities' });
+  }
+};
+
+// ─── Link related risk (directed edge) ────────────────────────────────────
+
+export const linkRelatedRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const causeId = req.params.id as string;
+    const { effectId, targetRiskId, nature, note } = req.body || {};
+    const targetId = effectId || targetRiskId;
+
+    if (!targetId) {
+      res.status(400).json({ status: 'error', message: 'effectId or targetRiskId is required' });
+      return;
+    }
+    if (causeId === targetId) {
+      res.status(400).json({ status: 'error', message: 'A risk cannot be linked to itself' });
+      return;
+    }
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const causeRisk = await prisma.risk.findFirst({ where: { id: causeId, tenantId: { in: scope.tenantIds } } });
+    const effectRisk = await prisma.risk.findFirst({ where: { id: targetId, tenantId: { in: scope.tenantIds } } });
+
+    if (!causeRisk || !effectRisk) {
+      res.status(404).json({ status: 'error', message: 'One or both risks not found' });
+      return;
+    }
+
+    const validNatures = ['Causes', 'Amplifies', 'SharesControl'];
+    const linkNature = validNatures.includes(nature) ? nature : 'Causes';
+
+    const link = await prisma.$transaction(async (tx) => {
+      const l = await tx.riskLink.upsert({
+        where: { causeId_effectId: { causeId, effectId: targetId } },
+        create: { causeId, effectId: targetId, nature: linkNature, note: note ? String(note).trim() : null },
+        update: { nature: linkNature, note: note ? String(note).trim() : null },
+      });
+      await writeAudit(tx, {
+        tenantId: causeRisk.tenantId,
+        actorId: req.user!.id,
+        action: 'RISK_LINKED',
+        subjectType: SUBJ_RISK,
+        subjectId: causeId,
+        payload: { effectId: targetId, nature: linkNature },
+      });
+      return l;
+    });
+
+    res.json({ status: 'success', link });
+  } catch (error: any) {
+    console.error('[Link Related Risk Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to link related risk' });
+  }
+};
+
+// ─── Formal review of a risk ───────────────────────────────────────────────
+
+export const reviewRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const { likelihood, impact, reviewCadenceMonths, notes } = req.body || {};
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    if (!risk) {
+      res.status(404).json({ status: 'error', message: 'Risk not found' });
+      return;
+    }
+
+    const cadence = Number(reviewCadenceMonths) || risk.reviewCadenceMonths;
+    const now = new Date();
+    const data: any = {
+      lastReviewedAt: now,
+      nextReviewDate: nextReviewFrom(cadence),
+      reviewCadenceMonths: cadence,
+    };
+
+    let scoresChanged = false;
+    if (likelihood || impact) {
+      const { l, i, score } = scoreOf(
+        Number(likelihood ?? risk.inherentLikelihood),
+        Number(impact ?? risk.inherentImpact),
+      );
+      const residual = await computeResidual(prisma, id, l, i);
+      Object.assign(data, {
+        inherentLikelihood: l,
+        inherentImpact: i,
+        inherentScore: score,
+        ...residual,
+      });
+      scoresChanged = true;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.risk.update({ where: { id }, data });
+      if (scoresChanged) {
+        await tx.riskScoreSnapshot.create({
+          data: {
+            tenantId: risk.tenantId,
+            riskId: id,
+            score: u.residualScore,
+            inherentScore: u.inherentScore,
+            residualScore: u.residualScore,
+            reason: notes ? `Reviewed: ${String(notes).trim()}` : 'Reviewed',
+          },
+        });
+      }
+      await writeAudit(tx, {
+        tenantId: risk.tenantId,
+        actorId: req.user!.id,
+        action: 'RISK_REVIEWED',
+        subjectType: SUBJ_RISK,
+        subjectId: id,
+        payload: { lastReviewedAt: now, nextReviewDate: data.nextReviewDate, notes: notes || null },
+      });
+      return u;
+    });
+
+    res.json({
+      status: 'success',
+      message: `${risk.ref} reviewed successfully. Next review due on ${updated.nextReviewDate?.toISOString().slice(0, 10)}.`,
+      risk: updated,
+    });
+  } catch (error: any) {
+    console.error('[Risk Review Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to review risk' });
+  }
+};
+
+// ─── Heatmap & network analytics ─────────────────────────────────────────
+
+export const riskAnalytics = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    await auditCrossTenantRead(scope, req.user!.id, 'grc.risks.analytics');
+
+    const risks = await prisma.risk.findMany({
+      where: { tenantId: { in: scope.tenantIds } },
+      include: {
+        causes: { select: { effectId: true, nature: true } },
+        effects: { select: { causeId: true, nature: true } },
+        controlLinks: { select: { implementationId: true } },
+        treatments: { select: { status: true } },
+        issues: { select: { id: true, status: true } },
+        _count: { select: { kris: true, lossEvents: true } },
+      },
+    });
+
+    const inherentHeatmap = Array.from({ length: 5 }, () => Array(5).fill(0));
+    const residualHeatmap = Array.from({ length: 5 }, () => Array(5).fill(0));
+
+    for (const r of risks) {
+      const lInh = Math.min(5, Math.max(1, r.inherentLikelihood)) - 1;
+      const iInh = Math.min(5, Math.max(1, r.inherentImpact)) - 1;
+      inherentHeatmap[lInh][iInh]++;
+
+      const lRes = Math.min(5, Math.max(1, r.residualLikelihood)) - 1;
+      const iRes = Math.min(5, Math.max(1, r.residualImpact)) - 1;
+      residualHeatmap[lRes][iRes]++;
+    }
+
+    const connectedRisks = risks
+      .map((r) => ({
+        id: r.id,
+        ref: r.ref,
+        title: r.title,
+        residualScore: r.residualScore,
+        degree: r.causes.length + r.effects.length,
+        causesCount: r.causes.length,
+        causedByCount: r.effects.length,
+      }))
+      .sort((a, b) => b.degree - a.degree)
+      .slice(0, 10);
+
+    res.json({
+      status: 'success',
+      totalRisks: risks.length,
+      inherentHeatmap,
+      residualHeatmap,
+      connectedRisks,
+    });
+  } catch (error: any) {
+    console.error('[Risk Analytics Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch risk analytics' });
   }
 };

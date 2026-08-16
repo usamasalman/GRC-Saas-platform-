@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import {
-  computeEntityRisk, suggestedBudgetHours,
+  computeEntityRisk, suggestedBudgetHours, derivePriorFindings,
   FACTOR_WEIGHTS, FACTOR_LABELS, RiskFactors,
 } from '../services/auditRiskScoring';
 
@@ -48,21 +48,51 @@ export const listUniverse = async (req: AuthenticatedRequest, res: Response): Pr
           orderBy: { createdAt: 'desc' },
           take: 3,
         },
+        issues: { select: { id: true, status: true, riskRating: true } },
+        riskLinks: {
+          include: {
+            risk: {
+              select: {
+                id: true, ref: true, title: true, category: true, direction: true,
+                residualScore: true, inherentScore: true, status: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ riskScore: 'desc' }, { name: 'asc' }],
       take: 500,
     });
 
     const enriched = entities.map((e) => {
-      const calc = computeEntityRisk(pickFactors(e), e.lastAuditedAt, e.auditCycleMonths);
+      // Prior finding density is derived from the findings on record rather
+      // than read off the stored column, so the plan reflects what the
+      // platform actually knows about this entity today.
+      const factors = { ...pickFactors(e), priorFindings: derivePriorFindings(e.issues) };
+      const calc = computeEntityRisk(factors, e.lastAuditedAt, e.auditCycleMonths);
+      const linkedRisks = e.riskLinks.map((l) => l.risk);
+      const openIssues = e.issues.filter((i) => i.status !== 'Closed');
       return {
         id: e.id, ref: e.ref, name: e.name, type: e.type, description: e.description,
         tenantId: e.tenantId, tenantName: e.tenant.name,
         parentName: e.parent?.name || null,
         owner: e.owner,
-        factors: pickFactors(e),
-        riskScore: e.riskScore,
-        riskTier: e.riskTier,
+        factors,
+        /// The score the annual assessment last stored, and the score the
+        /// current evidence produces. A gap between them means the assessment
+        /// is out of date — which is itself the signal a CAE needs.
+        riskScore: calc.riskScore,
+        storedRiskScore: e.riskScore,
+        assessmentStale: Math.abs(calc.riskScore - e.riskScore) >= 0.25,
+        riskTier: calc.riskTier,
+        // The register risks that live here — what makes the plan risk-based
+        // in the sense IIA Standard 9.4 means.
+        linkedRisks,
+        linkedRiskCount: linkedRisks.length,
+        maxLinkedResidual: linkedRisks.reduce((m, r) => Math.max(m, r?.residualScore ?? 0), 0),
+        issueCount: e.issues.length,
+        openIssueCount: openIssues.length,
+        highOpenIssues: openIssues.filter((i) => i.riskRating === 'High').length,
         lastAuditedAt: e.lastAuditedAt,
         auditCycleMonths: e.auditCycleMonths,
         monthsSinceAudit: calc.monthsSinceAudit,

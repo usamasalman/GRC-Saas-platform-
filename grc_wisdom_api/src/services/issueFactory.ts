@@ -29,6 +29,13 @@ export type NewIssue = {
   cause?: string | null;
   sourceReference?: string | null;
   targetCloseDate?: Date | null;
+  // ── Linkage spine ────────────────────────────────────────────────────
+  // What this issue is a gap *in*. Set as many as the caller genuinely knows;
+  // an issue that names none of them is a note, not a traceable finding.
+  auditId?: string | null;
+  riskId?: string | null;
+  implementationId?: string | null;
+  auditableEntityId?: string | null;
 };
 
 /**
@@ -68,6 +75,10 @@ export async function createIssueRecord(tx: any, input: NewIssue) {
       raisedById: input.raisedById,
       status: 'Open',
       targetCloseDate: input.targetCloseDate ?? null,
+      auditId: input.auditId ?? null,
+      riskId: input.riskId ?? null,
+      implementationId: input.implementationId ?? null,
+      auditableEntityId: input.auditableEntityId ?? null,
     },
   });
 
@@ -77,7 +88,16 @@ export async function createIssueRecord(tx: any, input: NewIssue) {
     action: 'ISSUE_RAISED',
     subjectType: 'Issue',
     subjectId: issue.id,
-    payload: { ref, source: input.source, riskRating: issue.riskRating, sourceReference: input.sourceReference ?? null },
+    payload: {
+      ref, source: input.source, riskRating: issue.riskRating,
+      sourceReference: input.sourceReference ?? null,
+      linkedTo: {
+        audit: input.auditId ?? null,
+        risk: input.riskId ?? null,
+        control: input.implementationId ?? null,
+        entity: input.auditableEntityId ?? null,
+      },
+    },
   });
 
   return issue;

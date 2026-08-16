@@ -109,6 +109,16 @@ export async function hasCapability(userId: string, capability: string): Promise
 }
 
 /**
+ * As above for a set of alternatives, in one permission load rather than one
+ * per capability. Used where authorisation is primarily by record ownership
+ * and a capability is only the fallback route in.
+ */
+export async function hasAnyCapability(userId: string, capabilities: string[]): Promise<boolean> {
+  const eff = await getEffectivePermissions(userId);
+  return capabilities.some((c) => eff.capabilities.includes(c));
+}
+
+/**
  * Route middleware. Place after requireAuth:
  *   router.post('/', requireCapability(CAP.MANAGE_TENANT), createTenant)
  *

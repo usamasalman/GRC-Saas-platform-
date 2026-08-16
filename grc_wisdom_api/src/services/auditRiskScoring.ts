@@ -74,6 +74,40 @@ export function computeEntityRisk(
   return { riskScore, riskTier, monthsSinceAudit, coverageUplift: Number(coverageUplift.toFixed(2)) };
 }
 
+/**
+ * Prior finding density, derived from the findings actually on the entity.
+ *
+ * This factor carries 15% of the plan's weight and used to be typed in by hand
+ * on a 1–5 scale, while the platform already held the exact count. A number a
+ * human maintains by memory is not evidence, and IIA Standard 9.4 expects the
+ * plan to be defensible.
+ *
+ * Open findings count double: a closed finding says the entity had a problem,
+ * an open one says it still does. High-rated findings count double again,
+ * because ten low-rated observations are not the same signal as two serious
+ * unremediated gaps.
+ */
+export function derivePriorFindings(
+  issues: { status: string; riskRating: string }[],
+): number {
+  if (issues.length === 0) return 1;
+
+  let weight = 0;
+  for (const i of issues) {
+    const severity = i.riskRating === 'High' ? 2 : i.riskRating === 'Medium' ? 1 : 0.5;
+    const openness = i.status === 'Closed' ? 1 : 2;
+    weight += severity * openness;
+  }
+
+  // Bands chosen so a clean entity scores 1 and a genuinely troubled one
+  // reaches 5 without a single outlier finding pushing it there.
+  if (weight >= 16) return 5;
+  if (weight >= 9) return 4;
+  if (weight >= 4) return 3;
+  if (weight >= 1.5) return 2;
+  return 1;
+}
+
 /** Default engagement budget by tier — the starting point a CAE then adjusts. */
 export function suggestedBudgetHours(riskTier: string): number {
   if (riskTier === 'High') return 160;

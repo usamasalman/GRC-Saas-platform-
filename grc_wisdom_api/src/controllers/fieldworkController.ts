@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
 const SUBJ_RCM = 'EngagementRisk';
 const SUBJ_TEST = 'TestProcedure';
@@ -244,7 +245,12 @@ export const recordResult = async (req: AuthenticatedRequest, res: Response): Pr
       where: { id: procedureId, engagementRisk: { audit: { tenantId: { in: scope.tenantIds } } } },
       include: {
         result: true,
-        engagementRisk: { include: { audit: { select: { id: true, ref: true, tenantId: true, status: true } } } },
+        engagementRisk: {
+          include: {
+            implementation: { select: { id: true, effectiveness: true, control: { select: { code: true } } } },
+            audit: { select: { id: true, ref: true, tenantId: true, status: true } },
+          },
+        },
       },
     });
     if (!proc) { res.status(404).json({ status: 'error', message: 'Test procedure not found' }); return; }
@@ -259,7 +265,9 @@ export const recordResult = async (req: AuthenticatedRequest, res: Response): Pr
 
     const audit = proc.engagementRisk.audit;
 
-    const result = await prisma.$transaction(async (tx) => {
+    const impl = proc.engagementRisk.implementation;
+
+    const { result, moved, controlMovedTo } = await prisma.$transaction(async (tx) => {
       const r = await tx.testResult.create({
         data: {
           procedureId,
@@ -271,21 +279,63 @@ export const recordResult = async (req: AuthenticatedRequest, res: Response): Pr
         },
       });
       await tx.testProcedure.update({ where: { id: procedureId }, data: { status: 'Completed' } });
+
+      // Independent testing is the strongest evidence the platform holds about
+      // whether a control works, and it used to stop at the engagement. An
+      // auditor could conclude Unsatisfactory and the enterprise register would
+      // never learn the control it relies on had failed.
+      //
+      // Audit's verdict overrides management's self-assessment in both
+      // directions — that is what the third line is for — but only where the
+      // RCM row actually names a control.
+      let rerated: { ref: string; from: number; to: number }[] = [];
+      let newEffectiveness: string | null = null;
+
+      if (impl) {
+        newEffectiveness = conclusion === 'Satisfactory'
+          ? 'Effective'
+          : conclusion === 'SatisfactoryWithExceptions'
+            ? 'PartiallyEffective'
+            : 'Ineffective';
+
+        if (newEffectiveness !== impl.effectiveness) {
+          await tx.controlImplementation.update({
+            where: { id: impl.id },
+            data: { effectiveness: newEffectiveness, lastReviewedAt: new Date() },
+          });
+          rerated = await recomputeRisksForImplementations(tx, [impl.id], 'TestFailed');
+        } else {
+          newEffectiveness = null; // unchanged; nothing to report
+        }
+      }
+
       await writeAudit(tx, {
         tenantId: audit.tenantId, actorId: req.user!.id, action: 'TEST_RESULT_RECORDED',
         subjectType: SUBJ_TEST, subjectId: procedureId,
-        payload: { auditRef: audit.ref, procedureRef: proc.ref, itemsTested: tested, exceptions, conclusion },
+        payload: {
+          auditRef: audit.ref, procedureRef: proc.ref, itemsTested: tested, exceptions, conclusion,
+          controlRerated: newEffectiveness ? { code: impl?.control.code, to: newEffectiveness } : null,
+          risksRerated: rerated.map((x) => ({ ref: x.ref, from: x.from, to: x.to })),
+        },
       });
-      return r;
+      return { result: r, moved: rerated, controlMovedTo: newEffectiveness };
     });
+
+    const consequence = [
+      controlMovedTo ? `${impl?.control.code} re-rated ${controlMovedTo}.` : '',
+      moved.length ? describeMovement(moved) : '',
+    ].filter(Boolean).join(' ');
 
     res.status(201).json({
       status: 'success',
-      message: conclusion === 'Satisfactory'
+      message: (conclusion === 'Satisfactory'
         ? 'Result recorded — control operating effectively.'
-        : `Result recorded with ${exceptions} exception(s). Raise a finding from this result if reportable.`,
+        : `Result recorded with ${exceptions} exception(s). Raise a finding from this result if reportable.`)
+        + (consequence ? ` ${consequence}` : ''),
       result,
       shouldRaiseFinding: conclusion !== 'Satisfactory',
+      controlRerated: controlMovedTo,
+      risksRerated: moved,
     });
   } catch (error: any) {
     console.error('[Record Result Error]:', error);

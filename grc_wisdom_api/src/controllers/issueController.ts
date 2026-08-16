@@ -6,6 +6,7 @@ import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResol
 import { checkSod, SodViolation } from '../services/sodEngine';
 import { createIssueRecord } from '../services/issueFactory';
 import { notify } from '../services/notificationService';
+import { hasAnyCapability, CAP } from '../services/capabilityEngine';
 
 const SUBJ_ISSUE = 'Issue';
 
@@ -347,7 +348,17 @@ export const assignCap = async (req: AuthenticatedRequest, res: Response): Promi
   }
 };
 
-/** The CAP owner declares remediation complete; closure still needs validation. */
+/**
+ * The CAP owner declares remediation complete; closure still needs validation.
+ *
+ * Authorisation here is by ownership, not by capability. A corrective action is
+ * deliberately owned by the accountable business manager — an asset owner, a
+ * head of operations — who holds no audit capability at all. Gating this on one
+ * would force the auditor to declare management's own remediation complete on
+ * their behalf, which inverts the accountability the whole flow exists to
+ * establish. So: the CAP owner may always submit their own, and an audit or
+ * compliance capability covers everyone else.
+ */
 export const submitForClosure = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -356,6 +367,19 @@ export const submitForClosure = async (req: AuthenticatedRequest, res: Response)
     const scope = await resolveTenantScope(req.user!.tenantId);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
+
+    if (issue.capOwnerId !== req.user!.id) {
+      const permitted = await hasAnyCapability(req.user!.id, [CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION]);
+      if (!permitted) {
+        res.status(403).json({
+          status: 'error',
+          code: 'NOT_CAP_OWNER',
+          message: `${issue.ref} can be submitted for closure by its corrective-action owner, or by internal audit or compliance.`,
+        });
+        return;
+      }
+    }
+
     if (issue.status !== 'CAPAssigned') {
       res.status(409).json({
         status: 'error',

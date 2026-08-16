@@ -305,7 +305,10 @@
         "maintain-roles-and-permissions",
         "import-or-enable-a-standard",
         "generate-and-distribute-a-report",
-        "create-or-manage-a-tenant"
+        "create-or-manage-a-tenant",
+        "plan-and-execute-an-audit",
+        "manage-a-control-implementation-and-evidence",
+        "create-import-and-version-a-document"
       ]
     },
     {
@@ -548,7 +551,8 @@
         "create-import-and-version-a-document",
         "review-approve-and-digitally-sign-a-document",
         "apply-retention-and-legal-hold",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "plan-and-execute-an-audit"
       ]
     },
     {

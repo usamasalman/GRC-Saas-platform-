@@ -37,7 +37,15 @@ const FrameworkAuthoring: React.FC = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<'standards' | 'controls'>('standards');
+  const [tab, setTab] = useState<'standards' | 'controls' | 'import'>('standards');
+
+  const [imports, setImports] = useState<any[]>([]);
+  const [openImport, setOpenImport] = useState<any | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [impForm, setImpForm] = useState({
+    kind: 'Clause', targetStandardId: '',
+    newStandardCode: '', newStandardTitle: '', newStandardAuthority: '', newStandardVersion: '',
+  });
 
   const [openStd, setOpenStd] = useState<string | null>(null);
   const [showStdForm, setShowStdForm] = useState(false);
@@ -70,6 +78,95 @@ const FrameworkAuthoring: React.FC = () => {
    * Clauses are pasted one per line as `ref | title | text`. A real standard
    * has dozens of them, so a row-by-row form would be the wrong shape.
    */
+  const loadImports = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/api/grc/imports');
+      setImports(res.data?.imports || []);
+    } catch { /* the panel simply stays empty */ }
+  }, []);
+
+  useEffect(() => { if (tab === 'import') loadImports(); }, [tab, loadImports]);
+
+  const openImportDetail = async (id: string) => {
+    try {
+      const res = await apiClient.get(`/api/grc/imports/${id}`);
+      setOpenImport(res.data || null);
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
+  /** Reads the chosen file as base64 — the same shape the API already takes. */
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(new Error('Could not read that file'));
+      reader.readAsDataURL(file);
+    });
+
+  const uploadFile = async (file: File) => {
+    setUploading(true); setNotice(''); setError('');
+    try {
+      const fileData = await fileToBase64(file);
+      const body: any = { kind: impForm.kind, fileName: file.name, fileData };
+      if (impForm.kind === 'Clause') {
+        if (impForm.targetStandardId) body.targetStandardId = impForm.targetStandardId;
+        else {
+          body.newStandardCode = impForm.newStandardCode;
+          body.newStandardTitle = impForm.newStandardTitle;
+          body.newStandardAuthority = impForm.newStandardAuthority;
+          body.newStandardVersion = impForm.newStandardVersion;
+        }
+      }
+      const res = await apiClient.post('/api/grc/imports', body);
+      setNotice(res.data?.message || 'File read');
+      await loadImports();
+      if (res.data?.import?.id) await openImportDetail(res.data.import.id);
+    } catch (err) { setError(apiError(err, 'Could not read that file')); }
+    finally { setUploading(false); }
+  };
+
+  const decide = async (candidateId: string, decision: string, edits?: any) => {
+    try {
+      await apiClient.patch(`/api/grc/import-candidates/${candidateId}`, { decision, ...(edits || {}) });
+      if (openImport?.import?.id) await openImportDetail(openImport.import.id);
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
+  const fixAndAccept = async (c: any) => {
+    const ref = window.prompt('Reference:', c.ref || '');
+    if (ref === null) return;
+    const title = window.prompt('Title:', c.title || '');
+    if (title === null) return;
+    await decide(c.id, 'Accepted', { ref, title });
+  };
+
+  const acceptClean = async (id: string) => {
+    try {
+      const res = await apiClient.post(`/api/grc/imports/${id}/accept-clean`, {});
+      setNotice(res.data?.message || '');
+      await openImportDetail(id);
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
+  const commitImport = async (id: string) => {
+    try {
+      const res = await apiClient.post(`/api/grc/imports/${id}/commit`, {});
+      setNotice(res.data?.message || 'Committed');
+      setOpenImport(null);
+      await Promise.all([load(), loadImports()]);
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
+  const discardImport = async (id: string) => {
+    if (!window.confirm('Discard this import? Nothing will be added to the library.')) return;
+    try {
+      const res = await apiClient.post(`/api/grc/imports/${id}/discard`, {});
+      setNotice(res.data?.message || 'Discarded');
+      setOpenImport(null);
+      await loadImports();
+    } catch (err) { window.alert(apiError(err)); }
+  };
+
   const parseClauses = (raw: string) =>
     raw.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
       const [ref, title, ...rest] = line.split('|').map((p) => p.trim());
@@ -181,7 +278,7 @@ const FrameworkAuthoring: React.FC = () => {
   const ownControls = controls.filter((c) => !c.isLibrary).length;
   const unmapped = controls.filter((c) => c.mappedTo.length === 0).length;
 
-  const tabBtn = (key: 'standards' | 'controls'): React.CSSProperties => ({
+  const tabBtn = (key: 'standards' | 'controls' | 'import'): React.CSSProperties => ({
     ...ghostBtn,
     background: tab === key ? 'var(--brand-tint)' : 'var(--surface)',
     borderColor: tab === key ? 'var(--brand)' : 'var(--field-line)',
@@ -202,6 +299,7 @@ const FrameworkAuthoring: React.FC = () => {
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={tabBtn('standards')} onClick={() => setTab('standards')}>Standards</button>
           <button style={tabBtn('controls')} onClick={() => setTab('controls')}>Controls</button>
+          <button style={tabBtn('import')} onClick={() => setTab('import')}>Import from file</button>
         </div>
       </div>
 
@@ -321,7 +419,7 @@ const FrameworkAuthoring: React.FC = () => {
             </table>
           </div>
         </>
-      ) : (
+      ) : tab === 'controls' ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button style={primaryBtn()} onClick={() => { setShowCtrlForm(!showCtrlForm); setFormErr(''); }}>
@@ -401,6 +499,215 @@ const FrameworkAuthoring: React.FC = () => {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* ── Upload ─────────────────────────────────────────────── */}
+          <div style={{ ...S.card, padding: 18, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 650, color: 'var(--ink)', marginBottom: 4 }}>
+              Import a framework from a file
+            </div>
+            <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--ink-muted)', maxWidth: '76ch' }}>
+              Spreadsheets (.xlsx, .csv), PDF and Word are read here. Nothing is added to the library
+              on upload — what the file contains is staged for you to check first, because a misread
+              clause becomes the criterion an audit tests against.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 3 }}>Contains</label>
+                <select
+                  value={impForm.kind}
+                  onChange={(e) => setImpForm({ ...impForm, kind: e.target.value })}
+                  style={{ ...S.input, width: 190 }}
+                >
+                  <option value="Clause">Clauses of a standard</option>
+                  <option value="Control">Controls (spreadsheet only)</option>
+                </select>
+              </div>
+
+              {impForm.kind === 'Clause' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 3 }}>Add to</label>
+                  <select
+                    value={impForm.targetStandardId}
+                    onChange={(e) => setImpForm({ ...impForm, targetStandardId: e.target.value })}
+                    style={{ ...S.input, width: 260 }}
+                  >
+                    <option value="">— create a new standard —</option>
+                    {standards.filter((x: any) => x.isOwnedHere).map((x: any) => (
+                      <option key={x.id} value={x.id}>{x.code} — {x.title}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {impForm.kind === 'Clause' && !impForm.targetStandardId && (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                {([
+                  ['newStandardCode', 'Code', 'ISO22301', 140],
+                  ['newStandardTitle', 'Title', 'Business Continuity Management', 280],
+                  ['newStandardAuthority', 'Authority', 'ISO', 150],
+                  ['newStandardVersion', 'Version', '2019', 110],
+                ] as [string, string, string, number][]).map(([key, label, ph, w]) => (
+                  <div key={key}>
+                    <label style={{ display: 'block', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 3 }}>{label}</label>
+                    <input
+                      value={(impForm as any)[key]}
+                      placeholder={ph}
+                      onChange={(e) => setImpForm({ ...impForm, [key]: e.target.value })}
+                      style={{ ...S.input, width: w }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 14 }}>
+              <input
+                type="file"
+                accept=".xlsx,.csv,.pdf,.docx"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadFile(f);
+                  e.target.value = '';
+                }}
+                style={{ fontSize: 13 }}
+              />
+              {uploading && <span style={{ marginLeft: 10, fontSize: 12.5, color: 'var(--ink-muted)' }}>Reading…</span>}
+            </div>
+          </div>
+
+          {/* ── Review ─────────────────────────────────────────────── */}
+          {openImport && (
+            <div style={{ ...S.card, padding: 18, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 650, color: 'var(--ink)' }}>
+                    {openImport.import.fileName}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                    {openImport.totals.extracted} read · {openImport.totals.accepted} accepted ·{' '}
+                    {openImport.totals.rejected} rejected ·{' '}
+                    <span style={{ color: openImport.totals.needsAttention > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                      {openImport.totals.needsAttention} need attention
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {openImport.import.status === 'Extracted' && (
+                    <>
+                      <button style={ghostBtn} onClick={() => acceptClean(openImport.import.id)}>Accept clean rows</button>
+                      <button style={primaryBtn()} onClick={() => commitImport(openImport.import.id)}>
+                        Commit {openImport.totals.accepted} accepted
+                      </button>
+                      <button style={{ ...ghostBtn, color: 'var(--danger)' }} onClick={() => discardImport(openImport.import.id)}>Discard</button>
+                    </>
+                  )}
+                  <button style={ghostBtn} onClick={() => setOpenImport(null)}>Close</button>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Row</th>
+                      <th style={S.th}>Confidence</th>
+                      <th style={S.th}>Reference</th>
+                      <th style={S.th}>Title</th>
+                      <th style={S.th}>Status</th>
+                      <th style={{ ...S.th, textAlign: 'right' }}>Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openImport.candidates.map((c: any) => (
+                      <tr key={c.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                        <td style={{ ...S.td, color: 'var(--ink-faint)' }}>{c.rowNumber}</td>
+                        <td style={S.td}>
+                          <span style={pill(
+                            c.confidence === 'High' ? 'var(--success)' : c.confidence === 'Medium' ? 'var(--warning)' : 'var(--danger)',
+                            c.confidence === 'High' ? 'var(--success-line)' : c.confidence === 'Medium' ? 'var(--warning-line)' : 'var(--danger-line)',
+                          )}>{c.confidence}</span>
+                        </td>
+                        <td style={{ ...S.td, fontWeight: 600, color: 'var(--ink)' }}>{c.ref || <em style={{ color: 'var(--danger)' }}>none</em>}</td>
+                        <td style={S.td}>
+                          {c.title || <em style={{ color: 'var(--danger)' }}>no title</em>}
+                          {c.issue && (
+                            <div style={{ fontSize: 11.5, color: 'var(--warning)', marginTop: 3 }}>{c.issue}</div>
+                          )}
+                        </td>
+                        <td style={S.td}>
+                          <span style={{ color: c.status === 'Accepted' ? 'var(--success)' : c.status === 'Rejected' ? 'var(--danger)' : 'var(--ink-muted)' }}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {openImport.import.status === 'Extracted' && (
+                            <>
+                              {c.issue && <button onClick={() => fixAndAccept(c)} style={linkBtn('var(--info)')}>correct</button>}
+                              {c.status !== 'Accepted' && !c.issue && <button onClick={() => decide(c.id, 'Accepted')} style={linkBtn('var(--success)')}>accept</button>}
+                              {c.status !== 'Rejected' && <button onClick={() => decide(c.id, 'Rejected')} style={linkBtn('var(--danger)')}>reject</button>}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── History ────────────────────────────────────────────── */}
+          <div style={{ ...S.card, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={S.th}>File</th>
+                  <th style={S.th}>Contains</th>
+                  <th style={S.th}>Rows</th>
+                  <th style={S.th}>Status</th>
+                  <th style={S.th}>Uploaded by</th>
+                  <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {imports.map((i) => (
+                  <tr key={i.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                    <td style={{ ...S.td, fontWeight: 600, color: 'var(--ink)' }}>
+                      {i.fileName}
+                      <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{i.fileType}</div>
+                    </td>
+                    <td style={S.td}>{i.kind === 'Clause' ? 'Clauses' : 'Controls'}</td>
+                    <td style={S.td}>
+                      {i.extractedCount}
+                      {i.committedCount > 0 && <span style={{ color: 'var(--success)' }}> · {i.committedCount} committed</span>}
+                    </td>
+                    <td style={S.td}>
+                      <span style={pill(
+                        i.status === 'Committed' ? 'var(--success)' : i.status === 'Discarded' ? 'var(--ink-muted)' : 'var(--warning)',
+                        i.status === 'Committed' ? 'var(--success-line)' : i.status === 'Discarded' ? 'var(--line)' : 'var(--warning-line)',
+                      )}>{i.status}</span>
+                    </td>
+                    <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{i.uploadedBy?.name || ''}</td>
+                    <td style={{ ...S.td, textAlign: 'right' }}>
+                      <button onClick={() => openImportDetail(i.id)} style={linkBtn('var(--info)')}>
+                        {i.status === 'Extracted' ? 'review' : 'view'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {imports.length === 0 && (
+                  <tr><td colSpan={6} style={{ ...S.td, color: 'var(--ink-faint)', padding: 24, textAlign: 'center' }}>
+                    Nothing imported yet.
+                  </td></tr>
+                )}
               </tbody>
             </table>
           </div>
