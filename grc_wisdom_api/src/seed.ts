@@ -66,6 +66,17 @@ async function main() {
   const seed = SEED as any;
 
   // ── Wipe in FK-safe order ────────────────────────────────────────────────
+  // Asset links first — they reference risks and control implementations.
+  await prisma.sharedServiceControl.deleteMany();
+  await prisma.sharedServiceConsumer.deleteMany();
+  await prisma.sharedService.deleteMany();
+  await prisma.vendorRiskLink.deleteMany();
+  await prisma.vendorAssessment.deleteMany();
+  await prisma.vendor.deleteMany();
+  await prisma.riskCriteria.deleteMany();
+  await prisma.assetRiskLink.deleteMany();
+  await prisma.assetControlLink.deleteMany();
+  await prisma.asset.deleteMany();
   await prisma.kriReading.deleteMany();
   await prisma.kri.deleteMany();
   await prisma.lossEvent.deleteMany();
@@ -848,16 +859,27 @@ async function main() {
 
 
   // -- 10g. Risk register + audit programme -------------------------------
+  // `via` is provenance, `entity` matches an auditable-entity name so the risk
+  // lands in the audit universe, and `causes` names the risks this one drives —
+  // together they populate the linkage spine the heatmaps and the plan read.
   const RISK_SEED = [
-    { title: 'Excessive privileged access to production systems', category: 'Technology', l: 4, i: 5, treatment: 'Mitigate' },
-    { title: 'Personal data processed without recorded lawful basis', category: 'Compliance', l: 3, i: 5, treatment: 'Mitigate' },
-    { title: 'Third-party cloud provider outage disrupts service', category: 'Third-Party', l: 3, i: 4, treatment: 'Transfer' },
-    { title: 'Phishing leads to credential compromise', category: 'Operational', l: 4, i: 4, treatment: 'Mitigate' },
-    { title: 'Key person dependency in security operations', category: 'People', l: 3, i: 3, treatment: 'Mitigate' },
-    { title: 'Unpatched externally-facing application', category: 'Technology', l: 4, i: 4, treatment: 'Mitigate' },
-    { title: 'Cross-border data transfer without assessment', category: 'Compliance', l: 2, i: 5, treatment: 'Avoid' },
-    { title: 'Inadequate backup restoration testing', category: 'Operational', l: 2, i: 4, treatment: 'Mitigate' },
+    { title: 'Excessive privileged access to production systems', category: 'Technology', l: 4, i: 5, treatment: 'Mitigate', direction: 'Threat', via: 'InternalAudit', entity: 'Identity and access management', causes: [3], cadence: 3 },
+    { title: 'Personal data processed without recorded lawful basis', category: 'Compliance', l: 3, i: 5, treatment: 'Mitigate', direction: 'Threat', via: 'Regulator', entity: 'Personal data processing', causes: [], cadence: 6 },
+    { title: 'Third-party cloud provider outage disrupts service', category: 'Third-Party', l: 3, i: 4, treatment: 'Transfer', direction: 'Threat', via: 'Workshop', entity: 'Third-party and cloud management', causes: [7], cadence: 6 },
+    { title: 'Phishing leads to credential compromise', category: 'Operational', l: 4, i: 4, treatment: 'Mitigate', direction: 'Threat', via: 'Incident', entity: 'Identity and access management', causes: [], cadence: 3 },
+    { title: 'Key person dependency in security operations', category: 'People', l: 3, i: 3, treatment: 'Mitigate', direction: 'Threat', via: 'Workshop', entity: 'Security operations centre', causes: [5], cadence: 12 },
+    { title: 'Unpatched externally-facing application', category: 'Technology', l: 4, i: 4, treatment: 'Mitigate', direction: 'Threat', via: 'Scan', entity: 'Change and release management', causes: [0], cadence: 3 },
+    { title: 'Cross-border data transfer without assessment', category: 'Compliance', l: 2, i: 5, treatment: 'Avoid', direction: 'Threat', via: 'Workshop', entity: 'Personal data processing', causes: [], cadence: 12 },
+    { title: 'Inadequate backup restoration testing', category: 'Operational', l: 2, i: 4, treatment: 'Mitigate', direction: 'Threat', via: 'RCSA', entity: 'Business continuity and recovery', causes: [], cadence: 6 },
+    // ISO 31000 counts upside as risk. Without at least one on the register the
+    // opportunity view has nothing to show and the model looks threat-only.
+    { title: 'Cloud migration unlocks Vision 2030 service expansion', category: 'Strategic', l: 4, i: 4, treatment: 'Exploit', direction: 'Opportunity', via: 'Workshop', entity: 'Third-party and cloud management', causes: [], cadence: 6 },
+    { title: 'Automating controls testing frees assurance capacity', category: 'Operational', l: 3, i: 3, treatment: 'Enhance', direction: 'Opportunity', via: 'Workshop', entity: 'Change and release management', causes: [], cadence: 6 },
   ];
+
+  /// Title → seed metadata, so the entity links can be made after the audit
+  /// universe exists further down rather than guessed at here.
+  const RISK_SEED_BY_TITLE = new Map(RISK_SEED.map((r) => [r.title, r]));
 
   const AUDIT_SEED = [
     {
@@ -897,6 +919,7 @@ async function main() {
     });
 
     // Risks
+    const createdRisks: { id: string; seedIndex: number }[] = [];
     for (let r = 0; r < RISK_SEED.length; r++) {
       const rs = RISK_SEED[r];
       const owner = users[r % users.length];
@@ -909,13 +932,30 @@ async function main() {
       else if (links.length === 1) rl = Math.max(1, il - 2);
       const rscore = rl * ii;
 
+      // Review dates are staggered so the register shows a realistic mix of
+      // current, due-soon and overdue — a page where everything is green
+      // teaches nobody how the review clock behaves.
+      const cadence = rs.cadence ?? 6;
+      const reviewOffsetDays = [-45, -12, 20, 60, 110, -3, 150, 45, 75, 30][r % 10];
       const risk = await prisma.risk.create({
         data: {
           tenantId: tid, ref: `RSK-${String(r + 1).padStart(3, '0')}`,
           title: rs.title,
           description: `Cause: gap in ${rs.category.toLowerCase()} controls. Event: ${rs.title.toLowerCase()}. Impact: material exposure to the entity.`,
           category: rs.category, ownerId: owner.id,
+          direction: rs.direction,
           treatmentType: rs.treatment,
+          identifiedVia: rs.via,
+          identifiedSource: rs.via === 'Regulator' ? 'SAMA-2025-0447'
+            : rs.via === 'Incident' ? 'INC-2025-1183'
+              : rs.via === 'Scan' ? 'Wisdom Eye ASM weekly sweep' : null,
+          reviewCadenceMonths: cadence,
+          lastReviewedAt: new Date(Date.now() - (cadence * 30 - reviewOffsetDays) * 86400000),
+          nextReviewDate: new Date(Date.now() + reviewOffsetDays * 86400000),
+          // A handful of risks are seasonal rather than always-on, so the
+          // horizon view has something real to show.
+          horizonStart: r === 2 ? new Date(Date.now() + 40 * 86400000) : null,
+          horizonEnd: r === 2 ? new Date(Date.now() + 220 * 86400000) : null,
           status: r < 4 ? 'UnderTreatment' : (r === 6 ? 'Accepted' : 'Open'),
           inherentLikelihood: il, inherentImpact: ii, inherentScore: iscore,
           residualLikelihood: rl, residualImpact: ii, residualScore: rscore,
@@ -925,10 +965,12 @@ async function main() {
         },
       });
       riskCount++;
-      await prisma.riskScoreSnapshot.create({ data: { tenantId: tid, riskId: risk.id, score: rscore, inherentScore: iscore, residualScore: rscore } });
+      createdRisks.push({ id: risk.id, seedIndex: r });
+      await prisma.riskScoreSnapshot.create({ data: { tenantId: tid, riskId: risk.id, score: rscore, inherentScore: iscore, residualScore: rscore, reason: 'Created' } });
       for (const link of links) {
         await prisma.riskControlLink.create({ data: { riskId: risk.id, implementationId: link.id } });
       }
+
       if (r < 4) {
         await prisma.riskTreatmentAction.create({
           data: {
@@ -940,6 +982,25 @@ async function main() {
           },
         });
         treatmentCount++;
+      }
+    }
+
+    // Causal edges between risks, now that every risk in this tenant exists.
+    // Flat likelihood x impact cannot show that one medium risk sits upstream
+    // of three others; the network can, and this gives it something to show.
+    const riskIdBySeedIndex = new Map(createdRisks.map((c) => [c.seedIndex, c.id]));
+    for (let r = 0; r < RISK_SEED.length; r++) {
+      const causeId = riskIdBySeedIndex.get(r);
+      if (!causeId) continue;
+      for (const effectIndex of (RISK_SEED[r].causes ?? [])) {
+        const effectId = riskIdBySeedIndex.get(effectIndex);
+        if (!effectId || effectId === causeId) continue;
+        await prisma.riskLink.create({
+          data: {
+            causeId, effectId, nature: 'Causes',
+            note: `${RISK_SEED[r].title} materially increases the likelihood of ${RISK_SEED[effectIndex].title.toLowerCase()}.`,
+          },
+        });
       }
     }
 
@@ -964,10 +1025,22 @@ async function main() {
           const capOwner = users[(a + 2) % users.length];
           const closer = users[(a + 3) % users.length];
           const isClosed = ff.close && closer.id !== raiser.id;
+          // An audit finding is evidence about a register risk. Naming that
+          // risk — and the entity it sits in — is what turns the issue register
+          // into something the annual plan and the heatmaps can read.
+          const linkedRisk = createdRisks[(a * 2 + f) % Math.max(1, createdRisks.length)];
+          const linkedEntityName = linkedRisk ? RISK_SEED[linkedRisk.seedIndex]?.entity : null;
+          const linkedEntity = linkedEntityName
+            ? await prisma.auditableEntity.findFirst({
+              where: { tenantId: tid, name: linkedEntityName }, select: { id: true },
+            })
+            : null;
           await prisma.issue.create({
             data: {
               auditId: audit.id, tenantId: tid, ref: `${audit.ref}-F${f + 1}`,
               source: 'InternalAudit',
+              riskId: linkedRisk?.id ?? null,
+              auditableEntityId: linkedEntity?.id ?? null,
               title: ff.condition.slice(0, 120),
               criterion: ff.criterion, condition: ff.condition, cause: ff.cause,
               recommendation: ff.recommendation, riskRating: ff.rating,
@@ -1115,6 +1188,129 @@ async function main() {
   }
   console.log(`  audit universe: ${entityCount} entities · plans: ${planCount} · plan items: ${planItemCount}`);
 
+  // Place each risk in the audit universe. This has to run after the universe
+  // is built, not inside the risk loop — the entities do not exist yet there,
+  // and the name lookup would silently find nothing.
+  let riskEntityLinks = 0;
+  for (const rs of RISK_SEED_BY_TITLE.keys()) {
+    const meta = RISK_SEED_BY_TITLE.get(rs)!;
+    if (!meta.entity) continue;
+    const matches = await prisma.risk.findMany({ where: { title: rs }, select: { id: true, tenantId: true } });
+    for (const m of matches) {
+      const ent = await prisma.auditableEntity.findFirst({
+        where: { tenantId: m.tenantId, name: meta.entity }, select: { id: true },
+      });
+      if (!ent) continue;
+      await prisma.riskEntityLink.upsert({
+        where: { riskId_auditableEntityId: { riskId: m.id, auditableEntityId: ent.id } },
+        update: {},
+        create: { riskId: m.id, auditableEntityId: ent.id },
+      });
+      riskEntityLinks++;
+    }
+  }
+  console.log(`  risk-to-entity links: ${riskEntityLinks}`);
+
+
+
+  // -- 10j. Asset register (ISO 27001 A.5.9 / ISO 27005) --------------------
+  // Physical and non-physical, internally held and supplied by a third party —
+  // the four quadrants the register has to cover to be worth anything.
+  const ASSET_SEED = [
+    { name: 'Core banking platform',        type: 'Software',    ownership: 'Internal',   cls: 'Restricted',   c: 5, i: 5, a: 5, loc: 'Riyadh DC-1',        value: 12_000_000, entity: 'Core banking platform',              risk: 0 },
+    { name: 'Customer master data',         type: 'Information', ownership: 'Internal',   cls: 'Restricted',   c: 5, i: 5, a: 4, loc: 'Riyadh DC-1',        value: 8_000_000,  entity: 'Personal data processing',           risk: 1 },
+    { name: 'Payment card data store',      type: 'Information', ownership: 'Internal',   cls: 'Restricted',   c: 4, i: 4, a: 3, loc: 'Riyadh DC-1',        value: 6_500_000,  entity: 'Personal data processing',           risk: 1 },
+    { name: 'Primary data centre — Riyadh', type: 'Physical',    ownership: 'Internal',   cls: 'Confidential', c: 3, i: 3, a: 5, loc: 'Riyadh, KSA',        value: 45_000_000, entity: 'Business continuity and recovery',   risk: 7 },
+    { name: 'Branch network hardware',      type: 'Physical',    ownership: 'Internal',   cls: 'Internal',     c: 2, i: 3, a: 3, loc: '38 branches',        value: 9_200_000,  entity: null,                                 risk: null },
+    { name: 'Identity provider (SSO)',      type: 'Software',    ownership: 'Internal',   cls: 'Restricted',   c: 5, i: 5, a: 5, loc: 'Riyadh DC-1',        value: 2_400_000,  entity: 'Identity and access management',     risk: 0 },
+    { name: 'Cloud hosting — regional',     type: 'Service',     ownership: 'ThirdParty', cls: 'Confidential', c: 4, i: 4, a: 5, loc: 'Provider region',    value: 5_000_000,  entity: 'Third-party and cloud management',   risk: 2, vendor: 'Regional Cloud Services Co.', contract: 'CT-2024-0117' },
+    { name: 'Payroll processing service',   type: 'Service',     ownership: 'ThirdParty', cls: 'Confidential', c: 4, i: 3, a: 2, loc: 'Supplier premises', value: 900_000,    entity: 'Payroll and HR operations',          risk: null, vendor: 'Gulf Payroll Partners', contract: 'CT-2023-0442' },
+    { name: 'Managed SOC service',          type: 'Service',     ownership: 'Shared',     cls: 'Confidential', c: 4, i: 4, a: 4, loc: 'Hybrid',            value: 3_100_000,  entity: 'Security operations centre',         risk: 4, vendor: 'Falcon Security Operations', contract: 'CT-2025-0088' },
+    { name: 'Treasury settlement gateway',  type: 'Software',    ownership: 'ThirdParty', cls: 'Restricted',   c: 5, i: 5, a: 5, loc: 'Provider region',    value: 4_200_000,  entity: 'Treasury and cash management',       risk: null, vendor: 'Interbank Gateway Ltd', contract: 'CT-2022-0910' },
+    { name: 'Security operations team',     type: 'Personnel',   ownership: 'Internal',   cls: 'Internal',     c: 3, i: 4, a: 4, loc: 'Riyadh HQ',          value: null,       entity: 'Security operations centre',         risk: 4 },
+    { name: 'Banking licence and brand',    type: 'Intangible',  ownership: 'Internal',   cls: 'Public',       c: 2, i: 5, a: 3, loc: 'Corporate',          value: null,       entity: null,                                 risk: null },
+  ];
+
+  let assetCount = 0, assetRiskLinks = 0, assetControlLinks = 0;
+  for (const ctxName of Object.keys(tenantMap)) {
+    if (!GRC_TENANTS.some((g) => ctxName.replace(/[^A-Za-z ]/g, '').trim() === g.replace(/[^A-Za-z ]/g, '').trim())) continue;
+    const tid = tenantMap[ctxName];
+    if (!tid) continue;
+    const users = await prisma.user.findMany({ where: { tenantId: tid, status: 'Active' }, select: { id: true }, take: 6 });
+    if (users.length < 2) continue;
+    const tenantRisks = await prisma.risk.findMany({ where: { tenantId: tid }, select: { id: true, ref: true }, orderBy: { ref: 'asc' } });
+    const tenantImpls = await prisma.controlImplementation.findMany({ where: { tenantId: tid }, select: { id: true }, take: 12 });
+
+    for (let x = 0; x < ASSET_SEED.length; x++) {
+      const a = ASSET_SEED[x];
+      const criticality = Math.max(a.c, a.i, a.a);
+      const tier = criticality >= 5 ? 'Critical' : criticality >= 4 ? 'High' : criticality >= 3 ? 'Medium' : 'Low';
+      const entity = a.entity
+        ? await prisma.auditableEntity.findFirst({ where: { tenantId: tid, name: a.entity }, select: { id: true } })
+        : null;
+      // Review dates staggered so the inventory shows current, due and overdue.
+      const offsetDays = [-30, 60, 120, -8, 200, 45, -60, 90, 150, 30, 240, 300][x % 12];
+
+      const asset = await prisma.asset.create({
+        data: {
+          tenantId: tid,
+          ref: `AST-${String(x + 1).padStart(4, '0')}`,
+          name: a.name,
+          description: `${a.type} asset held ${a.ownership === 'Internal' ? 'internally' : 'by a third party'}; ${a.loc}.`,
+          type: a.type,
+          ownership: a.ownership,
+          classification: a.cls,
+          confidentiality: a.c, integrity: a.i, availability: a.a,
+          criticality, criticalityTier: tier,
+          ownerId: users[x % users.length].id,
+          custodianId: users[(x + 1) % users.length].id,
+          location: a.loc,
+          vendorName: (a as any).vendor ?? null,
+          contractRef: (a as any).contract ?? null,
+          replacementValue: a.value ?? null,
+          currency: 'SAR',
+          status: 'Active',
+          acquiredAt: new Date(Date.now() - (400 + x * 60) * 86400000),
+          reviewCadenceMonths: 12,
+          lastReviewedAt: new Date(Date.now() - (365 - offsetDays) * 86400000),
+          nextReviewDate: new Date(Date.now() + offsetDays * 86400000),
+          auditableEntityId: entity?.id ?? null,
+        },
+      });
+      assetCount++;
+
+      // Tie the asset to the register risk it actually carries, with the
+      // ISO 27005 threat/vulnerability pair on the link.
+      if (a.risk !== null && a.risk !== undefined && tenantRisks[a.risk]) {
+        const THREATS = [
+          { t: 'Credential compromise by an external actor', v: 'Standing privileged access without periodic recertification', tl: 4, vl: 4, ef: 0.35 },
+          { t: 'Unauthorised disclosure of personal data',   v: 'No recorded lawful basis for several processing purposes',   tl: 3, vl: 4, ef: 0.25 },
+          { t: 'Supplier outage or service withdrawal',      v: 'Single-provider dependency with no tested exit plan',        tl: 3, vl: 4, ef: 0.40 },
+          { t: 'Ransomware encrypts production systems',     v: 'Backup restoration not tested within the agreed window',     tl: 4, vl: 3, ef: 0.60 },
+          { t: 'Loss of a single specialist',                v: 'No documented runbook or trained deputy',                    tl: 3, vl: 4, ef: 0.15 },
+        ];
+        const th = THREATS[x % THREATS.length];
+        await prisma.assetRiskLink.create({
+          data: {
+            assetId: asset.id, riskId: tenantRisks[a.risk].id,
+            threat: th.t, vulnerability: th.v,
+            threatLevel: th.tl, vulnerabilityLevel: th.vl, exposureFactor: th.ef,
+          },
+        });
+        assetRiskLinks++;
+      }
+
+      // Controls protecting this asset — deliberately not every asset, so the
+      // "unprotected but exposed" signal has something real to report.
+      if (x % 3 !== 2 && tenantImpls.length > 0) {
+        for (const impl of tenantImpls.slice(x % 4, (x % 4) + 2)) {
+          await prisma.assetControlLink.create({ data: { assetId: asset.id, implementationId: impl.id } });
+          assetControlLinks++;
+        }
+      }
+    }
+  }
+  console.log(`  assets: ${assetCount} (${assetRiskLinks} risk links, ${assetControlLinks} control links)`);
 
   // -- 10i. Risk appetite, RCSA, KRIs and loss events ----------------------
   const APPETITE = [
@@ -1151,7 +1347,7 @@ async function main() {
     BusinessDisruptionSystemFailure: 'Technology',
   };
 
-  let appetiteCount = 0, campaignCount = 0, assessmentCount = 0;
+  let appetiteCount = 0, criteriaCount = 0, campaignCount = 0, assessmentCount = 0;
   let kriCount = 0, readingCount = 0, lossCount = 0, autoIssueCount = 0;
 
   for (const ctxName of Object.keys(tenantMap)) {
@@ -1163,17 +1359,82 @@ async function main() {
     if (users.length < 3) continue;
     const setter = users[0], approver = users[1];
 
+    const approvedAt = new Date(Date.now() - 60 * 86400000);
     for (const a of APPETITE) {
+      // Technology gets a real revision history: a tighter v1 that was in force
+      // until two months ago, then the current v2. Without at least one
+      // superseded version the "what was the tolerance when this was accepted?"
+      // question has nothing to demonstrate.
+      if (a.category === 'Technology') {
+        const supersededAt = new Date(Date.now() - 60 * 86400000);
+        const v1 = await prisma.riskAppetite.create({
+          data: {
+            tenantId: tid, category: a.category, version: 1,
+            statement: 'Interim appetite pending the FY2026 review. Deliberately tighter while the cloud migration was in flight.',
+            appetiteThreshold: Math.max(1, a.appetite - 2),
+            toleranceThreshold: Math.max(2, a.tolerance - 4),
+            setById: setter.id, status: 'Superseded',
+            approvedById: approver.id,
+            approvedAt: new Date(Date.now() - 400 * 86400000),
+            effectiveFrom: new Date(Date.now() - 400 * 86400000),
+            effectiveTo: supersededAt,
+          },
+        });
+        const v2 = await prisma.riskAppetite.create({
+          data: {
+            tenantId: tid, category: a.category, version: 2, statement: a.statement,
+            appetiteThreshold: a.appetite, toleranceThreshold: a.tolerance,
+            setById: setter.id, status: 'Approved',
+            approvedById: approver.id, approvedAt: supersededAt,
+            effectiveFrom: supersededAt,
+          },
+        });
+        await prisma.riskAppetite.update({
+          where: { id: v1.id }, data: { supersededById: v2.id },
+        });
+        appetiteCount += 2;
+        continue;
+      }
+
       await prisma.riskAppetite.create({
         data: {
-          tenantId: tid, category: a.category, statement: a.statement,
+          tenantId: tid, category: a.category, version: 1, statement: a.statement,
           appetiteThreshold: a.appetite, toleranceThreshold: a.tolerance,
           setById: setter.id, status: 'Approved',
-          approvedById: approver.id, approvedAt: new Date(Date.now() - 60 * 86400000),
+          approvedById: approver.id, approvedAt: approvedAt,
+          effectiveFrom: approvedAt,
         },
       });
       appetiteCount++;
     }
+
+    // Risk criteria: one approved version per GRC tenant, so the register is
+    // banded on something the organisation owns rather than on a constant.
+    await prisma.riskCriteria.create({
+      data: {
+        tenantId: tid, version: 1,
+        name: `FY${new Date().getFullYear()} enterprise risk criteria`,
+        impactScale: JSON.stringify([
+          { level: 1, label: 'Insignificant', descriptor: 'Absorbed within normal operations. No customer, regulatory or reporting consequence.', monetaryFrom: 0, monetaryTo: 100_000 },
+          { level: 2, label: 'Minor', descriptor: 'Handled by the responsible function. Isolated customer complaints; no reportable breach.', monetaryFrom: 100_000, monetaryTo: 1_000_000 },
+          { level: 3, label: 'Moderate', descriptor: 'Requires executive attention. Service degradation, or a finding an assessor would raise.', monetaryFrom: 1_000_000, monetaryTo: 10_000_000 },
+          { level: 4, label: 'Major', descriptor: 'Board-level attention. SAMA or NCA notification, material service loss, or public comment.', monetaryFrom: 10_000_000, monetaryTo: 50_000_000 },
+          { level: 5, label: 'Severe', descriptor: 'Threatens the licence to operate. Enforcement action, prolonged outage, or loss of a core capability.', monetaryFrom: 50_000_000, monetaryTo: null },
+        ]),
+        likelihoodScale: JSON.stringify([
+          { level: 1, label: 'Rare', descriptor: 'Would require an exceptional combination of failures.', frequency: 'Less than once in 20 years' },
+          { level: 2, label: 'Unlikely', descriptor: 'Not expected, but has occurred in comparable Saudi institutions.', frequency: 'Once in 5 to 20 years' },
+          { level: 3, label: 'Possible', descriptor: 'Could occur at some point; controls are the reason it has not.', frequency: 'Once in 2 to 5 years' },
+          { level: 4, label: 'Likely', descriptor: 'Expected to occur; near misses are already being seen.', frequency: 'Roughly once a year' },
+          { level: 5, label: 'Almost certain', descriptor: 'Occurring now, or certain to within the planning horizon.', frequency: 'Several times a year' },
+        ]),
+        highThreshold: 15, mediumThreshold: 8, currency: 'SAR',
+        setById: setter.id, status: 'Approved',
+        approvedById: approver.id, approvedAt: approvedAt,
+        effectiveFrom: approvedAt,
+      },
+    });
+    criteriaCount++;
 
     // Only the GRC-heavy tenants get the full ERM data set, to keep volume sane.
     if (!['OmniOps', 'Al Noor Holding Group'].some((n) => ctxName.startsWith(n.split(' ')[0]))) continue;
@@ -1289,7 +1550,7 @@ async function main() {
       assessmentCount++;
     }
   }
-  console.log(`  risk appetite: ${appetiteCount} categories · rcsa: ${campaignCount} campaigns / ${assessmentCount} assessments`);
+  console.log(`  risk appetite: ${appetiteCount} versions · criteria: ${criteriaCount} · rcsa: ${campaignCount} campaigns / ${assessmentCount} assessments`);
   console.log(`  kris: ${kriCount} (${readingCount} readings) · loss events: ${lossCount} · auto-raised issues: ${autoIssueCount}`);
 
   // ── 11. SoD platform-default rules (TRD §6.4) ───────────────────────────
@@ -1342,6 +1603,161 @@ async function main() {
       },
     ],
   });
+
+  // -- 10k. Third-party risk and shared services ---------------------------
+  // The suppliers named on third-party assets become real vendor records, so
+  // the concentration question ("how much of us runs through this company?")
+  // can finally be asked.
+  const VENDOR_SEED = [
+    { name: 'Regional Cloud Services Co.', legal: 'Regional Cloud Services Company LLC', cat: 'CloudHosting',      country: 'Saudi Arabia', loc: 'Riyadh region',  access: 'Confidential',          sys: true,  crit: 5, sub: 5, spend: 4_200_000, notice: 180, endInDays: 260, contract: 'CT-2024-0117' },
+    { name: 'Gulf Payroll Partners',       legal: 'Gulf Payroll Partners Ltd',            cat: 'Outsourcing',       country: 'Bahrain',      loc: 'Manama',        access: 'SensitivePersonalData', sys: false, crit: 3, sub: 3, spend: 780_000,   notice: 90,  endInDays: 70,  contract: 'CT-2023-0442' },
+    { name: 'Falcon Security Operations',  legal: 'Falcon Security Operations Co.',       cat: 'Outsourcing',       country: 'Saudi Arabia', loc: 'Riyadh',        access: 'Confidential',          sys: true,  crit: 5, sub: 4, spend: 2_900_000, notice: 120, endInDays: 400, contract: 'CT-2025-0088' },
+    { name: 'Interbank Gateway Ltd',       legal: 'Interbank Gateway Limited',            cat: 'Financial',         country: 'United Arab Emirates', loc: 'Dubai', access: 'PersonalData',          sys: true,  crit: 5, sub: 5, spend: 3_400_000, notice: 180, endInDays: 95,  contract: 'CT-2022-0910' },
+    { name: 'Najd Facilities Management',  legal: 'Najd Facilities Management Est.',      cat: 'Facilities',        country: 'Saudi Arabia', loc: 'Riyadh',        access: 'None',                  sys: false, crit: 2, sub: 1, spend: 450_000,   notice: 30,  endInDays: 520, contract: 'CT-2025-0211' },
+    { name: 'Meridian Advisory',           legal: 'Meridian Advisory Partners',           cat: 'ProfessionalServices', country: 'United Kingdom', loc: 'London',  access: 'Confidential',          sys: false, crit: 3, sub: 2, spend: 1_100_000, notice: 60,  endInDays: 180, contract: 'CT-2025-0303' },
+  ];
+
+  let vendorCount = 0, vendorAssessmentCount = 0, sharedServiceCount = 0;
+  for (const ctxName of Object.keys(tenantMap)) {
+    if (!GRC_TENANTS.some((g) => ctxName.replace(/[^A-Za-z ]/g, '').trim() === g.replace(/[^A-Za-z ]/g, '').trim())) continue;
+    const tid = tenantMap[ctxName];
+    if (!tid) continue;
+    const users = await prisma.user.findMany({
+      where: { tenantId: tid, status: 'Active' }, select: { id: true }, take: 6,
+    });
+    if (users.length < 3) continue;
+
+    for (let v = 0; v < VENDOR_SEED.length; v++) {
+      const d = VENDOR_SEED[v];
+      // Same arithmetic as services/vendorRisk.computeTier — the seed must not
+      // invent a tier the product would not have produced.
+      const weights: Record<string, number> = {
+        None: 1, Metadata: 2, Confidential: 3, PersonalData: 4, SensitivePersonalData: 5,
+      };
+      const base = Math.max(weights[d.access] ?? 1, d.crit);
+      let tierScore = base * d.sub;
+      if (d.sys && tierScore < 12) tierScore = 12;
+      tierScore = Math.min(25, Math.max(1, tierScore));
+      const tier = tierScore >= 20 ? 'Critical' : tierScore >= 14 ? 'High' : tierScore >= 8 ? 'Medium' : 'Low';
+      const cadence = tier === 'Critical' ? 6 : tier === 'High' ? 12 : tier === 'Medium' ? 18 : 24;
+
+      // Staggered so the register shows current, due-soon, overdue and never
+      // assessed — a screen where everything is green teaches nothing.
+      const neverAssessed = v === 3;
+      const lastAssessed = neverAssessed ? null : new Date(Date.now() - [40, 400, 120, 0, 200, 300][v] * 86400000);
+      const nextDue = lastAssessed
+        ? new Date(lastAssessed.getTime() + cadence * 30 * 86400000)
+        : new Date(Date.now() - 30 * 86400000);
+
+      const vendor = await prisma.vendor.create({
+        data: {
+          tenantId: tid, ref: `VEN-${String(v + 1).padStart(4, '0')}`,
+          name: d.name, legalName: d.legal, category: d.cat,
+          description: `${d.cat} supplier operating from ${d.country}.`,
+          country: d.country, dataLocation: d.loc, dataAccess: d.access,
+          hasSystemAccess: d.sys,
+          subprocessors: v === 0 ? 'Sub-processor: Gulf Datacenter Services (DR site, Dammam)' : null,
+          serviceCriticality: d.crit, substitutability: d.sub,
+          tier, tierScore,
+          contractRef: d.contract,
+          contractStart: new Date(Date.now() - 500 * 86400000),
+          contractEnd: new Date(Date.now() + d.endInDays * 86400000),
+          noticePeriodDays: d.notice,
+          annualSpend: d.spend, currency: 'SAR',
+          relationshipOwnerId: users[v % users.length].id,
+          status: 'Active', onboardedAt: new Date(Date.now() - 500 * 86400000),
+          assessmentCadenceMonths: cadence,
+          lastAssessedAt: lastAssessed,
+          nextAssessmentDue: nextDue,
+        },
+      });
+      vendorCount++;
+
+      if (!neverAssessed) {
+        // One reviewed cycle per supplier, with one deliberately Inadequate so
+        // the "supplier failed diligence" path has something to show.
+        const outcome = v === 1 ? 'Inadequate' : v === 5 ? 'NeedsImprovement' : 'Adequate';
+        const score = v === 1 ? 41 : v === 5 ? 68 : 84;
+        await prisma.vendorAssessment.create({
+          data: {
+            vendorId: vendor.id, tenantId: tid,
+            ref: `VA-2026-${String(v + 1).padStart(3, '0')}`,
+            kind: 'Periodic',
+            questionnaire: 'SAMA CSF supplier annex',
+            requestedById: users[(v + 1) % users.length].id,
+            dueDate: new Date(lastAssessed!.getTime() - 14 * 86400000),
+            status: 'Reviewed',
+            submittedAt: new Date(lastAssessed!.getTime() - 7 * 86400000),
+            score, outcome,
+            narrative: outcome === 'Adequate'
+              ? 'Controls evidenced across access management, encryption and incident response.'
+              : outcome === 'NeedsImprovement'
+                ? 'Encryption at rest evidenced; incident notification timelines not contractually committed.'
+                : 'No independent assurance report provided; sub-processor list incomplete; breach notification undefined.',
+            reviewedById: users[(v + 2) % users.length].id,
+            reviewedAt: lastAssessed,
+          },
+        });
+        vendorAssessmentCount++;
+      }
+
+      // Point the third-party assets at their real supplier record.
+      await prisma.asset.updateMany({
+        where: { tenantId: tid, vendorName: d.name },
+        data: { vendorId: vendor.id },
+      });
+    }
+
+    // Shared services: only meaningful where the tenant has children to serve.
+    const children = await prisma.tenant.findMany({
+      where: { parentId: tid }, select: { id: true }, take: 6,
+    });
+    if (children.length === 0) continue;
+
+    const impls = await prisma.controlImplementation.findMany({
+      where: { tenantId: tid }, select: { id: true }, take: 8,
+    });
+    const SERVICES = [
+      { name: 'Group Identity & Access', fn: 'IT', sla: 'Joiner within 1 business day; leaver within 4 hours; quarterly recertification.', controls: 3 },
+      { name: 'Group Security Operations', fn: 'Security', sla: '24x7 monitoring; P1 acknowledged within 15 minutes; monthly threat report.', controls: 2 },
+      { name: 'Group Procurement & Vendor Onboarding', fn: 'Procurement', sla: 'Due diligence completed before contract signature; annual reassessment.', controls: 2 },
+    ];
+    for (let x = 0; x < SERVICES.length; x++) {
+      const sv = SERVICES[x];
+      const service = await prisma.sharedService.create({
+        data: {
+          providerTenantId: tid, ref: `SVC-${String(x + 1).padStart(3, '0')}`,
+          name: sv.name, function: sv.fn,
+          description: `Operated centrally on behalf of the group's entities.`,
+          serviceOwnerId: users[x % users.length].id,
+          slaSummary: sv.sla,
+          reportingCadence: x === 1 ? 'Monthly' : 'Quarterly',
+          status: 'Active',
+        },
+      });
+      sharedServiceCount++;
+
+      for (let c = 0; c < children.length; c++) {
+        await prisma.sharedServiceConsumer.create({
+          data: {
+            sharedServiceId: service.id,
+            consumerTenantId: children[c].id,
+            // One entity deliberately left unaccepted: relying on a service
+            // nobody formally signed up to is the state worth surfacing.
+            acceptedAt: c === 0 && x === 2 ? null : new Date(Date.now() - 200 * 86400000),
+            acceptedById: c === 0 && x === 2 ? null : users[(x + 1) % users.length].id,
+          },
+        });
+      }
+      for (const impl of impls.slice(x * 2, x * 2 + sv.controls)) {
+        await prisma.sharedServiceControl.create({
+          data: { sharedServiceId: service.id, implementationId: impl.id },
+        });
+      }
+    }
+  }
+  console.log(`  vendors: ${vendorCount} (${vendorAssessmentCount} assessments) · shared services: ${sharedServiceCount}`);
+
   console.log(`  sod rules: ${await prisma.sodRule.count()}`);
 
   console.log('Seeding complete. All users log in with: ' + DEMO_PASSWORD);

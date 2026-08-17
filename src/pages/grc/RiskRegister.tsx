@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
+import RiskHeatmaps, { Matrix, Legend } from './risk/RiskHeatmaps';
+import RiskCriteriaPanel from './risk/RiskCriteriaPanel';
+import type { Grid } from './risk/RiskHeatmaps';
+import Icon from '../../components/Icon';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -33,11 +37,6 @@ function ratingOf(score: number): 'High' | 'Medium' | 'Low' {
   return score >= 15 ? 'High' : score >= 8 ? 'Medium' : 'Low';
 }
 
-function cellBgColor(score: number): string {
-  if (score >= 15) return '#D9383A'; // High/Critical Red
-  if (score >= 8) return '#E08A00';  // Medium Amber
-  return '#1B7A4B';                  // Low Green
-}
 
 type TabMode = 'cockpit' | 'register' | 'treatments' | 'appetite' | 'network';
 
@@ -48,6 +47,7 @@ const RiskRegister: React.FC = () => {
   const [categories, setCategories] = useState<string[]>([]);
   const [appetites, setAppetites] = useState<any[]>([]);
   const [impls, setImpls] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
   const [scope, setScope] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,15 +98,19 @@ const RiskRegister: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [rRes, iRes] = await Promise.all([
+      const [rRes, iRes, aRes] = await Promise.all([
         apiClient.get('/api/grc/risks'),
         apiClient.get('/api/grc/implementations').catch(() => null),
+        // Analytics drives the appetite overlay, coverage and network views.
+        // A failure here must not blank the register.
+        apiClient.get('/api/grc/risk-analytics').catch(() => null),
       ]);
       setRisks(rRes.data?.risks || []);
       setTotals(rRes.data?.totals || {});
       setCategories(rRes.data?.categories || []);
       setAppetites(rRes.data?.appetites || []);
       setImpls(iRes?.data?.implementations || []);
+      setAnalytics(aRes?.data || null);
       setScope(rRes.data?.scope || '');
     } catch (err) {
       setError(apiError(err, 'Failed to load the risk management data'));
@@ -281,24 +285,23 @@ const RiskRegister: React.FC = () => {
     });
   }, [risks, statusFilter, categoryFilter, ratingFilter, directionFilter, selectedHeatmapFilter, q]);
 
-  // 5×5 Matrices for Heatmaps
-  const inherentHeatMap: Record<string, any[]> = useMemo(() => {
-    const map: Record<string, any[]> = {};
+  // 5×5 matrices, indexed [likelihood-1][impact-1] to match the shared Matrix.
+  const buildGrid = (pick: (r: any) => { l: number; i: number }): Grid => {
+    const g: Grid = Array.from({ length: 5 }, () =>
+      Array.from({ length: 5 }, () => ({ count: 0, refs: [] as string[] })));
     for (const r of risks) {
-      const key = `${r.inherentLikelihood}-${r.inherentImpact}`;
-      (map[key] ||= []).push(r);
+      const { l, i } = pick(r);
+      const li = Math.min(5, Math.max(1, l)) - 1;
+      const ii = Math.min(5, Math.max(1, i)) - 1;
+      g[li][ii].count++;
+      g[li][ii].refs.push(r.ref);
     }
-    return map;
-  }, [risks]);
-
-  const residualHeatMap: Record<string, any[]> = useMemo(() => {
-    const map: Record<string, any[]> = {};
-    for (const r of risks) {
-      const key = `${r.residualLikelihood}-${r.residualImpact}`;
-      (map[key] ||= []).push(r);
-    }
-    return map;
-  }, [risks]);
+    return g;
+  };
+  const inherentGrid = useMemo(
+    () => buildGrid((r) => ({ l: r.inherentLikelihood, i: r.inherentImpact })), [risks]);
+  const residualGrid = useMemo(
+    () => buildGrid((r) => ({ l: r.residualLikelihood, i: r.residualImpact })), [risks]);
 
   // All Treatment actions extracted across all risks
   const allTreatmentActions = useMemo(() => {
@@ -361,10 +364,10 @@ const RiskRegister: React.FC = () => {
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={exportRiskCsv} style={ghostBtn} title="Export current filtered view to CSV spreadsheet">
-            📥 Export CSV
+            <Icon name="download" size={15} /> Export CSV
           </button>
           <button onClick={load} style={ghostBtn} title="Reload fresh data from server">
-            ↻ Refresh
+            <Icon name="refresh" size={15} /> Refresh
           </button>
           <button
             onClick={() => {
@@ -455,7 +458,7 @@ const RiskRegister: React.FC = () => {
       {/* Notifications & Error Alerts */}
       {error && (
         <div style={{ ...S.error, marginBottom: 16 }}>
-          <span>⚠️</span>
+          <Icon name="warning" size={16} />
           <span>{error}</span>
         </div>
       )}
@@ -474,9 +477,9 @@ const RiskRegister: React.FC = () => {
             justifyContent: 'space-between',
           }}
         >
-          <span>✓ {notice}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="success" size={15} />{notice}</span>
           <button onClick={() => setNotice('')} style={linkBtn('var(--success)')}>
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       )}
@@ -508,7 +511,7 @@ const RiskRegister: React.FC = () => {
             gap: 6,
           }}
         >
-          <span>📊</span>
+          <Icon name="matrix" size={16} />
           <span>Risk Cockpit &amp; Dual Heatmaps</span>
         </button>
 
@@ -529,7 +532,7 @@ const RiskRegister: React.FC = () => {
             gap: 6,
           }}
         >
-          <span>📋</span>
+          <Icon name="standards" size={16} />
           <span>Risk Register Inventory</span>
           <span style={{ fontSize: 11, background: 'var(--surface-sunk)', padding: '1px 6px', borderRadius: 10 }}>
             {filteredRisks.length}
@@ -553,7 +556,7 @@ const RiskRegister: React.FC = () => {
             gap: 6,
           }}
         >
-          <span>🛡️</span>
+          <Icon name="shield" size={16} />
           <span>Risk Treatment &amp; Mitigation Hub</span>
           <span style={{ fontSize: 11, background: 'var(--brand-tint)', color: 'var(--brand)', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
             {allTreatmentActions.length}
@@ -577,11 +580,37 @@ const RiskRegister: React.FC = () => {
             gap: 6,
           }}
         >
-          <span>🎯</span>
+          <Icon name="target" size={16} />
           <span>Risk Appetite &amp; Tolerance</span>
           {totals.beyondTolerance > 0 && (
             <span style={{ fontSize: 11, background: 'var(--danger-bg)', color: 'var(--danger)', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
               {totals.beyondTolerance} alert
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('network')}
+          style={{
+            background: activeTab === 'network' ? 'var(--surface)' : 'transparent',
+            color: activeTab === 'network' ? 'var(--brand)' : 'var(--ink-muted)',
+            border: '1px solid ' + (activeTab === 'network' ? 'var(--line)' : 'transparent'),
+            borderBottom: activeTab === 'network' ? '2px solid var(--brand)' : 'none',
+            padding: '10px 18px',
+            borderRadius: '6px 6px 0 0',
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Icon name="network" size={16} />
+          <span>Matrices &amp; Network</span>
+          {(analytics?.totals?.networked ?? 0) > 0 && (
+            <span style={{ fontSize: 11, background: 'var(--brand-tint)', color: 'var(--brand-strong)', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
+              {analytics.totals.networked}
             </span>
           )}
         </button>
@@ -590,193 +619,41 @@ const RiskRegister: React.FC = () => {
       {/* ── TAB 1: COCKPIT & DUAL HEATMAPS ─────────────────────────────────── */}
       {activeTab === 'cockpit' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Dual Heatmaps Section */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 20 }}>
-            {/* 1. Inherent Risk Heatmap */}
-            <div style={{ ...S.card, padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>
-                      1. Inherent Risk Heatmap (5×5)
-                    </h3>
-                    <span style={{ fontSize: 11, background: 'var(--surface-sunk)', padding: '2px 6px', borderRadius: 4, color: 'var(--ink-muted)' }}>
-                      Pre-Controls
-                    </span>
-                  </div>
-                  <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
-                    Total Exposure: <strong>{totalInherentExposure} pts</strong> · Raw Likelihood × Impact
-                  </p>
-                </div>
-              </div>
-
-              {/* Heatmap Grid */}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10 }}>
-                {/* Impact Label Y-Axis */}
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textAlign: 'right', paddingRight: 4 }}>
-                  {[5, 4, 3, 2, 1].map((impact) => (
-                    <div key={impact} style={{ height: 46, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      I-{impact}
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(5, 46px)', gridTemplateColumns: 'repeat(5, 52px)', gap: 4 }}>
-                    {[5, 4, 3, 2, 1].map((impact) =>
-                      [1, 2, 3, 4, 5].map((lik) => {
-                        const cell = inherentHeatMap[`${lik}-${impact}`] || [];
-                        const score = lik * impact;
-                        const bg = cellBgColor(score);
-                        const isSelected = selectedHeatmapFilter?.type === 'inherent' && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === impact;
-
-                        return (
-                          <div
-                            key={`inh-${lik}-${impact}`}
-                            onClick={() => {
-                              if (cell.length > 0) {
-                                setSelectedHeatmapFilter(isSelected ? null : { type: 'inherent', lik, imp: impact });
-                                setActiveTab('register');
-                              }
-                            }}
-                            title={`Inherent Likelihood ${lik} × Impact ${impact} = Score ${score}\n${cell.length} risk(s) in this cell`}
-                            style={{
-                              background: cell.length ? bg : 'var(--surface-sunk)',
-                              color: cell.length ? '#FFFFFF' : 'var(--ink-faint)',
-                              border: isSelected ? '3px solid #000' : '1px solid var(--line)',
-                              borderRadius: 6,
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: cell.length ? 'pointer' : 'default',
-                              fontWeight: cell.length ? 700 : 400,
-                              fontSize: cell.length ? 15 : 10,
-                              boxShadow: cell.length ? 'var(--shadow-sm)' : 'none',
-                              transition: 'transform 0.1s ease',
-                            }}
-                          >
-                            {cell.length > 0 ? (
-                              <>
-                                <span>{cell.length}</span>
-                                <span style={{ fontSize: 9, opacity: 0.85 }}>({score})</span>
-                              </>
-                            ) : (
-                              <span style={{ opacity: 0.3 }}>{score}</span>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Likelihood Label X-Axis */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 52px)', gap: 4, marginTop: 6, fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textAlign: 'center' }}>
-                    {[1, 2, 3, 4, 5].map((lik) => (
-                      <div key={lik}>L-{lik}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', marginTop: 8 }}>
-                Likelihood (1–5) → · Impact (1–5) ↑
-              </div>
-            </div>
-
-            {/* 2. Residual Risk Heatmap */}
-            <div style={{ ...S.card, padding: '20px', border: '1px solid var(--brand-line)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>
-                      2. Residual Risk Heatmap (5×5)
-                    </h3>
-                    <span style={{ fontSize: 11, background: 'var(--brand-tint)', color: 'var(--brand)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
-                      Post-Controls Verified
-                    </span>
-                  </div>
-                  <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
-                    Total Residual Exposure: <strong>{totalResidualExposure} pts</strong> · (
-                    <span style={{ color: 'var(--success)', fontWeight: 600 }}>
-                      ▼ -{Math.max(0, totalInherentExposure - totalResidualExposure)} pts saved
-                    </span>)
-                  </p>
-                </div>
-              </div>
-
-              {/* Heatmap Grid */}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10 }}>
-                {/* Impact Label Y-Axis */}
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textAlign: 'right', paddingRight: 4 }}>
-                  {[5, 4, 3, 2, 1].map((impact) => (
-                    <div key={impact} style={{ height: 46, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      I-{impact}
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(5, 46px)', gridTemplateColumns: 'repeat(5, 52px)', gap: 4 }}>
-                    {[5, 4, 3, 2, 1].map((impact) =>
-                      [1, 2, 3, 4, 5].map((lik) => {
-                        const cell = residualHeatMap[`${lik}-${impact}`] || [];
-                        const score = lik * impact;
-                        const bg = cellBgColor(score);
-                        const isSelected = selectedHeatmapFilter?.type === 'residual' && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === impact;
-
-                        return (
-                          <div
-                            key={`res-${lik}-${impact}`}
-                            onClick={() => {
-                              if (cell.length > 0) {
-                                setSelectedHeatmapFilter(isSelected ? null : { type: 'residual', lik, imp: impact });
-                                setActiveTab('register');
-                              }
-                            }}
-                            title={`Residual Likelihood ${lik} × Impact ${impact} = Score ${score}\n${cell.length} risk(s) in this cell`}
-                            style={{
-                              background: cell.length ? bg : 'var(--surface-sunk)',
-                              color: cell.length ? '#FFFFFF' : 'var(--ink-faint)',
-                              border: isSelected ? '3px solid var(--brand-strong)' : '1px solid var(--line)',
-                              borderRadius: 6,
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: cell.length ? 'pointer' : 'default',
-                              fontWeight: cell.length ? 700 : 400,
-                              fontSize: cell.length ? 15 : 10,
-                              boxShadow: cell.length ? 'var(--shadow-sm)' : 'none',
-                              transition: 'transform 0.1s ease',
-                            }}
-                          >
-                            {cell.length > 0 ? (
-                              <>
-                                <span>{cell.length}</span>
-                                <span style={{ fontSize: 9, opacity: 0.85 }}>({score})</span>
-                              </>
-                            ) : (
-                              <span style={{ opacity: 0.3 }}>{score}</span>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Likelihood Label X-Axis */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 52px)', gap: 4, marginTop: 6, fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textAlign: 'center' }}>
-                    {[1, 2, 3, 4, 5].map((lik) => (
-                      <div key={lik}>L-{lik}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', marginTop: 8 }}>
-                Likelihood (1–5) → · Impact (1–5) ↑ (Click any cell to filter register)
-              </div>
-            </div>
+          {/* Dual matrices — the accessible shared component. The previous
+              inline grids used solid saturated fills with white text; the amber
+              band measured 2.69:1, well under the 4.5:1 AA floor, and three
+              bands could not distinguish a 15 from a 25. */}
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <Matrix
+              grid={inherentGrid}
+              title="Inherent — before controls"
+              caption={`Total exposure ${totalInherentExposure} pts. Where the register would sit with no control environment at all. Click a cell to filter the register.`}
+              selectedKey={selectedHeatmapFilter?.type === 'inherent'
+                ? `${selectedHeatmapFilter.lik}-${selectedHeatmapFilter.imp}` : null}
+              onSelect={(refs, _label, lik, imp) => {
+                if (refs.length === 0) return;
+                const same = selectedHeatmapFilter?.type === 'inherent'
+                  && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === imp;
+                setSelectedHeatmapFilter(same ? null : { type: 'inherent', lik, imp });
+                if (!same) setActiveTab('register');
+              }}
+            />
+            <Matrix
+              grid={residualGrid}
+              title="Residual — after controls"
+              caption={`Total exposure ${totalResidualExposure} pts. Derived from verified control effectiveness and recomputed whenever a control changes.`}
+              selectedKey={selectedHeatmapFilter?.type === 'residual'
+                ? `${selectedHeatmapFilter.lik}-${selectedHeatmapFilter.imp}` : null}
+              onSelect={(refs, _label, lik, imp) => {
+                if (refs.length === 0) return;
+                const same = selectedHeatmapFilter?.type === 'residual'
+                  && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === imp;
+                setSelectedHeatmapFilter(same ? null : { type: 'residual', lik, imp });
+                if (!same) setActiveTab('register');
+              }}
+            />
           </div>
+          <Legend />
 
           {/* Exposure Migration & Quick Action Strip */}
           <div
@@ -815,7 +692,7 @@ const RiskRegister: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                Manage Treatment Plans →
+                Manage treatment plans <Icon name="arrowRight" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
               </button>
               <button
                 onClick={() => setActiveTab('register')}
@@ -857,7 +734,7 @@ const RiskRegister: React.FC = () => {
               }}
             >
               <span>
-                🎯 Active Filter: <strong>{selectedHeatmapFilter.type.toUpperCase()} Heatmap</strong> cell Likelihood:{' '}
+                <Icon name="filter" size={14} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 6 }} />Active filter: <strong>{selectedHeatmapFilter.type.toUpperCase()} Heatmap</strong> cell Likelihood:{' '}
                 {selectedHeatmapFilter.lik} × Impact: {selectedHeatmapFilter.imp} (Score: {selectedHeatmapFilter.lik * selectedHeatmapFilter.imp})
               </span>
               <button
@@ -873,7 +750,7 @@ const RiskRegister: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                Clear Cell Filter ✕
+                Clear cell filter <Icon name="close" size={13} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
               </button>
             </div>
           )}
@@ -1036,7 +913,7 @@ const RiskRegister: React.FC = () => {
                                       borderRadius: 4,
                                     }}
                                   >
-                                    ⚙ {r.linkedControls.length} control(s)
+                                    <Icon name="controls" size={12} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> {r.linkedControls.length} control(s)
                                   </span>
                                 )}
 
@@ -1061,7 +938,7 @@ const RiskRegister: React.FC = () => {
 
                         {/* Owner */}
                         <td style={{ ...S.td, color: 'var(--ink-body)', whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: 12 }}>👤 {r.owner?.name || 'Unassigned'}</span>
+                          <span style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="user" size={13} />{r.owner?.name || 'Unassigned'}</span>
                         </td>
 
                         {/* Inherent Score */}
@@ -1100,7 +977,7 @@ const RiskRegister: React.FC = () => {
                             </span>
                             {r.residualScore < r.inherentScore && (
                               <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: 11 }} title="Score reduced by controls">
-                                ▼ -{r.inherentScore - r.residualScore}
+                                <Icon name="caretDown" size={12} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> -{r.inherentScore - r.residualScore}
                               </span>
                             )}
                           </div>
@@ -1133,7 +1010,7 @@ const RiskRegister: React.FC = () => {
                           {r.treatments && r.treatments.length > 0 ? (
                             <div style={{ fontSize: 11, color: r.overdueTreatments > 0 ? 'var(--danger)' : 'var(--ink-muted)' }}>
                               {r.treatments.filter((t: any) => t.status === 'Done').length}/{r.treatments.length} actions done
-                              {r.overdueTreatments > 0 && <span> (⚠️ {r.overdueTreatments} overdue)</span>}
+                              {r.overdueTreatments > 0 && <span> ({r.overdueTreatments} overdue)</span>}
                             </div>
                           ) : (
                             <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>No actions assigned</div>
@@ -1243,7 +1120,7 @@ const RiskRegister: React.FC = () => {
           >
             <div>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--ink)' }}>
-                🛡️ Enterprise Risk Treatment Plans &amp; Corrective Actions
+                Enterprise risk treatment plans &amp; corrective actions
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-muted)' }}>
                 Track treatment action items (Mitigate, Transfer, Avoid, Accept) with assigned owners, milestones, and due dates.
@@ -1321,7 +1198,7 @@ const RiskRegister: React.FC = () => {
                       <td style={S.td}>
                         <span style={{ color: isOverdue ? 'var(--danger)' : 'var(--ink-body)', fontWeight: isOverdue ? 700 : 500 }}>
                           {t.dueDate ? t.dueDate.slice(0, 10) : '—'}
-                          {isOverdue && <span style={{ marginLeft: 4 }}>⚠️ OVERDUE</span>}
+                          {isOverdue && <span style={{ marginLeft: 4, fontWeight: 700 }}>OVERDUE</span>}
                         </span>
                       </td>
 
@@ -1348,7 +1225,7 @@ const RiskRegister: React.FC = () => {
                               cursor: 'pointer',
                             }}
                           >
-                            Mark Done ✓
+                            Mark done <Icon name="check" size={13} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
                           </button>
                         ) : (
                           <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>Signed Off</span>
@@ -1374,9 +1251,13 @@ const RiskRegister: React.FC = () => {
       {/* ── TAB 4: APPETITE & TOLERANCE POSTURE ────────────────────────────── */}
       {activeTab === 'appetite' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Criteria first: a tolerance of 12 means nothing until "impact 4"
+              has a definition behind it. */}
+          <RiskCriteriaPanel onChanged={load} />
+
           <div style={{ ...S.card, padding: '20px 24px' }}>
             <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--ink)' }}>
-              🎯 Board-Approved Risk Appetite &amp; Tolerance Framework
+              Board-approved risk appetite &amp; tolerance framework
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-muted)' }}>
               Risk Appetite is the target exposure level approved by governance. Tolerance is the hard ceiling beyond which risks MUST be treated down and cannot be accepted.
@@ -1427,6 +1308,13 @@ const RiskRegister: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* The dead tab made real: the appetite overlay, control coverage and the
+          risk network — the three views the register could not previously show. */}
+      {activeTab === 'network' && (
+        <RiskHeatmaps analytics={analytics} />
+      )}
+
 
       {/* ── DETAIL & TREATMENT DRAWER MODAL ───────────────────────────────── */}
       {detail && (
@@ -1499,7 +1387,7 @@ const RiskRegister: React.FC = () => {
                   fontSize: 16,
                 }}
               >
-                ✕
+                <Icon name="close" size={14} />
               </button>
             </div>
 
@@ -1580,7 +1468,7 @@ const RiskRegister: React.FC = () => {
                         </span>
                         {detail.residualScore < detail.inherentScore && (
                           <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: 12 }}>
-                            ▼ -{detail.inherentScore - detail.residualScore} saved
+                            <Icon name="caretDown" size={12} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> -{detail.inherentScore - detail.residualScore} saved
                           </span>
                         )}
                       </div>
@@ -1639,7 +1527,7 @@ const RiskRegister: React.FC = () => {
                               cursor: 'pointer',
                             }}
                           >
-                            {isLinked ? 'Unlink ✕' : 'Link +'}
+                            {isLinked ? 'Unlink' : 'Link'}
                           </button>
                         </div>
                       );
@@ -1685,10 +1573,10 @@ const RiskRegister: React.FC = () => {
                         <div>
                           {t.status === 'Open' ? (
                             <button onClick={() => completeTreatment(t.id)} style={primaryBtn()}>
-                              Mark Completed ✓
+                              Mark completed <Icon name="check" size={13} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
                             </button>
                           ) : (
-                            <span style={pill('var(--success)', 'var(--success-line)')}>Done ✓</span>
+                            <span style={pill('var(--success)', 'var(--success-line)')}>Done</span>
                           )}
                         </div>
                       </div>
@@ -1771,7 +1659,7 @@ const RiskRegister: React.FC = () => {
           <div style={{ ...S.card, width: '100%', maxWidth: 540, padding: 26, borderRadius: 12, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 18, color: 'var(--ink)', fontWeight: 700 }}>Log New Enterprise Risk</h3>
-              <button onClick={() => setShowNew(false)} style={linkBtn('var(--ink-muted)')}>✕</button>
+              <button onClick={() => setShowNew(false)} style={linkBtn('var(--ink-muted)')} aria-label="Close"><Icon name="close" size={15} label="Close" /></button>
             </div>
 
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}>{formErr}</div>}

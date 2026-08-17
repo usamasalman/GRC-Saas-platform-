@@ -11,6 +11,7 @@ import {
   checkRiskTransition, allowedNextRiskStatuses, treatmentsFor,
   RISK_DIRECTIONS, THREAT_TREATMENTS, OPPORTUNITY_TREATMENTS,
 } from '../services/riskLifecycle';
+import { activeCriteria, bandFor } from '../services/riskCriteria';
 
 const SUBJ_RISK = 'Risk';
 const TREATMENTS = [...THREAT_TREATMENTS, ...OPPORTUNITY_TREATMENTS];
@@ -49,6 +50,12 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
       include: {
         owner: { select: { id: true, name: true, email: true } },
         acceptedBy: { select: { id: true, name: true } },
+        acceptedUnderAppetite: {
+          select: {
+            id: true, version: true, appetiteThreshold: true,
+            toleranceThreshold: true, effectiveFrom: true, effectiveTo: true,
+          },
+        },
         tenant: { select: { id: true, name: true } },
         controlLinks: { include: { implementation: { include: { control: { select: { code: true } } } } } },
         treatments: { orderBy: { createdAt: 'asc' } },
@@ -62,10 +69,15 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
       take: 500,
     });
 
+    // The tenant's own approved criteria band the register where it has set
+    // them; otherwise the platform default applies and says so.
+    const criteria = await activeCriteria(prisma, req.user!.tenantId);
+
     // Board-set appetite is per category, so one lookup covers the whole page
     // and every risk can be banded without an N+1.
     const appetites = await prisma.riskAppetite.findMany({
-      where: { tenantId: { in: scope.tenantIds }, status: 'Approved' },
+      // Only the version currently in force bands a live register.
+      where: { tenantId: { in: scope.tenantIds }, status: 'Approved', effectiveTo: null },
     });
     const appetiteByCategory = new Map(appetites.map((a) => [a.category, a]));
 
@@ -75,8 +87,8 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
       const openIssues = r.issues.filter((i) => i.status !== 'Closed');
       return {
         ...r,
-        inherentRating: ratingOf(r.inherentScore),
-        residualRating: ratingOf(r.residualScore),
+        inherentRating: bandFor(r.inherentScore, criteria),
+        residualRating: bandFor(r.residualScore, criteria),
         linkedControls: r.controlLinks.map((l) => l.implementation.control.code),
         effectiveControls: r.controlLinks.filter(
           (l) => l.implementation.status === 'Verified' && l.implementation.effectiveness === 'Effective',
@@ -127,6 +139,9 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
       scope: scope.kind,
       count: enriched.length,
       categories: CATEGORIES,
+      /// The scale these ratings were produced on, so the UI can show the
+      /// anchor text behind a level rather than a bare number.
+      criteria,
       directions: RISK_DIRECTIONS,
       treatmentsByDirection: {
         Threat: THREAT_TREATMENTS,
@@ -525,7 +540,11 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
     // Board-set appetite is the ceiling on what may be accepted. Only an
     // approved statement binds — a draft is still just a proposal.
     const appetite = await prisma.riskAppetite.findFirst({
-      where: { tenantId: risk.tenantId, category: risk.category, status: 'Approved' },
+      where: {
+        tenantId: risk.tenantId, category: risk.category,
+        status: 'Approved', effectiveTo: null,
+      },
+      orderBy: { version: 'desc' },
     });
     const band = appetite ? evaluateAppetite(risk.residualScore, appetite) : null;
     if (band === 'BeyondTolerance') {
@@ -548,12 +567,26 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
           acceptedById: req.user!.id,
           acceptedUntil: untilDate,
           acceptanceReason: String(reason).trim(),
+          // Pin the decision to the exact ceiling and score it was taken
+          // against. Without this a later revision of the board's tolerance
+          // silently rewrites the basis of every acceptance already on record.
+          acceptedUnderAppetiteId: appetite?.id ?? null,
+          acceptedAtScore: risk.residualScore,
         },
       });
       await writeAudit(tx, {
         tenantId: risk.tenantId, actorId: req.user!.id, action: 'RISK_ACCEPTED',
         subjectType: SUBJ_RISK, subjectId: id,
-        payload: { until: untilDate, reason, residualScore: risk.residualScore, appetiteBand: band },
+        payload: {
+          until: untilDate, reason, residualScore: risk.residualScore, appetiteBand: band,
+          judgedAgainst: appetite
+            ? {
+              appetiteId: appetite.id, version: appetite.version,
+              appetiteThreshold: appetite.appetiteThreshold,
+              toleranceThreshold: appetite.toleranceThreshold,
+            }
+            : null,
+        },
       });
       return u;
     });
@@ -765,38 +798,161 @@ export const riskAnalytics = async (req: AuthenticatedRequest, res: Response): P
       },
     });
 
-    const inherentHeatmap = Array.from({ length: 5 }, () => Array(5).fill(0));
-    const residualHeatmap = Array.from({ length: 5 }, () => Array(5).fill(0));
+    const appetites = await prisma.riskAppetite.findMany({
+      where: { tenantId: { in: scope.tenantIds }, status: 'Approved' },
+    });
+    const appetiteByCategory = new Map(appetites.map((a) => [a.category, a]));
+
+    /**
+     * A grid cell carries the refs, not just a count — a heatmap you cannot
+     * drill into is a picture, not an instrument. Index [likelihood-1][impact-1].
+     */
+    const emptyGrid = () =>
+      Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ count: 0, refs: [] as string[] })));
+
+    const inherent = emptyGrid();
+    const residual = emptyGrid();
+    const opportunity = emptyGrid();
+
+    /** Where each risk moved from and to, so the mitigation effect is visible. */
+    const migration: {
+      ref: string; title: string; direction: string;
+      from: { l: number; i: number; score: number };
+      to: { l: number; i: number; score: number };
+      delta: number; band: string;
+    }[] = [];
+
+    const clamp = (n: number) => Math.min(5, Math.max(1, n));
 
     for (const r of risks) {
-      const lInh = Math.min(5, Math.max(1, r.inherentLikelihood)) - 1;
-      const iInh = Math.min(5, Math.max(1, r.inherentImpact)) - 1;
-      inherentHeatmap[lInh][iInh]++;
+      const iL = clamp(r.inherentLikelihood), iI = clamp(r.inherentImpact);
+      const rL = clamp(r.residualLikelihood), rI = clamp(r.residualImpact);
 
-      const lRes = Math.min(5, Math.max(1, r.residualLikelihood)) - 1;
-      const iRes = Math.min(5, Math.max(1, r.residualImpact)) - 1;
-      residualHeatmap[lRes][iRes]++;
+      const target = r.direction === 'Opportunity' ? opportunity : residual;
+      inherent[iL - 1][iI - 1].count++;
+      inherent[iL - 1][iI - 1].refs.push(r.ref);
+      target[rL - 1][rI - 1].count++;
+      target[rL - 1][rI - 1].refs.push(r.ref);
+
+      const appetite = appetiteByCategory.get(r.category);
+      migration.push({
+        ref: r.ref, title: r.title, direction: r.direction,
+        from: { l: iL, i: iI, score: r.inherentScore },
+        to: { l: rL, i: rI, score: r.residualScore },
+        delta: r.inherentScore - r.residualScore,
+        band: appetite ? evaluateAppetite(r.residualScore, appetite) : 'NoAppetiteSet',
+      });
     }
 
+    /**
+     * The appetite overlay: for each category, which of the 25 cells are within
+     * appetite, within tolerance, or beyond it. This is the view that answers
+     * "where is the board's line drawn?" rather than "where are the risks?".
+     */
+    const appetiteGrids = appetites.map((a) => ({
+      category: a.category,
+      statement: a.statement,
+      appetiteThreshold: a.appetiteThreshold,
+      toleranceThreshold: a.toleranceThreshold,
+      grid: Array.from({ length: 5 }, (_, li) =>
+        Array.from({ length: 5 }, (_, ii) => evaluateAppetite((li + 1) * (ii + 1), a))),
+      // Risks of this category placed on that grid.
+      placed: risks
+        .filter((r) => r.category === a.category)
+        .map((r) => ({
+          ref: r.ref, l: clamp(r.residualLikelihood), i: clamp(r.residualImpact),
+          score: r.residualScore, band: evaluateAppetite(r.residualScore, a),
+        })),
+    }));
+
+    // ── Control coverage: how well is each category actually defended? ──────
+    const implIds = [...new Set(risks.flatMap((r) => r.controlLinks.map((l) => l.implementationId)))];
+    const impls = implIds.length
+      ? await prisma.controlImplementation.findMany({
+        where: { id: { in: implIds } },
+        select: { id: true, status: true, effectiveness: true },
+      })
+      : [];
+    const implById = new Map(impls.map((i) => [i.id, i]));
+
+    const coverage: Record<string, {
+      risks: number; unmitigated: number; effective: number;
+      partial: number; ineffective: number; unverified: number;
+      inherentTotal: number; residualTotal: number; mitigationRate: number;
+    }> = {};
+
+    for (const r of risks) {
+      const c = (coverage[r.category] ||= {
+        risks: 0, unmitigated: 0, effective: 0, partial: 0, ineffective: 0,
+        unverified: 0, inherentTotal: 0, residualTotal: 0, mitigationRate: 0,
+      });
+      c.risks++;
+      c.inherentTotal += r.inherentScore;
+      c.residualTotal += r.residualScore;
+      if (r.controlLinks.length === 0) c.unmitigated++;
+      for (const link of r.controlLinks) {
+        const impl = implById.get(link.implementationId);
+        if (!impl) continue;
+        if (impl.status !== 'Verified') c.unverified++;
+        else if (impl.effectiveness === 'Effective') c.effective++;
+        else if (impl.effectiveness === 'PartiallyEffective') c.partial++;
+        else if (impl.effectiveness === 'Ineffective') c.ineffective++;
+        else c.unverified++;
+      }
+    }
+    for (const c of Object.values(coverage)) {
+      c.mitigationRate = c.inherentTotal > 0
+        ? Math.round((1 - c.residualTotal / c.inherentTotal) * 100)
+        : 0;
+    }
+
+    // ── The risk network: which risks concentrate exposure ─────────────────
+    const byId = new Map(risks.map((r) => [r.id, r]));
     const connectedRisks = risks
       .map((r) => ({
-        id: r.id,
-        ref: r.ref,
-        title: r.title,
+        id: r.id, ref: r.ref, title: r.title, category: r.category,
         residualScore: r.residualScore,
         degree: r.causes.length + r.effects.length,
         causesCount: r.causes.length,
         causedByCount: r.effects.length,
+        /// Flat likelihood x impact cannot see that a medium risk sitting
+        /// upstream of four others carries more exposure than its own score.
+        networkScore: Number(
+          (r.residualScore * (1 + 0.25 * (r.causes.length + r.effects.length))).toFixed(1),
+        ),
+        causes: r.causes.map((c) => byId.get(c.effectId)?.ref).filter(Boolean),
+        causedBy: r.effects.map((e) => byId.get(e.causeId)?.ref).filter(Boolean),
       }))
-      .sort((a, b) => b.degree - a.degree)
-      .slice(0, 10);
+      .filter((r) => r.degree > 0)
+      .sort((a, b) => b.networkScore - a.networkScore)
+      .slice(0, 12);
 
+    const now = Date.now();
     res.json({
       status: 'success',
       totalRisks: risks.length,
-      inherentHeatmap,
-      residualHeatmap,
+      /// Grids are [likelihood-1][impact-1] and each cell is { count, refs }.
+      inherent,
+      residual,
+      opportunity,
+      migration: migration.sort((a, b) => b.delta - a.delta),
+      appetiteGrids,
+      coverage,
       connectedRisks,
+      totals: {
+        mitigationRate: (() => {
+          const inh = risks.reduce((a, r) => a + r.inherentScore, 0);
+          const res2 = risks.reduce((a, r) => a + r.residualScore, 0);
+          return inh > 0 ? Math.round((1 - res2 / inh) * 100) : 0;
+        })(),
+        unmitigated: risks.filter((r) => r.controlLinks.length === 0).length,
+        beyondTolerance: migration.filter((m) => m.band === 'BeyondTolerance').length,
+        reviewOverdue: risks.filter(
+          (r) => r.nextReviewDate && r.nextReviewDate.getTime() < now && r.status !== 'Closed',
+        ).length,
+        opportunities: risks.filter((r) => r.direction === 'Opportunity').length,
+        networked: risks.filter((r) => r.causes.length + r.effects.length > 0).length,
+      },
     });
   } catch (error: any) {
     console.error('[Risk Analytics Error]:', error);

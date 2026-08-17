@@ -154,9 +154,10 @@ const getRisk = async (token, id) =>
     : bad('an issue cannot name the risk it evidences', 'Issue has auditId but no riskId');
 
   const universe = (await api('/api/grc/universe', { token: grc })).json.entities || [];
-  const entityHasRisk = universe.length > 0 && Object.keys(universe[0]).some((k) => /^risk(s|Ids)?$|registerRisk/i.test(k));
+  const entityHasRisk = universe.length > 0 && universe.some((e) => Array.isArray(e.linkedRisks) && e.linkedRisks.length > 0);
   entityHasRisk
-    ? ok('an auditable entity can name its register risks')
+    ? ok('an auditable entity can name its register risks',
+      `${universe.filter((e) => (e.linkedRisks || []).length).length} of ${universe.length} entities linked`)
     : bad('an auditable entity cannot name its register risks',
       'AuditableEntity scores 6 factors of its own with no reference to the Risk register');
 

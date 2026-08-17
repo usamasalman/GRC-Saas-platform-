@@ -1,3 +1,4 @@
+import Icon from '../../components/Icon';
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 
@@ -42,7 +43,7 @@ export default function AuditLogViewer() {
     try {
       const res = await apiClient.get('/api/admin/db/verify-audit');
       if (res.data.status === 'success') {
-        setVerifyStatus(res.data.integrityVerified ? '✓ Cryptographic Hash Chain Verified: INTACT (WORM Locked)' : '⚠ WARNING: Hash chain tampering detected!');
+    setVerifyStatus(res.data.integrityVerified ? '✓ Cryptographic Hash Chain Verified: INTACT (WORM Locked)' : ' WARNING: Hash chain tampering detected!');
       }
     } catch {
       setVerifyStatus('Verification check completed.');
@@ -62,7 +63,7 @@ export default function AuditLogViewer() {
           onClick={handleVerifyChain}
           style={{ background: 'var(--info)', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
         >
-          🔗 Verify Hash Chain
+          <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Verify Hash Chain
         </button>
       </header>
 
@@ -99,7 +100,7 @@ export default function AuditLogViewer() {
                   <td style={{ padding: '12px 16px', fontWeight: 'bold', color: 'var(--info)' }}>{log.action}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>{log.actor?.name || 'System'}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--success)' }}>{log.currentHash.substring(0, 24)}...</td>
-                  <td style={{ padding: '12px 16px', color: 'var(--violet)' }}>{log.wormLocked ? '🔒 Locked' : 'Unlocked'}</td>
+         <td style={{ padding: '12px 16px', color: 'var(--violet)' }}>{log.wormLocked ? ' Locked' : 'Unlocked'}</td>
                 </tr>
               ))}
             </tbody>

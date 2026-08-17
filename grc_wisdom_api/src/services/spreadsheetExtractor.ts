@@ -122,11 +122,14 @@ function cell(row: any[], idx: number | undefined): string {
   return String(v).trim();
 }
 
-export async function extractFromSpreadsheet(
+/**
+ * Reads the first sheet into zero-based rows. Shared with the asset importer,
+ * which needs the same file handling but an entirely different header map.
+ */
+export async function readSheetRows(
   buffer: Buffer,
-  kind: CandidateKind,
   fileType: 'xlsx' | 'csv',
-): Promise<ExtractionResult> {
+): Promise<any[][] | null> {
   const wb = new ExcelJS.Workbook();
   if (fileType === 'csv') {
     const { Readable } = await import('stream');
@@ -134,11 +137,8 @@ export async function extractFromSpreadsheet(
   } else {
     await wb.xlsx.load(buffer as any);
   }
-
   const sheet = wb.worksheets[0];
-  if (!sheet) {
-    return { candidates: [], headerRow: null, columnsUsed: {}, warnings: ['The file has no readable sheet'] };
-  }
+  if (!sheet) return null;
 
   const rows: any[][] = [];
   sheet.eachRow({ includeEmpty: false }, (row) => {
@@ -146,6 +146,22 @@ export async function extractFromSpreadsheet(
     // ExcelJS pads index 0; drop it so columns are zero-based.
     rows.push(values.slice(1));
   });
+  return rows;
+}
+
+/** Normalises a header cell for intent matching. Shared with the asset importer. */
+export const normaliseHeader = (v: any) =>
+  String(v ?? '').trim().toLowerCase().replace(/[\s_\-.]+/g, ' ').replace(/[^\w %#]/g, '');
+
+export async function extractFromSpreadsheet(
+  buffer: Buffer,
+  kind: CandidateKind,
+  fileType: 'xlsx' | 'csv',
+): Promise<ExtractionResult> {
+  const rows = await readSheetRows(buffer, fileType);
+  if (!rows) {
+    return { candidates: [], headerRow: null, columnsUsed: {}, warnings: ['The file has no readable sheet'] };
+  }
 
   const header = findHeader(rows, kind);
   const warnings: string[] = [];

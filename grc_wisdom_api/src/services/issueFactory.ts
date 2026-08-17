@@ -36,6 +36,8 @@ export type NewIssue = {
   riskId?: string | null;
   implementationId?: string | null;
   auditableEntityId?: string | null;
+  assetId?: string | null;
+  vendorId?: string | null;
 };
 
 /**
@@ -79,6 +81,8 @@ export async function createIssueRecord(tx: any, input: NewIssue) {
       riskId: input.riskId ?? null,
       implementationId: input.implementationId ?? null,
       auditableEntityId: input.auditableEntityId ?? null,
+      assetId: input.assetId ?? null,
+      vendorId: input.vendorId ?? null,
     },
   });
 
@@ -96,6 +100,8 @@ export async function createIssueRecord(tx: any, input: NewIssue) {
         risk: input.riskId ?? null,
         control: input.implementationId ?? null,
         entity: input.auditableEntityId ?? null,
+        asset: input.assetId ?? null,
+        vendor: input.vendorId ?? null,
       },
     },
   });

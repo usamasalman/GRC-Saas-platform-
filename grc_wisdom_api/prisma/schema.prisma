@@ -30,6 +30,12 @@ model Tenant {
   riskSnapshots RiskScoreSnapshot[]
   tickets       Ticket[]
   asmAssets     AsmAsset[]
+  assets        Asset[]
+  riskCriteria  RiskCriteria[]
+  vendors       Vendor[]
+  vendorAssessments VendorAssessment[]
+  servicesProvided  SharedService[] @relation("ServiceProvider")
+  servicesConsumed  SharedServiceConsumer[] @relation("ServiceConsumer")
   phishCampaigns PhishCampaign[]
   impersonationSessions ImpersonationSession[]
   roles         Role[]
@@ -113,6 +119,15 @@ model User {
   evidenceUploaded        Evidence[] @relation("EvidenceUploader")
   evidenceReviewed        Evidence[] @relation("EvidenceReviewer")
   risksOwned              Risk[] @relation("RiskOwner")
+  assetsOwned             Asset[] @relation("AssetOwner")
+  vendorsOwned            Vendor[] @relation("VendorOwner")
+  assessmentsRequested    VendorAssessment[] @relation("AssessmentRequester")
+  assessmentsReviewed     VendorAssessment[] @relation("AssessmentReviewer")
+  sharedServicesOwned     SharedService[] @relation("SharedServiceOwner")
+  sharedServicesAccepted  SharedServiceConsumer[] @relation("ServiceAcceptor")
+  criteriaSet             RiskCriteria[] @relation("CriteriaSetter")
+  criteriaApproved        RiskCriteria[] @relation("CriteriaApprover")
+  assetsCustodied         Asset[] @relation("AssetCustodian")
   risksAccepted           Risk[] @relation("RiskAcceptor")
   treatmentsOwned         RiskTreatmentAction[] @relation("TreatmentOwner")
   auditsLed               Audit[] @relation("AuditLead")
@@ -386,6 +401,8 @@ model ControlImplementation {
   rcsaAssessments RcsaAssessment[]
   /// Deficiencies raised against this control, from any source.
   issues          Issue[]
+  assetLinks      AssetControlLink[]
+  sharedServices  SharedServiceControl[]
 
   @@index([tenantId, status])
   @@index([nextDueDate])
@@ -489,6 +506,12 @@ model Risk {
   acceptedBy         User?    @relation("RiskAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
   acceptedUntil      DateTime?
   acceptanceReason   String?
+  /// The exact appetite version the acceptance was judged against, and the
+  /// residual score it was judged at. Without these, a later change to the
+  /// board's tolerance silently rewrites the basis of every past decision.
+  acceptedUnderAppetiteId String?
+  acceptedUnderAppetite   RiskAppetite? @relation("AcceptedUnderAppetite", fields: [acceptedUnderAppetiteId], references: [id], onDelete: SetNull)
+  acceptedAtScore         Int?
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -502,6 +525,8 @@ model Risk {
   /// Which parts of the audit universe this risk lives in. This is what lets
   /// the annual audit plan be driven by the register rather than beside it.
   entityLinks        RiskEntityLink[]
+  /// Assets this risk threatens, with the threat and vulnerability that join them.
+  assetLinks         AssetRiskLink[]
   /// Every issue that evidences this risk, whatever raised it.
   issues             Issue[]
   /// Engagement RCM rows that reference this register risk instead of
@@ -509,6 +534,7 @@ model Risk {
   engagementRisks    EngagementRisk[]
   /// Risks this one causes, and risks that cause it. Flat likelihood x impact
   /// cannot see concentration; the network can.
+  vendorLinks        VendorRiskLink[]
   causes             RiskLink[] @relation("RiskCause")
   effects            RiskLink[] @relation("RiskEffect")
   snapshots          RiskScoreSnapshot[]
@@ -630,6 +656,7 @@ model AuditableEntity {
   riskLinks     RiskEntityLink[]
   /// Findings raised here. priorFindings is derived from this, not typed.
   issues        Issue[]
+  assets        Asset[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, riskTier])
@@ -796,6 +823,14 @@ model Issue {
   /// prior-finding density instead of asking someone to type it.
   auditableEntityId String?
   auditableEntity   AuditableEntity? @relation(fields: [auditableEntityId], references: [id], onDelete: SetNull)
+
+  /// The asset this gap sits on, where there is one.
+  assetId        String?
+  asset          Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  /// The supplier this gap sits with, for third-party findings.
+  vendorId       String?
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
 
   title          String
 
@@ -1496,6 +1531,365 @@ model OpenSourceTool {
   updatedAt     DateTime @updatedAt
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Asset register - ISO/IEC 27001 A.5.9 (inventory of information and other
+// associated assets) and ISO/IEC 27005 asset valuation
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Everything the organisation depends on and therefore has to protect:
+/// physical and non-physical, internally owned and supplied by a third party.
+///
+/// This is the anchor the register hangs off. ISO 27005 states risk as
+/// "a threat exploits a vulnerability of an asset, causing impact" - without an
+/// asset inventory the impact half of that sentence has nothing behind it, and
+/// impact ends up being a number somebody felt was about right.
+model Asset {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref            String
+  name           String
+  description    String?
+
+  /// Information | Software | Physical | Service | Personnel | Intangible
+  /// The six ISO 27005 asset classes. Tangibility is derived from this.
+  type           String   @default("Information")
+  /// Internal | ThirdParty | Shared - who actually holds the asset. A third
+  /// party asset still carries the organisation's risk; that is the whole
+  /// point of third-party risk management.
+  ownership      String   @default("Internal")
+  /// Public | Internal | Confidential | Restricted (ISO 27001 A.5.12)
+  classification String   @default("Internal")
+
+  // -- Valuation: the CIA triad, each 1-5 -------------------------------
+  /// How damaging is unauthorised disclosure?
+  confidentiality Int     @default(3)
+  /// How damaging is unauthorised modification or loss of accuracy?
+  integrity       Int     @default(3)
+  /// How damaging is loss of access?
+  availability    Int     @default(3)
+  /// Derived: max(C, I, A). Server-side, never client-set. An asset is as
+  /// critical as its most demanding dimension - a database whose availability
+  /// matters little is still critical if disclosure would be catastrophic, so
+  /// averaging the three would hide exactly the case that matters.
+  criticality     Int     @default(3)
+  /// Critical | High | Medium | Low, banded from criticality.
+  criticalityTier String  @default("Medium")
+
+  // -- Accountability ---------------------------------------------------
+  /// Accountable for the asset and its risk decisions.
+  ownerId        String
+  owner          User     @relation("AssetOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  /// Operates or maintains it day to day. Separating the two is what makes
+  /// an asset attestation meaningful rather than self-signed.
+  custodianId    String?
+  custodian      User?    @relation("AssetCustodian", fields: [custodianId], references: [id], onDelete: SetNull)
+
+  location       String?
+  /// Third-party assets carry the supplier and the contract that governs them.
+  /// Kept for assets registered before the vendor register existed; the
+  /// relation below is what the platform reasons about.
+  vendorName     String?
+  vendorId       String?
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  contractRef    String?
+
+  // -- Quantification (NIST SP 800-30 / FAIR) ---------------------------
+  /// Replacement or rebuild cost. Drives Single and Annualised Loss
+  /// Expectancy where a risk against this asset carries an exposure factor.
+  replacementValue Float?
+  currency         String @default("SAR")
+
+  /// Active | InDevelopment | Retired
+  status         String   @default("Active")
+  acquiredAt     DateTime?
+  /// Assets go stale like risks do. ISO 27001 A.5.9 expects the inventory to
+  /// be maintained, not merely created once.
+  reviewCadenceMonths Int  @default(12)
+  lastReviewedAt DateTime?
+  nextReviewDate DateTime?
+  retiredAt      DateTime?
+
+  /// An application depends on a server, a service depends on a supplier.
+  /// Dependency is how impact propagates.
+  parentId       String?
+  parent         Asset?   @relation("AssetTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Asset[]  @relation("AssetTree")
+
+  /// Placing an asset in the audit universe is what lets the annual plan cover
+  /// it, rather than the universe and the inventory drifting apart.
+  auditableEntityId String?
+  auditableEntity   AuditableEntity? @relation(fields: [auditableEntityId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  riskLinks      AssetRiskLink[]
+  controlLinks   AssetControlLink[]
+  issues         Issue[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, criticalityTier])
+  @@index([tenantId, ownership])
+  @@index([tenantId, nextReviewDate])
+}
+
+/// The threat-vulnerability-asset triple from ISO 27005, held on the link so
+/// one asset can face several distinct threats and one threat can span assets.
+model AssetRiskLink {
+  id        String   @id @default(uuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  riskId    String
+  risk      Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+
+  /// What could act against the asset - ransomware, insider, supplier failure,
+  /// flood. Free text so a tenant's own threat catalogue fits.
+  threat        String?
+  /// The weakness the threat would exploit.
+  vulnerability String?
+  /// 1-5. Combined with vulnerability to suggest likelihood.
+  threatLevel        Int?
+  vulnerabilityLevel Int?
+  /// Fraction of the asset's value lost if this risk materialises (0-1).
+  /// The exposure factor in SLE = asset value x exposure factor.
+  exposureFactor Float?
+
+  createdAt DateTime @default(now())
+
+  @@unique([assetId, riskId])
+  @@index([riskId])
+}
+
+/// Which controls actually protect this asset. Distinct from Risk-Control:
+/// a control can be effective against a risk in general and still not be
+/// deployed on a particular asset, which is where audit findings come from.
+model AssetControlLink {
+  id               String   @id @default(uuid())
+  assetId          String
+  asset            Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  implementationId String
+  implementation   ControlImplementation @relation(fields: [implementationId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+
+  @@unique([assetId, implementationId])
+  @@index([implementationId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Third-party risk management, and shared services inside a group
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A supplier the organisation depends on.
+///
+/// The asset register already carried `vendorName` as free text, which meant
+/// "Regional Cloud Services Co." on one asset and "Regional Cloud" on another
+/// were two different suppliers as far as the platform was concerned — so the
+/// concentration question ("how much of us runs through this one company?")
+/// could not be asked at all. A vendor is a record now, and assets point at it.
+model Vendor {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref            String
+  name           String
+  legalName      String?
+  /// CloudHosting | Software | ProfessionalServices | Outsourcing | Logistics |
+  /// Facilities | Staffing | Financial | Other
+  category       String   @default("Other")
+  description    String?
+
+  /// Where the supplier operates from, and where the data goes. Cross-border
+  /// transfer is a live PDPL question in Saudi, so it is a field not a note.
+  country        String?
+  dataLocation   String?
+  /// None | Metadata | Confidential | PersonalData | SensitivePersonalData
+  /// The highest classification of data this supplier can reach.
+  dataAccess     String   @default("None")
+  /// Whether the supplier can act on the organisation's systems directly.
+  hasSystemAccess Boolean @default(false)
+  /// Named fourth parties. A supplier's own suppliers are the organisation's
+  /// exposure too, and the usual reason a concentration is missed.
+  subprocessors  String?
+
+  // ── Tiering (server-derived, never client-set) ────────────────────────
+  /// 1-5. How badly the organisation is hurt if this supplier stops.
+  serviceCriticality Int   @default(3)
+  /// 1-5. How hard it would be to replace them inside the notice period.
+  substitutability   Int   @default(3)
+  /// Critical | High | Medium | Low — derived from criticality, data access
+  /// and substitutability.
+  tier           String   @default("Medium")
+  tierScore      Int      @default(9)
+
+  // ── Contract ─────────────────────────────────────────────────────────
+  contractRef    String?
+  contractStart  DateTime?
+  contractEnd    DateTime?
+  /// Notice the organisation must give to exit, in days. Drives how early a
+  /// renewal decision has to be taken.
+  noticePeriodDays Int?
+  annualSpend    Float?
+  currency       String   @default("SAR")
+
+  relationshipOwnerId String
+  relationshipOwner   User @relation("VendorOwner", fields: [relationshipOwnerId], references: [id], onDelete: Cascade)
+
+  /// Prospective | Active | UnderReview | Exiting | Terminated
+  status         String   @default("Active")
+  onboardedAt    DateTime?
+  offboardedAt   DateTime?
+
+  /// Due-diligence cadence, driven by tier: critical suppliers are reassessed
+  /// more often than stationery suppliers.
+  assessmentCadenceMonths Int @default(12)
+  lastAssessedAt DateTime?
+  nextAssessmentDue DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assessments    VendorAssessment[]
+  /// Assets this supplier holds or operates.
+  assets         Asset[]
+  /// Risks arising from this relationship.
+  riskLinks      VendorRiskLink[]
+  issues         Issue[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, tier])
+  @@index([tenantId, status])
+  @@index([tenantId, nextAssessmentDue])
+}
+
+/// One due-diligence cycle against a supplier.
+model VendorAssessment {
+  id          String   @id @default(uuid())
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  ref         String
+  /// Onboarding | Periodic | Triggered | Exit
+  kind        String   @default("Periodic")
+  /// The questionnaire used, e.g. "SAMA CSF supplier annex" or "SIG Lite".
+  questionnaire String?
+
+  requestedById String
+  requestedBy   User   @relation("AssessmentRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  dueDate     DateTime
+  /// Requested | InProgress | Submitted | Reviewed | Overdue
+  status      String   @default("Requested")
+
+  submittedAt DateTime?
+  /// 0-100. What the supplier scored on the questionnaire.
+  score       Int?
+  /// Adequate | NeedsImprovement | Inadequate
+  outcome     String?
+  narrative   String?
+
+  /// Review must be a different person from whoever requested it.
+  reviewedById String?
+  reviewedBy   User?   @relation("AssessmentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, ref])
+  @@index([vendorId, status])
+}
+
+/// The risk this supplier relationship carries, joined to the register so a
+/// vendor issue is not a separate universe from every other risk.
+model VendorRiskLink {
+  id        String  @id @default(uuid())
+  vendorId  String
+  vendor    Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  riskId    String
+  risk      Risk    @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([vendorId, riskId])
+  @@index([riskId])
+}
+
+/// A capability one entity in the group runs on behalf of others — group IT
+/// operating identity, group security operating the SOC.
+///
+/// This is the concentration nobody models: when Group IT operates access
+/// recertification for eight subsidiaries, one failed control is eight failed
+/// controls, and each subsidiary's own register shows it as green because the
+/// control "belongs" to the parent.
+model SharedService {
+  id            String   @id @default(uuid())
+  /// The entity that runs the service.
+  providerTenantId String
+  providerTenant   Tenant @relation("ServiceProvider", fields: [providerTenantId], references: [id], onDelete: Cascade)
+
+  ref           String
+  name          String
+  /// IT | Security | HR | Finance | Legal | Procurement | Facilities | Other
+  function      String   @default("IT")
+  description   String?
+
+  serviceOwnerId String
+  serviceOwner   User    @relation("SharedServiceOwner", fields: [serviceOwnerId], references: [id], onDelete: Cascade)
+
+  /// What the consuming entities are entitled to expect.
+  slaSummary    String?
+  /// Monthly | Quarterly | Annual — how often the service reports on itself.
+  reportingCadence String @default("Quarterly")
+
+  /// Active | Transitioning | Retired
+  status        String   @default("Active")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  consumers     SharedServiceConsumer[]
+  controls      SharedServiceControl[]
+
+  @@unique([providerTenantId, ref])
+  @@index([providerTenantId, status])
+}
+
+/// An entity that relies on a shared service.
+model SharedServiceConsumer {
+  id              String @id @default(uuid())
+  sharedServiceId String
+  sharedService   SharedService @relation(fields: [sharedServiceId], references: [id], onDelete: Cascade)
+  consumerTenantId String
+  consumerTenant   Tenant @relation("ServiceConsumer", fields: [consumerTenantId], references: [id], onDelete: Cascade)
+  /// When the consuming entity accepted the service and its SLA.
+  acceptedAt      DateTime?
+  acceptedById    String?
+  acceptedBy      User?  @relation("ServiceAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+
+  @@unique([sharedServiceId, consumerTenantId])
+  @@index([consumerTenantId])
+}
+
+/// A control the shared service operates on its consumers' behalf. This is the
+/// join that makes the concentration visible: one implementation, many
+/// entities relying on it.
+model SharedServiceControl {
+  id              String @id @default(uuid())
+  sharedServiceId String
+  sharedService   SharedService @relation(fields: [sharedServiceId], references: [id], onDelete: Cascade)
+  implementationId String
+  implementation   ControlImplementation @relation(fields: [implementationId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@unique([sharedServiceId, implementationId])
+  @@index([implementationId])
+}
+
 model AsmAsset {
   id            String   @id @default(uuid())
   tenantId      String
@@ -1620,13 +2014,82 @@ model RiskAppetite {
   approvedById       String?
   approvedBy         User?    @relation("AppetiteApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt         DateTime?
-  /// Draft | Approved
+  /// Draft | Approved | Superseded
   status             String   @default("Draft")
+
+  // -- Version history --------------------------------------------------
+  /// IIA Standard 9.1 lists review of the risk appetite statement as evidence
+  /// of conformance, which makes this record audit evidence rather than a
+  /// setting. Evidence that is overwritten in place cannot answer "what was
+  /// the approved tolerance for Technology risk when RSK-014 was accepted last
+  /// March?" — so a change now mints a new version and supersedes the old one.
+  version            Int      @default(1)
+  /// When this version began to bind. Null until it is approved.
+  effectiveFrom      DateTime?
+  /// When it stopped binding, i.e. when its successor was approved.
+  effectiveTo        DateTime?
+  supersededById     String?  @unique
+  supersededBy       RiskAppetite?  @relation("AppetiteVersion", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes         RiskAppetite?  @relation("AppetiteVersion")
+
+  /// Risks that were accepted while this version was the one in force.
+  acceptedRisks      Risk[]   @relation("AcceptedUnderAppetite")
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  @@unique([tenantId, category])
+  @@unique([tenantId, category, version])
+  @@index([tenantId, status])
+  @@index([tenantId, category, effectiveFrom])
+}
+
+/// Risk criteria — ISO 31000 clause 6.3.4.
+///
+/// The scale a tenant measures risk on. This was hard-coded: every tenant
+/// shared one 1-5 impact ladder with no anchor text and one set of High/Medium/
+/// Low bands, which means a hospital group and a bank were being told their
+/// impact-4 meant the same thing. The standard requires criteria to be defined,
+/// aligned to objectives, and reviewed — so they are data, owned, versioned and
+/// approved by a second person, exactly like the appetite they sit beneath.
+model RiskCriteria {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  version         Int      @default(1)
+  name            String
+
+  /// Five levels, as JSON: [{ level, label, descriptor, monetaryFrom, monetaryTo }].
+  /// Held as text because the anchors are prose an organisation writes for
+  /// itself; the shape is validated on write rather than by the column type.
+  impactScale     String
+  /// Five levels, as JSON: [{ level, label, descriptor, frequency }].
+  likelihoodScale String
+
+  /// Where the 1-25 product is banded. Hard-coded at 15 and 8 before this.
+  highThreshold   Int      @default(15)
+  mediumThreshold Int      @default(8)
+  currency        String   @default("SAR")
+
+  setById         String
+  setBy           User     @relation("CriteriaSetter", fields: [setById], references: [id], onDelete: Cascade)
+  /// Criteria bind only once someone other than the author approves them.
+  approvedById    String?
+  approvedBy      User?    @relation("CriteriaApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt      DateTime?
+  /// Draft | Approved | Superseded
+  status          String   @default("Draft")
+
+  effectiveFrom   DateTime?
+  effectiveTo     DateTime?
+  supersededById  String?  @unique
+  supersededBy    RiskCriteria? @relation("CriteriaVersion", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes      RiskCriteria? @relation("CriteriaVersion")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, version])
   @@index([tenantId, status])
 }
 
@@ -1927,7 +2390,7 @@ model FrameworkImport {
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  /// Clause | Control — what the file is understood to contain.
+  /// Clause | Control | Asset — what the file is understood to contain.
   kind         String
   fileName     String
   fileUrl      String
@@ -1975,6 +2438,12 @@ model ImportCandidate {
   body       String?
   /// Control domain. Unused for clauses.
   extra      String?
+  /// The whole parsed row as JSON, for kinds that carry more than four fields.
+  /// An asset row has a type, an ownership, three CIA ratings, an owner and a
+  /// supplier; forcing those through ref/title/body/extra would lose most of
+  /// them, and losing a CIA rating silently is how a register gets a criticality
+  /// nobody chose.
+  payload    String?
 
   /// High | Medium | Low — how sure the parser is, so review starts where it
   /// is least confident rather than at row one.

@@ -1,3 +1,4 @@
+import Icon from '../components/Icon';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
@@ -72,7 +73,7 @@ const ChangePassword: React.FC = () => {
         <h1 style={{ fontSize: 22, marginBottom: 8 }}>Change Password</h1>
         {user?.mustChangePassword ? (
           <p style={{ color: 'var(--warning)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
-            ⚠ Your administrator reset your password. You must choose a new password before continuing.
+            <Icon name="warning" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Your administrator reset your password. You must choose a new password before continuing.
           </p>
         ) : (
           <p style={{ color: 'var(--ink-muted)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>

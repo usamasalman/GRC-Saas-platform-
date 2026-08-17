@@ -105,7 +105,7 @@ const PlatformSecurity: React.FC = () => {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={primaryBtn(verifying)} onClick={handleVerifyWorm} disabled={verifying}>
-            {verifying ? 'Verifying Hashes…' : '🔒 Verify WORM Chain'}
+      {verifying ? 'Verifying Hashes…' : ' Verify WORM Chain'}
           </button>
           <button style={ghostBtn} onClick={loadSecurity} disabled={loading}>↻ Refresh</button>
         </div>
@@ -130,7 +130,7 @@ const PlatformSecurity: React.FC = () => {
       {wormResult && (
         <div style={{ ...S.card, padding: 18, marginBottom: 20, borderColor: wormResult.isChainValid ? 'var(--success)' : 'var(--danger)', background: wormResult.isChainValid ? '#052e16' : '#450a0a' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 18 }}>{wormResult.isChainValid ? '✅' : '❌'}</span>
+   <span style={{ fontSize: 18 }}>{wormResult.isChainValid ? '' : ''}</span>
             <strong style={{ fontSize: 14, color: wormResult.isChainValid ? 'var(--success)' : 'var(--danger)' }}>
               {wormResult.isChainValid ? 'NO TAMPERING DETECTED — Cryptographic Chain Valid' : 'TAMPERING DETECTED IN AUDIT LOGS'}
             </strong>

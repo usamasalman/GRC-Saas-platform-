@@ -1,3 +1,5 @@
+import Icon from '../components/Icon';
+import type { IconName } from '../components/Icon';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
@@ -34,6 +36,9 @@ import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
+import AssetRegister from './grc/AssetRegister';
+import VendorRegister from './grc/VendorRegister';
+import SharedServices from './grc/SharedServices';
 
 // Real Modules & Entitlements Components
 import GrcModuleMarketplace from './marketplace/GrcModuleMarketplace';
@@ -134,7 +139,7 @@ const NAV: Record<string, any[]> = {
   ],
   holding: [
     ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['subsidiaries', '▥', 'Subsidiary Scorecards'], ['shared-services', '⇄', 'Shared Services']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -142,7 +147,7 @@ const NAV: Record<string, any[]> = {
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -150,7 +155,7 @@ const NAV: Record<string, any[]> = {
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
@@ -176,12 +181,43 @@ const NAV: Record<string, any[]> = {
   ],
   franchise: [
     ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards'], ['exceptions', '⇄', 'Exception Workflows']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['risk', '△', 'Network Risk'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Network Risk'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Network Teams'], ['user-admin', '♙', 'Users & Location Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Location Standard Enablement']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Franchise Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ]
+};
+
+/**
+ * Nav key → icon. The sidebar tuples carry a Unicode dingbat in slot 1 as a
+ * legacy fallback; this map is what actually renders. Dingbats and emoji vary
+ * by OS, cannot take the nav's colour, and sit off the optical centre — so the
+ * glyph is only used when a key has no entry here.
+ */
+const NAV_ICON: Record<string, IconName> = {
+  dashboard: 'dashboard', library: 'documents', tenants: 'building',
+  impersonation: 'user', 'saas-users': 'users', 'org-users': 'users',
+  'branch-users': 'users', 'team-directory': 'teams',
+  'user-admin': 'lifecycle', 'role-matrix': 'roles',
+  itsm: 'servicedesk', 'ticket-queues': 'scorecard', 'service-catalog': 'marketplace',
+  sla: 'clock', knowledge: 'knowledge',
+  'wisdom-eye': 'exposure', 'eye-phish': 'phishing', 'asm-tenants': 'building',
+  marketplace: 'marketplace', 'tool-marketplace': 'tools', 'tool-review': 'check',
+  'tool-installations': 'install', 'standard-repository': 'repository',
+  'tenant-standards': 'enablement', 'feature-flags': 'flag',
+  hierarchy: 'branch', subsidiaries: 'scorecard', 'shared-services': 'switch',
+  'branch-lifecycle': 'lifecycle', 'workspace-transfer': 'switch', 'wholesale-billing': 'invoices',
+  branches: 'branch', locations: 'building', scorecards: 'scorecard',
+  tasks: 'approvals', approvals: 'approvals', documents: 'documents', standards: 'standards',
+  'framework-authoring': 'authoring', controls: 'controls',
+  implementations: 'implementations', risk: 'risk', audits: 'audit',
+  vendors: 'vendors', assets: 'assets',
+  subscriptions: 'subscriptions', plans: 'plans', invoices: 'invoices',
+  payments: 'payments', 'payment-gateway': 'gateway',
+  usage: 'gauge', imports: 'upload', rules: 'settings',
+  help: 'help', 'brd-trace': 'scorecard', architecture: 'network',
+  security: 'lock', health: 'gauge',
 };
 
 const AppShell = () => {
@@ -340,6 +376,15 @@ const AppShell = () => {
     if (currentPage === 'implementations') {
       return <Implementations key={`${account.id}-${currentPage}`} />;
     }
+    if (currentPage === 'vendors') {
+      return <VendorRegister key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'shared-services') {
+      return <SharedServices key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'assets') {
+      return <AssetRegister key={`${account.id}-${currentPage}`} />;
+    }
     if (currentPage === 'risk') {
       return <RiskRegister key={`${account.id}-${currentPage}`} />;
     }
@@ -471,7 +516,9 @@ const AppShell = () => {
                     setMenuOpen(false);
                   }}
                 >
-                  <span className="nav-ico">{item[1]}</span>
+                  <span className="nav-ico">
+                    {NAV_ICON[item[0]] ? <Icon name={NAV_ICON[item[0]]} size={17} /> : item[1]}
+                  </span>
                   <span>{item[2]}</span>
                 </button>
               ))}
@@ -480,11 +527,11 @@ const AppShell = () => {
         </nav>
         <div className="side-footer">
           <button className="nav-item" id="helpBtn" onClick={() => setShowUserGuide(true)} title="Open Comprehensive User Guide & Feature Manual">
-            <span className="nav-ico">📖</span>
+            <span className="nav-ico"><Icon name="help" size={17} /></span>
             <span>User Guide &amp; Help</span>
           </button>
           <button className="nav-item" id="switchBtn" onClick={() => navigate('/')}>
-            <span className="nav-ico">⇄</span>
+            <span className="nav-ico"><Icon name="switch" size={17} /></span>
             <span>Switch login portal</span>
           </button>
         </div>
@@ -529,7 +576,7 @@ const AppShell = () => {
               transition: 'all 0.15s ease',
             }}
           >
-            <span>📖</span>
+            <span><Icon name="knowledge" size={15} /></span>
             <span>User Guide</span>
           </button>
           <button className="icon-btn" id="langBtn" onClick={toggleLanguage} title="English / العربية">

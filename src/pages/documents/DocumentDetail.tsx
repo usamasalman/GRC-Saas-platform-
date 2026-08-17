@@ -1,3 +1,4 @@
+import Icon from '../../components/Icon';
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 
@@ -147,21 +148,21 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                   onClick={() => setReaderMode('pdf-embed')}
                   style={{ background: readerMode === 'pdf-embed' ? 'var(--info)' : 'transparent', color: readerMode === 'pdf-embed' ? '#fff' : 'var(--ink-muted)', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                 >
-                  📄 Interactive PDF Reader
+                  <Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Interactive PDF Reader
                 </button>
                 <button
                   type="button"
                   onClick={() => setReaderMode('pdf-page')}
                   style={{ background: readerMode === 'pdf-page' ? 'var(--info)' : 'transparent', color: readerMode === 'pdf-page' ? '#fff' : 'var(--ink-muted)', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                 >
-                  📖 Formatted Document
+                  <Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Formatted Document
                 </button>
                 <button
                   type="button"
                   onClick={() => setReaderMode('raw-text')}
                   style={{ background: readerMode === 'raw-text' ? 'var(--info)' : 'transparent', color: readerMode === 'raw-text' ? '#fff' : 'var(--ink-muted)', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                 >
-                  📝 Text View
+                  <Icon name="edit" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Text View
                 </button>
               </div>
             )}
@@ -178,7 +179,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
               onClick={handlePrint}
               style={{ background: 'var(--surface-sunk)', color: 'var(--ink-body)', border: '1px solid var(--line)', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
             >
-              🖨️ Print
+              <Icon name="invoices" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} />️ Print
             </button>
 
             <button
@@ -196,19 +197,19 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
             onClick={() => setActiveTab('reader')}
             style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'reader' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'reader' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'reader' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
           >
-            📖 In-App PDF & Document Reader
+            <Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> In-App PDF & Document Reader
           </button>
           <button
             onClick={() => setActiveTab('file')}
             style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'file' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'file' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'file' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
           >
-            📄 File Attachment & Downloads {document?.fileName && '●'}
+            <Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> File Attachment & Downloads {document?.fileName && '●'}
           </button>
           <button
             onClick={() => setActiveTab('versions')}
             style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'versions' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'versions' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'versions' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
           >
-            📜 Version History ({document?.versions?.length || 1})
+            <Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Version History ({document?.versions?.length || 1})
           </button>
           <button
             onClick={() => setActiveTab('approvals')}
@@ -363,7 +364,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                     </div>
                   ) : (
                     <div style={{ background: 'var(--surface-sunk)', border: '1px dashed var(--line)', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>📄</div>
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}><Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /></div>
                       <div style={{ fontSize: '14px', color: 'var(--ink)', fontWeight: 600 }}>No raw binary file attached</div>
                       <p style={{ fontSize: '12px', color: 'var(--ink-muted)', margin: '4px 0 16px' }}>
                         This document was created as a structured text policy. You can still download it as a formatted document file.

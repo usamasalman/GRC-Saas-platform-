@@ -1,3 +1,4 @@
+import Icon from '../../components/Icon';
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 import DocumentDetail from './DocumentDetail';
@@ -371,7 +372,7 @@ export default function DocumentLibrary() {
         </div>
       ) : documents.length === 0 ? (
         <div style={{ background: 'var(--surface-sunk)', padding: '48px 24px', textAlign: 'center', color: 'var(--ink-muted)', borderRadius: '10px', border: '1px solid var(--line)' }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>📂</div>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}><Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /></div>
           <div style={{ fontSize: '15px', color: 'var(--ink)', fontWeight: 600 }}>No documents found</div>
           <p style={{ fontSize: '13px', margin: '4px 0 16px', color: 'var(--ink-muted)' }}>Get started by uploading or creating a governance document.</p>
           <button onClick={openCreateModal} style={{ background: 'var(--info)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
@@ -400,7 +401,7 @@ export default function DocumentLibrary() {
                     {doc.title}
                     {doc.isLockedOut && (
                       <span style={{ marginLeft: '8px', background: 'rgba(239, 68, 68, 0.2)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.4)', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}>
-                        🔒 Locked
+                        <Icon name="lock" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Locked
                       </span>
                     )}
                   </td>

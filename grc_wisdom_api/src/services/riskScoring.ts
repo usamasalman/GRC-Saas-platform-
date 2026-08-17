@@ -35,6 +35,11 @@ export type ScoreReason =
   | 'SelfAssessed'
   | 'Reviewed';
 
+/**
+ * Bands a score on the platform default. Use `bandFor` from services/riskCriteria
+ * wherever the tenant's own approved criteria are available — a tenant that has
+ * set its own scale should be banded on it, not on this.
+ */
 export function ratingOf(score: number): 'High' | 'Medium' | 'Low' {
   return score >= 15 ? 'High' : score >= 8 ? 'Medium' : 'Low';
 }

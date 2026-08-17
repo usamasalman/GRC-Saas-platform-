@@ -1,3 +1,5 @@
+import Icon from './Icon';
+import type { IconName } from './Icon';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   USER_GUIDE_DATA,
@@ -15,6 +17,31 @@ interface UserGuideModalProps {
 }
 
 type GuideViewMode = 'current' | 'all' | 'workflows';
+
+const ICON_NAMES: Record<string, true> = {
+  dashboard: true, scorecard: true, lifecycle: true, approvals: true, documents: true,
+  standards: true, authoring: true, controls: true, implementations: true,
+  risk: true, audit: true, vendors: true, assets: true, teams: true, users: true, roles: true,
+  servicedesk: true, knowledge: true, exposure: true, phishing: true,
+  marketplace: true, tools: true, install: true, repository: true, enablement: true,
+  subscriptions: true, plans: true, invoices: true, payments: true, gateway: true,
+  help: true, switch: true, settings: true, matrix: true, network: true, trend: true,
+  target: true, shield: true, gauge: true, refresh: true, close: true, check: true,
+  plus: true, minus: true, download: true, upload: true, search: true, edit: true,
+  trash: true, filter: true, external: true, link: true, copy: true,
+  chevronRight: true, chevronDown: true, chevronUp: true, arrowRight: true, arrowLeft: true,
+  caretUp: true, caretDown: true, warning: true, error: true, info: true, success: true,
+  lock: true, unlock: true, clock: true, flag: true, bell: true, menu: true,
+  user: true, building: true, branch: true, sparkline: true,
+};
+/**
+ * Guide entries carry an icon-set name. A name that has no glyph falls back to
+ * a neutral one rather than printing the raw string, so a new guide entry can
+ * never leak a bare word where an icon belongs.
+ */
+const GuideIcon: React.FC<{ name?: string; size?: number }> = ({ name, size = 18 }) => (
+  <Icon name={(name && name in ICON_NAMES ? name : 'help') as IconName} size={size} />
+);
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   isOpen,
@@ -178,7 +205,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 boxShadow: '0 4px 12px rgba(15, 122, 90, 0.35)',
               }}
             >
-              📖
+              <Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -278,7 +305,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 boxShadow: viewMode === 'current' ? 'var(--shadow-sm)' : 'none',
               }}
             >
-              <span>📌 Current Tab Guide</span>
+              <span><Icon name="flag" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Current Tab Guide</span>
               <span
                 style={{
                   background: viewMode === 'current' ? 'rgba(255, 255, 255, 0.25)' : 'var(--surface-sunk)',
@@ -308,7 +335,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 gap: 6,
               }}
             >
-              <span>🌐 All Platform Features</span>
+              <span><Icon name="network" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> All Platform Features</span>
               <span
                 style={{
                   background: viewMode === 'all' ? 'rgba(255, 255, 255, 0.25)' : 'var(--brand-tint)',
@@ -339,7 +366,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 gap: 6,
               }}
             >
-              <span>🚀 Master Workflows & SOPs</span>
+              <span><Icon name="trend" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Master Workflows & SOPs</span>
               <span
                 style={{
                   background: viewMode === 'workflows' ? 'rgba(255, 255, 255, 0.25)' : 'var(--warning-bg)',
@@ -441,7 +468,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         fontWeight: 700,
                       }}
                     >
-                      {currentTabGuide.icon}
+                      <GuideIcon name={currentTabGuide.icon} size={20} />
                     </span>
                     <div>
                       <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>
@@ -509,7 +536,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           fontWeight: 500,
                         }}
                       >
-                        👤 {role}
+                        <Icon name="user" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> {role}
                       </span>
                     ))}
                   </div>
@@ -531,7 +558,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       gap: 8,
                     }}
                   >
-                    <span>📋 Step-by-Step Instructions</span>
+                    <span><Icon name="standards" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Step-by-Step Instructions</span>
                     <span
                       style={{
                         fontSize: 12,
@@ -614,7 +641,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                     display: 'inline-block',
                                   }}
                                 >
-                                  💡 <strong>Tip:</strong> {stepItem.tip}
+                                  <Icon name="info" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> <strong>Tip:</strong> {stepItem.tip}
                                 </div>
                               )}
                             </div>
@@ -666,7 +693,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         gap: 6,
                       }}
                     >
-                      <span>🏆 Compliance & Governance Tips</span>
+                      <span><Icon name="target" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Compliance & Governance Tips</span>
                     </h5>
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: '#784805', lineHeight: 1.55 }}>
                       {currentTabGuide.proTips.map((tip, i) => (
@@ -686,7 +713,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       }}
                     >
                       <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: 'var(--ink-muted)' }}>
-                        🔗 Interconnected Modules
+                        <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Interconnected Modules
                       </h5>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {currentTabGuide.relatedTabs.map((rel) => (
@@ -791,7 +818,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                               fontWeight: 700,
                             }}
                           >
-                            {feat.icon}
+                            <GuideIcon name={feat.icon} size={17} />
                           </span>
                           <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
                             {feat.title}
@@ -878,7 +905,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   lineHeight: 1.5,
                 }}
               >
-                💡 <strong>Standard Operating Procedures (SOPs):</strong> Multi-step master workflows designed for assurance officers, risk managers, and compliance architects navigating interconnected platform modules.
+                <Icon name="info" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> <strong>Standard Operating Procedures (SOPs):</strong> Multi-step master workflows designed for assurance officers, risk managers, and compliance architects navigating interconnected platform modules.
               </div>
 
               {filteredWorkflows.map((wf) => (
@@ -897,7 +924,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 20 }}>{wf.icon}</span>
+                        <GuideIcon name={wf.icon} size={19} />
                         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>
                           {wf.title}
                         </h3>
@@ -932,7 +959,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                             color: 'var(--ink-muted)',
                           }}
                         >
-                          👤 {r}
+                          <Icon name="user" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> {r}
                         </span>
                       ))}
                     </div>
@@ -1026,7 +1053,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <span>
-              💡 <strong>Quick Shortcut:</strong> Press <kbd style={{ background: 'var(--surface)', border: '1px solid var(--line)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>Esc</kbd> anytime to dismiss this guide.
+              <Icon name="info" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> <strong>Quick Shortcut:</strong> Press <kbd style={{ background: 'var(--surface)', border: '1px solid var(--line)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>Esc</kbd> anytime to dismiss this guide.
             </span>
           </div>
 

@@ -1,3 +1,4 @@
+import Icon from '../../components/Icon';
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
@@ -233,7 +234,7 @@ const ImportsMigration: React.FC = () => {
                         >{retryingId === j.id ? '…' : '↻ Retry'}</button>
                       )}
                       {j.errorLog && (
-                        <button style={{ ...ghostBtn, padding: '4px 8px', fontSize: 11 }} onClick={() => setDetailJob(j)}>📋 Log</button>
+                        <button style={{ ...ghostBtn, padding: '4px 8px', fontSize: 11 }} onClick={() => setDetailJob(j)}><Icon name="standards" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Log</button>
                       )}
                     </td>
                   </tr>

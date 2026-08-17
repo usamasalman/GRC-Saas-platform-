@@ -88,40 +88,61 @@ export const setAppetite = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const existing = await prisma.riskAppetite.findUnique({
-      where: { tenantId_category: { tenantId: target, category } },
+    // Every version this category has ever had, newest first.
+    const history = await prisma.riskAppetite.findMany({
+      where: { tenantId: target, category },
+      orderBy: { version: 'desc' },
     });
+    const inForce = history.find((a) => a.status === 'Approved' && a.effectiveTo === null) || null;
+    const openDraft = history.find((a) => a.status === 'Draft') || null;
+
+    // A second draft for the same category would leave two candidates and no
+    // rule about which one an approver is blessing.
+    if (openDraft) {
+      res.status(409).json({
+        status: 'error',
+        code: 'DRAFT_ALREADY_OPEN',
+        message: `Version ${openDraft.version} of the ${category} appetite is already drafted and awaiting approval. Approve or withdraw it before drafting another.`,
+        draftId: openDraft.id,
+      });
+      return;
+    }
+
+    const nextVersion = (history[0]?.version ?? 0) + 1;
 
     const appetite = await prisma.$transaction(async (tx) => {
-      // Re-setting an approved statement returns it to draft: a changed
-      // threshold has to be re-approved before it binds again.
-      const saved = await tx.riskAppetite.upsert({
-        where: { tenantId_category: { tenantId: target, category } },
-        create: {
+      // A change mints a new version. The one in force keeps binding until the
+      // new one is approved, so there is never a window with no ceiling — and
+      // the old thresholds survive as the evidence of what was approved when.
+      const saved = await tx.riskAppetite.create({
+        data: {
           tenantId: target, category, statement: String(statement).trim(),
           appetiteThreshold: appetiteN, toleranceThreshold: toleranceN,
-          setById: req.user!.id, status: 'Draft',
-        },
-        update: {
-          statement: String(statement).trim(),
-          appetiteThreshold: appetiteN, toleranceThreshold: toleranceN,
-          setById: req.user!.id, status: 'Draft',
-          approvedById: null, approvedAt: null,
+          setById: req.user!.id, status: 'Draft', version: nextVersion,
         },
       });
       await writeAudit(tx, {
         tenantId: target, actorId: req.user!.id,
-        action: existing ? 'RISK_APPETITE_UPDATED' : 'RISK_APPETITE_SET',
+        action: inForce ? 'RISK_APPETITE_REVISED' : 'RISK_APPETITE_SET',
         subjectType: SUBJ_APPETITE, subjectId: saved.id,
-        payload: { category, appetiteThreshold: appetiteN, toleranceThreshold: toleranceN },
+        payload: {
+          category, version: nextVersion,
+          appetiteThreshold: appetiteN, toleranceThreshold: toleranceN,
+          supersedes: inForce
+            ? { version: inForce.version, appetite: inForce.appetiteThreshold, tolerance: inForce.toleranceThreshold }
+            : null,
+        },
       });
       return saved;
     });
 
-    res.status(existing ? 200 : 201).json({
+    res.status(inForce ? 200 : 201).json({
       status: 'success',
-      message: `Appetite for ${category} saved as draft — it must be approved before it takes effect.`,
+      message: inForce
+        ? `Version ${nextVersion} of the ${category} appetite drafted. Version ${inForce.version} (appetite ${inForce.appetiteThreshold}, tolerance ${inForce.toleranceThreshold}) stays in force until this is approved.`
+        : `Appetite for ${category} saved as draft — it must be approved before it takes effect.`,
       appetite,
+      currentlyInForce: inForce,
     });
   } catch (error: any) {
     console.error('[Appetite Set Error]:', error);
@@ -149,20 +170,55 @@ export const approveAppetite = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, superseded } = await prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      // Close the predecessor at the same instant the successor opens, so the
+      // history has no gap and no overlap — an "as at" lookup must always
+      // return exactly one binding version.
+      const previous = await tx.riskAppetite.findFirst({
+        where: {
+          tenantId: appetite.tenantId, category: appetite.category,
+          status: 'Approved', effectiveTo: null,
+        },
+        orderBy: { version: 'desc' },
+      });
+      if (previous) {
+        await tx.riskAppetite.update({
+          where: { id: previous.id },
+          data: { status: 'Superseded', effectiveTo: now, supersededById: id },
+        });
+      }
+
       const u = await tx.riskAppetite.update({
         where: { id },
-        data: { status: 'Approved', approvedById: req.user!.id, approvedAt: new Date() },
+        data: {
+          status: 'Approved', approvedById: req.user!.id, approvedAt: now,
+          effectiveFrom: now,
+        },
       });
       await writeAudit(tx, {
         tenantId: appetite.tenantId, actorId: req.user!.id, action: 'RISK_APPETITE_APPROVED',
         subjectType: SUBJ_APPETITE, subjectId: id,
-        payload: { category: appetite.category, appetiteThreshold: appetite.appetiteThreshold, toleranceThreshold: appetite.toleranceThreshold },
+        payload: {
+          category: appetite.category, version: appetite.version,
+          appetiteThreshold: appetite.appetiteThreshold,
+          toleranceThreshold: appetite.toleranceThreshold,
+          supersededVersion: previous?.version ?? null,
+          effectiveFrom: now,
+        },
       });
-      return u;
+      return { updated: u, superseded: previous };
     });
 
-    res.json({ status: 'success', message: `Appetite for ${appetite.category} approved and now in force`, appetite: updated });
+    res.json({
+      status: 'success',
+      message: superseded
+        ? `Version ${appetite.version} of the ${appetite.category} appetite is now in force. Version ${superseded.version} is retained as the basis for decisions taken while it applied.`
+        : `Appetite for ${appetite.category} approved and now in force`,
+      appetite: updated,
+      superseded,
+    });
   } catch (error: any) {
     console.error('[Appetite Approve Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to approve risk appetite' });
@@ -176,7 +232,7 @@ export const appetitePosture = async (req: AuthenticatedRequest, res: Response):
     await auditCrossTenantRead(scope, req.user!.id, 'grc.appetite.posture');
 
     const [appetites, risks] = await Promise.all([
-      prisma.riskAppetite.findMany({ where: { tenantId: { in: scope.tenantIds }, status: 'Approved' } }),
+      prisma.riskAppetite.findMany({ where: { tenantId: { in: scope.tenantIds }, status: 'Approved', effectiveTo: null } }),
       prisma.risk.findMany({
         where: { tenantId: { in: scope.tenantIds }, status: { not: 'Closed' } },
         include: { owner: { select: { id: true, name: true } } },

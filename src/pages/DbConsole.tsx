@@ -1,3 +1,4 @@
+import Icon from '../components/Icon';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
@@ -454,7 +455,7 @@ export default function DbConsole() {
 
   // ── Reset DB ───────────────────────────────────────────────────────────
   const handleResetDb = async () => {
-    if (!window.confirm('⚠ DESTRUCTIVE: Wipe all tables and re-seed from scratch?')) return;
+  if (!window.confirm(' DESTRUCTIVE: Wipe all tables and re-seed from scratch?')) return;
     addToast('Resetting & seeding database…', 'info');
     try {
       const res = await apiClient.post('/api/admin/db/reset');
@@ -479,7 +480,7 @@ export default function DbConsole() {
       const data = res.data;
       if (data.status === 'success') {
         setVerificationResult(data);
-        addToast(data.integrityVerified ? 'WORM chain: INTACT ✓' : 'WORM chain: TAMPERING DETECTED ✗', data.integrityVerified ? 'success' : 'error');
+    addToast(data.integrityVerified ? 'WORM chain: INTACT ✓' : 'WORM chain: TAMPERING DETECTED ', data.integrityVerified ? 'success' : 'error');
       } else {
         addToast(`Verification error: ${data.message}`, 'error');
       }
@@ -500,7 +501,7 @@ export default function DbConsole() {
   // ── Cell value formatter ──────────────────────────────────────────────
   const formatCell = (value: any, colName: string): string => {
     if (value === null || value === undefined) return '—';
-    if (typeof value === 'boolean') return value ? '✓' : '✗';
+  if (typeof value === 'boolean') return value ? '✓' : '';
     if (colName.toLowerCase().includes('hash')) return String(value).substring(0, 16) + '…';
     if (colName === 'payload' || colName === 'content') return String(value).substring(0, 40) + (String(value).length > 40 ? '…' : '');
     if (colName === 'timestamp' || colName === 'lastScan' || colName === 'createdAt') {
@@ -533,7 +534,7 @@ export default function DbConsole() {
                 : { background: '#0c1a3d40', borderColor: '#3b82f640', color: 'var(--info)' }),
             }}
           >
-            {t.type === 'success' ? '✓ ' : t.type === 'error' ? '✗ ' : 'ℹ '}{t.message}
+      {t.type === 'success' ? '✓ ' : t.type === 'error' ? ' ' : 'ℹ '}{t.message}
           </div>
         ))}
       </div>
@@ -569,13 +570,13 @@ export default function DbConsole() {
             background: 'var(--surface-sunk)', border: '1px solid var(--info-line)', color: 'var(--info)',
             padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
           }}>
-            🔗 Verify WORM Chain
+            <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Verify WORM Chain
           </button>
           <button className="db-btn" onClick={handleResetDb} style={{
             background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)',
             padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
           }}>
-            ⚠ Wipe & Seed
+            <Icon name="warning" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Wipe & Seed
           </button>
           <Link to="/" className="db-btn" style={{
             background: 'var(--surface-sunk)', border: '1px solid var(--line)', color: 'var(--ink-body)',
@@ -598,7 +599,7 @@ export default function DbConsole() {
               color: verificationResult.integrityVerified ? 'var(--success)' : 'var(--danger)',
               margin: 0, fontSize: '14px',
             }}>
-              {verificationResult.integrityVerified ? '🔒 CHAIN INTEGRITY: SECURE' : '🚨 CHAIN INTEGRITY: TAMPERED'}
+    {verificationResult.integrityVerified ? ' CHAIN INTEGRITY: SECURE' : ' CHAIN INTEGRITY: TAMPERED'}
             </h3>
             <button onClick={() => setVerificationResult(null)} style={{
               background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '16px',
@@ -652,7 +653,7 @@ export default function DbConsole() {
                 transition: 'background-color 0.15s ease, border-color 0.15s ease',
               }}
             >
-              <span style={{ opacity: 0.5, marginRight: '6px' }}>◆</span>{m.name}
+              <span style={{ opacity: 0.5, marginRight: '6px' }}><Icon name="flag" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /></span>{m.name}
               {activeModelIdx === idx && (
                 <span style={{ float: 'right', fontSize: '11px', opacity: 0.8 }}>{records.length}</span>
               )}
@@ -697,7 +698,7 @@ export default function DbConsole() {
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
                 type="text"
-                placeholder="🔍 Filter records…"
+        placeholder=" Filter records…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{ ...S.input, width: '200px', padding: '8px 12px', fontSize: '12px' }}
@@ -719,7 +720,7 @@ export default function DbConsole() {
             </div>
           ) : error ? (
             <div style={{ color: 'var(--danger)', background: '#450a0a20', padding: '16px', borderRadius: '6px', border: '1px solid #450a0a' }}>
-              ✗ {error}
+              <Icon name="close" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> {error}
             </div>
           ) : filteredRecords.length === 0 ? (
             <div style={{ color: 'var(--ink-body)', padding: '40px', textAlign: 'center' }}>
@@ -811,7 +812,7 @@ export default function DbConsole() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '14px', color: 'var(--violet)' }}>
-                  📋 Record Detail — {detailRecord.id?.substring(0, 12)}…
+                  <Icon name="standards" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Record Detail — {detailRecord.id?.substring(0, 12)}…
                 </h3>
                 <button onClick={() => setDetailRecord(null)} style={{
                   background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '16px',
@@ -860,7 +861,7 @@ export default function DbConsole() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, color: isEditing ? 'var(--info)' : 'var(--success)', fontSize: '16px' }}>
-                {isEditing ? `✏ Edit ${model.name}` : `+ Create ${model.name}`}
+        {isEditing ? ` Edit ${model.name}` : `+ Create ${model.name}`}
               </h3>
               <button type="button" onClick={() => setShowModal(false)} style={{
                 background: 'transparent', border: 'none', color: 'var(--ink-body)', cursor: 'pointer', fontSize: '20px',

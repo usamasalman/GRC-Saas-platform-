@@ -54,6 +54,30 @@ import {
   instantiateEngagement, deferPlanItem,
 } from '../controllers/auditPlanningController';
 
+import {
+  listAssets, createAsset, updateAsset, raiseRiskFromAsset,
+  setAssetControls, linkExistingRisk, reviewAsset, assetAnalytics,
+} from '../controllers/assetController';
+
+import {
+  listCriteria, criteriaAsAt, setCriteria, approveCriteria, withdrawCriteria,
+} from '../controllers/riskCriteriaController';
+
+import {
+  listVendors, createVendor, updateVendor,
+  requestAssessment, submitAssessment as submitVendorAssessment,
+  reviewAssessment, vendorAnalytics,
+} from '../controllers/vendorController';
+import {
+  listSharedServices, createSharedService, setConsumers,
+  acceptService, setServiceControls,
+} from '../controllers/sharedServiceController';
+
+import {
+  downloadTemplate, uploadAssetImport, listAssetImports, getAssetImport,
+  reviewAssetCandidate, acceptCleanRows, commitAssetImport, discardAssetImport,
+} from '../controllers/assetImportController';
+
 const router = Router();
 
 router.use(requireAuth);
@@ -129,6 +153,71 @@ router.post('/risks/:id/entities', requireCapability(CAP.ASSESS_RISK), setRiskEn
 router.post('/risks/:id/related', requireCapability(CAP.ASSESS_RISK), linkRelatedRisk);
 router.post('/risks/:id/review', requireCapability(CAP.ASSESS_RISK), reviewRisk);
 router.get('/risk-analytics', riskAnalytics);
+
+// -- Asset register (ISO 27001 A.5.9 / ISO 27005) --------------------------
+// Reading the inventory is open to anyone in scope; maintaining it needs the
+// asset capability, and raising risk from an asset needs the risk one too.
+router.get('/assets', listAssets);
+router.get('/asset-analytics', assetAnalytics);
+// The inventory is the foundation of both control implementation and risk
+// assessment, so anyone doing either has to be able to maintain it. Gating on
+// the dedicated asset capability alone left only Asset Owner able to add an
+// asset, which stalls the very first step of building the register.
+const MAY_MAINTAIN_ASSETS = requireAnyCapability(
+  CAP.MAINTAIN_ASSET, CAP.MANAGE_IMPLEMENTATION, CAP.ASSESS_RISK,
+);
+router.post('/assets', MAY_MAINTAIN_ASSETS, createAsset);
+router.patch('/assets/:id', MAY_MAINTAIN_ASSETS, updateAsset);
+router.post('/assets/:id/controls', MAY_MAINTAIN_ASSETS, setAssetControls);
+router.post('/assets/:id/review', MAY_MAINTAIN_ASSETS, reviewAsset);
+router.post('/assets/:id/risks', requireCapability(CAP.ASSESS_RISK), raiseRiskFromAsset);
+router.post('/assets/:id/link-risk', requireCapability(CAP.ASSESS_RISK), linkExistingRisk);
+
+// -- Bulk asset import (staged) -------------------------------------------
+// Extraction produces candidates, never assets. Criticality becomes the impact
+// of every risk raised against an asset, so nothing enters the register until
+// a human has seen what the parser understood.
+router.get('/assets/import/template', downloadTemplate);
+router.get('/assets/imports', listAssetImports);
+router.get('/assets/imports/:id', getAssetImport);
+router.post('/assets/import', MAY_MAINTAIN_ASSETS, uploadAssetImport);
+router.patch('/asset-candidates/:candidateId', MAY_MAINTAIN_ASSETS, reviewAssetCandidate);
+router.post('/assets/imports/:id/accept-clean', MAY_MAINTAIN_ASSETS, acceptCleanRows);
+router.post('/assets/imports/:id/commit', MAY_MAINTAIN_ASSETS, commitAssetImport);
+router.post('/assets/imports/:id/discard', MAY_MAINTAIN_ASSETS, discardAssetImport);
+
+// -- Third-party risk management (SAMA CSF 3.3.15, ISO 27036) --------------
+// Vendor risk is enterprise risk, so it is gated on the same capabilities and
+// its findings land in the same issue register as everything else.
+const MAY_MANAGE_VENDORS = requireAnyCapability(
+  CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.MANAGE_TENANT,
+);
+router.get('/vendors', listVendors);
+router.get('/vendor-analytics', vendorAnalytics);
+router.post('/vendors', MAY_MANAGE_VENDORS, createVendor);
+router.patch('/vendors/:id', MAY_MANAGE_VENDORS, updateVendor);
+router.post('/vendors/:id/assessments', MAY_MANAGE_VENDORS, requestAssessment);
+router.post('/vendor-assessments/:assessmentId/submit', MAY_MANAGE_VENDORS, submitVendorAssessment);
+router.post('/vendor-assessments/:assessmentId/review', MAY_MANAGE_VENDORS, reviewAssessment);
+
+// -- Shared services inside a group ---------------------------------------
+// Reading is open to provider and consumer alike; only the provider may change
+// what the service is, and only the consumer may accept it.
+router.get('/shared-services', listSharedServices);
+router.post('/shared-services', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), createSharedService);
+router.post('/shared-services/:id/consumers', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setConsumers);
+router.post('/shared-services/:id/controls', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setServiceControls);
+router.post('/shared-services/:id/accept', requireAnyCapability(CAP.MANAGE_TENANT, CAP.ASSESS_RISK), acceptService);
+
+// -- Risk criteria (ISO 31000 clause 6.3.4) -------------------------------
+// The scale the tenant measures on. Same governance as appetite: drafted by
+// one person, approved by another, versioned so a past decision can be read
+// against the scale that was in force when it was taken.
+router.get('/risk-criteria', listCriteria);
+router.get('/risk-criteria/as-at', criteriaAsAt);
+router.post('/risk-criteria', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_TENANT), setCriteria);
+router.post('/risk-criteria/:id/approve', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MAINTAIN_ROLES, CAP.MONITOR_SECURITY), approveCriteria);
+router.delete('/risk-criteria/:id', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_TENANT), withdrawCriteria);
 
 // ── Risk appetite ─────────────────────────────────────────────────────────
 // Setting appetite is a governance act; approving it must be a second person.

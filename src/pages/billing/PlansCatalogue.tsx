@@ -1,3 +1,4 @@
+import Icon from '../../components/Icon';
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
@@ -136,9 +137,9 @@ const PlansCatalogue: React.FC = () => {
                   <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 14 }}>Excluding 15% VAT</div>
 
                   <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 6, border: '1px solid var(--line)', fontSize: 12, color: 'var(--ink-body)', display: 'grid', gap: 6 }}>
-                    <div>👥 Named Users: <strong style={{ color: 'var(--ink)' }}>{p.maxUsers}</strong></div>
+                    <div><Icon name="teams" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Named Users: <strong style={{ color: 'var(--ink)' }}>{p.maxUsers}</strong></div>
                     <div>§ Enabled Frameworks: <strong style={{ color: 'var(--ink)' }}>{f.frameworks || 1}</strong></div>
-                    <div>💾 Encrypted Storage: <strong style={{ color: 'var(--ink)' }}>{f.storageGb || 10} GB</strong></div>
+                    <div><Icon name="install" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Encrypted Storage: <strong style={{ color: 'var(--ink)' }}>{f.storageGb || 10} GB</strong></div>
                     {f.aiCredits && <div>✦ AI RAG Credits: <strong style={{ color: 'var(--info)' }}>{f.aiCredits.toLocaleString()}</strong></div>}
                   </div>
                 </div>

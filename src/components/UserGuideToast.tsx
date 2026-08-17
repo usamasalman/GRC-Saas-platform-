@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import React, { useState, useEffect } from 'react';
 import { USER_GUIDE_DATA } from '../data/userGuideData';
 
@@ -97,7 +98,7 @@ export const UserGuideToast: React.FC<UserGuideToastProps> = ({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16 }}>💡</span>
+              <span style={{ fontSize: 16 }}><Icon name="info" size={15} /></span>
               <strong style={{ fontSize: 13, fontWeight: 700 }}>
                 {tabGuide.title} Guide
               </strong>
@@ -230,7 +231,7 @@ export const UserGuideToast: React.FC<UserGuideToastProps> = ({
                   boxShadow: 'var(--shadow-sm)',
                 }}
               >
-                <span>📖 Open Full Guide</span>
+                <span><Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Open Full Guide</span>
                 <span>→</span>
               </button>
 
@@ -293,7 +294,7 @@ export const UserGuideToast: React.FC<UserGuideToastProps> = ({
         }}
         title="Open User Guide & Feature Manual"
       >
-        <span style={{ fontSize: 15 }}>📖</span>
+        <span style={{ fontSize: 15 }}><Icon name="knowledge" size={15} /></span>
         <span>User Guide</span>
         <span
           style={{
