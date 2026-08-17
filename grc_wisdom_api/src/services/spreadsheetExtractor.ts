@@ -129,7 +129,7 @@ function cell(row: any[], idx: number | undefined): string {
 export async function readSheetRows(
   buffer: Buffer,
   fileType: 'xlsx' | 'csv',
-): Promise<any[][] | null> {
+): Promise<{ cells: any[][]; lineNumbers: number[] } | null> {
   const wb = new ExcelJS.Workbook();
   if (fileType === 'csv') {
     const { Readable } = await import('stream');
@@ -140,13 +140,18 @@ export async function readSheetRows(
   const sheet = wb.worksheets[0];
   if (!sheet) return null;
 
-  const rows: any[][] = [];
-  sheet.eachRow({ includeEmpty: false }, (row) => {
+  const cells: any[][] = [];
+  // The sheet's own row numbers, kept alongside. Blank rows are skipped for
+  // parsing but still occupy a line in the file, so a reviewer told "row 7"
+  // has to find row 7 in their spreadsheet, not the seventh non-blank row.
+  const lineNumbers: number[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
     const values = row.values as any[];
     // ExcelJS pads index 0; drop it so columns are zero-based.
-    rows.push(values.slice(1));
+    cells.push(values.slice(1));
+    lineNumbers.push(rowNumber);
   });
-  return rows;
+  return { cells, lineNumbers };
 }
 
 /** Normalises a header cell for intent matching. Shared with the asset importer. */
@@ -158,10 +163,11 @@ export async function extractFromSpreadsheet(
   kind: CandidateKind,
   fileType: 'xlsx' | 'csv',
 ): Promise<ExtractionResult> {
-  const rows = await readSheetRows(buffer, fileType);
-  if (!rows) {
+  const sheetData = await readSheetRows(buffer, fileType);
+  if (!sheetData) {
     return { candidates: [], headerRow: null, columnsUsed: {}, warnings: ['The file has no readable sheet'] };
   }
+  const rows = sheetData.cells;
 
   const header = findHeader(rows, kind);
   const warnings: string[] = [];

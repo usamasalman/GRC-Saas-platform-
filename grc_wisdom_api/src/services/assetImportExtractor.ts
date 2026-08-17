@@ -203,13 +203,16 @@ export async function extractAssetsFromSpreadsheet(
   buffer: Buffer,
   fileType: 'xlsx' | 'csv',
 ): Promise<AssetExtraction> {
-  const rows = await readSheetRows(buffer, fileType);
-  if (!rows) {
+  const sheetData = await readSheetRows(buffer, fileType);
+  if (!sheetData) {
     return {
       candidates: [], headerRow: null, columnsUsed: {}, unmappedColumns: [],
       warnings: ['The file has no readable sheet.'],
     };
   }
+  const rows = sheetData.cells;
+  /** The spreadsheet's own line number for a parsed row index. */
+  const lineOf = (i: number) => sheetData.lineNumbers[i] ?? i + 1;
 
   const header = findHeader(rows);
   if (!header) {
@@ -258,7 +261,7 @@ export async function extractAssetsFromSpreadsheet(
 
     if (!name) {
       candidates.push({
-        rowNumber: i + 1,
+        rowNumber: lineOf(i),
         row: {
           name: '', type: 'Information', ownership: 'Internal', classification: 'Internal',
           confidentiality: 3, integrity: 3, availability: 3, description: null, location: null,
@@ -325,7 +328,7 @@ export async function extractAssetsFromSpreadsheet(
     if (!issue && dupOf) {
       issue = `Duplicates row ${dupOf}, which has the same name.`;
     }
-    seenNames.set(name.toLowerCase(), i + 1);
+    seenNames.set(name.toLowerCase(), lineOf(i));
 
     // ── Confidence ────────────────────────────────────────────────────
     const ciaGiven = [header.map.confidentiality, header.map.integrity, header.map.availability]
@@ -338,7 +341,7 @@ export async function extractAssetsFromSpreadsheet(
         : 'Medium';
 
     candidates.push({
-      rowNumber: i + 1,
+      rowNumber: lineOf(i),
       row: {
         name,
         type, ownership, classification,
@@ -363,7 +366,7 @@ export async function extractAssetsFromSpreadsheet(
     warnings.push('A header row was found but no data rows follow it.');
   }
 
-  return { candidates, headerRow: header.index + 1, columnsUsed, unmappedColumns, warnings };
+  return { candidates, headerRow: lineOf(header.index), columnsUsed, unmappedColumns, warnings };
 }
 
 /** The columns the importer understands, for the downloadable template. */

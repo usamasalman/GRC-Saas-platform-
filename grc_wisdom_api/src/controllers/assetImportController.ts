@@ -300,11 +300,16 @@ export const reviewAssetCandidate = async (req: AuthenticatedRequest, res: Respo
     }
 
     if (status) {
-      if (status === 'Accepted' && (data.issue ?? cand.issue)) {
+      // `??` would be wrong here: a successful correction sets data.issue to
+      // null, and `null ?? cand.issue` falls through to the *old* issue — so
+      // fixing a row and accepting it in one action would be blocked forever.
+      // What matters is whether the corrections recomputed it at all.
+      const effectiveIssue = 'issue' in data ? data.issue : cand.issue;
+      if (status === 'Accepted' && effectiveIssue) {
         res.status(409).json({
           status: 'error',
           code: 'ROW_BLOCKED',
-          message: `This row cannot be accepted as it stands: ${data.issue ?? cand.issue}`,
+          message: `This row cannot be accepted as it stands: ${effectiveIssue}`,
         });
         return;
       }

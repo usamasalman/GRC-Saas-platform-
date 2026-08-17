@@ -3,6 +3,7 @@ import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
+import AssetImport from './asset/AssetImport';
 
 /**
  * The asset register — ISO/IEC 27001 A.5.9 inventory, valued the ISO 27005 way.
@@ -48,7 +49,7 @@ const label: React.CSSProperties = {
   letterSpacing: '0.03em', fontWeight: 600,
 };
 
-type Tab = 'register' | 'posture' | 'formulas';
+type Tab = 'register' | 'import' | 'posture' | 'formulas';
 
 const AssetRegister: React.FC = () => {
   const [tab, setTab] = useState<Tab>('register');
@@ -251,6 +252,9 @@ const AssetRegister: React.FC = () => {
           <Icon name="assets" size={16} /> Inventory
           <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{assets.length}</span>
         </button>
+        <button style={tabStyle(tab === 'import')} onClick={() => setTab('import')}>
+          <Icon name="upload" size={16} /> Bulk import
+        </button>
         <button style={tabStyle(tab === 'posture')} onClick={() => setTab('posture')}>
           <Icon name="matrix" size={16} /> Criticality vs protection
         </button>
@@ -376,6 +380,9 @@ const AssetRegister: React.FC = () => {
           </div>
         </>
       )}
+
+      {/* ── Bulk import ───────────────────────────────────────────────── */}
+      {tab === 'import' && <AssetImport onCommitted={load} />}
 
       {/* ── Criticality vs protection ─────────────────────────────────── */}
       {tab === 'posture' && analytics && (
