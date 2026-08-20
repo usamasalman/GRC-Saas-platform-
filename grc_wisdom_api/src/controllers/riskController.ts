@@ -15,7 +15,7 @@ import { activeCriteria, bandFor } from '../services/riskCriteria';
 
 const SUBJ_RISK = 'Risk';
 const TREATMENTS = [...THREAT_TREATMENTS, ...OPPORTUNITY_TREATMENTS];
-const CATEGORIES = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Technology', 'Third-Party', 'People'];
+export const CATEGORIES = ['Strategic', 'Operational', 'Financial', 'Compliance', 'Technology', 'Third-Party', 'People'];
 
 /**
  * Scoring and residual derivation now live in services/riskScoring so that

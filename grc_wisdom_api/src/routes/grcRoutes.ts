@@ -78,6 +78,11 @@ import {
   reviewAssetCandidate, acceptCleanRows, commitAssetImport, discardAssetImport,
 } from '../controllers/assetImportController';
 
+import {
+  downloadRiskTemplate, uploadRiskImport, listRiskImports, getRiskImport,
+  reviewRiskCandidate, acceptCleanRiskRows, commitRiskImport, discardRiskImport,
+} from '../controllers/riskImportController';
+
 const router = Router();
 
 router.use(requireAuth);
@@ -208,6 +213,19 @@ router.post('/shared-services', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANA
 router.post('/shared-services/:id/consumers', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setConsumers);
 router.post('/shared-services/:id/controls', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setServiceControls);
 router.post('/shared-services/:id/accept', requireAnyCapability(CAP.MANAGE_TENANT, CAP.ASSESS_RISK), acceptService);
+
+// -- Bulk risk import (staged) --------------------------------------------
+// Same discipline as creating one risk by hand, including the duplicate check:
+// a register that admits three spellings of the same risk stops being trusted.
+const MAY_IMPORT_RISKS = requireCapability(CAP.ASSESS_RISK);
+router.get('/risks/import/template', downloadRiskTemplate);
+router.get('/risks/imports', listRiskImports);
+router.get('/risks/imports/:id', getRiskImport);
+router.post('/risks/import', MAY_IMPORT_RISKS, uploadRiskImport);
+router.patch('/risk-candidates/:candidateId', MAY_IMPORT_RISKS, reviewRiskCandidate);
+router.post('/risks/imports/:id/accept-clean', MAY_IMPORT_RISKS, acceptCleanRiskRows);
+router.post('/risks/imports/:id/commit', MAY_IMPORT_RISKS, commitRiskImport);
+router.post('/risks/imports/:id/discard', MAY_IMPORT_RISKS, discardRiskImport);
 
 // -- Risk criteria (ISO 31000 clause 6.3.4) -------------------------------
 // The scale the tenant measures on. Same governance as appetite: drafted by

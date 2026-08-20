@@ -5,6 +5,7 @@ import RiskHeatmaps, { Matrix, Legend } from './risk/RiskHeatmaps';
 import RiskCriteriaPanel from './risk/RiskCriteriaPanel';
 import type { Grid } from './risk/RiskHeatmaps';
 import Icon from '../../components/Icon';
+import RiskImport from './risk/RiskImport';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -38,7 +39,7 @@ function ratingOf(score: number): 'High' | 'Medium' | 'Low' {
 }
 
 
-type TabMode = 'cockpit' | 'register' | 'treatments' | 'appetite' | 'network';
+type TabMode = 'cockpit' | 'register' | 'treatments' | 'appetite' | 'network' | 'import';
 
 const RiskRegister: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>('cockpit');
@@ -613,6 +614,27 @@ const RiskRegister: React.FC = () => {
               {analytics.totals.networked}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('import')}
+          style={{
+            background: activeTab === 'import' ? 'var(--surface)' : 'transparent',
+            color: activeTab === 'import' ? 'var(--brand)' : 'var(--ink-muted)',
+            border: '1px solid ' + (activeTab === 'import' ? 'var(--line)' : 'transparent'),
+            borderBottom: activeTab === 'import' ? '2px solid var(--brand)' : 'none',
+            padding: '10px 18px',
+            borderRadius: '6px 6px 0 0',
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Icon name="upload" size={16} />
+          <span>Bulk import</span>
         </button>
       </div>
 
@@ -1311,6 +1333,8 @@ const RiskRegister: React.FC = () => {
 
       {/* The dead tab made real: the appetite overlay, control coverage and the
           risk network — the three views the register could not previously show. */}
+      {activeTab === 'import' && <RiskImport onCommitted={load} />}
+
       {activeTab === 'network' && (
         <RiskHeatmaps analytics={analytics} />
       )}
