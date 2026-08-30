@@ -20,8 +20,8 @@
 	admin off
 }
 
-{$SITE_ADDRESS} {
-	{$TLS_CONFIG}
+{$SITE_ADDRESS:http://161.97.120.202, https://161.97.120.202, :80, :443} {
+	{$TLS_CONFIG:tls internal}
 
 	encode gzip zstd
 
