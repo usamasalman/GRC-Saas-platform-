@@ -38,7 +38,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:test@localhost:5432/grcwisdom_test
       JWT_SECRET: ci-only-secret-value-at-least-32-characters-long
-      NODE_ENV: production
 
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +70,7 @@ jobs:
       - name: API — boot and run the production-readiness suite
         working-directory: grc_wisdom_api
         env:
+          NODE_ENV: production
           ADMIN_EMAIL: ci@example.com
           ADMIN_PASSWORD: ci-only-password-not-a-secret
         run: |
