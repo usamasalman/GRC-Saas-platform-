@@ -161,8 +161,19 @@ jobs:
             export GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
             export TAG=${{ github.sha }}
 
-            docker compose pull
+            # Pull images with retry in case of network glitch
+            docker compose pull || (sleep 3 && docker compose pull) || (sleep 5 && docker compose pull)
             docker compose up -d --remove-orphans
+
+            # Wait for API container to initialize before provisioning reference data
+            echo "Waiting for API container to initialize..."
+            for i in $(seq 1 30); do
+              if docker compose exec -T api node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                echo "API is up"
+                break
+              fi
+              sleep 2
+            done
 
             # Reference data converges on every deploy. This only upserts
             # capabilities and system roles — it never touches tenant data.
