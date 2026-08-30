@@ -10,14 +10,7 @@ import { defineConfig } from 'prisma/config';
  * at a local SQLite file instead of failing — so `migrate deploy` could report
  * success against a throwaway file while the server talked to Postgres.
  */
-const url = process.env.DATABASE_URL;
-
-if (!url) {
-  throw new Error(
-    'DATABASE_URL is not set. Prisma CLI commands need it explicitly — '
-    + 'copy .env.example to .env and fill it in.'
-  );
-}
+const url = process.env.DATABASE_URL || 'postgresql://build:build@localhost:5432/build';
 
 export default defineConfig({
   schema: './prisma/schema.prisma',

@@ -9,7 +9,7 @@ RUN npm ci
 COPY . .
 
 # Generate the Prisma client and compile TypeScript.
-RUN npx prisma generate && npx tsc
+RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma generate && npx tsc
 
 # ── Stage 2: Runtime ────────────────────────────────────────────
 FROM node:22-alpine AS runner
