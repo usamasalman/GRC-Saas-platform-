@@ -52,7 +52,10 @@ const ImpersonationSessions: React.FC = () => {
     try {
       const [sRes, iRes] = await Promise.all([
         apiClient.get('/api/impersonation'),
-        apiClient.get('/api/auth/demo-identities').catch(() => null),
+        // The scope-resolved directory: returns exactly the users this
+        // operator is entitled to see, which is the correct candidate set
+        // for impersonation. The old endpoint was public and unscoped.
+        apiClient.get('/api/iam/users').catch(() => null),
       ]);
       setSessions(sRes.data?.sessions || []);
       setIdentities(iRes?.data?.users || []);

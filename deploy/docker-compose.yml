@@ -1,0 +1,83 @@
+# GRC Wisdom — single-host production stack.
+#
+# Four containers behind one origin: Caddy terminates TLS and serves both the
+# SPA and /api from the same address, which is why there is no CORS
+# configuration to get wrong.
+#
+#   docker compose up -d
+#   docker compose exec api npm run provision   # first time only
+#
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: grcwisdom
+      POSTGRES_USER: grcwisdom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No ports: mapping. Postgres is reachable only from the compose network,
+    # never from the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grcwisdom -d grcwisdom"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    image: ghcr.io/${GH_OWNER}/grcwisdom-api:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://grcwisdom:${POSTGRES_PASSWORD}@db:5432/grcwisdom
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (min 32 chars)}
+      NODE_ENV: production
+      PORT: 3000
+      # Same-origin deployment, so this is only used if you later split the UI
+      # onto its own hostname.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Used once by `npm run provision` to create the first administrator.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    volumes:
+      # Uploaded evidence and documents. Without this they are written to the
+      # container filesystem and vanish on the next deploy.
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  web:
+    image: ghcr.io/${GH_OWNER}/grcwisdom-web:${TAG:-latest}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:443}
+      TLS_CONFIG: ${TLS_CONFIG:-tls internal}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

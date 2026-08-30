@@ -35,17 +35,35 @@ async function issueRefreshToken(userId: string): Promise<string> {
   return token;
 }
 
-function resolvePortal(user: { context: string | null; email: string }): string {
-  const ctx = user.context;
-  if (ctx === 'GRC Wisdom SaaS Control Plane') return 'saas';
-  if (ctx === 'Al Noor Holding Group') return 'holding';
-  if (ctx === 'OmniOps') return 'multibranch';
-  if (ctx === 'Hayat National Hospital — Madinah') return 'branch';
-  if (ctx === 'Global Bank — Information Security') return 'document';
-  if (ctx === 'GRC Consulting Partners') return 'partner';
-  if (ctx === 'RetailCo Franchise Network') return 'franchise';
-  if (user.email === 'marcus.thorne@auditco.com') return 'auditor';
-  return 'saas';
+/**
+ * Which navigation set the app shell renders for this user.
+ *
+ * This used to match on hardcoded demo tenant NAMES ('OmniOps', 'Al Noor
+ * Holding Group', ...) and fell through to 'saas'. Once the demo tenants are
+ * gone every real customer matched nothing and was handed the platform
+ * control-plane navigation. Deriving it from tenant.type is data-driven and
+ * survives having no seed data.
+ *
+ * Note this is navigation only — authorisation is enforced server-side by
+ * capability, so a wrong answer here is a confusing menu, not an escalation.
+ */
+const PORTAL_BY_TENANT_TYPE: Record<string, string> = {
+  SAAS: 'saas',
+  SAAS_UNIT: 'saas',
+  HOLDING: 'holding',
+  MULTIBRANCH: 'multibranch',
+  BRANCH: 'branch',
+  PARTNER: 'partner',
+  FRANCHISE: 'franchise',
+  AUDITOR: 'auditor',
+  DOCUMENT: 'document',
+};
+
+function resolvePortal(user: { tenant?: { type?: string | null } | null }): string {
+  const type = String(user.tenant?.type || '').toUpperCase();
+  // An unrecognised tenant type gets the ordinary organisation workspace, not
+  // the control plane. The safe default is the least-privileged menu.
+  return PORTAL_BY_TENANT_TYPE[type] || 'multibranch';
 }
 
 function toUserResponse(user: any) {
@@ -224,8 +242,55 @@ export const logout = async (req: AuthenticatedRequest, res: Response): Promise<
 
 // ─── Register (admin-invited only per TRD §8.2 — this creates the *first* admin) ──
 
+/**
+ * First-run bootstrap — creates the very first administrator, then disables
+ * itself forever.
+ *
+ * This endpoint is public because it has to be: on a brand-new database there
+ * is no account to authenticate as. The previous version was public in a much
+ * worse sense — it accepted a registration at any time and attached the new
+ * account to `prisma.tenant.findFirst()`, so a stranger could POST an email and
+ * a password and become Tenant Admin inside whichever real customer happened to
+ * be created first.
+ *
+ * Two things make this safe now: it refuses once any user exists, and it links
+ * the account to the platform-super-admin Role record rather than only setting
+ * the role display string (a user with roleId null resolves to an empty
+ * capability set and can do nothing).
+ */
+/**
+ * Whether the platform has been initialised yet.
+ *
+ * Public by necessity — the login screen has to know whether to offer sign-in
+ * or first-run setup before anyone can authenticate. It returns a single
+ * boolean and nothing else: no counts, no emails, no tenant names. Once
+ * initialised it stays true forever, so it discloses nothing an attacker could
+ * not learn by simply loading the login page.
+ */
+export const bootstrapStatus = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const userCount = await prisma.user.count();
+    res.json({ status: 'success', initialised: userCount > 0 });
+  } catch {
+    // Fail closed: if we cannot tell, do not invite anyone into setup.
+    res.status(503).json({ status: 'error', initialised: true, message: 'Service unavailable' });
+  }
+};
+
 export const registerAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
+    // The gate. Not "no admins" — no users at all. Anything else lets someone
+    // race a real deployment during the window before the owner signs in.
+    const userCount = await prisma.user.count();
+    if (userCount > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'BOOTSTRAP_CLOSED',
+        message: 'This platform is already initialised. Ask an administrator for an account.',
+      });
+      return;
+    }
+
     const { email, name, password, tenantName } = req.body || {};
     if (!email || !name || !password) {
       res.status(400).json({ status: 'error', message: 'email, name, and password are required' });
@@ -233,39 +298,67 @@ export const registerAdmin = async (req: Request, res: Response): Promise<void> 
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
-    const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
-    if (existing) {
-      res.status(409).json({ status: 'error', message: 'A user with this email already exists' });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
+      res.status(400).json({ status: 'error', message: 'Enter a valid email address' });
       return;
     }
 
-    let tenant = await prisma.tenant.findFirst();
-    if (!tenant) {
-      tenant = await prisma.tenant.create({
-        data: { name: tenantName || 'New Organization', type: 'Enterprise', path: '/' },
+    // The first account on the platform is the one worth protecting most.
+    const pw = String(password);
+    if (pw.length < 12) {
+      res.status(400).json({
+        status: 'error',
+        code: 'WEAK_PASSWORD',
+        message: 'The first administrator password must be at least 12 characters.',
       });
+      return;
     }
 
-    const passwordHash = await bcrypt.hash(String(password), 10);
+    const role = await prisma.role.findFirst({
+      where: { key: 'platform-super-admin', tenantId: null },
+      select: { id: true, name: true },
+    });
+    if (!role) {
+      // Reference data has not been provisioned, so any account created here
+      // would have no capabilities. Say so plainly rather than making an
+      // account that appears to work and then denies every action.
+      res.status(503).json({
+        status: 'error',
+        code: 'NOT_PROVISIONED',
+        message: 'Platform roles are not provisioned yet. Run "npm run provision" on the server first.',
+      });
+      return;
+    }
+
+    const tenant = await prisma.tenant.findFirst({ where: { type: { in: ['SAAS', 'SAAS_UNIT'] } } })
+      ?? await prisma.tenant.create({
+        data: { name: tenantName || 'GRC Wisdom Control Plane', type: 'SAAS', path: '/' },
+      });
+
+    const passwordHash = await bcrypt.hash(pw, 12);
     const user = await prisma.user.create({
       data: {
         email: cleanEmail,
         name,
         passwordHash,
         tenantId: tenant.id,
-        role: 'Tenant Admin',
+        role: role.name,
+        roleId: role.id,
         context: tenant.name,
+        profile: 'Platform Owner',
         status: 'Active',
       },
       include: { tenant: true },
     });
 
+    console.log(`[Bootstrap]: first administrator created (${cleanEmail}). Endpoint now closed.`);
+
     const token = issueAccessToken(user);
     const refreshToken = await issueRefreshToken(user.id);
     res.status(201).json({ status: 'success', token, refreshToken, user: toUserResponse(user) });
   } catch (error: any) {
-    console.error('[Register Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to register admin' });
+    console.error('[Bootstrap Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to create the first administrator' });
   }
 };
 
@@ -394,30 +487,6 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response): 
   } catch (error: any) {
     console.error('[Change Password Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to change password' });
-  }
-};
-
-// ─── Public demo-identity list (safe fields only — no hashes) ──────────────
-
-export const listDemoIdentities = async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const users = await prisma.user.findMany({
-      where: { status: 'Active' },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        context: true,
-        branch: true,
-        department: true,
-      },
-      orderBy: { name: 'asc' },
-    });
-    res.json({ status: 'success', count: users.length, users });
-  } catch (error: any) {
-    console.error('[Demo Identities Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to list demo identities' });
   }
 };
 

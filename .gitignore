@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +28,11 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Local SQLite database — was tracked; contains user records and hashes.
+grc_wisdom_api/dev.db
+*.db
+
+# Server environment files
+deploy/.env
+.env

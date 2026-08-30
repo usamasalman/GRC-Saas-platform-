@@ -1,0 +1,62 @@
+# One origin serves the SPA and the API.
+#
+# SITE_ADDRESS and TLS_CONFIG come from .env:
+#
+#   IP only (no domain yet) — the default:
+#     SITE_ADDRESS=:443
+#     TLS_CONFIG=tls internal
+#   Caddy issues a certificate from its own CA. The browser shows a warning the
+#   first time; the session is still encrypted, which matters because a password
+#   and a bearer token cross this connection.
+#
+#   Once you have a domain, change two lines and restart Caddy:
+#     SITE_ADDRESS=grc.yourdomain.com
+#     TLS_CONFIG=
+#   An empty TLS_CONFIG lets Caddy obtain a real Let's Encrypt certificate and
+#   renew it on its own.
+
+{
+	# The admin API binds to localhost inside the container and is not needed.
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	{$TLS_CONFIG}
+
+	encode gzip zstd
+
+	# Requests the API owns. Listed before the catch-all because Caddy matches
+	# handle blocks in the order written.
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# Uploaded documents are served by the API so its own headers apply.
+	handle /uploads/* {
+		reverse_proxy api:3000
+	}
+
+	handle /health {
+		reverse_proxy api:3000
+	}
+
+	# Everything else is the single-page app.
+	handle {
+		reverse_proxy web:80
+	}
+
+	header {
+		# Belt and braces alongside helmet: these apply to the static assets too.
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		# Tells browsers not to advertise the server software.
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

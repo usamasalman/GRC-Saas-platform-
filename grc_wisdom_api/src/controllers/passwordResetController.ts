@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { resolveTenantScope } from '../services/scopeResolver';
 
 const BCRYPT_ROUNDS = 10;
 const RESET_CODE_TTL_HOURS = 24;
@@ -144,7 +145,12 @@ export const completeReset = async (req: Request, res: Response): Promise<void> 
 
 export const listRequests = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    // Unscoped, this listed every pending reset on the platform — each with the
+    // requester's email, name and role — to a security admin in any tenant.
+    const scope = await resolveTenantScope(req.user!.tenantId);
+
     const requests = await prisma.passwordResetRequest.findMany({
+      where: { user: { tenantId: { in: scope.tenantIds } } },
       orderBy: [{ status: 'asc' }, { requestedAt: 'desc' }],
       take: 200,
       include: {
@@ -176,6 +182,21 @@ export const approveRequest = async (req: AuthenticatedRequest, res: Response): 
     if (!request) { res.status(404).json({ status: 'error', message: 'Request not found' }); return; }
     if (request.status !== 'PENDING') {
       res.status(409).json({ status: 'error', message: `Request is already in status "${request.status}"` });
+      return;
+    }
+
+    // MONITOR_SECURITY is held by security roles in ordinary tenants too, so the
+    // capability alone does not say WHOSE passwords this admin may reset. Without
+    // this check a security admin in any tenant could approve a reset for a user
+    // in any other tenant and receive the one-time code — cross-tenant account
+    // takeover. adminTenantId was already being read here and then never used.
+    const scope = await resolveTenantScope(adminTenantId);
+    if (!scope.tenantIds.includes(request.user.tenantId)) {
+      res.status(403).json({
+        status: 'error',
+        code: 'OUT_OF_SCOPE',
+        message: 'This request belongs to a tenant outside your administrative scope.',
+      });
       return;
     }
 
@@ -231,10 +252,26 @@ export const denyRequest = async (req: AuthenticatedRequest, res: Response): Pro
     const id = req.params.id as string;
     const { note } = req.body || {};
 
-    const request = await prisma.passwordResetRequest.findUnique({ where: { id } });
+    const request = await prisma.passwordResetRequest.findUnique({
+      where: { id },
+      include: { user: { select: { tenantId: true } } },
+    });
     if (!request) { res.status(404).json({ status: 'error', message: 'Request not found' }); return; }
     if (request.status !== 'PENDING') {
       res.status(409).json({ status: 'error', message: `Request is already in status "${request.status}"` });
+      return;
+    }
+
+    // Same scope check as approve. Denying someone else's tenant's requests
+    // does not leak a code, but it does block account recovery for users this
+    // admin has no authority over.
+    const scope = await resolveTenantScope(adminTenantId);
+    if (!scope.tenantIds.includes(request.user.tenantId)) {
+      res.status(403).json({
+        status: 'error',
+        code: 'OUT_OF_SCOPE',
+        message: 'This request belongs to a tenant outside your administrative scope.',
+      });
       return;
     }
 

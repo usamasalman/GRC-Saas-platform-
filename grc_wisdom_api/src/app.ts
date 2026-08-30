@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import authRoutes from './routes/authRoutes';
 import dbAdminRoutes from './routes/dbAdminRoutes';
@@ -38,22 +39,83 @@ app.use(helmet({
   frameguard: false,
 }));
 
-// CORS Configuration
+// One reverse proxy (Caddy) sits in front of this process. Without this the
+// rate limiter would see the proxy's IP for every caller and throttle everyone
+// as if they were one client.
+app.set('trust proxy', 1);
+
+// ─── CORS: an explicit allow-list ───────────────────────────────────────────
+// This previously ended in an unconditional `callback(null, true)`, so every
+// branch reached the same answer and any website could call this API with a
+// signed-in user's credentials. Origins now come from configuration only.
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+if (IS_PRODUCTION && ALLOWED_ORIGINS.length === 0) {
+  console.warn(
+    '[CORS] No CORS_ORIGINS or FRONTEND_URL set. Only same-origin requests will '
+    + 'be accepted. If the UI is served from a different host or port, set CORS_ORIGINS.'
+  );
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, postman, health checks)
+    // No Origin header means the request is not a cross-origin browser request:
+    // curl, health checks, server-to-server, and same-origin navigations. CORS
+    // does not apply to those, so there is nothing to refuse.
     if (!origin) return callback(null, true);
-    if (process.env.FRONTEND_URL && process.env.FRONTEND_URL !== '*') {
-      if (origin === process.env.FRONTEND_URL) return callback(null, true);
-    }
-    // Allow Vercel domains, localhost, and production domains
-    if (origin.endsWith('.vercel.app') || origin.includes('localhost') || origin === 'https://grcwisdom.com' || origin === 'https://app.grcwisdom.com') {
+
+    const clean = origin.replace(/\/+$/, '');
+    if (ALLOWED_ORIGINS.includes(clean)) return callback(null, true);
+
+    // Development convenience only: the Vite dev server changes ports freely.
+    if (!IS_PRODUCTION && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(clean)) {
       return callback(null, true);
     }
-    return callback(null, true);
+
+    // Refuse by withholding the CORS headers rather than throwing. The browser
+    // blocks the response either way, and this keeps a probe from generating a
+    // 500 and a stack trace in the logs.
+    console.warn('[CORS] refused origin:', origin);
+    return callback(null, false);
   },
   credentials: true
 }));
+
+// ─── Rate limiting ──────────────────────────────────────────────────────────
+// A rateLimiter middleware existed in the tree but was imported by nothing, so
+// nothing was limited. Credential endpoints get a tight budget; the rest of the
+// API gets a ceiling that a real user will never reach but a scraper will.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // only failed attempts count toward the budget
+  message: {
+    status: 'error',
+    code: 'RATE_LIMITED',
+    message: 'Too many attempts. Try again in a few minutes.',
+  },
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    status: 'error',
+    code: 'RATE_LIMITED',
+    message: 'Too many requests. Please slow down.',
+  },
+});
+
+app.use('/api', apiLimiter);
 
 // Body Parsing (50mb limit for document file uploads)
 app.use(express.json({ limit: '50mb' }));
@@ -77,6 +139,9 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Phase 0 Authentication Routes
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/mfa', authLimiter);
+app.use('/api/auth/refresh', authLimiter);
 app.use('/api/auth', authRoutes);
 
 // Database Console Operations Route (Hidden from normal frontend navigation)
@@ -89,7 +154,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/admin/sod-rules', adminSodRoutes);
 
 // Phase 0 Password Reset — user requests + admin approvals
-app.use('/api/password-reset', passwordResetRoutes);
+app.use('/api/password-reset', authLimiter, passwordResetRoutes);
 
 // Phase 1 Tenant provisioning + scope-aware hierarchy
 app.use('/api/tenants', tenantRoutes);
@@ -217,10 +282,20 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     return;
   }
   console.error('[Global API Error]:', err.stack || err);
-  res.status(err.status || 500).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error'
-  });
+
+  const status = err.status || 500;
+
+  // Below 500 the message is something we wrote deliberately (validation, a
+  // business rule) and the caller needs to read it. At 500 the text comes from
+  // whatever threw — a Prisma error carries table and column names, a filesystem
+  // error carries absolute paths. In production that detail stays in the log.
+  const message = status < 500
+    ? (err.message || 'Request could not be completed')
+    : IS_PRODUCTION
+      ? 'Internal Server Error'
+      : (err.message || 'Internal Server Error');
+
+  res.status(status).json({ status: 'error', message });
 });
 
 export default app;

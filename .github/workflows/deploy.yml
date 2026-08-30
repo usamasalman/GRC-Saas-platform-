@@ -1,0 +1,192 @@
+name: Deploy
+
+# Push to main → typecheck and build → images to GHCR → server pulls and restarts.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # A second push while the first is still deploying cancels the first, so the
+  # server never receives two overlapping `compose up` runs.
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  verify:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: postgres
+          POSTGRES_DB: grcwisdom_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:test@localhost:5432/grcwisdom_test
+      JWT_SECRET: ci-only-secret-value-at-least-32-characters-long
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Frontend — install and typecheck
+        run: |
+          npm ci
+          npm run build
+
+      - name: API — install, migrate, build
+        working-directory: grc_wisdom_api
+        run: |
+          npm ci
+          npx prisma migrate deploy
+          npm run build
+
+      - name: API — provision reference data against a real database
+        working-directory: grc_wisdom_api
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: ci@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-only-password-not-a-secret
+        run: |
+          npm run provision
+
+      - name: API — boot and run the production-readiness suite
+        working-directory: grc_wisdom_api
+        env:
+          ADMIN_EMAIL: ci@example.com
+          ADMIN_PASSWORD: ci-only-password-not-a-secret
+        run: |
+          node dist/server.js &
+          echo $! > /tmp/server.pid
+
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3000/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
+
+          # Asserts every security property that was actually broken: the
+          # removed user-directory endpoint, the self-closing bootstrap, a
+          # login that works, an admin that holds capabilities, CORS refusing
+          # strangers, and login rate limiting.
+          node scripts/verify/production-readiness-test.js
+
+          kill "$(cat /tmp/server.pid)" || true
+
+  build:
+    name: Build and push images
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase the owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./grc_wisdom_api
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/grcwisdom-api:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/grcwisdom-api:${{ github.sha }}
+
+      - name: Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.web
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/grcwisdom-web:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/grcwisdom-web:${{ github.sha }}
+
+  deploy:
+    name: Deploy to Contabo
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pull the new images and restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ~/grcwisdom
+
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Set dynamic variables from current GitHub repo/owner
+            export GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            export TAG=${{ github.sha }}
+
+            docker compose pull
+            docker compose up -d --remove-orphans
+
+            # Reference data converges on every deploy. This only upserts
+            # capabilities and system roles — it never touches tenant data.
+            docker compose exec -T api npm run provision
+
+            docker image prune -f
+
+      - name: Confirm the deployment is answering
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ~/grcwisdom
+            for i in $(seq 1 30); do
+              if docker compose exec -T api node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                echo "deployment healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "API did not become healthy — recent logs:"
+            docker compose logs --tail=50 api
+            exit 1

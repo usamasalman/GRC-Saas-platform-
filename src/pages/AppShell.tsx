@@ -256,11 +256,11 @@ const AppShell = () => {
     try {
       user = JSON.parse(storedUser);
     } catch {
-      navigate('/');
+      navigate('/login');
       return;
     }
     if (!user?.id || !user?.portal) {
-      navigate('/');
+      navigate('/login');
       return;
     }
     if (user.mustChangePassword) {
@@ -272,12 +272,12 @@ const AppShell = () => {
     setTokenReady(true);
   }, [navigate]);
 
-  // Load supporting records for the mock dashboard views. These are optional —
-  // renderMockView falls back to its own seed data when apiData is null.
+  // Supporting records for the dashboard views. All optional: each call is
+  // caught individually so one failing endpoint cannot blank the shell.
   useEffect(() => {
     if (!tokenReady) return;
     Promise.all([
-      apiClient.get('/api/auth/demo-identities').catch(() => null),
+      apiClient.get('/api/auth/tenant-users').catch(() => null),
       apiClient.get('/api/tickets').catch(() => null),
       apiClient.get('/api/marketplace/tools').catch(() => null),
       apiClient.get('/api/asm/assets').catch(() => null),
@@ -309,7 +309,8 @@ const AppShell = () => {
     localStorage.removeItem('authPersonaId');
     localStorage.removeItem('grc_jwt_token');
     localStorage.removeItem('grc_user_json');
-    navigate('/');
+    localStorage.removeItem('grc_refresh_token');
+    navigate('/login');
   };
 
   // Render Real Document Components for DMS routes across ALL portals

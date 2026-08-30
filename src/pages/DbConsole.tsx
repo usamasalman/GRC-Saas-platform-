@@ -41,12 +41,15 @@ const MODEL_DEFS: ModelDef[] = [
   {
     name: 'User',
     endpoint: 'User',
-    displayColumns: ['name', 'email', 'passwordHash', 'role', 'status'],
+    displayColumns: ['name', 'email', 'role', 'status'],
     requiresTenant: true,
     fields: [
       { name: 'name', label: 'Full Name', type: 'text', required: true },
       { name: 'email', label: 'Email', type: 'email', required: true },
-      { name: 'passwordHash', label: 'Password', type: 'text', required: true, placeholder: 'Plain text for dev (e.g. Demo@2026)' },
+      // Credentials are not editable here. A value typed into this column is
+      // stored verbatim and compared with bcrypt at login, so it would silently
+      // create an account that can never sign in. Use the password-reset flow.
+      { name: 'passwordHash', label: 'Password hash', type: 'text', hidden: true },
       { name: 'role', label: 'Role', type: 'select', required: true, options: [
         'Platform Super Admin', 'Platform Security Admin', 'Platform Billing Admin', 'Platform Service Desk Manager',
         'Group Admin', 'Group Compliance Officer', 'Group Risk Manager', 'Group IT Director',

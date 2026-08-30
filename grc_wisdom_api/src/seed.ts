@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaNodeSQLite } from 'prisma-adapter-node-sqlite';
+import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcrypt';
 import { GW_DATA } from './utils/mockData';
 import SEED from './utils/seedData.json';
@@ -43,7 +43,9 @@ function roleSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-const adapter = new PrismaNodeSQLite({ url: 'file:dev.db' });
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error('DATABASE_URL is not set.');
+const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 const BCRYPT_ROUNDS = 10;

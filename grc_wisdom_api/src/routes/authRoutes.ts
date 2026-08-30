@@ -5,12 +5,12 @@ import {
   refresh,
   logout,
   registerAdmin,
+  bootstrapStatus,
   me,
   setupMfa,
   verifyMfa,
   listTenantUsers,
   changePassword,
-  listDemoIdentities,
 } from '../controllers/authController';
 import { requireAuth } from '../middlewares/authMiddleware';
 
@@ -20,8 +20,9 @@ const router = Router();
 router.post('/login', login);
 router.post('/mfa/challenge', mfaChallenge);
 router.post('/refresh', refresh);
+router.get('/bootstrap-status', bootstrapStatus);
+// First-run only: refuses once any user exists (see controller).
 router.post('/register-admin', registerAdmin);
-router.get('/demo-identities', listDemoIdentities);
 
 // Authenticated
 router.get('/me', requireAuth, me);
