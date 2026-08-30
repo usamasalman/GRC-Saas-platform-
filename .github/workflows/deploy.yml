@@ -150,7 +150,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          script_stop: true
+          timeout: 120s
           script: |
             set -euo pipefail
             cd ~/grcwisdom
@@ -177,7 +177,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          script_stop: true
+          timeout: 120s
           script: |
             set -euo pipefail
             cd ~/grcwisdom
