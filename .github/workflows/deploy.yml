@@ -163,6 +163,11 @@ jobs:
 
             # Pull images with retry in case of network glitch
             docker compose pull || (sleep 3 && docker compose pull) || (sleep 5 && docker compose pull)
+
+            # Ensure conflicting host web services are stopped
+            sudo systemctl stop apache2 nginx 2>/dev/null || true
+            sudo systemctl disable apache2 nginx 2>/dev/null || true
+
             docker compose up -d --remove-orphans
 
             # Wait for API container to initialize before provisioning reference data
