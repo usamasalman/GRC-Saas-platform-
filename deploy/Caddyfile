@@ -16,7 +16,7 @@
 	admin off
 }
 
-{$SITE_ADDRESS:http://161.97.120.202} {
+{$SITE_ADDRESS:http://:80} {
 
 	encode gzip zstd
 
