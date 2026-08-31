@@ -1,0 +1,29 @@
+# Files that are consumed by Linux must keep LF endings regardless of which
+# platform they were edited on.
+#
+# This repo is developed on Windows with core.autocrlf=true, which rewrites
+# checkouts to CRLF. That is harmless for source that only a compiler reads, and
+# not harmless for anything a Linux shell or daemon parses: a trailing \r ends up
+# part of the last token on the line. In a shell script it breaks the shebang; in
+# a Dockerfile it corrupts the final argument of a CMD.
+#
+# The deploy pipeline now copies deploy/ to the server directly, so these files
+# reach Linux exactly as they are stored here.
+
+deploy/**       text eol=lf
+*.sh            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+Caddyfile       text eol=lf
+*.prisma        text eol=lf
+
+# Binary — never touch.
+*.png           binary
+*.jpg           binary
+*.svg           text
+*.pdf           binary
+*.db            binary
+*.xlsx          binary
+*.docx          binary
