@@ -143,6 +143,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
+      # The stack config used to live only on the server, so a change to
+      # docker-compose.yml or the Caddyfile in this repo never reached it —
+      # the deploy pulled new images into an old topology and the two silently
+      # drifted apart. .env is deliberately NOT copied: it holds the secrets and
+      # the host-specific ports, and belongs only to the machine.
+      - name: Ship the stack config
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "deploy/docker-compose.yml,deploy/Caddyfile"
+          target: "~/grcwisdom"
+          strip_components: 1
+          overwrite: true
+
       - name: Pull the new images and restart
         uses: appleboy/ssh-action@v1
         with:
@@ -164,11 +183,22 @@ jobs:
             # Pull images with retry in case of network glitch
             docker compose pull || (sleep 3 && docker compose pull) || (sleep 5 && docker compose pull)
 
-            # Ensure conflicting host web services are stopped
-            sudo systemctl stop apache2 nginx 2>/dev/null || true
-            sudo systemctl disable apache2 nginx 2>/dev/null || true
-
-            docker compose up -d --remove-orphans
+            # This used to run `systemctl stop/disable apache2 nginx` to clear
+            # port 80. That is destructive on a shared host: this VPS runs a
+            # second application, and if that one is served by host nginx then
+            # every deploy here took it offline — with `disable` making it stay
+            # offline across a reboot.
+            #
+            # The right fix for a port clash is to publish on a free port
+            # (HTTP_PORT / HTTPS_PORT in .env), not to evict the neighbour.
+            # Fail loudly instead, so a clash is visible rather than resolved by
+            # breaking something else.
+            if ! docker compose up -d --remove-orphans; then
+              echo "compose up failed. If this is a port clash, set HTTP_PORT and"
+              echo "HTTPS_PORT in ~/grcwisdom/.env to free ports. Currently bound:"
+              sudo ss -tlnp | grep -E ':(80|443)\s' || true
+              exit 1
+            fi
 
             # Wait for API container to initialize before provisioning reference data
             echo "Waiting for API container to initialize..."
@@ -197,13 +227,41 @@ jobs:
           script: |
             set -euo pipefail
             cd ~/grcwisdom
+
+            # This used to probe 127.0.0.1:3000 from INSIDE the api container,
+            # which proves only that the API process started. Caddy could be
+            # crash-looping, the web container missing and port 80 unpublished,
+            # and this step still went green while the site was unreachable.
+            #
+            # Probe the published port instead — the same path a browser takes.
+            PORT="$(grep -E '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2)"
+            PORT="${PORT:-80}"
+            BASE="http://127.0.0.1:${PORT}"
+
+            echo "Probing ${BASE} through Caddy..."
             for i in $(seq 1 30); do
-              if docker compose exec -T api node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
-                echo "deployment healthy"
-                exit 0
+              if curl -sf -o /dev/null "${BASE}/health"; then
+                echo "edge is answering /health"
+                break
               fi
               sleep 2
             done
-            echo "API did not become healthy — recent logs:"
-            docker compose logs --tail=50 api
-            exit 1
+
+            curl -sf -o /dev/null "${BASE}/health" || {
+              echo "FAILED: the edge never answered /health."
+              echo "--- container status ---"; docker compose ps
+              echo "--- caddy ---";            docker compose logs --tail=40 caddy
+              echo "--- web ---";              docker compose logs --tail=20 web
+              echo "--- api ---";              docker compose logs --tail=40 api
+              exit 1
+            }
+
+            # /health proxies to the API. The SPA is a different container, so
+            # check the app root separately or a missing web image goes unnoticed.
+            if ! curl -sf -o /dev/null "${BASE}/"; then
+              echo "FAILED: the API answers but the app itself does not."
+              docker compose logs --tail=40 web
+              exit 1
+            fi
+
+            echo "deployment healthy — edge, API and SPA all responding"

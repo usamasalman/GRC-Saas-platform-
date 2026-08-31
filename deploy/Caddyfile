@@ -2,9 +2,16 @@
 #
 # TLS is controlled entirely by the SITE_ADDRESS scheme set in .env:
 #
-#   Plain HTTP (IP-only, no domain):
-#     SITE_ADDRESS=http://161.97.120.202
-#   Caddy serves HTTP only — no certificate, no browser warnings.
+#   IP-only, no domain yet:
+#     SITE_ADDRESS=http://:80
+#   Listens on port 80 on every interface and matches any Host header, so the
+#   server answers on its IP. Plain HTTP — no certificate, no browser warning.
+#
+#   Do NOT put the server's IP here (SITE_ADDRESS=http://161.97.120.202).
+#   Caddy runs inside a container whose only interfaces are loopback and the
+#   bridge address; the host's public IP is not among them. Naming it makes the
+#   site address impossible to serve from in here, and the useful form — bind
+#   everywhere, match anything — is the one with no host at all.
 #
 #   Production with a real domain (recommended):
 #     SITE_ADDRESS=app.yourdomain.com

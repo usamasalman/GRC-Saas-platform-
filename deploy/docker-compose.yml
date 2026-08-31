@@ -66,7 +66,13 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-http://161.97.120.202}
+      # Must NOT default to a bare IP. Compose always passes this variable, so a
+      # default here overrides the Caddyfile's own `{$SITE_ADDRESS:...}` fallback
+      # — setting the fallback alone has no effect.
+      #
+      # `http://:80` means: listen on port 80 on every interface, match any Host.
+      # That serves the IP today and a domain later without a Caddyfile change.
+      SITE_ADDRESS: ${SITE_ADDRESS:-http://:80}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
