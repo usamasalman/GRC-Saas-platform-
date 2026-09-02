@@ -234,7 +234,7 @@ jobs:
             # and this step still went green while the site was unreachable.
             #
             # Probe the published port instead — the same path a browser takes.
-            PORT="$(grep -E '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2)"
+            PORT="$(grep -E '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)"
             PORT="${PORT:-80}"
             BASE="http://127.0.0.1:${PORT}"
 
