@@ -234,7 +234,11 @@ jobs:
             # and this step still went green while the site was unreachable.
             #
             # Probe the published port instead — the same path a browser takes.
-            PORT="$(grep -E '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2)"
+            # `|| true` matters here. Under `set -euo pipefail`, a grep that finds
+            # nothing exits 1, pipefail propagates it, and set -e kills the script
+            # at this line — before a single diagnostic is printed. HTTP_PORT is
+            # optional, so "not found" is a normal outcome, not a failure.
+            PORT="$(grep -E '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)"
             PORT="${PORT:-80}"
             BASE="http://127.0.0.1:${PORT}"
 
@@ -248,11 +252,26 @@ jobs:
             done
 
             curl -sf -o /dev/null "${BASE}/health" || {
-              echo "FAILED: the edge never answered /health."
-              echo "--- container status ---"; docker compose ps
-              echo "--- caddy ---";            docker compose logs --tail=40 caddy
-              echo "--- web ---";              docker compose logs --tail=20 web
-              echo "--- api ---";              docker compose logs --tail=40 api
+              echo "FAILED: the edge never answered ${BASE}/health"
+              echo
+              # Every diagnostic gets `|| true` so one failing command cannot
+              # abort the report and leave the next person guessing.
+              echo "--- container status ---"
+              docker compose ps || true
+              echo
+              echo "--- is the API alive inside its own container? ---"
+              docker compose exec -T api node -e "fetch('http://127.0.0.1:3000/health').then(r=>console.log('api self:',r.status)).catch(e=>console.log('api self FAILED:',e.message))" || true
+              echo
+              echo "--- can Caddy reach the API over the docker network? ---"
+              docker compose exec -T caddy wget -qO- --timeout=3 http://api:3000/health >/dev/null 2>&1 \
+                && echo "caddy -> api OK" || echo "caddy -> api FAILED"
+              echo
+              echo "--- what is published on the host? ---"
+              (sudo ss -tlnp | grep -E ":(${PORT}|80|443)\s") || echo "nothing listening on ${PORT}/80/443"
+              echo
+              echo "--- caddy ---"; docker compose logs --tail=40 caddy || true
+              echo "--- api ---";   docker compose logs --tail=60 api   || true
+              echo "--- db ---";    docker compose logs --tail=20 db    || true
               exit 1
             }
 
