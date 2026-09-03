@@ -48,6 +48,17 @@ services:
       # Uploaded evidence and documents. Without this they are written to the
       # container filesystem and vanish on the next deploy.
       - uploads:/app/uploads
+    networks:
+      default:
+        aliases:
+          # Caddy addresses this name, not the bare service name `api`.
+          #
+          # This host runs several stacks and more than one of them has a
+          # service called `api`. Caddy was attached to two networks, so Docker
+          # resolved `api` to the OTHER application's container — which does not
+          # listen on 3000, producing `connection refused` from a container that
+          # was healthy the whole time. A project-prefixed alias cannot collide.
+          - grcwisdom-api-svc
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -58,6 +69,10 @@ services:
   web:
     image: ghcr.io/${GH_OWNER}/grcwisdom-web:${TAG:-latest}
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - grcwisdom-web-svc
 
   caddy:
     image: caddy:2-alpine
@@ -77,6 +92,13 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      # Declared explicitly so Caddy joins this network and no other. It had
+      # been attached by hand to a second stack's network, which is how the
+      # `api` name collision arose. Naming it here also changes the service
+      # config hash, so compose recreates the container and any stray manual
+      # attachment is dropped rather than surviving forever.
+      - default
     depends_on:
       - api
       - web

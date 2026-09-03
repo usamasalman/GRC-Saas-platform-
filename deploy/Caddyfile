@@ -54,7 +54,7 @@
 	handle @api {
 		reverse_proxy {
 			dynamic a {
-				name api
+				name grcwisdom-api-svc
 				port 3000
 				refresh 10s
 				# Docker's embedded DNS. Naming it explicitly rather than relying
@@ -70,7 +70,7 @@
 	handle {
 		reverse_proxy {
 			dynamic a {
-				name web
+				name grcwisdom-web-svc
 				port 80
 				refresh 10s
 				resolvers 127.0.0.11
