@@ -191,6 +191,12 @@ jobs:
             export GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
             export TAG=${{ github.sha }}
 
+            # Older caddy containers can still be running with the previous bind
+            # mount source (./deploy/Caddyfile). Keep that file in sync so a
+            # reload applies the current config before caddy is recreated.
+            mkdir -p deploy
+            cp -f Caddyfile deploy/Caddyfile
+
             # Pull images with retry in case of network glitch
             docker compose pull || (sleep 3 && docker compose pull) || (sleep 5 && docker compose pull)
 
