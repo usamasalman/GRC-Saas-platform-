@@ -1,0 +1,9 @@
+{
+  // Suggested when someone opens this repo. Not installed automatically.
+  "recommendations": [
+    // Real Caddyfile syntax highlighting, so the editor stops guessing.
+    "matthewpi.caddyfile-support",
+    // Docker Compose and Dockerfile awareness for deploy/.
+    "ms-azuretools.vscode-docker"
+  ]
+}

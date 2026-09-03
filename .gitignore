@@ -16,6 +16,9 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+# Shared so the Caddyfile is not parsed as PowerShell, which reports
+# syntax errors that do not exist. Editor preferences stay ignored.
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo

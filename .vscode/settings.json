@@ -1,0 +1,23 @@
+{
+  // The Caddyfile has no extension, so VS Code guesses at its language and
+  // lands on PowerShell — which then reports syntax errors that are not real:
+  // it reads `{$SITE_ADDRESS:http://:80}` as scope syntax and `@api` as the
+  // splatting operator. Neither is a Caddy problem.
+  //
+  // "caddyfile" is the language id contributed by the Caddyfile Support
+  // extension (matthewpi.caddyfile-support). Without that extension installed
+  // VS Code falls back to plain text, which is still correct — no highlighting,
+  // but no invented errors either.
+  "files.associations": {
+    "Caddyfile": "caddyfile",
+    "Caddyfile.*": "caddyfile",
+    "*.Caddyfile": "caddyfile"
+  },
+
+  // Caddyfiles are tab-indented by convention and `caddy fmt` will rewrite
+  // spaces back to tabs, which produces noisy diffs otherwise.
+  "[caddyfile]": {
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4
+  }
+}
