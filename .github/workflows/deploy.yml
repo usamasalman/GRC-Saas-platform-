@@ -257,6 +257,13 @@ jobs:
               docker compose restart caddy
             fi
 
+            # If Caddy cannot reach the API after a successful reload, force a
+            # fresh container so Docker DNS/network state is rebuilt.
+            if ! docker compose exec -T caddy wget -qO- --timeout=5 http://api:3000/health >/dev/null 2>&1; then
+              echo "Caddy cannot reach api:3000 after reload; recreating caddy."
+              docker compose up -d --no-deps --force-recreate caddy
+            fi
+
             docker image prune -f
 
       - name: Confirm the deployment is answering
