@@ -235,15 +235,26 @@ jobs:
             # syntax error into a clear message here rather than a puzzling
             # "reload failed" further down.
             echo "Reloading Caddy configuration..."
-            if docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
-              # A reload is graceful — in-flight requests finish, no dropped
-              # connections, and it re-resolves the upstream addresses.
-              docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
-              echo "Caddy reloaded"
-            else
+            if ! docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
               echo "FAILED: the Caddyfile did not validate. Caddy is still running"
               echo "the previous configuration. Fix deploy/Caddyfile and push again."
               exit 1
+            fi
+
+            # A reload is graceful — in-flight requests finish and nothing is
+            # dropped. It goes through Caddy's admin API, so it fails if that is
+            # disabled or the container is in a bad state.
+            #
+            # Restarting is the fallback rather than an error. A config that
+            # validated but was never applied is the worst outcome: the deploy
+            # reports success while the server runs yesterday's routing, which is
+            # precisely the class of failure that cost us an afternoon.
+            if docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile; then
+              echo "Caddy reloaded gracefully"
+            else
+              echo "Graceful reload failed — restarting the container so the new"
+              echo "configuration is definitely applied."
+              docker compose restart caddy
             fi
 
             docker image prune -f

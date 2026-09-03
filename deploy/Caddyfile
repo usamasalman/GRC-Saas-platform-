@@ -16,8 +16,15 @@
 #   Caddy automatically obtains and renews a Let's Encrypt certificate.
 
 {
-	# The admin API binds to localhost inside the container and is not needed.
-	admin off
+	# The admin API must stay on: `caddy reload` works by POSTing the new config
+	# to it, and the deploy reloads rather than restarting so in-flight requests
+	# are not dropped. This was `admin off`, which made every reload fail with
+	# `dial tcp [::1]:2019: connect: connection refused`.
+	#
+	# localhost here is the container's own loopback. No port is published for
+	# 2019, so it is reachable only by a process inside this container — which is
+	# exactly what `docker compose exec caddy caddy reload` is.
+	admin localhost:2019
 }
 
 {$SITE_ADDRESS:http://:80} {
