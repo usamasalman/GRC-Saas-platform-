@@ -9,14 +9,11 @@
 #
 #   Do NOT put the server's IP here (SITE_ADDRESS=http://161.97.120.202).
 #   Caddy runs inside a container whose only interfaces are loopback and the
-#   bridge address; the host's public IP is not among them. Naming it makes the
-#   site address impossible to serve from in here, and the useful form — bind
-#   everywhere, match anything — is the one with no host at all.
+#   bridge address; the host's public IP is not among them.
 #
 #   Production with a real domain (recommended):
 #     SITE_ADDRESS=app.yourdomain.com
 #   Caddy automatically obtains and renews a Let's Encrypt certificate.
-#   No other changes needed — just point your DNS to this server IP.
 
 {
 	# The admin API binds to localhost inside the container and is not needed.
@@ -27,31 +24,59 @@
 
 	encode gzip zstd
 
-	# Requests the API owns. Listed before the catch-all because Caddy matches
-	# handle blocks in the order written.
-	handle /api/* {
-		reverse_proxy api:3000
-	}
+	# ── Why the upstreams are declared this way ──────────────────────────────
+	#
+	# `reverse_proxy api:3000` resolves that hostname once, when the config
+	# loads, and holds the resulting IP. A deploy recreates the api and web
+	# containers with new bridge addresses while leaving Caddy running, so Caddy
+	# keeps dialling an address that now belongs to something else — producing
+	# `dial tcp 192.168.144.x:3000: connect: connection refused` on every
+	# request, for a container that is itself perfectly healthy.
+	#
+	# `dynamic a` re-resolves through Docker's embedded DNS on the refresh
+	# interval instead, so a recreated container is picked up on its own.
+	#
+	# lb_try_duration covers the few seconds during a deploy when the container
+	# genuinely is gone: retry briefly rather than returning 502 to a user who
+	# happened to click at the wrong moment.
 
-	# Uploaded documents are served by the API so its own headers apply.
-	handle /uploads/* {
-		reverse_proxy api:3000
-	}
+	# Everything the API owns. One matcher rather than three handle blocks, so
+	# the upstream is declared once and cannot drift between them.
+	@api path /api/* /uploads/* /health
 
-	handle /health {
-		reverse_proxy api:3000
+	handle @api {
+		reverse_proxy {
+			dynamic a {
+				name api
+				port 3000
+				refresh 10s
+				# Docker's embedded DNS. Naming it explicitly rather than relying
+				# on whatever /etc/resolv.conf happens to hold in the image.
+				resolvers 127.0.0.11
+			}
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
 	}
 
 	# Everything else is the single-page app.
 	handle {
-		reverse_proxy web:80
+		reverse_proxy {
+			dynamic a {
+				name web
+				port 80
+				refresh 10s
+				resolvers 127.0.0.11
+			}
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
 	}
 
-	headers {
+	header {
 		# Belt and braces alongside helmet: these apply to the static assets too.
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
-		# Tells browsers not to advertise the server software.
 		-Server
 	}
 

@@ -47,6 +47,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The Caddyfile is shipped to the server and bind-mounted. A syntax error
+      # in it does not fail a build — it fails at reload, or worse, silently at
+      # the next container restart, hours later. Parse it here, where it costs
+      # five seconds and blocks the deploy.
+      - name: Caddyfile — validate
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e SITE_ADDRESS="http://:80" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+
       - name: Frontend — install and typecheck
         run: |
           npm ci
@@ -213,6 +224,27 @@ jobs:
             # Reference data converges on every deploy. This only upserts
             # capabilities and system roles — it never touches tenant data.
             docker compose exec -T api npm run provision
+
+            # The Caddyfile is bind-mounted, and this job now copies a fresh one
+            # up on every deploy. Changing a mounted file does not restart the
+            # container and does not reload the config, so without this the
+            # server keeps running whatever it parsed the last time it started.
+            #
+            # Validate first: an invalid Caddyfile that gets reloaded is rejected
+            # and the old config stays live, but validating separately turns a
+            # syntax error into a clear message here rather than a puzzling
+            # "reload failed" further down.
+            echo "Reloading Caddy configuration..."
+            if docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
+              # A reload is graceful — in-flight requests finish, no dropped
+              # connections, and it re-resolves the upstream addresses.
+              docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+              echo "Caddy reloaded"
+            else
+              echo "FAILED: the Caddyfile did not validate. Caddy is still running"
+              echo "the previous configuration. Fix deploy/Caddyfile and push again."
+              exit 1
+            fi
 
             docker image prune -f
 
