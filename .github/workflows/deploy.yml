@@ -89,10 +89,10 @@ jobs:
           echo $! > /tmp/server.pid
 
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:3000/health > /dev/null && break
+            curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null && break
             sleep 1
           done
-          curl -sf http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
+          curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
           # Asserts every security property that was actually broken: the
           # removed user-directory endpoint, the self-closing bootstrap, a
@@ -266,7 +266,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          command_timeout: 5m
+          command_timeout: 8m
           script: |
             set -euo pipefail
             cd ~/grcwisdom
@@ -285,16 +285,25 @@ jobs:
             PORT="${PORT:-80}"
             BASE="http://127.0.0.1:${PORT}"
 
+            # -m 5 is not optional. Caddy's lb_try_duration holds a request for
+            # 10s while it retries an unavailable upstream, and curl has no
+            # default timeout — so 30 unbounded attempts take 300s and hit the
+            # step's 5m ceiling before a single diagnostic prints.
+            #
+            # Budget: 20 x (5s probe + 3s sleep) = 160s worst case, leaving the
+            # rest of the window for the failure report below.
             echo "Probing ${BASE} through Caddy..."
-            for i in $(seq 1 30); do
-              if curl -sf -o /dev/null "${BASE}/health"; then
-                echo "edge is answering /health"
+            for i in $(seq 1 20); do
+              CODE="$(curl -s -m 5 -o /dev/null -w '%{http_code}' "${BASE}/health" || echo 000)"
+              if [ "$CODE" = "200" ]; then
+                echo "edge is answering /health after ${i} attempt(s)"
                 break
               fi
-              sleep 2
+              echo "  attempt ${i}: HTTP ${CODE}"
+              sleep 3
             done
 
-            curl -sf -o /dev/null "${BASE}/health" || {
+            curl -sf -m 5 -o /dev/null "${BASE}/health" || {
               echo "FAILED: the edge never answered ${BASE}/health"
               echo
               # Every diagnostic gets `|| true` so one failing command cannot
@@ -320,7 +329,7 @@ jobs:
 
             # /health proxies to the API. The SPA is a different container, so
             # check the app root separately or a missing web image goes unnoticed.
-            if ! curl -sf -o /dev/null "${BASE}/"; then
+            if ! curl -sf -m 5 -o /dev/null "${BASE}/"; then
               echo "FAILED: the API answers but the app itself does not."
               docker compose logs --tail=40 web
               exit 1
