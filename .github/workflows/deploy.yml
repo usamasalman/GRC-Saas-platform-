@@ -234,12 +234,13 @@ jobs:
             # and the old config stays live, but validating separately turns a
             # syntax error into a clear message here rather than a puzzling
             # "reload failed" further down.
-            echo "Reloading Caddy configuration..."
+            echo "Applying Caddy configuration..."
             if docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
-              # A reload is graceful — in-flight requests finish, no dropped
-              # connections, and it re-resolves the upstream addresses.
-              docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
-              echo "Caddy reloaded"
+              # The Caddyfile sets `admin off`, so `caddy reload` cannot talk to
+              # the admin API (localhost:2019). Restart the container after
+              # validation so it boots with the new config.
+              docker compose restart caddy
+              echo "Caddy restarted with validated config"
             else
               echo "FAILED: the Caddyfile did not validate. Caddy is still running"
               echo "the previous configuration. Fix deploy/Caddyfile and push again."
