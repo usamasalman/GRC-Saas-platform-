@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { projectWhere, canWriteProject, canReadProject, sideOf } from '../services/projectAccess';
+import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 
 /**
  * Delivery projects — slice 1.
@@ -43,53 +44,6 @@ async function nextRef(tenantId: string): Promise<string> {
   return `PRJ-${String(count + 1).padStart(4, '0')}`;
 }
 
-/** Whole days between two dates, inclusive of the start. */
-const daysBetween = (from: Date, to: Date): number =>
-  Math.max(0, Math.round((to.getTime() - from.getTime()) / 86_400_000));
-
-/**
- * The time figures section 1 asks for, derived rather than stored — they change
- * every day on their own, and a stored copy would be wrong by morning.
- */
-function schedule(p: { startDate: Date; targetEndDate: Date; actualEndDate: Date | null; status: string }) {
-  const now = new Date();
-  const totalDays = daysBetween(p.startDate, p.targetEndDate);
-  const endedAt = p.actualEndDate ?? now;
-  const elapsedDays = Math.min(totalDays, daysBetween(p.startDate, endedAt));
-  const remainingDays = Math.max(0, totalDays - elapsedDays);
-  const overdue = !p.actualEndDate && now > p.targetEndDate && p.status !== 'Closed' && p.status !== 'Cancelled';
-
-  return {
-    totalDays,
-    elapsedDays,
-    remainingDays,
-    /** How far through the calendar we are, which is not how far through the work. */
-    elapsedPercent: totalDays === 0 ? 100 : Math.round((elapsedDays / totalDays) * 100),
-    overdue,
-    daysOverdue: overdue ? daysBetween(p.targetEndDate, now) : 0,
-  };
-}
-
-/**
- * On Track | At Risk | Delayed | Completed, per section 1.
- *
- * Derived from schedule against progress, never stored: a project drifts into
- * At Risk by the passage of time, with nobody touching it. `health` remains the
- * manager's separate judgement and is not overridden here.
- */
-function derivedStatus(
-  p: { status: string; reportedProgress: number },
-  s: ReturnType<typeof schedule>,
-): 'OnTrack' | 'AtRisk' | 'Delayed' | 'Completed' | 'NotStarted' {
-  if (p.status === 'Closed') return 'Completed';
-  if (p.status === 'Draft') return 'NotStarted';
-  if (s.overdue) return 'Delayed';
-  // Burning calendar materially faster than work is the earliest honest signal
-  // that a date is in trouble.
-  if (s.elapsedPercent - p.reportedProgress >= 20) return 'AtRisk';
-  return 'OnTrack';
-}
-
 const LIST_SELECT = {
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
@@ -107,22 +61,13 @@ function decorate(p: any, scope: any) {
   const s = schedule(p);
   return {
     ...p,
-    frameworks: safeParseArray(p.frameworks),
+    frameworks: parseFrameworks(p.frameworks),
     schedule: s,
     derivedStatus: derivedStatus(p, s),
     side: sideOf(scope, p),
     memberCount: p._count?.members ?? 0,
     _count: undefined,
   };
-}
-
-function safeParseArray(v: string): string[] {
-  try {
-    const parsed = JSON.parse(v || '[]');
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
 }
 
 // ─── List ───────────────────────────────────────────────────────────────────

@@ -70,6 +70,12 @@ jobs:
           npx prisma migrate deploy
           npm run build
 
+      # Pure logic — schedule arithmetic and the tenant access boundary. No
+      # database, no server, so it runs before either exists and fails fast.
+      - name: API — pure logic suite
+        working-directory: grc_wisdom_api
+        run: node scripts/verify/project-logic-test.js
+
       - name: API — provision reference data against a real database
         working-directory: grc_wisdom_api
         env:
