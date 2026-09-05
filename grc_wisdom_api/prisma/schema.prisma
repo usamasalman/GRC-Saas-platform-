@@ -65,6 +65,11 @@ model Tenant {
   automationRules AutomationRule[]
   importJobs    ImportJob[]
   frameworkImports FrameworkImport[]
+
+  /// Delivery projects this tenant owns — its own compliance programme.
+  projects         Project[]
+  /// Delivery projects this tenant runs FOR someone else, as a consulting partner.
+  projectsDelivered Project[] @relation("ProjectProvider")
 }
 
 model User {
@@ -169,6 +174,11 @@ model User {
   acknowledgements Acknowledgement[]
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
+
+  projectsOwned    Project[] @relation("ProjectOwner")
+  projectsManaged  Project[] @relation("ProjectManager")
+  projectsSponsored Project[] @relation("ProjectSponsor")
+  projectMemberships ProjectMember[] @relation("ProjectMemberUser")
 }
 
 model Plan {
@@ -2456,4 +2466,120 @@ model ImportCandidate {
   createdAt  DateTime @default(now())
 
   @@index([importId, status])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Delivery projects — slice 1: the engagement itself.
+//
+//  Phases, tasks, verification, delays, evidence and reports arrive in later
+//  slices. Every one of those is an additive migration against this table; none
+//  rewrites it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A delivery engagement: an ISO 27001 readiness programme, a SOC 2 audit
+/// preparation, a remediation project. One organisation runs several at once.
+model Project {
+  id               String   @id @default(uuid())
+
+  /// The CLIENT tenant — whoever's compliance programme this is. Their data,
+  /// their retention, deleted with them. Never the consultant's.
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// The delivery partner, when the work is consultant-led. Null for an
+  /// organisation running its own programme, which is the common case.
+  ///
+  /// Deliberately present from the first migration even though nothing sets it
+  /// yet: the column costs nothing, and adding it later would mean revisiting
+  /// every query that reads a project.
+  providerTenantId String?
+  providerTenant   Tenant?  @relation("ProjectProvider", fields: [providerTenantId], references: [id], onDelete: SetNull)
+
+  ref              String
+  name             String
+  description      String?
+  objectives       String?
+
+  /// Certification | Readiness | Remediation | Implementation | Assessment
+  projectType      String   @default("Readiness")
+  /// Framework codes in scope, as a JSON array: ["ISO27001","SOC2"]
+  frameworks       String   @default("[]")
+
+  /// Low | Medium | High | Critical
+  priority         String   @default("Medium")
+  /// Draft | Active | OnHold | Closed | Cancelled
+  status           String   @default("Draft")
+
+  /// Green | Amber | Red. A manager's judgement, deliberately not computed —
+  /// a project can be 80% done and red because the remaining 20% is the hard
+  /// part. Progress is arithmetic; health is an opinion, and the two disagree
+  /// often enough that conflating them destroys both.
+  health           String   @default("Green")
+  healthNote       String?
+
+  /// Both are written ONLY by services/projectRollup.ts, from slice 2 onward.
+  /// Reported counts work its owner says is done; verified counts work an
+  /// independent reviewer has confirmed. A project at 100/40 is not finished.
+  reportedProgress Int      @default(0)
+  verifiedProgress Int      @default(0)
+
+  startDate        DateTime
+  targetEndDate    DateTime
+  /// Set when the project reaches Closed. Null while it is still running, so
+  /// "did it land on time" is answerable without a separate flag.
+  actualEndDate    DateTime?
+
+  /// Accountable for the engagement: sets the timeline, answers for delivery.
+  ownerId          String
+  owner            User     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  /// Runs the day-to-day: phases, tasks, assignment.
+  managerId        String
+  manager          User     @relation("ProjectManager", fields: [managerId], references: [id], onDelete: Cascade)
+  /// Executive sponsor, where one exists.
+  sponsorId        String?
+  sponsor          User?    @relation("ProjectSponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
+
+  /// Required to reach Closed or Cancelled. A project that simply stops with no
+  /// explanation is the thing a steering committee asks about six months later.
+  closureNote      String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  members          ProjectMember[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, status])
+  @@index([providerTenantId, status])
+  @@index([tenantId, targetEndDate])
+}
+
+/// Who is on the engagement, and on which side of it.
+model ProjectMember {
+  id         String  @id @default(uuid())
+  projectId  String
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User    @relation("ProjectMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Client | Provider — which organisation this person answers to. Meaningful
+  /// only on consultant-led work; everyone is Client on an internal programme.
+  side       String  @default("Client")
+  /// Free text, because job titles are not an enum worth maintaining:
+  /// "Lead Consultant", "ISMS Manager", "Head of Internal Audit".
+  roleLabel  String
+  /// R | A | C | I against the engagement as a whole.
+  raci       String  @default("R")
+  /// Percentage of their time, where the organisation tracks it.
+  allocation Int?
+
+  /// Removed members are deactivated rather than deleted, so historical
+  /// assignment stays answerable after someone leaves the project.
+  active     Boolean @default(true)
+
+  addedAt    DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId, active])
+  @@index([userId, active])
 }

@@ -36,6 +36,7 @@ import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
+import ProjectPortfolio from './grc/project/ProjectPortfolio';
 import AssetRegister from './grc/AssetRegister';
 import VendorRegister from './grc/VendorRegister';
 import SharedServices from './grc/SharedServices';
@@ -139,7 +140,7 @@ const NAV: Record<string, any[]> = {
   ],
   holding: [
     ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['subsidiaries', '▥', 'Subsidiary Scorecards'], ['shared-services', '⇄', 'Shared Services']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
+    ['Assurance', [['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -147,7 +148,7 @@ const NAV: Record<string, any[]> = {
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
+    ['Assurance', [['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -155,7 +156,7 @@ const NAV: Record<string, any[]> = {
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
+    ['Assurance', [['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
@@ -172,7 +173,7 @@ const NAV: Record<string, any[]> = {
     ['Support', [['itsm', '?', 'Auditor Support Desk'], ['contacts', '♣', 'Engagement Contacts']]]
   ],
   partner: [
-    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
+    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['project-delivery', '▶', 'Consulting Delivery'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
     ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards'], ['framework-authoring', '✎', 'Framework Authoring']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
@@ -196,6 +197,7 @@ const NAV: Record<string, any[]> = {
  * glyph is only used when a key has no entry here.
  */
 const NAV_ICON: Record<string, IconName> = {
+  'project-delivery': 'target',
   dashboard: 'dashboard', library: 'documents', tenants: 'building',
   impersonation: 'user', 'saas-users': 'users', 'org-users': 'users',
   'branch-users': 'users', 'team-directory': 'teams',
@@ -370,6 +372,9 @@ const AppShell = () => {
     }
     if (currentPage === 'standards' || currentPage === 'tenant-standards') {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'project-delivery') {
+      return <ProjectPortfolio key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'controls') {
       return <ControlLibrary key={`${account.id}-${currentPage}`} />;

@@ -100,6 +100,10 @@ jobs:
           # strangers, and login rate limiting.
           node scripts/verify/production-readiness-test.js
 
+          # Slice 1 of the delivery module: creation, derived schedule,
+          # lifecycle transitions, tenant isolation and the audit trail.
+          node scripts/verify/project-delivery-test.js
+
           kill "$(cat /tmp/server.pid)" || true
 
   build:

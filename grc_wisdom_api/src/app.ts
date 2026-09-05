@@ -18,6 +18,7 @@ import marketplaceRoutes from './routes/marketplaceRoutes';
 import billingRoutes from './routes/billingRoutes';
 import usageRoutes from './routes/usageRoutes';
 import systemRoutes from './routes/systemRoutes';
+import projectRoutes from './routes/projectRoutes';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { SodViolation } from './services/sodEngine';
 import { resolveTenantScope, auditCrossTenantRead } from './services/scopeResolver';
@@ -183,6 +184,9 @@ app.use('/api/usage', usageRoutes);
 
 // System & Infrastructure (Health & Jobs, Platform Security, OCI Architecture, BRD Traceability)
 app.use('/api/system', systemRoutes);
+
+// Delivery projects (slice 1: the engagement itself)
+app.use('/api/projects', projectRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {

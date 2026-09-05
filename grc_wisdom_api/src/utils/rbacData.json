@@ -237,6 +237,13 @@
       "module": "Partner/MSP",
       "number": null,
       "tenancySpecific": true
+    },
+    {
+      "key": "manage-a-delivery-project",
+      "name": "Create and manage a delivery project",
+      "module": "Delivery",
+      "number": 31,
+      "tenancySpecific": true
     }
   ],
   "roles": [
@@ -256,7 +263,8 @@
         "create-an-approval-or-automation-workflow",
         "configure-an-integration",
         "monitor-security-and-handle-incidents",
-        "import-or-enable-a-standard"
+        "import-or-enable-a-standard",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -308,7 +316,8 @@
         "create-or-manage-a-tenant",
         "plan-and-execute-an-audit",
         "manage-a-control-implementation-and-evidence",
-        "create-import-and-version-a-document"
+        "create-import-and-version-a-document",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -342,7 +351,8 @@
         "publish-or-enable-a-module",
         "onboard-or-purchase-an-open-source-tool",
         "generate-and-distribute-a-report",
-        "create-or-manage-a-tenant"
+        "create-or-manage-a-tenant",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -358,7 +368,8 @@
         "maintain-roles-and-permissions",
         "manage-a-control-implementation-and-evidence",
         "assess-and-treat-a-risk",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -374,7 +385,8 @@
         "apply-retention-and-legal-hold",
         "manage-a-control-implementation-and-evidence",
         "acknowledge-or-monitor-a-policy",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -445,7 +457,8 @@
         "manage-a-control-implementation-and-evidence",
         "assess-and-treat-a-risk",
         "create-import-and-version-a-document",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -461,7 +474,8 @@
         "import-or-enable-a-standard",
         "operate-wisdom-eye-and-eye-phish",
         "generate-and-distribute-a-report",
-        "create-or-manage-a-tenant"
+        "create-or-manage-a-tenant",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -552,7 +566,8 @@
         "review-approve-and-digitally-sign-a-document",
         "apply-retention-and-legal-hold",
         "generate-and-distribute-a-report",
-        "plan-and-execute-an-audit"
+        "plan-and-execute-an-audit",
+        "manage-a-delivery-project"
       ]
     },
     {
@@ -613,7 +628,8 @@
         "assess-and-treat-a-risk",
         "plan-and-execute-an-audit",
         "create-import-and-version-a-document",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "manage-a-delivery-project"
       ]
     },
     {

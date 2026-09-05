@@ -50,6 +50,7 @@ export const CAP = {
   REPORT: 'generate-and-distribute-a-report',
   OPERATE_SECURITY_SERVICES: 'operate-wisdom-eye-and-eye-phish',
   ONBOARD_TOOL: 'onboard-or-purchase-an-open-source-tool',
+  MANAGE_PROJECT: 'manage-a-delivery-project',
 } as const;
 
 export interface EffectivePermissions {
