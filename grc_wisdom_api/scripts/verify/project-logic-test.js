@@ -27,6 +27,11 @@ const {
   TASK_STATUSES, DUE_SOON_DAYS, VERIFICATION_POLICIES, VERIFICATION_SLA_DAYS,
   VERIFICATION_STATES,
 } = require('../../dist/services/projectLifecycle');
+const {
+  slippage, signedDays, requiresDelayReason, impedimentCost, isOpen, attribute,
+  checkBlockRouting, checkImpedimentInput, checkResolvable, slipCost,
+  OWING_SIDES, IMPEDIMENT_CATEGORIES, IMPEDIMENT_KINDS,
+} = require('../../dist/services/projectDelay');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -633,6 +638,236 @@ const notWaiting = taskTiming({ status: 'InProgress', dueDate: null }, D('2026-0
 notWaiting.awaitingVerificationDays === null && !notWaiting.verificationOverdue
   ? ok('work nobody submitted is not waiting on anybody')
   : bad('work nobody submitted is not waiting', JSON.stringify(notWaiting));
+
+// ── 17. Slippage against the agreed plan ────────────────────────────────────
+console.log('\n17. Slippage');
+
+eq('a date moved five days later has slipped five days',
+   slippage({ baselineDueDate: D('2026-01-10'), dueDate: D('2026-01-15') }).slipDays, 5);
+eq('a date pulled in reports negative, not zero',
+   slippage({ baselineDueDate: D('2026-01-10'), dueDate: D('2026-01-07') }).slipDays, -3);
+eq('a date still on plan has slipped nothing',
+   slippage({ baselineDueDate: D('2026-01-10'), dueDate: D('2026-01-10') }).slipDays, 0);
+
+// Not baselined is not the same as not slipped. A task with no agreed date must
+// never be reported as being on plan — there is no plan for it to be on.
+const unplanned = slippage({ baselineDueDate: null, dueDate: D('2026-01-10') });
+!unplanned.baselined && !unplanned.slipped
+  ? ok('a task with no agreed date is unbaselined, not on time')
+  : bad('a task with no agreed date is unbaselined', JSON.stringify(unplanned));
+
+slippage({ baselineDueDate: D('2026-01-10'), dueDate: D('2026-01-15') }).slipped
+  ? ok('pushing a date out counts as slipped') : bad('pushing a date out counts as slipped');
+!slippage({ baselineDueDate: D('2026-01-10'), dueDate: D('2026-01-07') }).slipped
+  ? ok('pulling one in does not') : bad('pulling one in does not');
+
+signedDays(D('2026-01-01'), D('2026-01-01')) === 0 && signedDays(D('2026-02-01'), D('2026-01-01')) === -31
+  ? ok('day arithmetic is signed here, unlike the schedule helper')
+  : bad('day arithmetic is signed', String(signedDays(D('2026-02-01'), D('2026-01-01'))));
+
+// ── 18. When a date change has to be explained ──────────────────────────────
+// The test is against the BASELINE, not against today. A rule that waits for a
+// date to pass only ever catches slips after they have cost something.
+console.log('\n18. The delay-reason rule');
+
+const needsReason = (base, cur, next) =>
+  requiresDelayReason(base ? D(base) : null, cur ? D(cur) : null, next ? D(next) : null);
+
+needsReason('2026-01-10', '2026-01-10', '2026-01-20')
+  ? ok('pushing a date past the agreed one must be explained')
+  : bad('pushing a date past the agreed one must be explained');
+!needsReason(null, '2026-01-10', '2026-01-20')
+  ? ok('an unbaselined task is still being planned, so it moves freely')
+  : bad('an unbaselined task moves freely');
+!needsReason('2026-01-20', '2026-01-10', '2026-01-15')
+  ? ok('a date landing inside the agreed one costs nobody anything')
+  : bad('a date inside the agreed one is free');
+!needsReason('2026-01-10', '2026-01-30', '2026-01-20')
+  ? ok('pulling a slipped date back in needs no defending')
+  : bad('pulling a slipped date back in needs no defending');
+needsReason('2026-01-10', '2026-01-30', '2026-02-05')
+  ? ok('a second slip is explained again, not waved through')
+  : bad('a second slip is explained again');
+!needsReason('2026-01-10', '2026-01-30', '2026-01-30')
+  ? ok('re-sending the same date is not a slip')
+  : bad('re-sending the same date is not a slip');
+!needsReason('2026-01-10', '2026-01-10', null)
+  ? ok('clearing a date entirely is not a slip')
+  : bad('clearing a date is not a slip');
+
+// ── 19. What an impediment costs ────────────────────────────────────────────
+console.log('\n19. Impediment cost');
+
+const imp = (o) => Object.assign({
+  kind: 'Blocker', category: 'Other', owingSide: 'Client',
+  impactDays: null, raisedAt: D('2026-01-01'), resolvedAt: null,
+}, o);
+
+eq('an open blocker costs the time it has been open',
+   impedimentCost(imp({}), D('2026-01-09')), 8);
+// Stamped on resolution, because a blocker stops accruing when it clears — a
+// column that keeps counting would be wrong from the moment it mattered.
+eq('a cleared blocker costs what was stamped on it',
+   impedimentCost(imp({ impactDays: 4, resolvedAt: D('2026-01-20') }), D('2026-06-01')), 4);
+eq('a blocker cleared without a stamp falls back to its duration',
+   impedimentCost(imp({ resolvedAt: D('2026-01-06') }), D('2026-06-01')), 5);
+eq('a recorded delay costs the days it stated',
+   impedimentCost(imp({ kind: 'Delay', impactDays: 12, resolvedAt: D('2026-01-01') }), D('2026-02-01')), 12);
+eq('nothing costs a negative number of days',
+   impedimentCost(imp({ impactDays: -5 }), D('2026-01-09')), 0);
+eq('a blocker raised today has cost nothing yet',
+   impedimentCost(imp({}), D('2026-01-01')), 0);
+
+isOpen(imp({})) && !isOpen(imp({ resolvedAt: D('2026-01-05') }))
+  ? ok('open means an uncleared blocker') : bad('open means an uncleared blocker');
+!isOpen(imp({ kind: 'Delay' }))
+  ? ok('a delay is never open — the time is already gone')
+  : bad('a delay is never open');
+
+// ── 20. Attribution — the question the register exists to answer ────────────
+console.log('\n20. Attribution');
+
+const register = [
+  imp({ owingSide: 'Client', category: 'ClientDependency', impactDays: 14, resolvedAt: D('2026-01-15') }),
+  imp({ owingSide: 'Client', category: 'ClientDependency', impactDays: 6, resolvedAt: D('2026-01-20'), kind: 'Delay' }),
+  imp({ owingSide: 'Provider', category: 'ProviderCapacity', impactDays: 3, resolvedAt: D('2026-01-04') }),
+  imp({ owingSide: 'ThirdParty', category: 'ThirdParty' }), // still open
+];
+const att = attribute(register, D('2026-01-06'));
+
+eq('every day lost is counted once', att.totalDays, 14 + 6 + 3 + 5);
+eq('the client carries its own days', att.bySide.Client, 20);
+eq('the provider carries its own', att.bySide.Provider, 3);
+eq('and the open third-party blocker keeps accruing', att.bySide.ThirdParty, 5);
+eq('one blocker is still open', att.openCount, 1);
+eq('the rest are closed', att.resolvedCount, 3);
+eq('categories sum alongside sides', att.byCategory.ClientDependency, 20);
+eq('the side carrying the most days is named', att.largestSide, 'Client');
+
+// Zero-day sides are present on purpose. A report reading "Client 0,
+// Provider 12" says something that silently omitting the client does not —
+// and the omission reads as an accusation rather than a measurement.
+const oneSided = attribute([imp({ owingSide: 'Provider', impactDays: 12, resolvedAt: D('2026-01-05') })], D('2026-02-01'));
+oneSided.bySide.Client === 0 && oneSided.bySide.ThirdParty === 0
+  ? ok('sides that lost nothing are still reported, at zero')
+  : bad('sides that lost nothing are reported at zero', JSON.stringify(oneSided.bySide));
+
+const empty = attribute([], D('2026-01-01'));
+empty.totalDays === 0 && empty.largestSide === null
+  ? ok('a clean engagement blames nobody')
+  : bad('a clean engagement blames nobody', JSON.stringify(empty));
+
+// The sum has to survive being split. If the sides do not add to the total,
+// the register is producing two different answers to the same question.
+Object.values(att.bySide).reduce((a, b) => a + b, 0) === att.totalDays
+  ? ok('the sides add up to the total', att.totalDays + ' days')
+  : bad('the sides add up to the total');
+Object.values(att.byCategory).reduce((a, b) => a + b, 0) === att.totalDays
+  ? ok('so do the categories') : bad('the categories add up to the total');
+
+// ── 21. Blocked is reached by recording what the blocker is ─────────────────
+console.log('\n21. Block routing');
+
+const blockIn = checkBlockRouting('InProgress', 'Blocked');
+blockIn && blockIn.code === 'USE_IMPEDIMENT_ENDPOINT'
+  ? ok('an ordinary update cannot set Blocked')
+  : bad('an ordinary update cannot set Blocked', JSON.stringify(blockIn));
+const blockOut = checkBlockRouting('Blocked', 'InProgress');
+blockOut && blockOut.code === 'USE_IMPEDIMENT_ENDPOINT'
+  ? ok('nor clear it — the blocker is cleared, not the status')
+  : bad('nor clear it', JSON.stringify(blockOut));
+checkBlockRouting('InProgress', 'Done') === null
+  ? ok('unrelated moves are left alone') : bad('unrelated moves are left alone');
+
+// And it is part of the one composed verdict, so the ordering is settled in
+// the same place as everything else rather than in a controller.
+eq('the composed verdict routes Blocked too',
+   (checkTaskUpdate('InProgress', 'Blocked', false) || {}).code, 'USE_IMPEDIMENT_ENDPOINT');
+eq('and routes the way out of it',
+   (checkTaskUpdate('Blocked', 'NotStarted', false) || {}).code, 'USE_IMPEDIMENT_ENDPOINT');
+// Verification still wins where both could apply, because "this needs a
+// reviewer" is the more useful sentence than "use the blocker endpoint".
+eq('verification is still answered first',
+   (checkTaskUpdate('InProgress', 'Done', true) || {}).code, 'VERIFICATION_REQUIRED');
+
+// ── 22. The impediment vocabulary ───────────────────────────────────────────
+console.log('\n22. Vocabulary');
+
+checkImpedimentInput({ kind: 'Blocker', category: 'ClientDependency', owingSide: 'Client' }) === null
+  ? ok('a well-formed impediment is accepted') : bad('a well-formed impediment is accepted');
+eq('an invented category is refused',
+   (checkImpedimentInput({ category: 'Vibes', owingSide: 'Client' }) || {}).code, 'UNKNOWN_CATEGORY');
+eq('a missing category is refused too',
+   (checkImpedimentInput({ owingSide: 'Client' }) || {}).code, 'UNKNOWN_CATEGORY');
+eq('an invented side is refused',
+   (checkImpedimentInput({ category: 'Other', owingSide: 'Them' }) || {}).code, 'UNKNOWN_SIDE');
+eq('an invented kind is refused',
+   (checkImpedimentInput({ kind: 'Grumble', category: 'Other', owingSide: 'Client' }) || {}).code,
+   'UNKNOWN_KIND');
+
+OWING_SIDES.includes('ThirdParty')
+  ? ok('a third party can owe the time, not just the two signatories')
+  : bad('a third party can owe the time');
+IMPEDIMENT_CATEGORIES.includes('Other')
+  ? ok('there is an escape hatch, so nobody picks the nearest wrong answer')
+  : bad('there is an escape hatch');
+
+eq('a delay cannot be resolved — the time is already lost',
+   (checkResolvable({ kind: 'Delay', resolvedAt: null }) || {}).code, 'NOT_A_BLOCKER');
+eq('nor can an already-cleared blocker',
+   (checkResolvable({ kind: 'Blocker', resolvedAt: D('2026-01-01') }) || {}).code, 'ALREADY_RESOLVED');
+checkResolvable({ kind: 'Blocker', resolvedAt: null }) === null
+  ? ok('an open blocker can be cleared') : bad('an open blocker can be cleared');
+
+// ── 23. What a reschedule costs ─────────────────────────────────────────────
+// Measured as the increase in slip against the agreed date, not the distance
+// the date travelled. Charging the distance would count an earlier improvement
+// as a fresh loss and let the register report more days lost than the task has
+// actually slipped.
+console.log('\n23. Reschedule cost');
+
+const cost = (base, cur, next) => slipCost(D(base), cur ? D(cur) : null, D(next));
+
+eq('a first slip costs the days it slipped', cost('2026-01-10', '2026-01-10', '2026-01-20'), 10);
+eq('a second slip costs only the new days', cost('2026-01-10', '2026-01-30', '2026-02-04'), 5);
+// The case that made the naive version wrong: a date pulled in, then pushed out.
+eq('an earlier improvement is not re-charged as a loss',
+   cost('2026-01-10', '2026-01-05', '2026-01-20'), 10);
+eq('moving back inside the agreed date costs nothing',
+   cost('2026-01-20', '2026-01-30', '2026-01-15'), 0);
+eq('a task with no current date slips from the agreed one',
+   cost('2026-01-10', null, '2026-01-18'), 8);
+
+// Charges are gross: a date pulled back in is never refunded, because the
+// recovery was somebody's work and netting it off would let effort by one side
+// silently cancel days attributed to the other.
+const baseline = D('2026-01-10');
+const runCharges = (moves) => {
+  let standing = D('2026-01-10');
+  let charged = 0;
+  moves.forEach((next) => {
+    charged += slipCost(baseline, standing, D(next));
+    standing = D(next);
+  });
+  return { charged, slip: slippage({ baselineDueDate: baseline, dueDate: standing }).slipDays };
+};
+
+// Nothing pulled in: the episodes sum to exactly the slip, so the register and
+// the schedule tell the same story.
+const monotonic = runCharges(['2026-01-20', '2026-01-25', '2026-02-10']);
+monotonic.charged === monotonic.slip
+  ? ok('with no recoveries, the days charged equal the slip', monotonic.charged + ' days')
+  : bad('the days charged equal the slip',
+        'charged ' + monotonic.charged + ' vs slip ' + monotonic.slip);
+
+// With a recovery in the middle, the gross total is higher — and that gap is
+// the recovered time, which belongs to whoever did the recovering.
+const churned = runCharges(['2026-01-05', '2026-01-25', '2026-01-22', '2026-02-10']);
+churned.charged > churned.slip
+  ? ok('a recovery is not refunded to whoever caused the slip',
+       churned.charged + ' days charged against a ' + churned.slip + '-day net position')
+  : bad('a recovery is not refunded',
+        'charged ' + churned.charged + ' vs slip ' + churned.slip);
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

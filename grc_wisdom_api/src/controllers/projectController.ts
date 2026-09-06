@@ -7,6 +7,7 @@ import { projectWhere, canWriteProject, canReadProject, sideOf } from '../servic
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
+import { stampBaseline } from '../services/projectBaseline';
 
 /**
  * Delivery projects — slice 1.
@@ -50,6 +51,8 @@ const LIST_SELECT = {
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
   verificationPolicy: true,
+  baselineStartDate: true, baselineTargetEndDate: true,
+  baselineSetAt: true, baselineVersion: true,
   startDate: true, targetEndDate: true, actualEndDate: true, frameworks: true,
   tenantId: true, providerTenantId: true, createdAt: true,
   owner: { select: { id: true, name: true, email: true } },
@@ -399,6 +402,14 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
       // reporting a percentage measured against the standard it just left.
       if (data.verificationPolicy !== undefined) await recomputeProject(tx, id);
 
+      // Activation is the moment the plan stops being a draft and becomes the
+      // thing everyone agreed to, so it is the moment worth remembering. A
+      // project reactivated from OnHold keeps the baseline it already has —
+      // resuming is not renegotiating.
+      if (data.status === 'Active' && existing.status === 'Draft') {
+        await stampBaseline(tx, id, new Date());
+      }
+
       // Re-read rather than taking the update's own return: the rollup above
       // writes progress columns after it, and the pre-rollup row would show
       // figures that were true for a few milliseconds.
@@ -409,6 +420,105 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
   } catch (error: any) {
     console.error('[Project Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update project' });
+  }
+};
+
+// ─── Rebaseline ─────────────────────────────────────────────────────────────
+
+/**
+ * Agree a new plan, on the record.
+ *
+ * The only way baseline dates ever move after activation. It exists because the
+ * alternative — letting them drift with ordinary edits — makes them measure
+ * nothing, and forbidding it entirely makes a genuinely renegotiated programme
+ * report a slip it no longer has.
+ *
+ * The reason is required and the version increments, so a programme on its
+ * fourth agreed plan cannot present itself as one that has never moved. Every
+ * impediment already recorded stays: rebaselining resets what is being worked
+ * to, not what was lost getting here.
+ */
+export const rebaselineProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const id = str(req.params.id);
+
+    const existing = await prisma.project.findUnique({
+      where: { id },
+      select: {
+        id: true, tenantId: true, providerTenantId: true, ref: true,
+        status: true, baselineVersion: true, baselineSetAt: true,
+      },
+    });
+    if (!existing || !canReadProject(scope, existing)) {
+      res.status(404).json({ status: 'error', message: 'Project not found' });
+      return;
+    }
+    if (!canWriteProject(scope, existing.tenantId)) {
+      res.status(403).json({
+        status: 'error',
+        code: 'READ_ONLY_ENGAGEMENT',
+        message: 'You can view this engagement but not change it.',
+      });
+      return;
+    }
+    if (existing.status === 'Closed' || existing.status === 'Cancelled') {
+      res.status(409).json({
+        status: 'error',
+        code: 'PROJECT_FROZEN',
+        message: `This project is ${existing.status}. A finished engagement is a record.`,
+      });
+      return;
+    }
+    if (!existing.baselineSetAt) {
+      res.status(409).json({
+        status: 'error',
+        code: 'NOT_BASELINED',
+        message: 'This project has no agreed plan yet — activate it first. A draft moves freely.',
+      });
+      return;
+    }
+
+    const reason = req.body?.reason ? str(req.body.reason).trim() : '';
+    if (reason.length < 10) {
+      res.status(400).json({
+        status: 'error',
+        code: 'REASON_REQUIRED',
+        message: 'Say why the plan is being reset — at least 10 characters. A baseline moved '
+          + 'without a reason is a baseline nobody can defend at the next steering meeting.',
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const stamped = await stampBaseline(tx, id, new Date());
+      await writeAudit(tx, {
+        tenantId: existing.tenantId,
+        actorId: str(req.user!.id),
+        action: 'PROJECT_REBASELINED',
+        subjectType: 'Project',
+        subjectId: id,
+        payload: {
+          ref: existing.ref,
+          from: existing.baselineVersion,
+          to: stamped.version,
+          phases: stamped.phases,
+          tasks: stamped.tasks,
+          reason,
+        },
+      });
+      return stamped;
+    });
+
+    res.json({
+      status: 'success',
+      message: `Plan rebaselined. Version ${result.version}, covering `
+        + `${result.phases} phase(s) and ${result.tasks} task(s).`,
+      baseline: result,
+    });
+  } catch (error: any) {
+    console.error('[Project Rebaseline Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to rebaseline the project' });
   }
 };
 

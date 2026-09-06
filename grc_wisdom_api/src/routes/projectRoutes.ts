@@ -7,6 +7,7 @@ import {
   createProject,
   updateProject,
   closeProject,
+  rebaselineProject,
 } from '../controllers/projectController';
 import {
   getPlan,
@@ -18,6 +19,13 @@ import {
   deleteTask,
   taskStatuses,
 } from '../controllers/projectPlanController';
+import {
+  raiseImpediment,
+  blockTask,
+  resolveImpediment,
+  rescheduleTask,
+  getImpediments,
+} from '../controllers/projectImpedimentController';
 import {
   submitTask,
   verifyTask,
@@ -48,6 +56,9 @@ router.get('/:id', getProject);
 router.post('/', requireCapability(CAP.MANAGE_PROJECT), createProject);
 router.patch('/:id', requireCapability(CAP.MANAGE_PROJECT), updateProject);
 router.post('/:id/close', requireCapability(CAP.MANAGE_PROJECT), closeProject);
+// Moving the agreed plan is a management act with a reason attached — it is the
+// only thing that can move a baseline after the engagement starts.
+router.post('/:id/rebaseline', requireCapability(CAP.MANAGE_PROJECT), rebaselineProject);
 
 // ── The plan: phases and tasks ────────────────────────────────────────────
 //
@@ -77,5 +88,20 @@ router.post('/tasks/:taskId/verify', requireCapability(CAP.VERIFY_PROJECT_WORK),
 // Withdrawing your own submission is ordinary work; reopening a verified task
 // is not, and returnTask requires MANAGE_PROJECT itself for that case.
 router.post('/tasks/:taskId/return', requireCapability(CAP.EXECUTE_PROJECT_WORK), returnTask);
+
+// ── Delays and blockers ───────────────────────────────────────────────────
+//
+// Blocking and rescheduling carry the lighter capability because they are part
+// of doing the work: the person who hits the wall is the person who should say
+// so, and a rule that only a manager may report a blocker is a rule that
+// produces plans with no blockers in them.
+router.get('/:id/impediments', getImpediments);
+router.post('/:id/impediments', requireCapability(CAP.EXECUTE_PROJECT_WORK), raiseImpediment);
+router.post('/tasks/:taskId/block', requireCapability(CAP.EXECUTE_PROJECT_WORK), blockTask);
+// Re-dating is a planning act, so it needs the heavier one — see the split in
+// updateTask, where an assignee may report progress but not re-plan the work.
+router.post('/tasks/:taskId/reschedule', requireCapability(CAP.MANAGE_PROJECT), rescheduleTask);
+router.post('/impediments/:impedimentId/resolve',
+  requireCapability(CAP.EXECUTE_PROJECT_WORK), resolveImpediment);
 
 export default router;

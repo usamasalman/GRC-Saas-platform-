@@ -1,6 +1,7 @@
 /**
- * Delivery projects — slices 1 to 3: the engagement, the work inside it, and
- * the independent verification that turns one progress figure into two.
+ * Delivery projects — slices 1 to 4: the engagement, the work inside it, the
+ * independent verification that turns one progress figure into two, and the
+ * attribution of every day the plan has lost.
  *
  * The assertion that matters most is isolation. A delivery project is the first
  * record in this platform visible from two directions — the client tenant that
@@ -41,7 +42,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-3 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-4 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -721,6 +722,287 @@ async function main() {
       ? ok('and the verified figure falls back', `67% → ${reopened.json.rollup.verifiedProgress}%`)
       : bad('the verified figure falls back', `${reopened.json?.rollup?.verifiedProgress}`);
   }
+
+  // ── 19. The agreed plan ─────────────────────────────────────────────────
+  console.log('\n19. Baseline');
+
+  const bProject = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Delay attribution project',
+      startDate: iso(-5), targetEndDate: iso(90),
+      ownerId: myUserId, managerId: myUserId,
+    },
+  });
+  const bid = bProject.json?.project?.id;
+  bid ? ok('project for the delay run created') : bad('project for the delay run created',
+        `${bProject.status} ${JSON.stringify(bProject.json).slice(0, 160)}`);
+  if (!bid) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  // A draft has agreed nothing, so there is nothing to slip from.
+  bProject.json.project.baselineSetAt === null && bProject.json.project.baselineVersion === 0
+    ? ok('a draft carries no agreed plan')
+    : bad('a draft carries no agreed plan',
+          `${bProject.json.project.baselineSetAt} / v${bProject.json.project.baselineVersion}`);
+
+  const bActivated = await api(`/api/projects/${bid}`, {
+    token, method: 'PATCH', body: { status: 'Active' },
+  });
+  bActivated.json?.project?.baselineSetAt && bActivated.json?.project?.baselineVersion === 1
+    ? ok('activation stamps the plan that was agreed', 'v1')
+    : bad('activation stamps the agreed plan',
+          `${bActivated.json?.project?.baselineSetAt} / v${bActivated.json?.project?.baselineVersion}`);
+
+  const bPhase = await api(`/api/projects/${bid}/phases`, {
+    token, method: 'POST',
+    body: { name: 'Remediation', startDate: iso(-5), targetEndDate: iso(60), ownerId: myUserId },
+  });
+  const bPhaseId = bPhase.json?.phase?.id;
+  const bTask = await api(`/api/projects/phases/${bPhaseId}/tasks`, {
+    token, method: 'POST',
+    body: { name: 'Deploy MFA across the estate', assigneeId: myUserId, dueDate: iso(10) },
+  });
+  const btid = bTask.json?.task?.id;
+  btid ? ok('task created on a running engagement') : bad('task created', `${bTask.status}`);
+  if (!btid) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  // Added to a running engagement, so its plan was agreed the moment it was
+  // added — unlike one added to a draft, which is still being planned.
+  bTask.json.task.baselineDueDate
+    ? ok('a task added to a live plan is baselined at creation')
+    : bad('a task added to a live plan is baselined at creation');
+
+  const bPlan = await api(`/api/projects/${bid}/plan`, { token });
+  const bPlanTask = bPlan.json?.phases?.[0]?.tasks?.[0];
+  bPlanTask?.slippage?.baselined === true && bPlanTask?.slippage?.slipDays === 0
+    ? ok('a freshly planned task has slipped nothing')
+    : bad('a freshly planned task has slipped nothing', JSON.stringify(bPlanTask?.slippage));
+
+  // ── 20. A date cannot move past the agreed one in silence ───────────────
+  console.log('\n20. Moving a date');
+
+  const silentSlip = await api(`/api/projects/tasks/${btid}`, {
+    token, method: 'PATCH', body: { dueDate: iso(20) },
+  });
+  silentSlip.status === 409 && silentSlip.json?.code === 'USE_RESCHEDULE_ENDPOINT'
+    ? ok('a date cannot slip past the agreed one through an ordinary update')
+    : bad('a date cannot slip silently', `${silentSlip.status} ${silentSlip.json?.code}`);
+
+  // Pulling a date in never needs defending.
+  const pullIn = await api(`/api/projects/tasks/${btid}`, {
+    token, method: 'PATCH', body: { dueDate: iso(5) },
+  });
+  pullIn.status === 200
+    ? ok('pulling a date in stays an ordinary edit')
+    : bad('pulling a date in stays an ordinary edit', `${pullIn.status} ${pullIn.json?.code}`);
+
+  const noReason = await api(`/api/projects/tasks/${btid}/reschedule`, {
+    token, method: 'POST',
+    body: { dueDate: iso(20), category: 'ClientDependency', owingSide: 'Client' },
+  });
+  noReason.status === 400 && noReason.json?.code === 'REASON_REQUIRED'
+    ? ok('a reschedule must say why')
+    : bad('a reschedule must say why', `${noReason.status} ${noReason.json?.code}`);
+
+  const badCategory = await api(`/api/projects/tasks/${btid}/reschedule`, {
+    token, method: 'POST',
+    body: {
+      dueDate: iso(20), category: 'Vibes', owingSide: 'Client',
+      reason: 'The client has not returned the asset register.',
+    },
+  });
+  badCategory.status === 400 && badCategory.json?.code === 'UNKNOWN_CATEGORY'
+    ? ok('a reason has to be one the register can add up')
+    : bad('a reason has to be summable', `${badCategory.status} ${badCategory.json?.code}`);
+
+  const notASlip = await api(`/api/projects/tasks/${btid}/reschedule`, {
+    token, method: 'POST',
+    body: {
+      dueDate: iso(3), category: 'ClientDependency', owingSide: 'Client',
+      reason: 'Pulling this one forward after all.',
+    },
+  });
+  notASlip.status === 400 && notASlip.json?.code === 'NOT_A_SLIP'
+    ? ok('a date that is not slipping cannot invent a delay')
+    : bad('a date that is not slipping cannot invent a delay',
+          `${notASlip.status} ${notASlip.json?.code}`);
+
+  const slipped = await api(`/api/projects/tasks/${btid}/reschedule`, {
+    token, method: 'POST',
+    body: {
+      dueDate: iso(20), category: 'ClientDependency', owingSide: 'Client',
+      reason: 'Client has not returned the signed asset register.',
+    },
+  });
+  slipped.status === 200
+    ? ok('a slip with a reason and an owner is accepted')
+    : bad('a slip with a reason is accepted',
+          `${slipped.status} ${JSON.stringify(slipped.json).slice(0, 160)}`);
+
+  // Agreed day 10, pulled in to day 5, pushed to day 20. The plan is ten days
+  // behind, not fifteen — the earlier improvement is not re-charged as a loss.
+  slipped.json?.impediment?.impactDays === 10
+    ? ok('the cost is the increase in slip, not the distance travelled', '10 days')
+    : bad('the cost is the increase in slip', `got ${slipped.json?.impediment?.impactDays}`);
+  slipped.json?.impediment?.kind === 'Delay' && slipped.json?.impediment?.resolvedAt
+    ? ok('a recorded delay is closed at birth — the time is already gone')
+    : bad('a recorded delay is closed at birth', JSON.stringify(slipped.json?.impediment?.kind));
+  slipped.json?.task?.slippage?.slipDays === 10
+    ? ok('and the task now reads ten days behind plan')
+    : bad('the task reads ten days behind', JSON.stringify(slipped.json?.task?.slippage));
+
+  // ── 21. Blocked is reached by saying what the blocker is ────────────────
+  console.log('\n21. Blockers');
+
+  const silentBlock = await api(`/api/projects/tasks/${btid}`, {
+    token, method: 'PATCH', body: { status: 'Blocked' },
+  });
+  silentBlock.json?.code === 'USE_IMPEDIMENT_ENDPOINT'
+    ? ok('work cannot be blocked without saying why')
+    : bad('work cannot be blocked silently', `${silentBlock.status} ${silentBlock.json?.code}`);
+
+  const blockNoCategory = await api(`/api/projects/tasks/${btid}/block`, {
+    token, method: 'POST', body: { title: 'Waiting on something' },
+  });
+  blockNoCategory.status === 400
+    ? ok('a blocker needs a category and an owner')
+    : bad('a blocker needs a category and an owner', `${blockNoCategory.status}`);
+
+  const blocked = await api(`/api/projects/tasks/${btid}/block`, {
+    token, method: 'POST',
+    body: {
+      title: 'Firewall change window not approved',
+      category: 'ThirdParty', owingSide: 'ThirdParty', severity: 'High',
+      description: 'Managed service provider has not scheduled the change.',
+    },
+  });
+  blocked.status === 201 && blocked.json?.task?.status === 'Blocked'
+    ? ok('recording the blocker is what stops the work')
+    : bad('recording the blocker stops the work',
+          `${blocked.status} ${JSON.stringify(blocked.json).slice(0, 140)}`);
+  const impId = blocked.json?.impediment?.id;
+  blocked.json?.impediment?.open === true && blocked.json?.impediment?.impactDays === null
+    ? ok('an open blocker has no stamped cost yet')
+    : bad('an open blocker has no stamped cost', JSON.stringify(blocked.json?.impediment?.impactDays));
+
+  const silentUnblock = await api(`/api/projects/tasks/${btid}`, {
+    token, method: 'PATCH', body: { status: 'InProgress' },
+  });
+  silentUnblock.json?.code === 'USE_IMPEDIMENT_ENDPOINT'
+    ? ok('and the blocker is cleared, not the status')
+    : bad('the blocker is cleared, not the status', `${silentUnblock.json?.code}`);
+
+  const shortClose = await api(`/api/projects/impediments/${impId}/resolve`, {
+    token, method: 'POST', body: { resolutionNote: 'done' },
+  });
+  shortClose.status === 400 && shortClose.json?.code === 'REASON_REQUIRED'
+    ? ok('clearing a blocker must say how')
+    : bad('clearing a blocker must say how', `${shortClose.status} ${shortClose.json?.code}`);
+
+  const cleared = await api(`/api/projects/impediments/${impId}/resolve`, {
+    token, method: 'POST',
+    body: { resolutionNote: 'Change window approved for Thursday night.' },
+  });
+  cleared.json?.impediment?.open === false && cleared.json?.task?.status === 'InProgress'
+    ? ok('clearing the last blocker releases the work')
+    : bad('clearing the last blocker releases the work',
+          `${cleared.status} ${cleared.json?.task?.status}`);
+  cleared.json?.impediment?.impactDays !== null
+    ? ok('and stamps what it cost', `${cleared.json.impediment.impactDays} day(s)`)
+    : bad('and stamps what it cost');
+
+  const reClose = await api(`/api/projects/impediments/${impId}/resolve`, {
+    token, method: 'POST', body: { resolutionNote: 'Clearing it a second time.' },
+  });
+  reClose.status === 409 && reClose.json?.code === 'ALREADY_RESOLVED'
+    ? ok('a cleared blocker cannot be cleared again')
+    : bad('a cleared blocker cannot be cleared again', `${reClose.status} ${reClose.json?.code}`);
+
+  // ── 22. The register, and who owes the days ─────────────────────────────
+  console.log('\n22. Attribution');
+
+  const noImpact = await api(`/api/projects/${bid}/impediments`, {
+    token, method: 'POST',
+    body: { kind: 'Delay', title: 'Scope grew', category: 'ScopeChange', owingSide: 'Provider' },
+  });
+  noImpact.status === 400 && noImpact.json?.code === 'IMPACT_REQUIRED'
+    ? ok('a recorded delay must say how many days it cost')
+    : bad('a recorded delay must state its cost', `${noImpact.status} ${noImpact.json?.code}`);
+
+  // Not attached to any task: "the client has not appointed an ISMS owner"
+  // holds up a programme rather than a checkbox.
+  const programmeLevel = await api(`/api/projects/${bid}/impediments`, {
+    token, method: 'POST',
+    body: {
+      kind: 'Delay', title: 'Scope grew to cover the second data centre',
+      category: 'ScopeChange', owingSide: 'Provider', impactDays: 4,
+    },
+  });
+  programmeLevel.status === 201 && programmeLevel.json?.impediment?.task === null
+    ? ok('an impediment can sit against the engagement, not a checkbox')
+    : bad('an impediment can sit against the engagement',
+          `${programmeLevel.status} ${JSON.stringify(programmeLevel.json).slice(0, 140)}`);
+
+  const delayId = programmeLevel.json?.impediment?.id;
+  const resolveDelay = await api(`/api/projects/impediments/${delayId}/resolve`, {
+    token, method: 'POST', body: { resolutionNote: 'Trying to clear a recorded delay.' },
+  });
+  resolveDelay.status === 409 && resolveDelay.json?.code === 'NOT_A_BLOCKER'
+    ? ok('a recorded delay has nothing left to clear')
+    : bad('a recorded delay has nothing to clear', `${resolveDelay.status} ${resolveDelay.json?.code}`);
+
+  const register = await api(`/api/projects/${bid}/impediments`, { token });
+  const sum = register.json?.summary;
+  sum?.bySide?.Client === 10 && sum?.bySide?.Provider === 4
+    ? ok('days are attributed to whoever owed them',
+         `Client ${sum.bySide.Client}, Provider ${sum.bySide.Provider}, ThirdParty ${sum.bySide.ThirdParty}`)
+    : bad('days are attributed to whoever owed them', JSON.stringify(sum?.bySide));
+  sum?.largestSide === 'Client'
+    ? ok('and the side carrying the most is named')
+    : bad('the side carrying the most is named', `${sum?.largestSide}`);
+  Object.values(sum?.bySide || {}).reduce((a, b) => a + b, 0) === sum?.totalDays
+    ? ok('the sides add up to the total', `${sum.totalDays} days`)
+    : bad('the sides add up to the total', JSON.stringify(sum));
+  sum?.openCount === 0
+    ? ok('nothing is still blocking') : bad('nothing is still blocking', `${sum?.openCount}`);
+
+  const openOnly = await api(`/api/projects/${bid}/impediments?open=true`, { token });
+  (openOnly.json?.impediments || []).length === 0
+    ? ok('the register can be filtered to what is still costing time')
+    : bad('the open filter works', `${(openOnly.json?.impediments || []).length}`);
+
+  // ── 23. Agreeing a new plan ─────────────────────────────────────────────
+  console.log('\n23. Rebaseline');
+
+  const noWhy = await api(`/api/projects/${bid}/rebaseline`, {
+    token, method: 'POST', body: { reason: 'because' },
+  });
+  noWhy.status === 400 && noWhy.json?.code === 'REASON_REQUIRED'
+    ? ok('a baseline cannot move without a reason')
+    : bad('a baseline cannot move without a reason', `${noWhy.status} ${noWhy.json?.code}`);
+
+  const rebaselined = await api(`/api/projects/${bid}/rebaseline`, {
+    token, method: 'POST',
+    body: { reason: 'Steering committee agreed a revised plan on 12 March.' },
+  });
+  rebaselined.json?.baseline?.version === 2
+    ? ok('a renegotiated plan is version 2, not version 1 again')
+    : bad('a renegotiated plan increments the version',
+          `${rebaselined.status} ${JSON.stringify(rebaselined.json).slice(0, 140)}`);
+
+  const afterRebase = await api(`/api/projects/${bid}/plan`, { token });
+  afterRebase.json?.phases?.[0]?.tasks?.[0]?.slippage?.slipDays === 0
+    ? ok('the task now measures against the new plan')
+    : bad('the task measures against the new plan',
+          JSON.stringify(afterRebase.json?.phases?.[0]?.tasks?.[0]?.slippage));
+
+  // What was lost getting here survives. Rebaselining resets what is being
+  // worked to, not the record of what it cost to get this far.
+  const afterRegister = await api(`/api/projects/${bid}/impediments`, { token });
+  afterRegister.json?.summary?.totalDays === sum?.totalDays
+    ? ok('but the days already lost are still on the record', `${sum?.totalDays} days`)
+    : bad('the days already lost survive a rebaseline',
+          `${afterRegister.json?.summary?.totalDays} vs ${sum?.totalDays}`);
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);

@@ -3,6 +3,7 @@ import { S, ghostBtn } from '../iam/iamStyles';
 import ProjectPortfolio from './project/ProjectPortfolio';
 import ProjectPlan from './project/ProjectPlan';
 import ProjectVerification from './project/ProjectVerification';
+import ProjectImpediments from './project/ProjectImpediments';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -11,11 +12,11 @@ import ProjectVerification from './project/ProjectVerification';
  * The selected project is the only state this host owns — each tab loads its own
  * data — which is the same arrangement AuditProgramme uses for its engagements.
  *
- * Later slices add tabs beside Plan and Verification: deliverables, reports.
- * None of them change this file beyond one more entry.
+ * Later slices add tabs beside these: deliverables, reports. None of them
+ * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan' | 'verification';
+type TabKey = 'portfolio' | 'plan' | 'verification' | 'impediments';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -63,6 +64,14 @@ const DeliveryProjects: React.FC = () => {
         >
           Verification
         </button>
+        <button
+          style={{ ...tabStyle(tab === 'impediments'), opacity: selected ? 1 : 0.45 }}
+          onClick={() => selected && setTab('impediments')}
+          disabled={!selected}
+          title={selected ? undefined : 'Open a project from the portfolio first'}
+        >
+          Delays
+        </button>
 
         {tab !== 'portfolio' && selected && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -78,6 +87,9 @@ const DeliveryProjects: React.FC = () => {
       {tab === 'plan' && selected && <ProjectPlan key={selected.id} projectId={selected.id} />}
       {tab === 'verification' && selected && (
         <ProjectVerification key={selected.id} projectId={selected.id} />
+      )}
+      {tab === 'impediments' && selected && (
+        <ProjectImpediments key={selected.id} projectId={selected.id} />
       )}
     </div>
   );

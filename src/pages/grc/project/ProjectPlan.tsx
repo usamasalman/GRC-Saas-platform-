@@ -38,6 +38,11 @@ interface Task {
   verificationRound: number;
   needsVerification: boolean;
   timing: Timing;
+  slippage: { baselined: boolean; slipDays: number; slipped: boolean };
+  impediments: {
+    id: string; ref: string; title: string; category: string;
+    owingSide: string; severity: string; raisedAt: string;
+  }[];
 }
 
 interface Phase {
@@ -92,11 +97,13 @@ const PHASE_STATUS: Record<string, { label: string; fg: string; line: string }> 
  * could not have predicted.
  */
 const ALLOWED_NEXT: Record<string, string[]> = {
-  NotStarted: ['NotStarted', 'InProgress', 'Blocked'],
-  InProgress: ['InProgress', 'Blocked', 'NotStarted'],
-  Blocked: ['Blocked', 'InProgress', 'NotStarted'],
+  NotStarted: ['NotStarted', 'InProgress'],
+  InProgress: ['InProgress', 'NotStarted'],
+  // Reached by recording what the blocker is, and left by clearing it, so the
+  // dropdown offers nothing while a task is stopped.
+  Blocked: [],
   Done: ['Done', 'InProgress'],
-  Rejected: ['Rejected', 'InProgress', 'Blocked'],
+  Rejected: ['Rejected', 'InProgress'],
   // Settled by a reviewer: the row shows a button, not a dropdown.
   SubmittedForVerification: [],
   Verified: [],
@@ -318,6 +325,43 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   };
 
   /**
+   * Stop a task, saying what is stopping it.
+   *
+   * The server refuses `status: "Blocked"` on an ordinary update, so this is
+   * the only way in — and the prompt is where the reason gets captured. A
+   * blocker with no owing side is the row that starts the argument at the next
+   * steering meeting rather than settling it.
+   */
+  const blockTask = async (task: Task) => {
+    const title = window.prompt(`What is blocking ${task.ref}?`);
+    if (title === null) return;
+    if (title.trim().length < 3) { setError('Say what is blocking it.'); return; }
+
+    const owingSide = window.prompt(
+      'Who has to clear it? Client, Provider or ThirdParty', 'Client',
+    );
+    if (owingSide === null) return;
+
+    setBusyTask(task.id);
+    setError('');
+    try {
+      const res = await apiClient.post(`/api/projects/tasks/${task.id}/block`, {
+        title: title.trim(),
+        owingSide: owingSide.trim(),
+        // The register's categories are richer than a prompt can offer well;
+        // the Delays tab is where a blocker gets classified properly.
+        category: 'Other',
+      });
+      applyResult(task.id, { task: res.data?.task, rollup: res.data?.rollup });
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setBusyTask(null);
+    }
+  };
+
+  /**
    * Ask for the reason the server is going to insist on anyway.
    *
    * Returns null when the user cancels, so the caller can abandon quietly
@@ -502,6 +546,15 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                     {t.timing.daysOverdue}d overdue
                                   </div>
                                 )}
+                                {/* Movement from the date that was agreed, which
+                                    is a different fact from being overdue: a task
+                                    can have slipped a fortnight and still not be
+                                    late yet. */}
+                                {t.slippage?.slipped && (
+                                  <div style={{ fontSize: 10.5, color: 'var(--warning)' }}>
+                                    +{t.slippage.slipDays}d vs plan
+                                  </div>
+                                )}
                               </td>
 
                               <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 12.5 }}>
@@ -550,6 +603,29 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                     <option key={s} value={s}>{TASK_STATUS[s]?.label || s}</option>
                                   ))}
                                 </select>
+
+                                {/* Blocked is not in the dropdown: it is the one
+                                    status that appears on a steering report and
+                                    explains nothing, so it is reached by saying
+                                    what the blocker is. */}
+                                {t.status === 'Blocked' ? (
+                                  <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 3 }}>
+                                    {t.impediments?.[0]
+                                      ? `${t.impediments[0].title} · ${t.impediments[0].owingSide}`
+                                      : 'Blocked'}
+                                  </div>
+                                ) : ['InProgress', 'NotStarted', 'Rejected'].includes(t.status) && (
+                                  <button
+                                    style={{
+                                      ...actionBtn('var(--ink-muted)', busy),
+                                      marginTop: 4, marginRight: 0,
+                                    }}
+                                    disabled={busy}
+                                    onClick={() => blockTask(t)}
+                                  >
+                                    Block
+                                  </button>
+                                )}
                               </td>
 
                               <td style={{ ...S.td, whiteSpace: 'nowrap' }}>

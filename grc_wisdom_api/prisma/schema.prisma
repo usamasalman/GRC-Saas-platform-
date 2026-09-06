@@ -184,6 +184,8 @@ model User {
   tasksSubmitted   ProjectTask[]  @relation("TaskSubmitter")
   tasksVerified    ProjectTask[]  @relation("TaskVerifier")
   verificationsMade ProjectVerification[] @relation("VerificationActor")
+  impedimentsRaised ProjectImpediment[] @relation("ImpedimentRaiser")
+  impedimentsCleared ProjectImpediment[] @relation("ImpedimentResolver")
 }
 
 model Plan {
@@ -2547,6 +2549,20 @@ model Project {
   /// "did it land on time" is answerable without a separate flag.
   actualEndDate    DateTime?
 
+  /// The dates that were agreed, as opposed to the dates now being worked to.
+  ///
+  /// Stamped when the project is activated and moved only by an explicit
+  /// rebaseline. Without them a due date is just a mutable field, every plan is
+  /// always on time, and "why is this late" has no referent — you cannot ask
+  /// what moved if nothing recorded where it started.
+  baselineStartDate     DateTime?
+  baselineTargetEndDate DateTime?
+  baselineSetAt         DateTime?
+  /// Incremented on each rebaseline. A programme on its fourth agreed plan is a
+  /// different fact from one still on its first, and it is the fact a steering
+  /// committee asks about.
+  baselineVersion       Int      @default(0)
+
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
   owner            User     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -2568,6 +2584,7 @@ model Project {
   phases           ProjectPhase[]
   tasks            ProjectTask[]
   verifications    ProjectVerification[]
+  impediments      ProjectImpediment[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2629,6 +2646,9 @@ model ProjectPhase {
   startDate     DateTime
   targetEndDate DateTime
 
+  /// Stamped with the project's baseline and moved only by a rebaseline.
+  baselineTargetEndDate DateTime?
+
   ownerId       String
   owner         User    @relation("PhaseOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -2652,6 +2672,7 @@ model ProjectPhase {
   updatedAt     DateTime @updatedAt
 
   tasks         ProjectTask[]
+  impediments   ProjectImpediment[]
 
   @@index([projectId, sequence])
   @@index([projectId, status])
@@ -2708,6 +2729,12 @@ model ProjectTask {
   dueDate       DateTime?
   completedAt   DateTime?
 
+  /// The dates agreed when the plan was set, against which slippage is measured.
+  /// A task added to a running project is baselined at creation: its plan was
+  /// agreed the moment it was added.
+  baselineStartDate DateTime?
+  baselineDueDate   DateTime?
+
   /// null follows the project's verificationPolicy. true and false are explicit
   /// decisions that survive a policy change — a manager who exempted one task
   /// meant it, and a later switch to EveryTask should not silently un-exempt it.
@@ -2732,6 +2759,7 @@ model ProjectTask {
   updatedAt     DateTime @updatedAt
 
   verifications ProjectVerification[]
+  impediments   ProjectImpediment[]
 
   @@unique([projectId, ref])
   @@index([phaseId, sequence])
@@ -2739,6 +2767,82 @@ model ProjectTask {
   @@index([assigneeId, status])
   @@index([projectId, dueDate])
   @@index([projectId, status])
+}
+
+/// Something costing the engagement time, and who owes its resolution.
+///
+/// One register for two shapes, because a report that answers "how much time
+/// did this programme lose and to whom" must sum them together:
+///
+///   Blocker  work cannot proceed. Opens, sits, is cleared. Its cost is the
+///            time it stayed open, stamped into impactDays on resolution.
+///   Delay    a date moved. Recorded and closed in the same instant, because
+///            the time is already lost — there is nothing to clear.
+///
+/// `owingSide` is the column this table exists for. On consultant-led work the
+/// most contested question at every steering meeting is whose fault the slip
+/// was: the client says the consultant was slow, the consultant says the client
+/// never produced the evidence. Nobody can answer it afterwards from a Gantt
+/// chart. Recording it at the moment the time is lost — by the person losing
+/// it, before the argument — turns a dispute into a sum.
+model ProjectImpediment {
+  id          String   @id @default(uuid())
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Both optional. "The client has not appointed an ISMS owner" holds up a
+  /// phase, and sometimes a whole engagement, rather than one checkbox — and an
+  /// impediment that can only attach to a task cannot be raised until someone
+  /// invents a fake task to hang it on.
+  phaseId     String?
+  phase       ProjectPhase? @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        ProjectTask?  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  ref         String
+
+  /// Blocker | Delay
+  kind        String
+  /// ClientDependency | ProviderCapacity | ThirdParty | Regulatory
+  /// | ScopeChange | Technical | Resourcing | Other
+  category    String
+  /// Client | Provider | ThirdParty — who has to clear it. Not who raised it:
+  /// the consultant raising "waiting on client evidence" is the normal case.
+  owingSide   String
+  /// Low | Medium | High | Critical
+  severity    String   @default("Medium")
+
+  title       String
+  description String?
+
+  /// Days this cost the plan. Stamped on resolution for a blocker, at creation
+  /// for a delay. Stored rather than derived because a blocker's cost stops
+  /// accruing when it clears, and a column that keeps counting after that is a
+  /// column that is wrong from the moment it matters.
+  impactDays  Int?
+
+  /// When the blocked work is expected to move again, where anyone knows.
+  expectedClearDate DateTime?
+
+  raisedById  String
+  raisedBy    User     @relation("ImpedimentRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
+  raisedAt    DateTime @default(now())
+
+  resolvedById   String?
+  resolvedBy     User?  @relation("ImpedimentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt     DateTime?
+  /// Required to close a blocker. "Resolved" with no account of how is the
+  /// entry that makes a register useless six months later.
+  resolutionNote String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, ref])
+  @@index([projectId, resolvedAt])
+  @@index([projectId, owingSide])
+  @@index([taskId, resolvedAt])
+  @@index([phaseId, resolvedAt])
 }
 
 /// One decision in a task's verification history. Append-only: rows are written

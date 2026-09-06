@@ -1,3 +1,5 @@
+import { checkBlockRouting } from './projectDelay';
+
 /**
  * Declared state machines for the delivery tree, and the derived facts that
  * depend on where a task sits in time rather than what somebody set.
@@ -132,7 +134,8 @@ export function requiresVerification(
 
 export interface TransitionRefusal {
   code: 'ILLEGAL_TRANSITION' | 'UNKNOWN_STATUS' | 'VERIFICATION_REQUIRED'
-      | 'VERIFICATION_NOT_REQUIRED' | 'USE_VERIFICATION_ENDPOINT' | 'SELF_VERIFICATION';
+      | 'VERIFICATION_NOT_REQUIRED' | 'USE_VERIFICATION_ENDPOINT' | 'SELF_VERIFICATION'
+      | 'USE_IMPEDIMENT_ENDPOINT';
   message: string;
 }
 
@@ -274,6 +277,9 @@ export function checkSeparationOfDuties(actor: {
  *            endpoint" followed by "this needs no verification" is two round
  *            trips to reach one sentence.
  *   routing  anything in the verification lane belongs to another endpoint.
+ *   block    so does Blocked, in both directions — it is the one status that
+ *            appears on a steering report and explains nothing, so it is
+ *            reached by recording what the blocker is.
  *   table    everything else, including an invented status name.
  */
 export function checkTaskUpdate(
@@ -283,6 +289,7 @@ export function checkTaskUpdate(
 ): TransitionRefusal | null {
   return checkVerificationRule(to, needsVerification)
     || checkVerificationRouting(from, to)
+    || checkBlockRouting(from, to)
     || checkTaskTransition(from, to);
 }
 

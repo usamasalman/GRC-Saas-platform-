@@ -26,6 +26,9 @@ export interface GuardedProject {
   /** Who to tell when something needs a decision. Accountable for delivery. */
   ownerId: string;
   managerId: string;
+  /** Null until the plan is agreed. Slice 4 measures slippage against it. */
+  baselineSetAt: Date | null;
+  baselineVersion: number;
 }
 
 export interface ProjectGuard {
@@ -47,6 +50,7 @@ export async function guardProject(
       id: true, tenantId: true, providerTenantId: true,
       ref: true, name: true, status: true, verificationPolicy: true,
       ownerId: true, managerId: true,
+      baselineSetAt: true, baselineVersion: true,
     },
   });
 

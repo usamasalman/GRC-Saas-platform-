@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
+import { requiresDelayReason, slippage } from '../services/projectDelay';
 import {
   TASK_STATUSES, VERIFICATION_POLICIES, checkTaskUpdate, requiresVerification,
   taskTiming, taskCounts, isComplete,
@@ -82,9 +83,20 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             side: true, department: true, startDate: true, dueDate: true, completedAt: true,
             verificationOverride: true, verificationRound: true,
             submittedAt: true, verifiedAt: true,
+            baselineStartDate: true, baselineDueDate: true,
             assignee: { select: { id: true, name: true, email: true } },
             submittedBy: { select: { id: true, name: true } },
             verifiedBy: { select: { id: true, name: true } },
+            // A blocked task that does not say what is blocking it is the row
+            // everyone asks about and nobody can answer.
+            impediments: {
+              where: { kind: 'Blocker', resolvedAt: null },
+              orderBy: { raisedAt: 'asc' },
+              select: {
+                id: true, ref: true, title: true, category: true,
+                owingSide: true, severity: true, raisedAt: true, expectedClearDate: true,
+              },
+            },
           },
         },
       },
@@ -101,6 +113,7 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
         ...t,
         needsVerification: requiresVerification(policy, t.verificationOverride),
         timing: taskTiming(t, now),
+        slippage: slippage(t),
       }));
       return { ...ph, tasks, counts: taskCounts(tasks, now) };
     });
@@ -111,6 +124,8 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
       status: 'success',
       projectId: project.id,
       verificationPolicy: policy,
+      baselined: project.baselineSetAt !== null,
+      baselineVersion: project.baselineVersion,
       phases: decorated,
       totals: { phases: decorated.length, tasks: allTasks.length, ...taskCounts(allTasks, now) },
     });
@@ -356,6 +371,7 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
+    const baselineNow = project.baselineSetAt !== null;
     const ref = await nextTaskRef(project.id);
     const next = sequence !== undefined
       ? Number(sequence)
@@ -377,6 +393,12 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
           weight: Math.round(parsedWeight),
           startDate: startDate ? new Date(startDate) : null,
           dueDate: dueDate ? new Date(dueDate) : null,
+          // A task added to a running engagement is baselined now: its plan was
+          // agreed the moment it was added. One added to a draft is not, because
+          // nothing has been agreed at all — and an unbaselined task is not the
+          // same as one that has slipped by zero.
+          baselineStartDate: baselineNow && startDate ? new Date(startDate) : null,
+          baselineDueDate: baselineNow && dueDate ? new Date(dueDate) : null,
           verificationOverride: override,
         },
       });
@@ -418,6 +440,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       select: {
         id: true, projectId: true, ref: true, name: true, status: true,
         assigneeId: true, completionPercent: true, verificationOverride: true,
+        dueDate: true, baselineDueDate: true,
       },
     });
     if (!existing) { notFound(res); return; }
@@ -547,6 +570,21 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
           data[field] = d;
         }
       }
+
+      // A due date moving past the one that was agreed is a slip, and a plan
+      // whose dates can be moved without saying why is a plan that is never
+      // late. Pulling a date in stays an ordinary edit — only pushing it out
+      // needs defending.
+      if (requiresDelayReason(existing.baselineDueDate, existing.dueDate, data.dueDate ?? null)) {
+        res.status(409).json({
+          status: 'error',
+          code: 'USE_RESCHEDULE_ENDPOINT',
+          message: 'That date moves past the one agreed for this task. Use '
+            + 'POST /api/projects/tasks/:id/reschedule, which records how many days it '
+            + 'costs, why, and which side owes them.',
+        });
+        return;
+      }
     }
 
     if (Object.keys(data).length === 0) {
@@ -574,7 +612,11 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     res.json({
       status: 'success',
-      task: { ...result.updated, timing: taskTiming(result.updated) },
+      task: {
+        ...result.updated,
+        timing: taskTiming(result.updated),
+        slippage: slippage(result.updated),
+      },
       // Returned so the caller can repaint the whole tree from one response
       // rather than refetching the plan after every keystroke.
       rollup: result.rollup,
