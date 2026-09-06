@@ -17,6 +17,13 @@ const {
 const {
   projectWhere, canWriteProject, canReadProject, sideOf,
 } = require('../../dist/services/projectAccess');
+const {
+  weightedProgress, progressPair, rollUpPhases, totalWeight,
+} = require('../../dist/services/projectRollup');
+const {
+  checkTaskTransition, derivePhaseStatus, taskTiming, isComplete,
+  TASK_STATUSES, DUE_SOON_DAYS,
+} = require('../../dist/services/projectLifecycle');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -174,5 +181,155 @@ const platform = scope('PLATFORM', [CLIENT, PARTNER, STRANGER]);
 eq('a platform operator reads as the Client side', sideOf(platform, engagement), 'Client');
 canReadProject(platform, engagement) ? ok('a platform operator can read across') : bad('a platform operator can read across');
 
-console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
+// ── 6. Task transitions ─────────────────────────────────────────────────────
+console.log('\n6. Task transitions');
+
+checkTaskTransition('NotStarted', 'InProgress') === null
+  ? ok('work can start') : bad('work can start');
+checkTaskTransition('InProgress', 'Done') === null
+  ? ok('work in progress can finish') : bad('work in progress can finish');
+checkTaskTransition('Done', 'InProgress') === null
+  ? ok('finished work can be reopened') : bad('finished work can be reopened');
+checkTaskTransition('Blocked', 'InProgress') === null
+  ? ok('blocked work can resume') : bad('blocked work can resume');
+checkTaskTransition('InProgress', 'InProgress') === null
+  ? ok('a no-op transition is allowed') : bad('a no-op transition is allowed');
+
+// The one that matters: work cannot jump straight to done without being started,
+// which is how a plan gets marked complete in a single pass at the end.
+const jump = checkTaskTransition('NotStarted', 'Done');
+jump && jump.code === 'ILLEGAL_TRANSITION'
+  ? ok('work cannot jump from NotStarted to Done')
+  : bad('work cannot jump from NotStarted to Done', JSON.stringify(jump));
+
+const unknownStatus = checkTaskTransition('InProgress', 'Finished');
+unknownStatus && unknownStatus.code === 'UNKNOWN_STATUS'
+  ? ok('an invented status is refused by name')
+  : bad('an invented status is refused by name', JSON.stringify(unknownStatus));
+
+TASK_STATUSES.includes('Delayed') === false
+  ? ok('Delayed is not a stored status — it is derived from the due date')
+  : bad('Delayed is not a stored status');
+
+// ── 7. Phase status derivation ──────────────────────────────────────────────
+console.log('\n7. Phase status');
+
+const T = (status) => ({ status });
+eq('an empty phase is Not started', derivePhaseStatus([]), 'NotStarted');
+eq('all tasks untouched is Not started',
+   derivePhaseStatus([T('NotStarted'), T('NotStarted')]), 'NotStarted');
+eq('all tasks done is Complete',
+   derivePhaseStatus([T('Done'), T('Done')]), 'Complete');
+eq('any movement is In progress',
+   derivePhaseStatus([T('NotStarted'), T('InProgress')]), 'InProgress');
+// Blocked outranks in-progress: a phase with four moving and one stuck is a
+// phase that needs attention, and reporting it In progress hides that.
+eq('one blocked task surfaces over four moving ones',
+   derivePhaseStatus([T('InProgress'), T('InProgress'), T('InProgress'), T('InProgress'), T('Blocked')]),
+   'Blocked');
+eq('a blocked task does not hide completion of the rest',
+   derivePhaseStatus([T('Done'), T('Done')]), 'Complete');
+
+// ── 8. Rollup arithmetic ────────────────────────────────────────────────────
+console.log('\n8. Rollup');
+
+const task = (status, pct, weight) => ({
+  status,
+  completionPercent: pct === undefined ? 0 : pct,
+  weight: weight === undefined ? 1 : weight,
+});
+
+eq('no tasks is zero, not a division by zero', weightedProgress([], () => 100), 0);
+
+// The slice's own acceptance criterion: 10 tasks, 7 done, reports 70%.
+const seven = [];
+for (let i = 0; i < 7; i++) seven.push(task('Done'));
+for (let i = 0; i < 3; i++) seven.push(task('NotStarted'));
+eq('10 tasks with 7 done reports 70%', progressPair(seven).reported, 70);
+
+eq('partial completion counts toward the total',
+   progressPair([task('InProgress', 50), task('InProgress', 50)]).reported, 50);
+
+// Weight is the whole point: one heavy task should not be outvoted by three
+// trivial ones.
+eq('a heavy task outweighs three light ones',
+   progressPair([
+     task('Done', 100, 7), task('NotStarted', 0, 1),
+     task('NotStarted', 0, 1), task('NotStarted', 0, 1),
+   ]).reported, 70);
+
+eq('a zero weight is treated as one rather than vanishing',
+   progressPair([task('Done', 100, 0), task('NotStarted', 0, 0)]).reported, 50);
+
+eq('a reported percentage above 100 is clamped',
+   progressPair([task('InProgress', 250)]).reported, 100);
+
+eq('a negative percentage floors at zero',
+   progressPair([task('InProgress', -40)]).reported, 0);
+
+// Slice 2 has no verification states, so verified is legitimately zero even
+// when everything is finished. That is the honest answer, not a placeholder.
+eq('nothing is verified before verification exists',
+   progressPair([task('Done'), task('Done')]).verified, 0);
+
+eq('total weight sums the tasks', totalWeight([task('Done', 100, 3), task('Done', 100, 2)]), 5);
+
+// ── 9. Hierarchy consistency ────────────────────────────────────────────────
+// The project figure must equal a flat weighted average over every task. If the
+// levels disagree, nobody can explain the number to a steering committee.
+console.log('\n9. Hierarchy consistency');
+
+const phaseA = [task('Done', 100, 2), task('NotStarted', 0, 2)];
+const phaseB = [task('Done', 100, 1), task('Done', 100, 1), task('InProgress', 50, 4)];
+
+const pairA = progressPair(phaseA);
+const pairB = progressPair(phaseB);
+const viaPhases = rollUpPhases([
+  { totalWeight: totalWeight(phaseA), reported: pairA.reported, verified: pairA.verified },
+  { totalWeight: totalWeight(phaseB), reported: pairB.reported, verified: pairB.verified },
+]);
+const viaFlat = progressPair(phaseA.concat(phaseB));
+
+viaPhases.reported === viaFlat.reported
+  ? ok('rolling up by phase equals averaging every task flat', viaPhases.reported + '%')
+  : bad('rolling up by phase equals averaging every task flat',
+        'hierarchical ' + viaPhases.reported + '% vs flat ' + viaFlat.reported + '%');
+
+eq('phases holding no tasks contribute nothing rather than dragging the average',
+   rollUpPhases([{ totalWeight: 0, reported: 0, verified: 0 }]).reported, 0);
+
+// ── 10. Task timing ─────────────────────────────────────────────────────────
+console.log('\n10. Task timing');
+
+const lateTask = taskTiming({ status: 'InProgress', dueDate: D('2026-01-01') }, D('2026-01-11'));
+lateTask.overdue && lateTask.daysOverdue === 10
+  ? ok('an unfinished task past its date is overdue', lateTask.daysOverdue + ' days')
+  : bad('an unfinished task past its date is overdue', JSON.stringify(lateTask));
+
+const finished = taskTiming({ status: 'Done', dueDate: D('2026-01-01') }, D('2026-01-11'));
+!finished.overdue
+  ? ok('a finished task is never overdue, however late it was')
+  : bad('a finished task is never overdue');
+
+// Absence of a date is not a missed one. Treating it as late fills the dashboard
+// with noise nobody can clear.
+const undated = taskTiming({ status: 'InProgress', dueDate: null }, D('2026-06-01'));
+!undated.overdue && undated.daysUntilDue === null
+  ? ok('a task with no due date is never overdue')
+  : bad('a task with no due date is never overdue', JSON.stringify(undated));
+
+const soon = taskTiming({ status: 'InProgress', dueDate: D('2026-01-05') }, D('2026-01-01'));
+soon.dueSoon && !soon.overdue
+  ? ok('due within ' + DUE_SOON_DAYS + ' days is flagged as due soon')
+  : bad('due soon flagging', JSON.stringify(soon));
+
+const distant = taskTiming({ status: 'InProgress', dueDate: D('2026-03-01') }, D('2026-01-01'));
+!distant.dueSoon && !distant.overdue
+  ? ok('a distant date is neither due soon nor overdue')
+  : bad('a distant date is neither', JSON.stringify(distant));
+
+isComplete('Done') && !isComplete('InProgress')
+  ? ok('completion is decided in one place') : bad('completion is decided in one place');
+
+console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

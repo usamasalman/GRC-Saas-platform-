@@ -6,9 +6,8 @@ import { S, primaryBtn, ghostBtn, pill, StatStrip } from '../../iam/iamStyles';
  * The delivery portfolio — every engagement this organisation can see, with the
  * schedule and status figures the server derives.
  *
- * Slice 1 shows the engagement only. Phases, tasks and progress arrive next; the
- * progress bars here read from `reportedProgress` and will start moving on their
- * own once the rollup exists, with no change to this file.
+ * Rows open the plan. The two progress bars are fed by projectRollup, so they
+ * move as tasks are completed without this file computing anything.
  */
 
 interface Schedule {
@@ -90,7 +89,12 @@ const ProgressBars: React.FC<{ reported: number; verified: number }> = ({ report
   </div>
 );
 
-const ProjectPortfolio: React.FC = () => {
+interface Props {
+  /** Opens a project's plan. Supplied by the workspace host. */
+  onOpen?: (p: { id: string; ref: string; name: string }) => void;
+}
+
+const ProjectPortfolio: React.FC<Props> = ({ onOpen }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [totals, setTotals] = useState({ active: 0, atRisk: 0, delayed: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
@@ -192,7 +196,21 @@ const ProjectPortfolio: React.FC = () => {
                 {projects.map((p) => {
                   const d = DERIVED[p.derivedStatus] || DERIVED.NotStarted;
                   return (
-                    <tr key={p.id}>
+                    <tr
+                      key={p.id}
+                      onClick={() => onOpen?.({ id: p.id, ref: p.ref, name: p.name })}
+                      style={onOpen ? { cursor: 'pointer' } : undefined}
+                      // Keyboard reachable: the row is the primary action here,
+                      // and a table of unreachable rows is a table nobody can use
+                      // without a mouse.
+                      tabIndex={onOpen ? 0 : undefined}
+                      onKeyDown={(e) => {
+                        if (onOpen && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          onOpen({ id: p.id, ref: p.ref, name: p.name });
+                        }
+                      }}
+                    >
                       <td style={S.td}>
                         <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{p.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>

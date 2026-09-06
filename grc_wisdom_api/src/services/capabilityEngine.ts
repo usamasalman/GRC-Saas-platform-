@@ -51,6 +51,7 @@ export const CAP = {
   OPERATE_SECURITY_SERVICES: 'operate-wisdom-eye-and-eye-phish',
   ONBOARD_TOOL: 'onboard-or-purchase-an-open-source-tool',
   MANAGE_PROJECT: 'manage-a-delivery-project',
+  EXECUTE_PROJECT_WORK: 'execute-project-work',
 } as const;
 
 export interface EffectivePermissions {

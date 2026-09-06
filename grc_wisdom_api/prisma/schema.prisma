@@ -179,6 +179,8 @@ model User {
   projectsManaged  Project[] @relation("ProjectManager")
   projectsSponsored Project[] @relation("ProjectSponsor")
   projectMemberships ProjectMember[] @relation("ProjectMemberUser")
+  phasesOwned      ProjectPhase[] @relation("PhaseOwner")
+  tasksAssigned    ProjectTask[]  @relation("TaskAssignee")
 }
 
 model Plan {
@@ -2547,6 +2549,8 @@ model Project {
   updatedAt        DateTime @updatedAt
 
   members          ProjectMember[]
+  phases           ProjectPhase[]
+  tasks            ProjectTask[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2582,4 +2586,109 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([projectId, active])
   @@index([userId, active])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Slice 2 — the work breakdown: project → phase → task.
+//
+//  Progress columns on both are written by services/projectRollup.ts and by
+//  nothing else. Verification, delays and evidence extend these tables in later
+//  slices; none of it rewrites what is here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A stage of the engagement. Phases are ordered and own the tasks beneath them.
+model ProjectPhase {
+  id            String  @id @default(uuid())
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Display and dependency order within the project. Not unique: inserting a
+  /// phase between two others should not require renumbering the rest.
+  sequence      Int
+  name          String
+  description   String?
+  objectives    String?
+
+  startDate     DateTime
+  targetEndDate DateTime
+
+  ownerId       String
+  owner         User    @relation("PhaseOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  /// NotStarted | InProgress | Blocked | Complete
+  ///
+  /// Derived from the tasks beneath it and written by projectRollup, not set by
+  /// hand: a phase whose status disagrees with its own tasks is worse than no
+  /// status at all. Slice 3 adds a gate decision that must also pass before a
+  /// phase may read Complete.
+  status        String  @default("NotStarted")
+
+  /// Both written ONLY by services/projectRollup.ts.
+  reportedProgress Int  @default(0)
+  verifiedProgress Int  @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tasks         ProjectTask[]
+
+  @@index([projectId, sequence])
+  @@index([projectId, status])
+}
+
+/// A unit of work inside a phase.
+model ProjectTask {
+  id            String  @id @default(uuid())
+
+  /// Denormalised from the phase so the rollup and every tenant-scoped query
+  /// reach a task in one hop rather than joining through ProjectPhase.
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phaseId       String
+  phase         ProjectPhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+
+  sequence      Int     @default(0)
+  ref           String
+  name          String
+  description   String?
+
+  /// NotStarted | InProgress | Blocked | Done
+  ///
+  /// Slice 3 adds SubmittedForVerification, Verified and Rejected. There is no
+  /// stored Delayed: lateness is a function of dueDate and today, so a column
+  /// holding it would need a scanner to keep it true and would be wrong between
+  /// runs. It is derived alongside the other schedule figures.
+  status        String  @default("NotStarted")
+
+  /// Self-reported, 0-100. Separate from status so "most of the way through"
+  /// is expressible without pretending the task is finished.
+  completionPercent Int @default(0)
+
+  /// Relative size within its phase. Ten trivial tasks should not outweigh the
+  /// one that produces the ISMS scope statement.
+  weight        Int     @default(1)
+
+  /// Low | Medium | High | Critical
+  priority      String  @default("Medium")
+  /// Provider | Client — which side of the engagement owes this work.
+  side          String  @default("Client")
+  /// Free text: there is no Team model to point at, and inventing one for a
+  /// label would be a bigger commitment than this needs.
+  department    String?
+
+  assigneeId    String?
+  assignee      User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  startDate     DateTime?
+  dueDate       DateTime?
+  completedAt   DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, ref])
+  @@index([phaseId, sequence])
+  @@index([phaseId, status])
+  @@index([assigneeId, status])
+  @@index([projectId, dueDate])
 }

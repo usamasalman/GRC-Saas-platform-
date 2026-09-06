@@ -36,7 +36,7 @@ import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
-import ProjectPortfolio from './grc/project/ProjectPortfolio';
+import DeliveryProjects from './grc/DeliveryProjects';
 import AssetRegister from './grc/AssetRegister';
 import VendorRegister from './grc/VendorRegister';
 import SharedServices from './grc/SharedServices';
@@ -374,7 +374,7 @@ const AppShell = () => {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'project-delivery') {
-      return <ProjectPortfolio key={`${account.id}-${currentPage}`} />;
+      return <DeliveryProjects key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'controls') {
       return <ControlLibrary key={`${account.id}-${currentPage}`} />;

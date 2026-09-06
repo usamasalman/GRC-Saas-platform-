@@ -244,6 +244,13 @@
       "module": "Delivery",
       "number": 31,
       "tenancySpecific": true
+    },
+    {
+      "key": "execute-project-work",
+      "name": "Update assigned project tasks and report progress",
+      "module": "Delivery",
+      "number": 32,
+      "tenancySpecific": true
     }
   ],
   "roles": [
@@ -264,7 +271,8 @@
         "configure-an-integration",
         "monitor-security-and-handle-incidents",
         "import-or-enable-a-standard",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -317,7 +325,8 @@
         "plan-and-execute-an-audit",
         "manage-a-control-implementation-and-evidence",
         "create-import-and-version-a-document",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -333,7 +342,8 @@
         "transfer-a-user-between-branches-or-entities",
         "maintain-roles-and-permissions",
         "assess-and-treat-a-risk",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -352,7 +362,8 @@
         "onboard-or-purchase-an-open-source-tool",
         "generate-and-distribute-a-report",
         "create-or-manage-a-tenant",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -369,7 +380,8 @@
         "manage-a-control-implementation-and-evidence",
         "assess-and-treat-a-risk",
         "generate-and-distribute-a-report",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -386,7 +398,8 @@
         "manage-a-control-implementation-and-evidence",
         "acknowledge-or-monitor-a-policy",
         "generate-and-distribute-a-report",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -400,7 +413,8 @@
         "review-approve-and-digitally-sign-a-document",
         "apply-retention-and-legal-hold",
         "acknowledge-or-monitor-a-policy",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -458,7 +472,8 @@
         "assess-and-treat-a-risk",
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -475,7 +490,8 @@
         "operate-wisdom-eye-and-eye-phish",
         "generate-and-distribute-a-report",
         "create-or-manage-a-tenant",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -491,7 +507,8 @@
         "manage-a-control-implementation-and-evidence",
         "assess-and-treat-a-risk",
         "acknowledge-or-monitor-a-policy",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -567,7 +584,8 @@
         "apply-retention-and-legal-hold",
         "generate-and-distribute-a-report",
         "plan-and-execute-an-audit",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -581,7 +599,8 @@
         "assess-and-treat-a-risk",
         "manage-a-control-implementation-and-evidence",
         "manage-group-or-regional-governance",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -629,7 +648,8 @@
         "plan-and-execute-an-audit",
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
-        "manage-a-delivery-project"
+        "manage-a-delivery-project",
+        "execute-project-work"
       ]
     },
     {
@@ -642,7 +662,8 @@
         "create-an-itsm-ticket",
         "assess-and-treat-a-risk",
         "manage-a-control-implementation-and-evidence",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -716,7 +737,8 @@
         "create-import-and-version-a-document",
         "assess-and-treat-a-risk",
         "plan-and-execute-an-audit",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -758,7 +780,8 @@
         "create-or-select-a-commercial-plan",
         "onboard-or-purchase-an-open-source-tool",
         "manage-a-subscription",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -772,7 +795,8 @@
         "manage-partner-client-workspaces-and-engagements",
         "manage-and-resolve-support-tickets",
         "assign-or-complete-learning",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -800,7 +824,8 @@
         "plan-and-execute-an-audit",
         "manage-a-control-implementation-and-evidence",
         "create-import-and-version-a-document",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -814,7 +839,8 @@
         "manage-a-control-implementation-and-evidence",
         "create-import-and-version-a-document",
         "assess-and-treat-a-risk",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -857,7 +883,8 @@
         "assess-and-treat-a-risk",
         "plan-and-execute-an-audit",
         "create-import-and-version-a-document",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {
@@ -873,7 +900,8 @@
         "maintain-roles-and-permissions",
         "import-or-enable-a-standard",
         "manage-partner-client-workspaces-and-engagements",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "execute-project-work"
       ]
     },
     {

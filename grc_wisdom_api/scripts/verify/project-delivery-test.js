@@ -1,5 +1,5 @@
 /**
- * Delivery projects — slice 1: the engagement itself.
+ * Delivery projects — slices 1 and 2: the engagement, and the work inside it.
  *
  * The assertion that matters most is isolation. A delivery project is the first
  * record in this platform visible from two directions — the client tenant that
@@ -40,7 +40,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slice 1 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-2 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -256,6 +256,159 @@ async function main() {
   chained > 0
     ? ok('audit entries carry the hash chain', `${chained} of ${entries.length} checked`)
     : bad('audit entries carry the hash chain', 'no hashes present');
+
+
+  // ── 8. The plan: phases, tasks and rollup ───────────────────────────────
+  console.log('\n8. Plan and rollup');
+
+  const planProject = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Rollup verification project',
+      startDate: iso(-10), targetEndDate: iso(80),
+      ownerId: myUserId, managerId: myUserId,
+    },
+  });
+  const pid = planProject.json?.project?.id;
+  pid ? ok('project for the plan created') : bad('project for the plan created', JSON.stringify(planProject.json).slice(0, 160));
+  if (!pid) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  await api(`/api/projects/${pid}`, { token, method: 'PATCH', body: { status: 'Active' } });
+
+  const phaseRes = await api(`/api/projects/${pid}/phases`, {
+    token, method: 'POST',
+    body: {
+      name: 'Gap assessment', startDate: iso(-10), targetEndDate: iso(30),
+      ownerId: myUserId,
+    },
+  });
+  const phaseId = phaseRes.json?.phase?.id;
+  phaseRes.status === 201 && phaseId
+    ? ok('phase created')
+    : bad('phase created', `${phaseRes.status} ${JSON.stringify(phaseRes.json).slice(0, 160)}`);
+  if (!phaseId) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  phaseRes.json.phase.status === 'NotStarted'
+    ? ok('an empty phase starts as Not started')
+    : bad('an empty phase starts as Not started', phaseRes.json.phase.status);
+
+  // Phase status is derived, so setting it directly must be refused rather than
+  // silently accepted and then overwritten by the next rollup.
+  const setStatus = await api(`/api/projects/phases/${phaseId}`, {
+    token, method: 'PATCH', body: { status: 'Complete' },
+  });
+  setStatus.status === 400 && setStatus.json?.code === 'DERIVED_FIELD'
+    ? ok('phase status cannot be set by hand')
+    : bad('phase status cannot be set by hand', `${setStatus.status} ${setStatus.json?.code}`);
+
+  // ── The slice's own acceptance criterion: 10 tasks, 7 done, 70% ─────────
+  const taskIds = [];
+  for (let i = 1; i <= 10; i++) {
+    const t = await api(`/api/projects/phases/${phaseId}/tasks`, {
+      token, method: 'POST',
+      body: { name: `Control gap ${i}`, assigneeId: myUserId, dueDate: iso(20) },
+    });
+    if (t.json?.task?.id) taskIds.push(t.json.task.id);
+  }
+  taskIds.length === 10 ? ok('ten tasks created') : bad('ten tasks created', `${taskIds.length}`);
+
+  let lastRollup = null;
+  for (let i = 0; i < 7; i++) {
+    await api(`/api/projects/tasks/${taskIds[i]}`, { token, method: 'PATCH', body: { status: 'InProgress' } });
+    const r = await api(`/api/projects/tasks/${taskIds[i]}`, { token, method: 'PATCH', body: { status: 'Done' } });
+    lastRollup = r.json?.rollup;
+  }
+
+  lastRollup?.reportedProgress === 70
+    ? ok('10 tasks with 7 done rolls up to 70%', `${lastRollup.reportedProgress}%`)
+    : bad('10 tasks with 7 done rolls up to 70%', `got ${lastRollup?.reportedProgress}`);
+
+  lastRollup?.verifiedProgress === 0
+    ? ok('verified stays 0 — nothing has been checked yet')
+    : bad('verified stays 0', `got ${lastRollup?.verifiedProgress}`);
+
+  const afterPlan = await api(`/api/projects/${pid}`, { token });
+  afterPlan.json?.project?.reportedProgress === 70
+    ? ok('the project row carries the rolled-up figure')
+    : bad('the project row carries the rolled-up figure', `${afterPlan.json?.project?.reportedProgress}`);
+
+  const plan = await api(`/api/projects/${pid}/plan`, { token });
+  const ph = plan.json?.phases?.[0];
+  ph?.reportedProgress === 70 && ph?.status === 'InProgress'
+    ? ok('the phase reports 70% and reads In progress')
+    : bad('the phase reports 70% and reads In progress', `${ph?.reportedProgress}% / ${ph?.status}`);
+
+  plan.json?.totals?.done === 7
+    ? ok('plan totals count the finished tasks')
+    : bad('plan totals count the finished tasks', `${plan.json?.totals?.done}`);
+
+  // ── 9. Task transitions over HTTP ───────────────────────────────────────
+  console.log('\n9. Transitions');
+
+  const jumpTask = taskIds[7];
+  const jump = await api(`/api/projects/tasks/${jumpTask}`, {
+    token, method: 'PATCH', body: { status: 'Done' },
+  });
+  jump.status === 409 && jump.json?.code === 'ILLEGAL_TRANSITION'
+    ? ok('a task cannot jump from NotStarted to Done', jump.json.message)
+    : bad('a task cannot jump from NotStarted to Done', `${jump.status} ${jump.json?.code}`);
+
+  const invented = await api(`/api/projects/tasks/${jumpTask}`, {
+    token, method: 'PATCH', body: { status: 'Finished' },
+  });
+  invented.status === 400 && invented.json?.code === 'UNKNOWN_STATUS'
+    ? ok('an invented status is refused')
+    : bad('an invented status is refused', `${invented.status} ${invented.json?.code}`);
+
+  // Weighting: a heavy task should move the number more than a light one.
+  const heavy = await api(`/api/projects/tasks/${taskIds[7]}`, {
+    token, method: 'PATCH', body: { weight: 10 },
+  });
+  heavy.status === 200
+    ? ok('a manager can reweight a task')
+    : bad('a manager can reweight a task', `${heavy.status}`);
+  heavy.json?.rollup?.reportedProgress === 37
+    ? ok('reweighting moves the rollup', `70% → ${heavy.json.rollup.reportedProgress}%`)
+    : bad('reweighting moves the rollup', `got ${heavy.json?.rollup?.reportedProgress}, expected 37`);
+
+  // ── 10. Finishing and reopening ─────────────────────────────────────────
+  console.log('\n10. Completion bookkeeping');
+
+  await api(`/api/projects/tasks/${taskIds[8]}`, { token, method: 'PATCH', body: { status: 'InProgress' } });
+  const done = await api(`/api/projects/tasks/${taskIds[8]}`, { token, method: 'PATCH', body: { status: 'Done' } });
+  done.json?.task?.completionPercent === 100 && done.json?.task?.completedAt
+    ? ok('finishing pins completion at 100 and stamps the time')
+    : bad('finishing pins completion and stamps the time',
+          `${done.json?.task?.completionPercent} / ${done.json?.task?.completedAt}`);
+
+  const reopened = await api(`/api/projects/tasks/${taskIds[8]}`, {
+    token, method: 'PATCH', body: { status: 'InProgress' },
+  });
+  reopened.json?.task?.completedAt === null
+    ? ok('reopening clears the completion timestamp')
+    : bad('reopening clears the completion timestamp', `${reopened.json?.task?.completedAt}`);
+
+  // ── 11. A phase cannot be deleted with work inside it ───────────────────
+  console.log('\n11. Deletion guards');
+
+  const delPhase = await api(`/api/projects/phases/${phaseId}`, { token, method: 'DELETE' });
+  delPhase.status === 409 && delPhase.json?.code === 'PHASE_NOT_EMPTY'
+    ? ok('a phase holding tasks cannot be deleted')
+    : bad('a phase holding tasks cannot be deleted', `${delPhase.status} ${delPhase.json?.code}`);
+
+  // ── 12. A closed project is frozen ──────────────────────────────────────
+  console.log('\n12. Frozen projects');
+
+  await api(`/api/projects/${pid}/close`, {
+    token, method: 'POST',
+    body: { outcome: 'Closed', closureNote: 'Verification run complete; closing the fixture.' },
+  });
+  const afterClose = await api(`/api/projects/phases/${phaseId}/tasks`, {
+    token, method: 'POST', body: { name: 'Late addition' },
+  });
+  afterClose.status === 409 && afterClose.json?.code === 'PROJECT_FROZEN'
+    ? ok('a closed project will not accept new work')
+    : bad('a closed project will not accept new work', `${afterClose.status} ${afterClose.json?.code}`);
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);
