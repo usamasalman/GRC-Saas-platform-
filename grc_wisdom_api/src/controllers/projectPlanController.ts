@@ -89,6 +89,27 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             verifiedBy: { select: { id: true, name: true } },
             // A blocked task that does not say what is blocking it is the row
             // everyone asks about and nobody can answer.
+            evidence: {
+              where: { withdrawnAt: null },
+              orderBy: { uploadedAt: 'desc' },
+              select: {
+                id: true, ref: true, title: true, fileName: true, fileSize: true,
+                mimeType: true, classification: true, side: true,
+                uploadedInRound: true, uploadedAt: true,
+                uploadedBy: { select: { id: true, name: true } },
+              },
+            },
+            clauseLinks: {
+              select: {
+                id: true, note: true,
+                clause: {
+                  select: {
+                    id: true, ref: true, title: true,
+                    standard: { select: { id: true, code: true, name: true } },
+                  },
+                },
+              },
+            },
             impediments: {
               where: { kind: 'Blocker', resolvedAt: null },
               orderBy: { raisedAt: 'asc' },
@@ -111,7 +132,9 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
       // of them getting it wrong.
       const tasks = ph.tasks.map((t) => ({
         ...t,
-        needsVerification: requiresVerification(policy, t.verificationOverride),
+        needsVerification: requiresVerification(
+          policy, t.verificationOverride, t.evidence.length > 0,
+        ),
         timing: taskTiming(t, now),
         slippage: slippage(t),
       }));
@@ -441,6 +464,9 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
         id: true, projectId: true, ref: true, name: true, status: true,
         assigneeId: true, completionPercent: true, verificationOverride: true,
         dueDate: true, baselineDueDate: true,
+        // Under the EvidenceTasks policy this decides whether the task needs a
+        // reviewer at all, so it has to be loaded before the verdict is taken.
+        evidence: { where: { withdrawnAt: null }, select: { id: true } },
       },
     });
     if (!existing) { notFound(res); return; }
@@ -471,6 +497,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
       const refusal = checkTaskUpdate(existing.status, to, requiresVerification(
         project.verificationPolicy, existing.verificationOverride,
+        existing.evidence.length > 0,
       ));
 
       if (refusal) {

@@ -106,7 +106,7 @@ jobs:
           # strangers, and login rate limiting.
           node scripts/verify/production-readiness-test.js
 
-          # Slices 1-4 of the delivery module: creation, derived schedule,
+          # Slices 1-5 of the delivery module: creation, derived schedule,
           # lifecycle transitions, tenant isolation, the audit trail, the
           # phase/task rollup, and separation of duties on verification —
           # that last one is the control the dual progress figure rests on,
@@ -115,6 +115,11 @@ jobs:
           # Slice 4 adds the baseline and the delay register: a date cannot
           # move past the agreed one, and work cannot be blocked, without
           # saying why and which side owes the days.
+          # Slice 5 adds evidence and traceability. The assertions that matter
+          # most are the two immutability rules — nothing may be attached
+          # behind a completed sign-off, and evidence a reviewer relied on
+          # cannot be withdrawn — plus the fact that an evidence file is
+          # unreachable without an Authorization header.
           node scripts/verify/project-delivery-test.js
 
           kill "$(cat /tmp/server.pid)" || true

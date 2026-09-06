@@ -186,6 +186,9 @@ model User {
   verificationsMade ProjectVerification[] @relation("VerificationActor")
   impedimentsRaised ProjectImpediment[] @relation("ImpedimentRaiser")
   impedimentsCleared ProjectImpediment[] @relation("ImpedimentResolver")
+  projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
+  projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
+  taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
 }
 
 model Plan {
@@ -321,6 +324,7 @@ model StandardClause {
   text       String?
 
   links      ControlClauseLink[]
+  taskLinks  ProjectTaskClause[]
 
   @@unique([standardId, ref])
 }
@@ -2585,6 +2589,7 @@ model Project {
   tasks            ProjectTask[]
   verifications    ProjectVerification[]
   impediments      ProjectImpediment[]
+  evidence         ProjectEvidence[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2760,6 +2765,8 @@ model ProjectTask {
 
   verifications ProjectVerification[]
   impediments   ProjectImpediment[]
+  evidence      ProjectEvidence[]
+  clauseLinks   ProjectTaskClause[]
 
   @@unique([projectId, ref])
   @@index([phaseId, sequence])
@@ -2843,6 +2850,140 @@ model ProjectImpediment {
   @@index([projectId, owingSide])
   @@index([taskId, resolvedAt])
   @@index([phaseId, resolvedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Slice 5 — evidence for delivered work, and the line back to the clause it
+//  satisfies.
+//
+//  Deliberately NOT an extension of the existing Evidence model, which hangs
+//  off ControlImplementation with a NOT NULL foreign key and is scoped by
+//  Evidence.tenantId. Three reasons, any one of which would be enough:
+//
+//    - implementationId cannot be made nullable without an ALTER COLUMN on a
+//      populated table, which this project does not do;
+//    - control evidence is read with `tenantId: { in: scope.tenantIds }`, and a
+//      delivery partner is never inside its client's scope, so a consultant
+//      would get a 404 on evidence they uploaded themselves;
+//    - relaxing that filter to fix it would hand every delivery partner the
+//      client's ordinary control evidence, which has nothing to do with the
+//      engagement.
+//
+//  So the task link is what grants a partner visibility, rather than a blanket
+//  relaxation of a filter that is protecting something else.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A file or attestation supporting a delivered task.
+///
+/// Append-only in the sense that matters: a row is never edited after upload
+/// and never deleted, only withdrawn. Evidence that can be quietly swapped
+/// after somebody signed it off is not evidence, and the whole point of the
+/// verified figure next to the reported one is that somebody looked at
+/// something specific.
+model ProjectEvidence {
+  id            String   @id @default(uuid())
+
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId        String
+  task          ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  ref           String
+
+  title         String
+  description   String?
+
+  /// Public | Internal | Confidential | Restricted. Mirrors the vocabulary the
+  /// document module already uses, so one classification means one thing across
+  /// the platform.
+  classification String  @default("Internal")
+
+  // ── The file ──────────────────────────────────────────────────────────────
+  //
+  // storageKey is an opaque random name on a disk path that is NOT statically
+  // served. Files are reached only through an authenticated endpoint that
+  // resolves this row and checks project access first.
+  //
+  // The platform's other upload path writes `${Date.now()}_${originalName}` into
+  // a world-readable directory; naming a file after its upload time and its own
+  // title is what makes a private URL guessable. Nothing here is derived from
+  // anything an attacker can predict.
+  storageKey    String   @unique
+  fileName      String
+  fileSize      Int
+  /// Sniffed from the bytes, not taken from the caller. A caller-declared type
+  /// is a caller-chosen type.
+  mimeType      String
+  /// SHA-256 of the BYTES ON DISK, so it can be recomputed by re-reading the
+  /// file. The document module hashes the base64 string it was sent instead,
+  /// which cannot be checked against anything afterwards.
+  sha256        String
+
+  uploadedById  String
+  uploadedBy    User     @relation("ProjectEvidenceUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadedAt    DateTime @default(now())
+
+  /// Which side produced it. A client-supplied asset register and a
+  /// consultant-authored gap assessment are different kinds of evidence, and an
+  /// auditor asks which is which.
+  side          String   @default("Client")
+
+  /// The verification round in flight when this was uploaded.
+  ///
+  /// This is the column that answers "was this what the reviewer actually
+  /// looked at". Evidence stamped with round 2 was not in front of the person
+  /// who accepted round 1, and a report that cannot draw that line is a report
+  /// that lets evidence be back-filled after sign-off.
+  uploadedInRound Int    @default(0)
+
+  // ── Withdrawal ────────────────────────────────────────────────────────────
+  //
+  // Rows are withdrawn, never deleted. A deleted row takes with it the fact
+  // that somebody once offered this as proof, which is exactly the fact an
+  // investigation wants.
+  withdrawnById String?
+  withdrawnBy   User?    @relation("ProjectEvidenceWithdrawer", fields: [withdrawnById], references: [id], onDelete: SetNull)
+  withdrawnAt   DateTime?
+  withdrawnReason String?
+
+  createdAt     DateTime @default(now())
+
+  @@unique([projectId, ref])
+  @@index([taskId, withdrawnAt])
+  @@index([projectId, uploadedAt])
+  @@index([uploadedById])
+}
+
+/// The traceability edge: this delivered work satisfies that framework clause.
+///
+/// A join table rather than a column on ProjectTask, for the same reason
+/// ControlClauseLink is one — a single deliverable routinely satisfies several
+/// clauses across several frameworks, and one ISMS scope statement answering
+/// both ISO 27001 A.4 and SOC 2 CC1 is the ordinary case rather than the
+/// exception.
+///
+/// Without this table there is no path at all from a delivered task to the
+/// standard it was delivered for: Project.frameworks is a JSON array of code
+/// STRINGS with no foreign key, and Standard.code is unique only per tenant, so
+/// matching on it would silently resolve to another organisation's private
+/// framework that happens to share a code.
+model ProjectTaskClause {
+  id        String   @id @default(uuid())
+
+  taskId    String
+  task      ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  clauseId  String
+  clause    StandardClause @relation(fields: [clauseId], references: [id], onDelete: Cascade)
+
+  /// Free text: "partially satisfies — operational evidence still to follow".
+  note      String?
+
+  linkedById String
+  linkedBy   User    @relation("TaskClauseLinker", fields: [linkedById], references: [id], onDelete: Cascade)
+  linkedAt   DateTime @default(now())
+
+  @@unique([taskId, clauseId])
+  @@index([clauseId])
 }
 
 /// One decision in a task's verification history. Append-only: rows are written

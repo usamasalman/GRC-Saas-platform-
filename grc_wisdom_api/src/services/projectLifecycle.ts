@@ -98,13 +98,19 @@ export function isDelivered(status: string): boolean {
  * How much of an engagement needs independent confirmation.
  *
  *   EveryTask      every task goes through a reviewer
+ *   EvidenceTasks  a task requires a reviewer once it carries evidence
  *   SelectedTasks  only tasks the manager marks — the default
  *   None           the engagement does not do independent verification
  *
- * Slice 5 adds EvidenceTasks, which needs the evidence model to exist before it
- * can mean anything; it will be one more branch in the function below.
+ * EvidenceTasks is the one worth explaining. It says: if this work produced
+ * something, somebody independent looks at it. Work that produced nothing to
+ * look at is not sent to a reviewer who would have nothing to review. It is the
+ * setting most consulting engagements actually want, because it targets
+ * verification at deliverables without a manager having to tick each one.
  */
-export const VERIFICATION_POLICIES = ['EveryTask', 'SelectedTasks', 'None'] as const;
+export const VERIFICATION_POLICIES = [
+  'EveryTask', 'EvidenceTasks', 'SelectedTasks', 'None',
+] as const;
 export type VerificationPolicy = (typeof VERIFICATION_POLICIES)[number];
 
 /**
@@ -116,6 +122,11 @@ export type VerificationPolicy = (typeof VERIFICATION_POLICIES)[number];
  * through raises the bar on the work already planned, which is the only
  * behaviour a compliance officer would expect from a setting with that name.
  *
+ * `hasEvidence` is resolved by the caller and passed in rather than looked up
+ * here. This file has no database handle by design — the 201-assertion suite
+ * runs it straight off dist/ with no Postgres anywhere — and a query hidden
+ * inside a pure predicate would end that.
+ *
  * `None` wins over a task-level `true`. A policy saying the engagement does not
  * do independent verification should not be quietly reintroduced by a flag left
  * on one task, and nothing is lost — the override is still stored, so switching
@@ -124,9 +135,14 @@ export type VerificationPolicy = (typeof VERIFICATION_POLICIES)[number];
 export function requiresVerification(
   policy: string,
   override: boolean | null | undefined,
+  hasEvidence = false,
 ): boolean {
+  // None is checked first and stays first. It is a statement about the whole
+  // engagement, and a task-level flag — or a file somebody attached — must not
+  // quietly switch a workflow back on that the engagement turned off.
   if (policy === 'None') return false;
   if (override === true || override === false) return override;
+  if (policy === 'EvidenceTasks') return hasEvidence;
   return policy === 'EveryTask';
 }
 

@@ -39,3 +39,8 @@ grc_wisdom_api/dev.db
 # Server environment files
 deploy/.env
 .env
+
+# Uploaded files and delivery evidence. Real client material — pen test reports,
+# network diagrams, board minutes — must never reach a git remote.
+grc_wisdom_api/uploads/
+grc_wisdom_api/evidence-store/

@@ -20,6 +20,15 @@ import {
   taskStatuses,
 } from '../controllers/projectPlanController';
 import {
+  attachEvidence,
+  downloadEvidence,
+  withdrawEvidence,
+  linkClauses,
+  unlinkClause,
+  getEvidenceRegister,
+  verifyEvidenceIntegrity,
+} from '../controllers/projectEvidenceController';
+import {
   raiseImpediment,
   blockTask,
   resolveImpediment,
@@ -103,5 +112,25 @@ router.post('/tasks/:taskId/block', requireCapability(CAP.EXECUTE_PROJECT_WORK),
 router.post('/tasks/:taskId/reschedule', requireCapability(CAP.MANAGE_PROJECT), rescheduleTask);
 router.post('/impediments/:impedimentId/resolve',
   requireCapability(CAP.EXECUTE_PROJECT_WORK), resolveImpediment);
+
+// ── Evidence and traceability ─────────────────────────────────────────────
+//
+// Attaching evidence is part of doing the work, so it carries the lighter
+// capability and re-checks that the caller is the assignee or on the delivery
+// side. Mapping work to framework clauses is a management act.
+//
+// Note there is no route that serves an evidence file statically. Every read
+// goes through downloadEvidence, which resolves the row and checks project
+// access before streaming — the platform's other file path is an unauthenticated
+// static mount, and that is the mistake this module is built to avoid.
+router.get('/:id/evidence', getEvidenceRegister);
+router.get('/:id/evidence/integrity', requireCapability(CAP.MANAGE_PROJECT), verifyEvidenceIntegrity);
+router.post('/tasks/:taskId/evidence', requireCapability(CAP.EXECUTE_PROJECT_WORK), attachEvidence);
+router.get('/evidence/:evidenceId/download', downloadEvidence);
+router.post('/evidence/:evidenceId/withdraw',
+  requireCapability(CAP.EXECUTE_PROJECT_WORK), withdrawEvidence);
+
+router.post('/tasks/:taskId/clauses', requireCapability(CAP.MANAGE_PROJECT), linkClauses);
+router.delete('/clauses/:linkId', requireCapability(CAP.MANAGE_PROJECT), unlinkClause);
 
 export default router;

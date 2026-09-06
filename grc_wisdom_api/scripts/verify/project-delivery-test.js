@@ -42,7 +42,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-4 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-5 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -1003,6 +1003,224 @@ async function main() {
     ? ok('but the days already lost are still on the record', `${sum?.totalDays} days`)
     : bad('the days already lost survive a rebaseline',
           `${afterRegister.json?.summary?.totalDays} vs ${sum?.totalDays}`);
+
+  // ── 24. Evidence for delivered work ─────────────────────────────────────
+  console.log('\n24. Evidence');
+
+  const eProject = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Evidence and traceability project',
+      startDate: iso(-5), targetEndDate: iso(60),
+      ownerId: myUserId, managerId: myUserId,
+      // The policy slice 5 makes real: verification follows the deliverable.
+      verificationPolicy: 'EvidenceTasks',
+    },
+  });
+  const eid = eProject.json?.project?.id;
+  eid ? ok('project for the evidence run created')
+      : bad('project for the evidence run created', `${eProject.status}`);
+  if (!eid) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  eProject.json.project.verificationPolicy === 'EvidenceTasks'
+    ? ok('EvidenceTasks is accepted as a policy')
+    : bad('EvidenceTasks is accepted', `${eProject.json.project.verificationPolicy}`);
+
+  await api(`/api/projects/${eid}`, { token, method: 'PATCH', body: { status: 'Active' } });
+
+  const ePhase = await api(`/api/projects/${eid}/phases`, {
+    token, method: 'POST',
+    body: { name: 'Scoping', startDate: iso(-5), targetEndDate: iso(30), ownerId: myUserId },
+  });
+  const ePhaseId = ePhase.json?.phase?.id;
+
+  // Two tasks: one will produce a deliverable, one will not.
+  const withDoc = await api(`/api/projects/phases/${ePhaseId}/tasks`, {
+    token, method: 'POST', body: { name: 'Write the ISMS scope statement', assigneeId: myUserId },
+  });
+  const noDoc = await api(`/api/projects/phases/${ePhaseId}/tasks`, {
+    token, method: 'POST', body: { name: 'Book the kickoff call', assigneeId: myUserId },
+  });
+  const withDocId = withDoc.json?.task?.id;
+  const noDocId = noDoc.json?.task?.id;
+  withDocId && noDocId ? ok('two tasks created') : bad('two tasks created');
+  if (!withDocId) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  // Under EvidenceTasks, a task with nothing to show needs no reviewer.
+  const planBefore = await api(`/api/projects/${eid}/plan`, { token });
+  const tasksBefore = planBefore.json?.phases?.[0]?.tasks || [];
+  tasksBefore.every((t) => t.needsVerification === false)
+    ? ok('under EvidenceTasks, work with no deliverable needs no reviewer')
+    : bad('EvidenceTasks with no evidence',
+          JSON.stringify(tasksBefore.map((t) => t.needsVerification)));
+
+  // A real PDF: %PDF- as the leading bytes.
+  const pdfBytes = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n');
+  const pdfB64 = pdfBytes.toString('base64');
+
+  const noFile = await api(`/api/projects/tasks/${withDocId}/evidence`, {
+    token, method: 'POST', body: { title: 'Scope statement' },
+  });
+  noFile.status === 400
+    ? ok('evidence needs an actual file') : bad('evidence needs a file', `${noFile.status}`);
+
+  const evDangerous = await api(`/api/projects/tasks/${withDocId}/evidence`, {
+    token, method: 'POST',
+    body: { title: 'Report', fileName: 'report.html', fileData: pdfB64 },
+  });
+  evDangerous.status === 400 && evDangerous.json?.code === 'DANGEROUS_TYPE'
+    ? ok('markup is refused as evidence — it would run as the application')
+    : bad('markup is refused', `${evDangerous.status} ${evDangerous.json?.code}`);
+
+  const evAttached = await api(`/api/projects/tasks/${withDocId}/evidence`, {
+    token, method: 'POST',
+    body: {
+      title: 'ISMS scope statement v1',
+      description: 'Signed by the CISO.',
+      fileName: 'isms-scope.pdf',
+      fileData: pdfB64,
+      classification: 'Confidential',
+    },
+  });
+  evAttached.status === 201
+    ? ok('evidence attaches to delivered work')
+    : bad('evidence attaches', `${evAttached.status} ${JSON.stringify(evAttached.json).slice(0, 160)}`);
+
+  const evId = evAttached.json?.evidence?.id;
+  // The type is read from the bytes, not from anything the caller said.
+  evAttached.json?.evidence?.mimeType === 'application/pdf'
+    ? ok('the content type comes from the bytes, not the caller')
+    : bad('content type from bytes', `${evAttached.json?.evidence?.mimeType}`);
+  evAttached.json?.evidence?.fileSize === pdfBytes.length
+    ? ok('the recorded size is the real size') : bad('recorded size', `${evAttached.json?.evidence?.fileSize}`);
+  /^[0-9a-f]{64}$/.test(evAttached.json?.evidence?.sha256 || '')
+    ? ok('a SHA-256 of the stored bytes is recorded')
+    : bad('sha256 recorded', `${evAttached.json?.evidence?.sha256}`);
+
+  // The rollup moved: this task now needs a reviewer that it did not before.
+  const planAfter = await api(`/api/projects/${eid}/plan`, { token });
+  const deliverable = (planAfter.json?.phases?.[0]?.tasks || [])
+    .find((t) => t.id === withDocId);
+  const nonDeliverable = (planAfter.json?.phases?.[0]?.tasks || [])
+    .find((t) => t.id === noDocId);
+  deliverable?.needsVerification === true && nonDeliverable?.needsVerification === false
+    ? ok('attaching a deliverable is what sends the task to a reviewer')
+    : bad('evidence drives the requirement',
+          `${deliverable?.needsVerification} / ${nonDeliverable?.needsVerification}`);
+
+  // ── 25. Files are not publicly reachable ────────────────────────────────
+  console.log('\n25. Evidence storage');
+
+  const evDownload = await api(`/api/projects/evidence/${evId}/evDownload`, { token });
+  evDownload.status === 200
+    ? ok('evidence downloads through an authenticated route')
+    : bad('evidence downloads', `${evDownload.status}`);
+
+  const anonDownload = await api(`/api/projects/evidence/${evId}/evDownload`, {});
+  anonDownload.status === 401 || anonDownload.status === 403
+    ? ok('and refuses an unauthenticated caller', `${anonDownload.status}`)
+    : bad('refuses an unauthenticated caller', `${anonDownload.status}`);
+
+  const evIntegrity = await api(`/api/projects/${eid}/evidence/evIntegrity`, { token });
+  evIntegrity.json?.intact === 1 && evIntegrity.json?.altered === 0
+    ? ok('stored bytes still hash to what was recorded')
+    : bad('evIntegrity check', JSON.stringify(evIntegrity.json).slice(0, 160));
+
+  // ── 26. Evidence cannot move under a signature ──────────────────────────
+  console.log('\n26. Immutability');
+
+  await api(`/api/projects/tasks/${withDocId}`, { token, method: 'PATCH', body: { status: 'InProgress' } });
+  const evSubmitted = await api(`/api/projects/tasks/${withDocId}/submit`, { token, method: 'POST' });
+  evSubmitted.status === 200
+    ? ok('work with a deliverable can be evSubmitted for review')
+    : bad('submit', `${evSubmitted.status} ${evSubmitted.json?.code}`);
+
+  if (!reviewerToken) {
+    console.log('   SKIP  no independent reviewer available — sign-off rules unasserted');
+  } else {
+  const evVerified = await api(`/api/projects/tasks/${withDocId}/verify`, {
+    token: reviewerToken, method: 'POST',
+    body: { decision: 'Accept', note: 'Scope statement reviewed against the standard.' },
+  });
+  evVerified.status === 200
+    ? ok('and accepted by someone who did not do it')
+    : bad('verify', `${evVerified.status} ${evVerified.json?.code}`);
+
+  // The rule the slice exists for: nothing may appear behind a sign-off.
+  const lateEvidence = await api(`/api/projects/tasks/${withDocId}/evidence`, {
+    token, method: 'POST',
+    body: { title: 'Added afterwards', fileName: 'extra.pdf', fileData: pdfB64 },
+  });
+  lateEvidence.status === 409 && lateEvidence.json?.code === 'TASK_VERIFIED'
+    ? ok('evidence cannot be added behind a completed sign-off')
+    : bad('no evidence behind a sign-off', `${lateEvidence.status} ${lateEvidence.json?.code}`);
+
+  const pullIt = await api(`/api/projects/evidence/${evId}/withdraw`, {
+    token, method: 'POST', body: { reason: 'Superseded by a later version of the document.' },
+  });
+  pullIt.status === 409 && pullIt.json?.code === 'EVIDENCE_LOCKED'
+    ? ok('nor can the evidence a reviewer relied on be pulled out from under them')
+    : bad('evVerified evidence is locked', `${pullIt.status} ${pullIt.json?.code}`);
+  }
+
+  // ── 27. Traceability to the framework ───────────────────────────────────
+  console.log('\n27. Traceability');
+
+  const standards = await api('/api/grc/standards', { token });
+  const std = (standards.json?.standards || []).find((s) => (s.clauses || []).length > 0)
+    || (standards.json?.standards || [])[0];
+  const clauseList = std?.clauses || [];
+
+  if (clauseList.length === 0) {
+    console.log('   SKIP  no standard with clauses is seeded — traceability asserted in the logic suite');
+  } else {
+    const clauseId = clauseList[0].id;
+
+    const evLinked = await api(`/api/projects/tasks/${noDocId}/clauses`, {
+      token, method: 'POST',
+      body: { clauseIds: [clauseId], note: 'Satisfies the scoping requirement.' },
+    });
+    evLinked.status === 201
+      ? ok('delivered work maps to the clause it satisfies')
+      : bad('clause link', `${evLinked.status} ${JSON.stringify(evLinked.json).slice(0, 160)}`);
+
+    const again = await api(`/api/projects/tasks/${noDocId}/clauses`, {
+      token, method: 'POST', body: { clauseIds: [clauseId] },
+    });
+    again.status === 201
+      ? ok('re-sending a mapping is a no-op, not an error')
+      : bad('duplicate mapping is a no-op', `${again.status}`);
+
+    const bogus = await api(`/api/projects/tasks/${noDocId}/clauses`, {
+      token, method: 'POST', body: { clauseIds: ['00000000-0000-0000-0000-000000000000'] },
+    });
+    bogus.status === 400
+      ? ok('a clause that does not exist is refused') : bad('bogus clause refused', `${bogus.status}`);
+
+    const evRegister = await api(`/api/projects/${eid}/evidence`, { token });
+    evRegister.json?.coverage?.clausesCovered === 1
+      ? ok('the evRegister reports what the plan traces to')
+      : bad('coverage counts clauses', JSON.stringify(evRegister.json?.coverage));
+    // Mapped but not finished: an intention, not something to defend.
+    evRegister.json?.coverage?.clausesSatisfied === 0
+      ? ok('a clause whose work is unfinished is claimed, not defended')
+      : bad('unfinished work does not satisfy a clause',
+            `${evRegister.json?.coverage?.clausesSatisfied}`);
+  }
+
+  // ── 28. The evidence evRegister ───────────────────────────────────────────
+  console.log('\n28. Register');
+
+  const reg = await api(`/api/projects/${eid}/evidence`, { token });
+  reg.json?.summary?.standing === 1
+    ? ok('the evRegister lists standing evidence') : bad('evRegister standing', JSON.stringify(reg.json?.summary));
+  const expectedStanding = reviewerToken ? 'Seen' : 'Pending';
+  (reg.json?.evidence || [])[0]?.standing === expectedStanding
+    ? ok('and marks whether the reviewer actually saw it', expectedStanding)
+    : bad('standing marked', `${(reg.json?.evidence || [])[0]?.standing}`);
+  reg.json?.vocabulary?.classifications?.length === 4
+    ? ok('the classification vocabulary is served to the client')
+    : bad('vocabulary served', JSON.stringify(reg.json?.vocabulary?.classifications));
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);

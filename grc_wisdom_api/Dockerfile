@@ -36,7 +36,9 @@ COPY --from=builder /app/dist ./dist
 
 # uploads/ is a mount point for a named volume. Creating it here with the right
 # ownership means the container does not need to be root to write to it.
-RUN mkdir -p /app/uploads && chown -R node:node /app
+# evidence-store/ is the same arrangement for delivery evidence, and is
+# deliberately a separate path: nothing under it is ever served statically.
+RUN mkdir -p /app/uploads /app/evidence-store && chown -R node:node /app
 
 USER node
 

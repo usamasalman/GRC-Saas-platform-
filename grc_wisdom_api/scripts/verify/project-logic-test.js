@@ -32,6 +32,11 @@ const {
   checkBlockRouting, checkImpedimentInput, checkResolvable, slipCost,
   OWING_SIDES, IMPEDIMENT_CATEGORIES, IMPEDIMENT_KINDS,
 } = require('../../dist/services/projectDelay');
+const {
+  evidenceStanding, hasStandingEvidence, checkEvidenceAttachable,
+  checkEvidenceWithdrawable, checkEvidenceFile, sniffMime, clauseCoverage,
+  extensionOf, MAX_EVIDENCE_BYTES,
+} = require('../../dist/services/projectEvidence');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -344,8 +349,9 @@ isComplete('Done') && !isComplete('InProgress')
   ? ok('completion is decided in one place') : bad('completion is decided in one place');
 
 // ── 11. Verification policy ─────────────────────────────────────────────────
-// Nine cases, because three policies times three override values is the whole
-// truth table and a rule this small should have no unexplored corner.
+// The override truth table. Slice 5 added EvidenceTasks and its own cases live
+// in section 24; these still hold unchanged, which is the point of asserting
+// them here — a new policy value must not disturb the existing three.
 console.log('\n11. Verification policy');
 
 eq('EveryTask + no override  → required', requiresVerification('EveryTask', null), true);
@@ -367,9 +373,9 @@ eq('None + exempted    → not required', requiresVerification('None', false), f
 eq('an undefined override behaves as no override',
    requiresVerification('EveryTask', undefined), true);
 
-VERIFICATION_POLICIES.length === 3
-  ? ok('three policies, no hidden fourth', VERIFICATION_POLICIES.join(' / '))
-  : bad('three policies', VERIFICATION_POLICIES.join(','));
+VERIFICATION_POLICIES.length === 4
+  ? ok('four policies, no hidden fifth', VERIFICATION_POLICIES.join(' / '))
+  : bad('four policies', VERIFICATION_POLICIES.join(','));
 
 // ── 12. Verification states and routing ─────────────────────────────────────
 console.log('\n12. Verification states');
@@ -868,6 +874,177 @@ churned.charged > churned.slip
        churned.charged + ' days charged against a ' + churned.slip + '-day net position')
   : bad('a recovery is not refunded',
         'charged ' + churned.charged + ' vs slip ' + churned.slip);
+
+// ── 24. The EvidenceTasks policy ────────────────────────────────────────────
+// Nine cases, because the precedence between a policy and a task-level override
+// is the kind of thing that looks obviously right and is quietly wrong.
+console.log('\n24. Verification policy');
+
+const needs = (policy, override, hasEvidence) =>
+  requiresVerification(policy, override, hasEvidence);
+
+needs('EveryTask', null, false) ? ok('EveryTask needs a reviewer by default') : bad('EveryTask default');
+!needs('SelectedTasks', null, false) ? ok('SelectedTasks does not, until marked') : bad('SelectedTasks default');
+needs('SelectedTasks', true, false) ? ok('a marked task under SelectedTasks does') : bad('SelectedTasks marked');
+!needs('EveryTask', false, false) ? ok('an exempted task under EveryTask does not') : bad('EveryTask exempt');
+
+// The new branch: verification follows the deliverable.
+needs('EvidenceTasks', null, true)
+  ? ok('EvidenceTasks sends work that produced something to a reviewer')
+  : bad('EvidenceTasks with evidence');
+!needs('EvidenceTasks', null, false)
+  ? ok('and does not send work that produced nothing to review')
+  : bad('EvidenceTasks without evidence');
+needs('EvidenceTasks', true, false)
+  ? ok('an explicit mark still wins under EvidenceTasks')
+  : bad('EvidenceTasks explicit true');
+!needs('EvidenceTasks', false, true)
+  ? ok('and an explicit exemption still wins over a file')
+  : bad('EvidenceTasks explicit false');
+
+// None is a statement about the whole engagement. Neither a task-level flag nor
+// a file somebody attached may switch a workflow back on that was turned off.
+!needs('None', true, true)
+  ? ok('None outranks both a mark and a deliverable')
+  : bad('None outranks everything');
+VERIFICATION_POLICIES.includes('EvidenceTasks')
+  ? ok('EvidenceTasks is a real policy value now') : bad('EvidenceTasks is offered');
+
+// ── 25. What the reviewer actually saw ──────────────────────────────────────
+console.log('\n25. Evidence standing');
+
+const ev = (round, withdrawn) => ({ uploadedInRound: round, withdrawnAt: withdrawn || null });
+const tk = (status, round) => ({ status, verificationRound: round });
+
+eq('evidence on unverified work is still pending',
+   evidenceStanding(ev(1), tk('InProgress', 0)), 'Pending');
+eq('evidence offered in the accepted round was seen',
+   evidenceStanding(ev(1), tk('Verified', 1)), 'Seen');
+eq('evidence from an earlier round was seen too',
+   evidenceStanding(ev(1), tk('Verified', 3)), 'Seen');
+eq('retracted evidence reads as withdrawn, whatever else is true',
+   evidenceStanding(ev(1, D('2026-02-01')), tk('Verified', 3)), 'Withdrawn');
+
+// The reading that matters: a file that appeared after the sign-off it seems to
+// support. The upload path refuses this, but a rule enforced in a controller
+// and a fact derivable from the data are different guarantees, and reports are
+// built on the second.
+eq('evidence from a later round was NOT in front of the person who signed',
+   evidenceStanding(ev(4), tk('Verified', 2)), 'AddedLater');
+
+hasStandingEvidence([ev(1)]) ? ok('standing evidence counts') : bad('standing evidence counts');
+!hasStandingEvidence([ev(1, D('2026-01-01'))])
+  ? ok('withdrawn evidence does not — or withdrawing keeps the credit and drops the substance')
+  : bad('withdrawn evidence does not count');
+!hasStandingEvidence([]) ? ok('no evidence is no evidence') : bad('no evidence is no evidence');
+
+// ── 26. Evidence cannot move under a signature ──────────────────────────────
+console.log('\n26. Immutability rules');
+
+eq('evidence cannot be attached to verified work',
+   (checkEvidenceAttachable({ status: 'Verified' }) || {}).code, 'TASK_VERIFIED');
+checkEvidenceAttachable({ status: 'InProgress' }) === null
+  ? ok('but attaches freely to work in flight') : bad('attaches to work in flight');
+checkEvidenceAttachable({ status: 'Rejected' }) === null
+  ? ok('and to work sent back for rework') : bad('attaches to rejected work');
+
+eq('evidence a verifier relied on cannot be withdrawn',
+   (checkEvidenceWithdrawable(ev(1), tk('Verified', 1)) || {}).code, 'EVIDENCE_LOCKED');
+checkEvidenceWithdrawable(ev(1), tk('InProgress', 0)) === null
+  ? ok('unverified evidence can be withdrawn') : bad('unverified evidence can be withdrawn');
+eq('and nothing is withdrawn twice',
+   (checkEvidenceWithdrawable(ev(1, D('2026-01-01')), tk('InProgress', 0)) || {}).code,
+   'ALREADY_WITHDRAWN');
+
+// ── 27. What may be stored ──────────────────────────────────────────────────
+console.log('\n27. File rules');
+
+checkEvidenceFile('scope-statement.pdf', 1024) === null
+  ? ok('a PDF is evidence') : bad('a PDF is evidence');
+eq('an empty file is not', (checkEvidenceFile('x.pdf', 0) || {}).code, 'EMPTY_FILE');
+eq('nor is a disk image',
+   (checkEvidenceFile('backup.pdf', MAX_EVIDENCE_BYTES + 1) || {}).code, 'FILE_TOO_LARGE');
+
+// Markup stored and later handed back from the API's own origin is a script
+// running as the application, so it is refused outright.
+['report.html', 'diagram.svg', 'thing.js', 'setup.exe'].forEach((name) => {
+  const r = checkEvidenceFile(name, 500);
+  r && r.code === 'DANGEROUS_TYPE'
+    ? ok('refused as evidence: ' + name)
+    : bad('refused as evidence: ' + name, JSON.stringify(r));
+});
+checkEvidenceFile('EVIDENCE.PDF', 500) === null
+  ? ok('the extension check is case-insensitive') : bad('extension check is case-insensitive');
+eq('a file with no extension has none', extensionOf('READ_ME'), '');
+
+// ── 28. The type comes from the bytes, not the caller ───────────────────────
+// A declared content type is a chosen one, and it decides how a browser later
+// treats the download.
+console.log('\n28. Type sniffing');
+
+eq('a PDF is recognised by its signature',
+   sniffMime([0x25, 0x50, 0x44, 0x46, 0x2d], 'anything.txt'), 'application/pdf');
+eq('so is a PNG', sniffMime([0x89, 0x50, 0x4e, 0x47], 'x.png'), 'image/png');
+eq('and a JPEG', sniffMime([0xff, 0xd8, 0xff, 0xe0], 'x.jpg'), 'image/jpeg');
+// A .docx IS a zip; only the extension separates them, and trusting it here is
+// safe because the bytes already agreed it is a zip container.
+eq('a docx is a zip that the extension disambiguates',
+   sniffMime([0x50, 0x4b, 0x03, 0x04], 'minutes.docx'),
+   'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+eq('a bare zip stays a zip',
+   sniffMime([0x50, 0x4b, 0x03, 0x04], 'bundle.zip'), 'application/zip');
+// The lie that matters: a file NAMED .pdf whose bytes are not a PDF.
+eq('a mislabelled file is not taken at its word',
+   sniffMime([0x00, 0x01, 0x02, 0x03], 'definitely-a.pdf'), 'application/octet-stream');
+
+// ── 29. Traceability coverage ───────────────────────────────────────────────
+// Two figures, deliberately separate: clauses a plan MENTIONS are an intention,
+// clauses whose every task is finished are something you can defend in an audit.
+console.log('\n29. Coverage');
+
+const T5 = (status, ...clauses) => ({
+  id: 't' + status + clauses.join(''),
+  status,
+  clauseLinks: clauses.map((c) => ({ clauseId: c, standardCode: c.split('-')[0] })),
+});
+
+const plan = [
+  T5('Verified', 'ISO27001-A5'),
+  T5('Done', 'ISO27001-A5'),
+  T5('InProgress', 'ISO27001-A8'),
+  T5('Done', 'SOC2-CC1'),
+  T5('NotStarted'),
+];
+const cov = clauseCoverage(plan, isComplete);
+
+eq('every distinct clause the plan touches is counted', cov.clausesCovered, 3);
+eq('tasks carrying a clause link', cov.tasksMapped, 4);
+eq('out of the whole plan', cov.tasksTotal, 5);
+eq('mapped percentage', cov.mappedPercent, 80);
+// A.5 has two tasks and both are complete; CC1 has one and it is complete.
+// A.8's only task is still in flight, so the clause is claimed but not defensible.
+eq('only clauses whose every task is finished are satisfied', cov.clausesSatisfied, 2);
+eq('per-standard: ISO covers two clauses', cov.byStandard['ISO27001'].covered, 2);
+eq('and defends one of them', cov.byStandard['ISO27001'].satisfied, 1);
+eq('SOC2 defends its only one', cov.byStandard['SOC2'].satisfied, 1);
+
+// Verified counts as complete for coverage, exactly as it does for progress —
+// one definition of finished across the module.
+clauseCoverage([T5('Verified', 'ISO27001-A5')], isComplete).clausesSatisfied === 1
+  ? ok('verified work satisfies a clause, same as done work')
+  : bad('verified work satisfies a clause');
+
+const emptyPlan = clauseCoverage([], isComplete);
+emptyPlan.mappedPercent === 0 && emptyPlan.clausesCovered === 0
+  ? ok('an empty plan traces nowhere, without dividing by zero')
+  : bad('an empty plan traces nowhere', JSON.stringify(emptyPlan));
+
+// A plan with tasks but no links traces nothing — which must read as 0%, not as
+// full coverage of an empty clause set.
+const unmapped = clauseCoverage([T5('Done'), T5('Done')], isComplete);
+unmapped.mappedPercent === 0 && unmapped.clausesSatisfied === 0
+  ? ok('finished work with no clause links proves nothing about a framework')
+  : bad('unmapped work proves nothing', JSON.stringify(unmapped));
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

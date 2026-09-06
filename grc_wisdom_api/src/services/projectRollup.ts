@@ -191,6 +191,10 @@ export async function recomputeProject(
         select: {
           status: true, completionPercent: true, weight: true,
           verificationOverride: true, dueDate: true, submittedAt: true,
+          // Standing evidence only. Under the EvidenceTasks policy a withdrawn
+          // file must stop satisfying the requirement, or withdrawing becomes a
+          // way to keep the credit while removing the substance.
+          evidence: { where: { withdrawnAt: null }, select: { id: true } },
         },
       },
     },
@@ -199,7 +203,9 @@ export async function recomputeProject(
   const computed = phases.map((phase: any) => {
     const tasks = phase.tasks.map((t: any) => ({
       ...t,
-      needsVerification: requiresVerification(policy, t.verificationOverride),
+      needsVerification: requiresVerification(
+        policy, t.verificationOverride, t.evidence.length > 0,
+      ),
     }));
     const pair = progressPair(tasks);
     return {

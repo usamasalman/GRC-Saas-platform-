@@ -234,12 +234,24 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
       });
       return;
     }
-    const mapped = await prisma.controlClauseLink.count({ where: { clause: { standardId: id } } });
-    if (mapped > 0) {
+    // Both kinds of mapping have to be counted. StandardClause cascades from
+    // Standard, so a delete that only checked control mappings would silently
+    // take a delivery project's traceability with it — the clause rows vanish,
+    // the ProjectTaskClause rows cascade behind them, and the engagement quietly
+    // stops being able to say which framework it was delivered against.
+    const [mapped, delivered] = await Promise.all([
+      prisma.controlClauseLink.count({ where: { clause: { standardId: id } } }),
+      prisma.projectTaskClause.count({ where: { clause: { standardId: id } } }),
+    ]);
+    if (mapped > 0 || delivered > 0) {
+      const parts = [
+        mapped > 0 ? `${mapped} control mapping(s)` : null,
+        delivered > 0 ? `${delivered} delivery task link(s)` : null,
+      ].filter(Boolean);
       res.status(409).json({
         status: 'error',
         code: 'STANDARD_MAPPED',
-        message: `${mapped} control mapping(s) point at this standard's clauses. Unmap them first.`,
+        message: `${parts.join(' and ')} point at this standard's clauses. Unmap them first.`,
       });
       return;
     }

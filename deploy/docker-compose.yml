@@ -48,6 +48,10 @@ services:
       # Uploaded evidence and documents. Without this they are written to the
       # container filesystem and vanish on the next deploy.
       - uploads:/app/uploads
+      # Delivery evidence. A separate volume from uploads because it is a
+      # separate store with different rules: nothing here is ever served
+      # statically, and every read goes through an authenticated handler.
+      - evidence:/app/evidence-store
     networks:
       default:
         aliases:
@@ -106,5 +110,6 @@ services:
 volumes:
   pgdata:
   uploads:
+  evidence:
   caddy_data:
   caddy_config:
