@@ -251,6 +251,13 @@
       "module": "Delivery",
       "number": 32,
       "tenancySpecific": true
+    },
+    {
+      "key": "verify-project-delivery",
+      "name": "Verify and sign off delivered project work",
+      "module": "Delivery",
+      "number": 33,
+      "tenancySpecific": true
     }
   ],
   "roles": [
@@ -272,7 +279,8 @@
         "monitor-security-and-handle-incidents",
         "import-or-enable-a-standard",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -326,7 +334,8 @@
         "manage-a-control-implementation-and-evidence",
         "create-import-and-version-a-document",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -363,7 +372,8 @@
         "generate-and-distribute-a-report",
         "create-or-manage-a-tenant",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -381,7 +391,8 @@
         "assess-and-treat-a-risk",
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -399,7 +410,8 @@
         "acknowledge-or-monitor-a-policy",
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -414,7 +426,8 @@
         "apply-retention-and-legal-hold",
         "acknowledge-or-monitor-a-policy",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -473,7 +486,8 @@
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -491,7 +505,8 @@
         "generate-and-distribute-a-report",
         "create-or-manage-a-tenant",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -585,7 +600,8 @@
         "generate-and-distribute-a-report",
         "plan-and-execute-an-audit",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -649,7 +665,8 @@
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -825,7 +842,8 @@
         "manage-a-control-implementation-and-evidence",
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {
@@ -901,7 +919,8 @@
         "import-or-enable-a-standard",
         "manage-partner-client-workspaces-and-engagements",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "verify-project-delivery"
       ]
     },
     {

@@ -181,6 +181,9 @@ model User {
   projectMemberships ProjectMember[] @relation("ProjectMemberUser")
   phasesOwned      ProjectPhase[] @relation("PhaseOwner")
   tasksAssigned    ProjectTask[]  @relation("TaskAssignee")
+  tasksSubmitted   ProjectTask[]  @relation("TaskSubmitter")
+  tasksVerified    ProjectTask[]  @relation("TaskVerifier")
+  verificationsMade ProjectVerification[] @relation("VerificationActor")
 }
 
 model Plan {
@@ -2525,6 +2528,19 @@ model Project {
   reportedProgress Int      @default(0)
   verifiedProgress Int      @default(0)
 
+  /// EveryTask | SelectedTasks | None — how much of this engagement needs an
+  /// independent reviewer before it counts as verified.
+  ///
+  /// This is the DEFAULT, not the record: a task carries `verificationOverride`
+  /// and the two combine in projectLifecycle.requiresVerification. Storing the
+  /// policy here rather than stamping a boolean on every task at creation means
+  /// raising the bar mid-engagement actually raises it, instead of applying only
+  /// to work planned afterwards.
+  ///
+  /// Default is SelectedTasks: on a real programme the client wants the scope
+  /// statement and the SoA independently confirmed, not the kickoff call.
+  verificationPolicy String @default("SelectedTasks")
+
   startDate        DateTime
   targetEndDate    DateTime
   /// Set when the project reaches Closed. Null while it is still running, so
@@ -2551,6 +2567,7 @@ model Project {
   members          ProjectMember[]
   phases           ProjectPhase[]
   tasks            ProjectTask[]
+  verifications    ProjectVerification[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2619,8 +2636,12 @@ model ProjectPhase {
   ///
   /// Derived from the tasks beneath it and written by projectRollup, not set by
   /// hand: a phase whose status disagrees with its own tasks is worse than no
-  /// status at all. Slice 3 adds a gate decision that must also pass before a
-  /// phase may read Complete.
+  /// status at all.
+  ///
+  /// From slice 3 a phase reads Complete only when every task is Done or
+  /// Verified, so a phase holding work that is still with a reviewer cannot
+  /// report itself finished. That gate needed no new field — it falls out of
+  /// what "complete" means for a task.
   status        String  @default("NotStarted")
 
   /// Both written ONLY by services/projectRollup.ts.
@@ -2653,11 +2674,15 @@ model ProjectTask {
   description   String?
 
   /// NotStarted | InProgress | Blocked | Done
+  /// | SubmittedForVerification | Verified | Rejected
   ///
-  /// Slice 3 adds SubmittedForVerification, Verified and Rejected. There is no
-  /// stored Delayed: lateness is a function of dueDate and today, so a column
-  /// holding it would need a scanner to keep it true and would be wrong between
-  /// runs. It is derived alongside the other schedule figures.
+  /// Done and Verified are both terminal, and which one a task may reach depends
+  /// on whether it needs verification: work that does cannot be marked Done at
+  /// all, and work that does not cannot be submitted. See projectLifecycle.
+  ///
+  /// There is no stored Delayed: lateness is a function of dueDate and today, so
+  /// a column holding it would need a scanner to keep it true and would be wrong
+  /// between runs. It is derived alongside the other schedule figures.
   status        String  @default("NotStarted")
 
   /// Self-reported, 0-100. Separate from status so "most of the way through"
@@ -2683,12 +2708,82 @@ model ProjectTask {
   dueDate       DateTime?
   completedAt   DateTime?
 
+  /// null follows the project's verificationPolicy. true and false are explicit
+  /// decisions that survive a policy change — a manager who exempted one task
+  /// meant it, and a later switch to EveryTask should not silently un-exempt it.
+  verificationOverride Boolean?
+
+  /// The latest submission and decision, denormalised so the plan screen can
+  /// show "waiting on Rehan since Tuesday" without joining the history table.
+  /// ProjectVerification holds every round; these two hold the current one.
+  submittedById String?
+  submittedBy   User?    @relation("TaskSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedAt   DateTime?
+  verifiedById  String?
+  verifiedBy    User?    @relation("TaskVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt    DateTime?
+
+  /// How many times this task has been put forward. A deliverable accepted on
+  /// the third attempt is a different fact from one accepted first time, and an
+  /// auditor asks about the difference.
+  verificationRound Int  @default(0)
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  verifications ProjectVerification[]
 
   @@unique([projectId, ref])
   @@index([phaseId, sequence])
   @@index([phaseId, status])
   @@index([assigneeId, status])
   @@index([projectId, dueDate])
+  @@index([projectId, status])
+}
+
+/// One decision in a task's verification history. Append-only: rows are written
+/// and never updated or deleted, because the point of the table is that the
+/// third attempt is still visible after the third attempt succeeds.
+///
+/// This is deliberately a table rather than a reading of the WORM audit log.
+/// The audit log proves nothing was tampered with; it stores payloads as JSON
+/// text and is not a structure you can build a verification report on top of.
+/// Both are written — the log for integrity, this for reporting.
+model ProjectVerification {
+  id          String   @id @default(uuid())
+
+  /// Denormalised from the task so a project-wide verification report is one
+  /// indexed query rather than a join through every task.
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      String
+  task        ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  /// Submission number this row belongs to. Submitted/Accepted/Rejected for one
+  /// round share a value, so a report can group a rejection with what caused it.
+  round       Int
+
+  /// Submitted | Accepted | Rejected | Withdrawn
+  outcome     String
+
+  actorId     String
+  actor       User     @relation("VerificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  /// Client | Provider — which organisation the actor answered to at the time.
+  /// Recorded rather than derived later because people move between tenants and
+  /// "the client accepted this" must stay true afterwards.
+  actorSide   String
+
+  /// Required on a rejection: work sent back without a reason comes straight
+  /// back. Optional on everything else.
+  note        String?
+
+  /// What was being claimed at the moment of the decision, so a report can show
+  /// what the reviewer was actually looking at.
+  reportedPercent Int  @default(0)
+
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([taskId, round])
+  @@index([actorId, createdAt])
 }

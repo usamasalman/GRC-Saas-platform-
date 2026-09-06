@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { S, ghostBtn } from '../iam/iamStyles';
 import ProjectPortfolio from './project/ProjectPortfolio';
 import ProjectPlan from './project/ProjectPlan';
+import ProjectVerification from './project/ProjectVerification';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -10,11 +11,11 @@ import ProjectPlan from './project/ProjectPlan';
  * The selected project is the only state this host owns — each tab loads its own
  * data — which is the same arrangement AuditProgramme uses for its engagements.
  *
- * Later slices add tabs beside Plan: verification, deliverables, reports. None
- * of them change this file beyond a line in TABS.
+ * Later slices add tabs beside Plan and Verification: deliverables, reports.
+ * None of them change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan';
+type TabKey = 'portfolio' | 'plan' | 'verification';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -54,8 +55,16 @@ const DeliveryProjects: React.FC = () => {
         >
           Plan
         </button>
+        <button
+          style={{ ...tabStyle(tab === 'verification'), opacity: selected ? 1 : 0.45 }}
+          onClick={() => selected && setTab('verification')}
+          disabled={!selected}
+          title={selected ? undefined : 'Open a project from the portfolio first'}
+        >
+          Verification
+        </button>
 
-        {tab === 'plan' && selected && (
+        {tab !== 'portfolio' && selected && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}>
               <span style={{ color: 'var(--ink-faint)' }}>{selected.ref}</span> · {selected.name}
@@ -67,6 +76,9 @@ const DeliveryProjects: React.FC = () => {
 
       {tab === 'portfolio' && <ProjectPortfolio onOpen={open} />}
       {tab === 'plan' && selected && <ProjectPlan key={selected.id} projectId={selected.id} />}
+      {tab === 'verification' && selected && (
+        <ProjectVerification key={selected.id} projectId={selected.id} />
+      )}
     </div>
   );
 };

@@ -5,6 +5,8 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { projectWhere, canWriteProject, canReadProject, sideOf } from '../services/projectAccess';
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
+import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
+import { recomputeProject } from '../services/projectRollup';
 
 /**
  * Delivery projects — slice 1.
@@ -47,6 +49,7 @@ async function nextRef(tenantId: string): Promise<string> {
 const LIST_SELECT = {
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
+  verificationPolicy: true,
   startDate: true, targetEndDate: true, actualEndDate: true, frameworks: true,
   tenantId: true, providerTenantId: true, createdAt: true,
   owner: { select: { id: true, name: true, email: true } },
@@ -164,7 +167,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
     const scope = await resolveTenantScope(str(req.user!.tenantId));
     const {
       name, description, objectives, projectType, priority, frameworks,
-      startDate, targetEndDate, ownerId, managerId, sponsorId,
+      startDate, targetEndDate, ownerId, managerId, sponsorId, verificationPolicy,
       tenantId: bodyTenantId, providerTenantId,
     } = req.body || {};
 
@@ -207,6 +210,13 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       res.status(400).json({ status: 'error', message: `priority must be one of: ${PRIORITIES.join(', ')}` });
       return;
     }
+    if (verificationPolicy && !VERIFICATION_POLICIES.includes(verificationPolicy)) {
+      res.status(400).json({
+        status: 'error',
+        message: `verificationPolicy must be one of: ${VERIFICATION_POLICIES.join(', ')}`,
+      });
+      return;
+    }
 
     // Owner and manager must be real users inside the client organisation. A
     // project accountable to somebody in another tenant is not accountable.
@@ -235,6 +245,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
           objectives: objectives ? str(objectives) : null,
           projectType: projectType || 'Readiness',
           priority: priority || 'Medium',
+          verificationPolicy: verificationPolicy || 'SelectedTasks',
           frameworks: JSON.stringify(Array.isArray(frameworks) ? frameworks.map(String) : []),
           startDate: start,
           targetEndDate: target,
@@ -318,6 +329,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     // never, and the check stops compiling.
     const ENUM_FIELDS: ReadonlyArray<readonly [string, readonly string[]]> = [
       ['priority', PRIORITIES], ['health', HEALTH], ['projectType', TYPES],
+      ['verificationPolicy', VERIFICATION_POLICIES],
     ];
 
     for (const [field, allowed] of ENUM_FIELDS) {
@@ -371,7 +383,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const p = await tx.project.update({ where: { id }, data, select: LIST_SELECT });
+      await tx.project.update({ where: { id }, data });
       await writeAudit(tx, {
         tenantId: existing.tenantId,
         actorId: str(req.user!.id),
@@ -380,7 +392,17 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         subjectId: id,
         payload: { ref: existing.ref, changed: Object.keys(data) },
       });
-      return p;
+
+      // Changing the verification policy changes what every task in the tree
+      // needs, so the verified figure has to be recomputed in the same
+      // transaction. Otherwise switching an engagement to EveryTask leaves it
+      // reporting a percentage measured against the standard it just left.
+      if (data.verificationPolicy !== undefined) await recomputeProject(tx, id);
+
+      // Re-read rather than taking the update's own return: the rollup above
+      // writes progress columns after it, and the pre-rollup row would show
+      // figures that were true for a few milliseconds.
+      return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
     });
 
     res.json({ status: 'success', project: decorate(updated, scope) });

@@ -18,6 +18,13 @@ import {
   deleteTask,
   taskStatuses,
 } from '../controllers/projectPlanController';
+import {
+  submitTask,
+  verifyTask,
+  returnTask,
+  getVerificationQueue,
+  getTaskVerifications,
+} from '../controllers/projectVerificationController';
 
 const router = Router();
 
@@ -55,5 +62,20 @@ router.delete('/phases/:phaseId', requireCapability(CAP.MANAGE_PROJECT), deleteP
 router.post('/phases/:phaseId/tasks', requireCapability(CAP.MANAGE_PROJECT), createTask);
 router.patch('/tasks/:taskId', requireCapability(CAP.EXECUTE_PROJECT_WORK), updateTask);
 router.delete('/tasks/:taskId', requireCapability(CAP.MANAGE_PROJECT), deleteTask);
+
+// ── Verification ──────────────────────────────────────────────────────────
+//
+// The capability split is the whole control. Submitting is part of doing the
+// work; accepting it is a separate duty held by a separate capability, and no
+// route lets one call do both. The handlers then add the rule a capability
+// cannot express — that this particular person did not do this particular task.
+router.get('/:id/verification', getVerificationQueue);
+router.get('/tasks/:taskId/verifications', getTaskVerifications);
+
+router.post('/tasks/:taskId/submit', requireCapability(CAP.EXECUTE_PROJECT_WORK), submitTask);
+router.post('/tasks/:taskId/verify', requireCapability(CAP.VERIFY_PROJECT_WORK), verifyTask);
+// Withdrawing your own submission is ordinary work; reopening a verified task
+// is not, and returnTask requires MANAGE_PROJECT itself for that case.
+router.post('/tasks/:taskId/return', requireCapability(CAP.EXECUTE_PROJECT_WORK), returnTask);
 
 export default router;

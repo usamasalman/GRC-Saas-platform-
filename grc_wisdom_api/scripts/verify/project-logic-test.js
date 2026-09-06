@@ -21,8 +21,11 @@ const {
   weightedProgress, progressPair, rollUpPhases, totalWeight,
 } = require('../../dist/services/projectRollup');
 const {
-  checkTaskTransition, derivePhaseStatus, taskTiming, isComplete,
-  TASK_STATUSES, DUE_SOON_DAYS,
+  checkTaskTransition, derivePhaseStatus, taskTiming, isComplete, isDelivered,
+  requiresVerification, checkVerificationRule, checkVerificationRouting,
+  checkSeparationOfDuties, checkTaskUpdate, taskCounts,
+  TASK_STATUSES, DUE_SOON_DAYS, VERIFICATION_POLICIES, VERIFICATION_SLA_DAYS,
+  VERIFICATION_STATES,
 } = require('../../dist/services/projectLifecycle');
 
 let pass = 0, fail = 0;
@@ -233,10 +236,11 @@ eq('a blocked task does not hide completion of the rest',
 // ── 8. Rollup arithmetic ────────────────────────────────────────────────────
 console.log('\n8. Rollup');
 
-const task = (status, pct, weight) => ({
+const task = (status, pct, weight, needsVerification) => ({
   status,
   completionPercent: pct === undefined ? 0 : pct,
   weight: weight === undefined ? 1 : weight,
+  needsVerification: needsVerification === true,
 });
 
 eq('no tasks is zero, not a division by zero', weightedProgress([], () => 100), 0);
@@ -267,10 +271,13 @@ eq('a reported percentage above 100 is clamped',
 eq('a negative percentage floors at zero',
    progressPair([task('InProgress', -40)]).reported, 0);
 
-// Slice 2 has no verification states, so verified is legitimately zero even
-// when everything is finished. That is the honest answer, not a placeholder.
-eq('nothing is verified before verification exists',
-   progressPair([task('Done'), task('Done')]).verified, 0);
+// Work that needs no reviewer is verified by being finished — otherwise an
+// engagement that verifies only its deliverables could never reach 100%.
+eq('work needing no reviewer is verified by being finished',
+   progressPair([task('Done'), task('Done')]).verified, 100);
+// Work that does need one is not, however finished it looks.
+eq('finished work still awaiting a reviewer counts for nothing',
+   progressPair([task('Done', 100, 1, true), task('Done', 100, 1, true)]).verified, 0);
 
 eq('total weight sums the tasks', totalWeight([task('Done', 100, 3), task('Done', 100, 2)]), 5);
 
@@ -330,6 +337,302 @@ const distant = taskTiming({ status: 'InProgress', dueDate: D('2026-03-01') }, D
 
 isComplete('Done') && !isComplete('InProgress')
   ? ok('completion is decided in one place') : bad('completion is decided in one place');
+
+// ── 11. Verification policy ─────────────────────────────────────────────────
+// Nine cases, because three policies times three override values is the whole
+// truth table and a rule this small should have no unexplored corner.
+console.log('\n11. Verification policy');
+
+eq('EveryTask + no override  → required', requiresVerification('EveryTask', null), true);
+eq('EveryTask + exempted     → not required', requiresVerification('EveryTask', false), false);
+eq('EveryTask + confirmed    → required', requiresVerification('EveryTask', true), true);
+
+eq('SelectedTasks + no override → not required', requiresVerification('SelectedTasks', null), false);
+eq('SelectedTasks + selected    → required', requiresVerification('SelectedTasks', true), true);
+eq('SelectedTasks + exempted    → not required', requiresVerification('SelectedTasks', false), false);
+
+// None is absolute. A policy stating the engagement does no independent
+// verification should not be reintroduced by a flag left on a single task.
+eq('None + no override → not required', requiresVerification('None', null), false);
+eq('None + selected    → still not required', requiresVerification('None', true), false);
+eq('None + exempted    → not required', requiresVerification('None', false), false);
+
+// undefined is what Prisma hands back for a null column read through a partial
+// select, and it must mean the same thing as null rather than crashing.
+eq('an undefined override behaves as no override',
+   requiresVerification('EveryTask', undefined), true);
+
+VERIFICATION_POLICIES.length === 3
+  ? ok('three policies, no hidden fourth', VERIFICATION_POLICIES.join(' / '))
+  : bad('three policies', VERIFICATION_POLICIES.join(','));
+
+// ── 12. Verification states and routing ─────────────────────────────────────
+console.log('\n12. Verification states');
+
+['SubmittedForVerification', 'Verified', 'Rejected'].forEach((s) => {
+  TASK_STATUSES.includes(s)
+    ? ok('"' + s + '" is a real status') : bad('"' + s + '" is a real status');
+});
+
+// Both terminal states are complete; only one of them was checked by anybody.
+isComplete('Verified') && isComplete('Done')
+  ? ok('Done and Verified both count as complete')
+  : bad('Done and Verified both count as complete');
+!isComplete('SubmittedForVerification')
+  ? ok('work sitting with a reviewer is not complete')
+  : bad('work sitting with a reviewer is not complete');
+// ...but the assignee has finished with it, which is a different question.
+isDelivered('SubmittedForVerification') && !isDelivered('Rejected')
+  ? ok('submitted work is delivered; rejected work is not')
+  : bad('submitted work is delivered; rejected work is not');
+
+// The submission path itself.
+checkTaskTransition('InProgress', 'SubmittedForVerification') === null
+  ? ok('work in progress can be submitted') : bad('work in progress can be submitted');
+checkTaskTransition('SubmittedForVerification', 'Verified') === null
+  ? ok('a submission can be accepted') : bad('a submission can be accepted');
+checkTaskTransition('SubmittedForVerification', 'Rejected') === null
+  ? ok('a submission can be rejected') : bad('a submission can be rejected');
+checkTaskTransition('Rejected', 'InProgress') === null
+  ? ok('rejected work goes back to in progress') : bad('rejected work goes back');
+
+// The one that would defeat the whole module: skipping the reviewer entirely.
+const skipReview = checkTaskTransition('InProgress', 'Verified');
+skipReview && skipReview.code === 'ILLEGAL_TRANSITION'
+  ? ok('work cannot become Verified without being submitted')
+  : bad('work cannot become Verified without being submitted', JSON.stringify(skipReview));
+
+const backToStart = checkTaskTransition('Verified', 'NotStarted');
+backToStart && backToStart.code === 'ILLEGAL_TRANSITION'
+  ? ok('verified work cannot be rewound to Not started')
+  : bad('verified work cannot be rewound to Not started', JSON.stringify(backToStart));
+
+// ── 13. The two symmetrical requirement rules ───────────────────────────────
+console.log('\n13. Requirement rules');
+
+// A task needing a reviewer must not have a second terminal state available,
+// or the reviewer is optional in practice however loudly the policy says so.
+const dodge = checkVerificationRule('Done', true);
+dodge && dodge.code === 'VERIFICATION_REQUIRED'
+  ? ok('work needing a reviewer cannot simply be marked Done')
+  : bad('work needing a reviewer cannot be marked Done', JSON.stringify(dodge));
+
+const noise = checkVerificationRule('SubmittedForVerification', false);
+noise && noise.code === 'VERIFICATION_NOT_REQUIRED'
+  ? ok('work needing no reviewer cannot be pushed into their queue')
+  : bad('work needing no reviewer cannot be pushed into their queue', JSON.stringify(noise));
+
+checkVerificationRule('Done', false) === null
+  ? ok('ordinary work can still be marked Done') : bad('ordinary work can be marked Done');
+checkVerificationRule('SubmittedForVerification', true) === null
+  ? ok('work needing a reviewer can be submitted') : bad('work needing a reviewer can be submitted');
+checkVerificationRule('Blocked', true) === null
+  ? ok('the rule says nothing about unrelated moves') : bad('the rule says nothing about unrelated moves');
+
+// Routing: an ordinary task update must not be able to carry a verification.
+console.log('\n   routing away from the ordinary update path');
+VERIFICATION_STATES.forEach((s) => {
+  const r = checkVerificationRouting('InProgress', s);
+  r && r.code === 'USE_VERIFICATION_ENDPOINT'
+    ? ok('PATCH cannot set ' + s)
+    : bad('PATCH cannot set ' + s, JSON.stringify(r));
+});
+['SubmittedForVerification', 'Verified'].forEach((s) => {
+  const r = checkVerificationRouting(s, 'InProgress');
+  r && r.code === 'USE_VERIFICATION_ENDPOINT'
+    ? ok('PATCH cannot move work out of ' + s)
+    : bad('PATCH cannot move work out of ' + s, JSON.stringify(r));
+});
+// Rejected is ordinary work again — forcing rework through a verification
+// endpoint would be ceremony with no control behind it.
+checkVerificationRouting('Rejected', 'InProgress') === null
+  ? ok('picking rejected work back up is an ordinary update')
+  : bad('picking rejected work back up is an ordinary update');
+checkVerificationRouting('InProgress', 'Done') === null
+  ? ok('ordinary moves are left alone') : bad('ordinary moves are left alone');
+
+// ── 13b. The composed verdict, and the order it applies the three rules ─────
+// This ordering was wrong when first written: checking the table first answers
+// a PATCH of status "Verified" with "a task cannot go from InProgress to
+// Verified", which is true and useless — it sends the reader off to submit the
+// task and be refused a second time. Asserted here so it cannot drift back.
+console.log('\n13b. The composed verdict');
+
+const verdict = (from, to, needs) => {
+  const r = checkTaskUpdate(from, to, needs);
+  return r ? r.code : null;
+};
+
+eq('needing a reviewer beats pointing at another endpoint',
+   verdict('InProgress', 'Done', true), 'VERIFICATION_REQUIRED');
+eq('needing no reviewer is said plainly, not routed elsewhere',
+   verdict('InProgress', 'SubmittedForVerification', false), 'VERIFICATION_NOT_REQUIRED');
+eq('setting Verified points at the endpoint, not at the table',
+   verdict('InProgress', 'Verified', true), 'USE_VERIFICATION_ENDPOINT');
+eq('so does setting Rejected',
+   verdict('InProgress', 'Rejected', true), 'USE_VERIFICATION_ENDPOINT');
+eq('and so does submitting work that genuinely needs it',
+   verdict('InProgress', 'SubmittedForVerification', true), 'USE_VERIFICATION_ENDPOINT');
+eq('withdrawing is routed too',
+   verdict('SubmittedForVerification', 'InProgress', true), 'USE_VERIFICATION_ENDPOINT');
+eq('an invented status is still named as such',
+   verdict('InProgress', 'Finished', false), 'UNKNOWN_STATUS');
+eq('an impossible ordinary move is still impossible',
+   verdict('NotStarted', 'Done', false), 'ILLEGAL_TRANSITION');
+eq('an ordinary move is allowed', verdict('InProgress', 'Done', false), null);
+eq('picking rejected work back up is allowed',
+   verdict('Rejected', 'InProgress', true), null);
+
+// ── 14. Separation of duties ────────────────────────────────────────────────
+// The load-bearing control. If any of these four pass, the second progress
+// figure means nothing and the module is a task tracker with extra columns.
+console.log('\n14. Separation of duties');
+
+const sodSelf = checkSeparationOfDuties({
+  actorId: 'u1', assigneeId: 'u1', submittedById: 'u2',
+});
+sodSelf && sodSelf.code === 'SELF_VERIFICATION'
+  ? ok('the assignee cannot verify their own task')
+  : bad('the assignee cannot verify their own task', JSON.stringify(sodSelf));
+
+const sodSubmitter = checkSeparationOfDuties({
+  actorId: 'u2', assigneeId: 'u1', submittedById: 'u2',
+});
+sodSubmitter && sodSubmitter.code === 'SELF_VERIFICATION'
+  ? ok('whoever submitted it cannot verify it either')
+  : bad('whoever submitted it cannot verify it', JSON.stringify(sodSubmitter));
+
+// The manager who submitted on someone else's behalf is still the submitter.
+const sodProxy = checkSeparationOfDuties({
+  actorId: 'mgr', assigneeId: 'u1', submittedById: 'mgr',
+});
+sodProxy
+  ? ok('submitting on behalf of someone else still disqualifies you')
+  : bad('submitting on behalf of someone else still disqualifies you');
+
+checkSeparationOfDuties({ actorId: 'u3', assigneeId: 'u1', submittedById: 'u2' }) === null
+  ? ok('a third party may verify') : bad('a third party may verify');
+
+// An unassigned task submitted by someone else is verifiable — there is no
+// assignee to collide with, and refusing would strand the work.
+checkSeparationOfDuties({ actorId: 'u3', assigneeId: null, submittedById: 'u2' }) === null
+  ? ok('an unassigned task is verifiable by anyone who did not submit it')
+  : bad('an unassigned task is verifiable by anyone who did not submit it');
+
+// ── 15. Verified progress ───────────────────────────────────────────────────
+console.log('\n15. Verified progress');
+
+const needing = (status, pct, weight) => task(status, pct, weight, true);
+
+eq('a verified task counts fully', progressPair([needing('Verified', 100)]).verified, 100);
+eq('a submitted task counts for nothing yet',
+   progressPair([needing('SubmittedForVerification', 100)]).verified, 0);
+eq('a rejected task counts for nothing',
+   progressPair([needing('Rejected', 90)]).verified, 0);
+
+// Submitted work still reports 100 — the claim was made, it just has not been
+// accepted. This gap between the two numbers is the entire point.
+eq('a submitted task still reports what was claimed',
+   progressPair([needing('SubmittedForVerification', 100)]).reported, 100);
+
+// A mixed engagement: five tasks, three verified, one waiting, one exempt-and-done.
+const mixed = [
+  needing('Verified', 100), needing('Verified', 100), needing('Verified', 100),
+  needing('SubmittedForVerification', 100),
+  task('Done', 100),
+];
+eq('a mixed phase reports everything claimed', progressPair(mixed).reported, 100);
+eq('and verifies only what was accepted or needed no acceptance',
+   progressPair(mixed).verified, 80);
+
+// The invariant that must hold for any set of tasks whatsoever: every task
+// counting toward verified also counts fully toward reported, so a project can
+// never show more confirmed than claimed.
+console.log('\n   the invariant, over every state and both requirements');
+let invariantHeld = true;
+let worst = null;
+TASK_STATUSES.forEach((status) => {
+  [true, false].forEach((needs) => {
+    [0, 37, 100].forEach((pct) => {
+      [1, 5].forEach((w) => {
+        const pair = progressPair([{
+          status, completionPercent: pct, weight: w, needsVerification: needs,
+        }]);
+        if (pair.verified > pair.reported) {
+          invariantHeld = false;
+          worst = status + '/' + needs + '/' + pct + ' → ' + pair.verified + ' > ' + pair.reported;
+        }
+      });
+    });
+  });
+});
+invariantHeld
+  ? ok('verified never exceeds reported', TASK_STATUSES.length * 12 + ' combinations')
+  : bad('verified never exceeds reported', worst);
+
+// Hierarchy consistency has to survive the second dimension too, or the two
+// numbers agree at task level and diverge at project level.
+const vPhaseA = [needing('Verified', 100, 2), needing('SubmittedForVerification', 100, 2)];
+const vPhaseB = [task('Done', 100, 1), needing('Rejected', 50, 3)];
+const vPairA = progressPair(vPhaseA);
+const vPairB = progressPair(vPhaseB);
+const vHier = rollUpPhases([
+  { totalWeight: totalWeight(vPhaseA), reported: vPairA.reported, verified: vPairA.verified },
+  { totalWeight: totalWeight(vPhaseB), reported: vPairB.reported, verified: vPairB.verified },
+]);
+const vFlat = progressPair(vPhaseA.concat(vPhaseB));
+vHier.verified === vFlat.verified
+  ? ok('verified rolls up consistently too', vHier.verified + '%')
+  : bad('verified rolls up consistently', 'hierarchical ' + vHier.verified + ' vs flat ' + vFlat.verified);
+
+// ── 16. Counts and review latency ───────────────────────────────────────────
+console.log('\n16. Counts and review latency');
+
+const now16 = D('2026-03-01');
+const counted = taskCounts([
+  { status: 'Verified', dueDate: null, needsVerification: true },
+  { status: 'Done', dueDate: null },
+  { status: 'SubmittedForVerification', dueDate: D('2026-02-01'), submittedAt: D('2026-02-27'), needsVerification: true },
+  { status: 'Rejected', dueDate: D('2026-02-01'), needsVerification: true },
+  { status: 'Blocked', dueDate: D('2026-03-04') },
+  { status: 'InProgress', dueDate: D('2026-06-01') },
+  { status: 'NotStarted', dueDate: null },
+], now16);
+
+eq('total counts every task', counted.total, 7);
+eq('done counts Done and Verified together', counted.done, 2);
+eq('verified is counted separately', counted.verified, 1);
+eq('one task is awaiting a reviewer', counted.awaitingVerification, 1);
+eq('one task came back rejected', counted.rejected, 1);
+eq('three tasks will need a reviewer', counted.needsVerification, 3);
+eq('one task is blocked', counted.blocked, 1);
+// The submitted task is a month past its date but the assignee handed it over;
+// only the rejected one is still owed by somebody.
+eq('submitted work is not counted against the person who delivered it', counted.overdue, 1);
+eq('the blocked task is due this week', counted.dueSoon, 1);
+
+// Reviewer latency is its own measurement, on its own clock.
+const waiting = taskTiming(
+  { status: 'SubmittedForVerification', dueDate: null, submittedAt: D('2026-02-20') },
+  D('2026-03-01'),
+);
+waiting.awaitingVerificationDays === 9 && waiting.verificationOverdue
+  ? ok('a submission sitting ' + waiting.awaitingVerificationDays + ' days is flagged',
+       'window is ' + VERIFICATION_SLA_DAYS + ' days')
+  : bad('a long-waiting submission is flagged', JSON.stringify(waiting));
+
+const fresh = taskTiming(
+  { status: 'SubmittedForVerification', dueDate: null, submittedAt: D('2026-02-28') },
+  D('2026-03-01'),
+);
+!fresh.verificationOverdue && fresh.awaitingVerificationDays === 1
+  ? ok('a fresh submission is not the reviewer being late')
+  : bad('a fresh submission is not late', JSON.stringify(fresh));
+
+const notWaiting = taskTiming({ status: 'InProgress', dueDate: null }, D('2026-03-01'));
+notWaiting.awaitingVerificationDays === null && !notWaiting.verificationOverdue
+  ? ok('work nobody submitted is not waiting on anybody')
+  : bad('work nobody submitted is not waiting', JSON.stringify(notWaiting));
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

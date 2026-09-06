@@ -1,5 +1,6 @@
 /**
- * Delivery projects — slices 1 and 2: the engagement, and the work inside it.
+ * Delivery projects — slices 1 to 3: the engagement, the work inside it, and
+ * the independent verification that turns one progress figure into two.
  *
  * The assertion that matters most is isolation. A delivery project is the first
  * record in this platform visible from two directions — the client tenant that
@@ -40,7 +41,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-2 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-3 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -409,6 +410,306 @@ async function main() {
   afterClose.status === 409 && afterClose.json?.code === 'PROJECT_FROZEN'
     ? ok('a closed project will not accept new work')
     : bad('a closed project will not accept new work', `${afterClose.status} ${afterClose.json?.code}`);
+
+  // ── 13. Verification policy ─────────────────────────────────────────────
+  console.log('\n13. Verification policy');
+
+  const badPolicy = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Bad policy', startDate: iso(0), targetEndDate: iso(60),
+      ownerId: myUserId, managerId: myUserId, verificationPolicy: 'Whenever',
+    },
+  });
+  badPolicy.status === 400
+    ? ok('an invented verification policy is refused')
+    : bad('an invented verification policy is refused', `${badPolicy.status}`);
+
+  const vProject = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Verification workflow project',
+      startDate: iso(-5), targetEndDate: iso(60),
+      ownerId: myUserId, managerId: myUserId,
+      verificationPolicy: 'EveryTask',
+    },
+  });
+  const vid = vProject.json?.project?.id;
+  vid && vProject.json.project.verificationPolicy === 'EveryTask'
+    ? ok('a project can be created requiring verification of every task')
+    : bad('a project requiring verification of every task',
+          `${vProject.status} ${JSON.stringify(vProject.json).slice(0, 160)}`);
+  if (!vid) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  await api(`/api/projects/${vid}`, { token, method: 'PATCH', body: { status: 'Active' } });
+
+  const vPhase = await api(`/api/projects/${vid}/phases`, {
+    token, method: 'POST',
+    body: { name: 'Deliverables', startDate: iso(-5), targetEndDate: iso(40), ownerId: myUserId },
+  });
+  const vPhaseId = vPhase.json?.phase?.id;
+  vPhaseId ? ok('phase created for the verification run') : bad('phase created', `${vPhase.status}`);
+  if (!vPhaseId) { console.log('\nCannot continue.\n'); process.exit(1); }
+
+  const mkTask = async (name, extra = {}) => {
+    const r = await api(`/api/projects/phases/${vPhaseId}/tasks`, {
+      token, method: 'POST',
+      body: { name, assigneeId: myUserId, dueDate: iso(15), ...extra },
+    });
+    return r.json?.task?.id;
+  };
+
+  const scopeTask = await mkTask('ISMS scope statement');
+  const exemptTask = await mkTask('Book the kickoff call', { verificationOverride: false });
+  const soaTask = await mkTask('Statement of Applicability');
+  scopeTask && exemptTask && soaTask
+    ? ok('three tasks created, one explicitly exempt')
+    : bad('three tasks created', `${scopeTask} ${exemptTask} ${soaTask}`);
+
+  const vPlan = await api(`/api/projects/${vid}/plan`, { token });
+  const planTasks = vPlan.json?.phases?.[0]?.tasks || [];
+  const byId = (id) => planTasks.find((t) => t.id === id);
+
+  byId(scopeTask)?.needsVerification === true
+    ? ok('a task under EveryTask needs verification')
+    : bad('a task under EveryTask needs verification', `${byId(scopeTask)?.needsVerification}`);
+  byId(exemptTask)?.needsVerification === false
+    ? ok('an explicit exemption survives the project policy')
+    : bad('an explicit exemption survives the project policy', `${byId(exemptTask)?.needsVerification}`);
+  vPlan.json?.phases?.[0]?.counts?.needsVerification === 2
+    ? ok('the plan counts what will need a reviewer', '2 of 3')
+    : bad('the plan counts what will need a reviewer',
+          `${vPlan.json?.phases?.[0]?.counts?.needsVerification}`);
+
+  // ── 14. Verification cannot be reached through an ordinary update ────────
+  console.log('\n14. The routing guard');
+
+  await api(`/api/projects/tasks/${scopeTask}`, { token, method: 'PATCH', body: { status: 'InProgress' } });
+
+  // The one that would defeat the module: marking work done to skip the reviewer.
+  const dodge = await api(`/api/projects/tasks/${scopeTask}`, {
+    token, method: 'PATCH', body: { status: 'Done' },
+  });
+  dodge.status === 409 && dodge.json?.code === 'VERIFICATION_REQUIRED'
+    ? ok('work needing a reviewer cannot be marked Done', dodge.json.message.slice(0, 60))
+    : bad('work needing a reviewer cannot be marked Done', `${dodge.status} ${dodge.json?.code}`);
+
+  for (const s of ['Verified', 'Rejected', 'SubmittedForVerification']) {
+    const r = await api(`/api/projects/tasks/${scopeTask}`, {
+      token, method: 'PATCH', body: { status: s },
+    });
+    r.json?.code === 'USE_VERIFICATION_ENDPOINT'
+      ? ok(`PATCH cannot set ${s}`)
+      : bad(`PATCH cannot set ${s}`, `${r.status} ${r.json?.code}`);
+  }
+
+  // The exempt task takes the ordinary path, which is the other half of the rule.
+  await api(`/api/projects/tasks/${exemptTask}`, { token, method: 'PATCH', body: { status: 'InProgress' } });
+  const exemptDone = await api(`/api/projects/tasks/${exemptTask}`, {
+    token, method: 'PATCH', body: { status: 'Done' },
+  });
+  exemptDone.json?.task?.status === 'Done'
+    ? ok('exempt work is still finished the ordinary way')
+    : bad('exempt work is still finished the ordinary way', `${exemptDone.status}`);
+
+  const wrongSubmit = await api(`/api/projects/tasks/${exemptTask}/submit`, { token, method: 'POST' });
+  wrongSubmit.status === 400 && wrongSubmit.json?.code === 'VERIFICATION_NOT_REQUIRED'
+    ? ok('exempt work cannot be pushed into a reviewer queue')
+    : bad('exempt work cannot be pushed into a reviewer queue',
+          `${wrongSubmit.status} ${wrongSubmit.json?.code}`);
+
+  // ── 15. Submission, and the gap between the two figures ──────────────────
+  console.log('\n15. Submission');
+
+  const submitted = await api(`/api/projects/tasks/${scopeTask}/submit`, {
+    token, method: 'POST', body: { note: 'Scope statement drafted and circulated.' },
+  });
+  submitted.json?.task?.status === 'SubmittedForVerification'
+    ? ok('work in progress can be submitted for verification')
+    : bad('work can be submitted', `${submitted.status} ${JSON.stringify(submitted.json).slice(0, 140)}`);
+  submitted.json?.task?.completionPercent === 100 && submitted.json?.task?.verificationRound === 1
+    ? ok('submitting pins the claim at 100 and opens round 1')
+    : bad('submitting pins the claim and opens round 1',
+          `${submitted.json?.task?.completionPercent} / ${submitted.json?.task?.verificationRound}`);
+
+  // Two of three tasks are finished as far as the doers are concerned, but only
+  // the exempt one counts as confirmed. That gap is the product.
+  const rollup15 = submitted.json?.rollup;
+  rollup15?.reportedProgress === 67 && rollup15?.verifiedProgress === 33
+    ? ok('reported and verified separate', `${rollup15.reportedProgress}% reported, ${rollup15.verifiedProgress}% verified`)
+    : bad('reported and verified separate',
+          `got ${rollup15?.reportedProgress}/${rollup15?.verifiedProgress}, expected 67/33`);
+
+  const phase15 = await api(`/api/projects/${vid}/plan`, { token });
+  phase15.json?.phases?.[0]?.status !== 'Complete'
+    ? ok('a phase holding work still with a reviewer is not Complete',
+         phase15.json?.phases?.[0]?.status)
+    : bad('a phase holding submitted work is not Complete');
+
+  // ── 16. Separation of duties over HTTP ───────────────────────────────────
+  // The assertion this whole module rests on.
+  console.log('\n16. Separation of duties');
+
+  const selfVerify = await api(`/api/projects/tasks/${scopeTask}/verify`, {
+    token, method: 'POST', body: { decision: 'Accept' },
+  });
+  selfVerify.status === 403 && selfVerify.json?.code === 'SELF_VERIFICATION'
+    ? ok('the person who did the work cannot accept it', selfVerify.json.message.slice(0, 60))
+    : bad('the person who did the work cannot accept it',
+          `${selfVerify.status} ${selfVerify.json?.code}`);
+
+  // A second identity, holding a role that carries the verification capability.
+  //
+  // Inviting is capped by what the inviter holds — you cannot issue privileges
+  // you lack — so the role has to be one this account can actually grant. The
+  // bootstrap operator deliberately holds a narrow set, so the usual answer is
+  // its own role, which makes the point sharper anyway: two break-glass
+  // administrators, and the one who did the work is still refused.
+  const perms = await api('/api/iam/effective-permissions', { token });
+  const granted = new Set(perms.json?.granted || []);
+
+  granted.has('verify-project-delivery')
+    ? ok('the verification capability is provisioned and held', perms.json?.roleKey)
+    : bad('the verification capability is provisioned and held',
+          `role ${perms.json?.roleKey} holds ${granted.size} capabilities`);
+
+  const roles = await api('/api/iam/roles', { token });
+  const verifierRole = (roles.json?.roles || []).find(
+    (r) => Array.isArray(r.capabilities)
+      && r.capabilities.includes('verify-project-delivery')
+      && r.capabilities.includes('execute-project-work')
+      && r.capabilities.every((c) => granted.has(c)),
+  );
+  verifierRole
+    ? ok('a grantable role carries the verification capability', verifierRole.name)
+    : bad('a grantable role carries the verification capability');
+
+  let reviewerToken = null;
+  let reviewerId = null;
+  if (verifierRole) {
+    const email = `reviewer.${Date.now()}@verify.local`;
+    const invited = await api('/api/iam/users/invite', {
+      token, method: 'POST',
+      body: { email, name: 'Independent Reviewer', roleId: verifierRole.id },
+    });
+    const tempPassword = invited.json?.temporaryPassword;
+    reviewerId = invited.json?.user?.id;
+
+    if (tempPassword) {
+      const firstToken = await login(email, tempPassword);
+      const newPassword = `Rev-${Date.now()}-Aa1`;
+      await api('/api/auth/change-password', {
+        token: firstToken, method: 'POST',
+        body: { currentPassword: tempPassword, newPassword },
+      });
+      reviewerToken = await login(email, newPassword);
+    }
+    reviewerToken
+      ? ok('an independent reviewer can sign in')
+      : bad('an independent reviewer can sign in', JSON.stringify(invited.json).slice(0, 140));
+  }
+
+  if (reviewerToken) {
+    // A rejection with no reason comes straight back, so refuse it up front.
+    const bareReject = await api(`/api/projects/tasks/${scopeTask}/verify`, {
+      token: reviewerToken, method: 'POST', body: { decision: 'Reject', note: 'no' },
+    });
+    bareReject.status === 400 && bareReject.json?.code === 'REASON_REQUIRED'
+      ? ok('a rejection must say why')
+      : bad('a rejection must say why', `${bareReject.status} ${bareReject.json?.code}`);
+
+    const badDecision = await api(`/api/projects/tasks/${scopeTask}/verify`, {
+      token: reviewerToken, method: 'POST', body: { decision: 'Maybe' },
+    });
+    badDecision.status === 400
+      ? ok('a decision must be Accept or Reject')
+      : bad('a decision must be Accept or Reject', `${badDecision.status}`);
+
+    const rejected = await api(`/api/projects/tasks/${scopeTask}/verify`, {
+      token: reviewerToken, method: 'POST',
+      body: { decision: 'Reject', note: 'Scope omits the third-party hosting boundary.' },
+    });
+    rejected.json?.task?.status === 'Rejected'
+      ? ok('a reviewer can reject submitted work')
+      : bad('a reviewer can reject submitted work',
+            `${rejected.status} ${JSON.stringify(rejected.json).slice(0, 140)}`);
+    rejected.json?.task?.verifiedById === null && rejected.json?.task?.completedAt === null
+      ? ok('rejected work carries no verifier and no completion date')
+      : bad('rejected work carries no verifier',
+            `${rejected.json?.task?.verifiedById} / ${rejected.json?.task?.completedAt}`);
+    rejected.json?.rollup?.verifiedProgress === 33
+      ? ok('a rejection leaves the verified figure where it was')
+      : bad('a rejection leaves the verified figure', `${rejected.json?.rollup?.verifiedProgress}`);
+
+    // Rework: rejected work is ordinary work again.
+    const rework = await api(`/api/projects/tasks/${scopeTask}`, {
+      token, method: 'PATCH', body: { status: 'InProgress' },
+    });
+    rework.json?.task?.status === 'InProgress'
+      ? ok('rejected work goes back to in progress through the ordinary update')
+      : bad('rejected work goes back to in progress', `${rework.status} ${rework.json?.code}`);
+
+    const resubmitted = await api(`/api/projects/tasks/${scopeTask}/submit`, { token, method: 'POST' });
+    resubmitted.json?.task?.verificationRound === 2
+      ? ok('resubmission opens a second round')
+      : bad('resubmission opens a second round', `${resubmitted.json?.task?.verificationRound}`);
+
+    const accepted = await api(`/api/projects/tasks/${scopeTask}/verify`, {
+      token: reviewerToken, method: 'POST',
+      body: { decision: 'Accept', note: 'Hosting boundary now in scope.' },
+    });
+    accepted.json?.task?.status === 'Verified'
+      ? ok('a reviewer can accept resubmitted work')
+      : bad('a reviewer can accept resubmitted work',
+            `${accepted.status} ${JSON.stringify(accepted.json).slice(0, 140)}`);
+    accepted.json?.task?.verifiedById === reviewerId
+      ? ok('the accepted task records who confirmed it')
+      : bad('the accepted task records who confirmed it', `${accepted.json?.task?.verifiedById}`);
+    accepted.json?.rollup?.verifiedProgress === 67
+      ? ok('acceptance moves the verified figure', `33% → ${accepted.json.rollup.verifiedProgress}%`)
+      : bad('acceptance moves the verified figure', `${accepted.json?.rollup?.verifiedProgress}`);
+
+    // ── 17. The record ─────────────────────────────────────────────────────
+    console.log('\n17. The verification record');
+
+    const history = await api(`/api/projects/tasks/${scopeTask}/verifications`, { token });
+    const outcomes = (history.json?.history || []).map((h) => h.outcome);
+    outcomes.join(',') === 'Submitted,Rejected,Submitted,Accepted'
+      ? ok('every decision is kept, in order', outcomes.join(' → '))
+      : bad('every decision is kept, in order', outcomes.join(','));
+    (history.json?.history || []).filter((h) => h.round === 1).length === 2
+      ? ok('a rejection stays grouped with the submission that caused it')
+      : bad('a rejection stays grouped with its submission');
+    (history.json?.history || []).some((h) => h.note && h.note.includes('hosting boundary'))
+      ? ok('the reason a reviewer gave is part of the record')
+      : bad('the reason a reviewer gave is part of the record');
+
+    const queue = await api(`/api/projects/${vid}/verification`, { token });
+    queue.json?.summary?.awaiting === 0 && queue.json?.summary?.decisions === 4
+      ? ok('the queue is empty and four decisions are on file')
+      : bad('the queue and decision count',
+            `${queue.json?.summary?.awaiting} awaiting, ${queue.json?.summary?.decisions} decisions`);
+
+    // ── 18. Reopening discards a confirmation, so it is a management act ────
+    console.log('\n18. Reopening');
+
+    const shortNote = await api(`/api/projects/tasks/${scopeTask}/return`, {
+      token, method: 'POST', body: { note: 'nope' },
+    });
+    shortNote.status === 400 && shortNote.json?.code === 'REASON_REQUIRED'
+      ? ok('reopening verified work needs a reason')
+      : bad('reopening verified work needs a reason', `${shortNote.status} ${shortNote.json?.code}`);
+
+    const reopened = await api(`/api/projects/tasks/${scopeTask}/return`, {
+      token, method: 'POST', body: { note: 'Client disputes the boundary after all.' },
+    });
+    reopened.json?.task?.status === 'InProgress' && reopened.json?.task?.verifiedById === null
+      ? ok('reopening returns the task and clears the verifier')
+      : bad('reopening returns the task', `${reopened.status} ${reopened.json?.task?.status}`);
+    reopened.json?.rollup?.verifiedProgress === 33
+      ? ok('and the verified figure falls back', `67% → ${reopened.json.rollup.verifiedProgress}%`)
+      : bad('the verified figure falls back', `${reopened.json?.rollup?.verifiedProgress}`);
+  }
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);

@@ -106,8 +106,12 @@ jobs:
           # strangers, and login rate limiting.
           node scripts/verify/production-readiness-test.js
 
-          # Slice 1 of the delivery module: creation, derived schedule,
-          # lifecycle transitions, tenant isolation and the audit trail.
+          # Slices 1-3 of the delivery module: creation, derived schedule,
+          # lifecycle transitions, tenant isolation, the audit trail, the
+          # phase/task rollup, and separation of duties on verification —
+          # that last one is the control the dual progress figure rests on,
+          # and it is asserted over HTTP against a real database because a
+          # pure test cannot prove two different sessions are two people.
           node scripts/verify/project-delivery-test.js
 
           kill "$(cat /tmp/server.pid)" || true

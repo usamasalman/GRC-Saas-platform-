@@ -1,4 +1,6 @@
-import { derivePhaseStatus, isComplete } from './projectLifecycle';
+import {
+  derivePhaseStatus, isComplete, requiresVerification, taskCounts, TaskCounts,
+} from './projectLifecycle';
 
 /**
  * Progress arithmetic for the delivery tree, and the only writer of
@@ -16,9 +18,10 @@ import { derivePhaseStatus, isComplete } from './projectLifecycle';
  *   reported  what the people doing the work say is done
  *   verified  what an independent reviewer has confirmed
  *
- * In slice 2 nothing can be verified yet, so `verified` is legitimately zero
- * everywhere. Slice 3 changes one predicate below and the arithmetic, the
- * callers and the columns all stay as they are.
+ * Verified can never exceed reported, for any set of tasks: every task that
+ * counts toward the second figure also counts fully toward the first. That is
+ * asserted in the test suite, because a project showing more verified than
+ * reported would be a arithmetic bug presented as an assurance claim.
  */
 
 // ─── The two dimensions ─────────────────────────────────────────────────────
@@ -28,6 +31,13 @@ export interface RollupTask {
   status: string;
   completionPercent: number;
   weight: number;
+  /**
+   * Resolved from the project policy and the task override before it reaches
+   * here — see projectLifecycle.requiresVerification. The rollup takes the
+   * answer rather than the inputs so the arithmetic stays testable without
+   * knowing what a policy is.
+   */
+  needsVerification: boolean;
 }
 
 type CompletionFn = (t: RollupTask) => number;
@@ -40,17 +50,26 @@ const reportedCompletion: CompletionFn = (t) =>
   isComplete(t.status) ? 100 : clampPercent(t.completionPercent);
 
 /**
- * What a reviewer has confirmed.
+ * What has been confirmed to the standard this engagement set.
  *
- * Slice 2 has no verification states, so this returns zero for every task and
- * verified progress is zero throughout — which is accurate, not a placeholder.
- * A phase reading 100% reported and 0% verified is exactly the honest answer
- * before anybody has checked anything.
+ * Two branches, and the second is the one that keeps the figure honest on
+ * engagements that verify only part of the work:
  *
- * Slice 3 replaces the body with `t.status === 'Verified' ? 100 : 0`, plus the
- * rule that a task not requiring verification counts once complete.
+ *   - a task needing a reviewer counts only once one has accepted it;
+ *   - a task not needing one counts as soon as it is complete.
+ *
+ * Reading the second branch as zero instead would make verified progress a
+ * measure of how much verification was configured rather than how much work is
+ * confirmed, and every engagement not verifying everything would show a figure
+ * that could never reach 100 no matter what anyone did.
+ *
+ * Note this is never partial. A percentage is a claim; verification is a
+ * decision, and half a decision does not exist.
  */
-const verifiedCompletion: CompletionFn = () => 0;
+const verifiedCompletion: CompletionFn = (t) =>
+  t.needsVerification
+    ? (t.status === 'Verified' ? 100 : 0)
+    : (isComplete(t.status) ? 100 : 0);
 
 // ─── Pure arithmetic ────────────────────────────────────────────────────────
 
@@ -125,7 +144,16 @@ export interface RollupResult {
   projectId: string;
   reportedProgress: number;
   verifiedProgress: number;
-  phases: { id: string; reported: number; verified: number; status: string }[];
+  /**
+   * Returned so a caller can repaint an entire tree from one mutation response
+   * rather than refetching the plan. Counts travel with the percentages because
+   * a client recomputing them locally is a client that will eventually disagree
+   * with the server about how many tasks are blocked.
+   */
+  phases: {
+    id: string; reported: number; verified: number; status: string; counts: TaskCounts;
+  }[];
+  counts: TaskCounts;
 }
 
 /**
@@ -139,25 +167,50 @@ export interface RollupResult {
  * transaction client type is awkward to name and the alternative is every
  * caller casting at the call site.
  */
-export async function recomputeProject(tx: any, projectId: string): Promise<RollupResult> {
+export async function recomputeProject(
+  tx: any,
+  projectId: string,
+  now: Date = new Date(),
+): Promise<RollupResult> {
+  // The policy is read here, once, rather than passed in by each caller. Every
+  // task's verification requirement depends on it, and a caller that forgot to
+  // supply it would produce a plausible-looking figure computed against the
+  // wrong standard.
+  const project = await tx.project.findUnique({
+    where: { id: projectId },
+    select: { verificationPolicy: true },
+  });
+  const policy = project?.verificationPolicy || 'SelectedTasks';
+
   const phases = await tx.projectPhase.findMany({
     where: { projectId },
     select: {
       id: true,
       status: true,
-      tasks: { select: { status: true, completionPercent: true, weight: true } },
+      tasks: {
+        select: {
+          status: true, completionPercent: true, weight: true,
+          verificationOverride: true, dueDate: true, submittedAt: true,
+        },
+      },
     },
   });
 
   const computed = phases.map((phase: any) => {
-    const pair = progressPair(phase.tasks);
+    const tasks = phase.tasks.map((t: any) => ({
+      ...t,
+      needsVerification: requiresVerification(policy, t.verificationOverride),
+    }));
+    const pair = progressPair(tasks);
     return {
       id: phase.id,
       previousStatus: phase.status,
-      status: derivePhaseStatus(phase.tasks),
+      status: derivePhaseStatus(tasks),
       reported: pair.reported,
       verified: pair.verified,
-      totalWeight: totalWeight(phase.tasks),
+      totalWeight: totalWeight(tasks),
+      tasks,
+      counts: taskCounts(tasks, now),
     };
   });
 
@@ -170,19 +223,20 @@ export async function recomputeProject(tx: any, projectId: string): Promise<Roll
     }),
   ));
 
-  const project = rollUpPhases(computed);
+  const rolled = rollUpPhases(computed);
 
   await tx.project.update({
     where: { id: projectId },
-    data: { reportedProgress: project.reported, verifiedProgress: project.verified },
+    data: { reportedProgress: rolled.reported, verifiedProgress: rolled.verified },
   });
 
   return {
     projectId,
-    reportedProgress: project.reported,
-    verifiedProgress: project.verified,
+    reportedProgress: rolled.reported,
+    verifiedProgress: rolled.verified,
     phases: computed.map((c: any) => ({
-      id: c.id, reported: c.reported, verified: c.verified, status: c.status,
+      id: c.id, reported: c.reported, verified: c.verified, status: c.status, counts: c.counts,
     })),
+    counts: taskCounts(computed.flatMap((c: any) => c.tasks), now),
   };
 }

@@ -52,6 +52,10 @@ export const CAP = {
   ONBOARD_TOOL: 'onboard-or-purchase-an-open-source-tool',
   MANAGE_PROJECT: 'manage-a-delivery-project',
   EXECUTE_PROJECT_WORK: 'execute-project-work',
+  // Held separately from MANAGE_PROJECT on purpose: running an engagement and
+  // confirming its deliverables are two duties, and a tenant that wants them
+  // split needs to be able to grant one without the other.
+  VERIFY_PROJECT_WORK: 'verify-project-delivery',
 } as const;
 
 export interface EffectivePermissions {

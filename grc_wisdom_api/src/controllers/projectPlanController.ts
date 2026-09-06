@@ -2,11 +2,11 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { resolveTenantScope } from '../services/scopeResolver';
-import { canReadProject, canWriteProject } from '../services/projectAccess';
+import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import {
-  TASK_STATUSES, checkTaskTransition, taskTiming, isComplete,
+  TASK_STATUSES, VERIFICATION_POLICIES, checkTaskUpdate, requiresVerification,
+  taskTiming, taskCounts, isComplete,
 } from '../services/projectLifecycle';
 
 /**
@@ -25,6 +25,25 @@ const str = (v: unknown): string => String(v ?? '');
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 const SIDES = ['Client', 'Provider'];
 
+/**
+ * verificationOverride is tri-state, so it needs a parser that can tell "the
+ * caller sent null on purpose" from "the caller sent nonsense".
+ *
+ * A sentinel rather than a thrown error because every other validation in this
+ * file answers with a 400 and a sentence, and one branch that throws would be
+ * the one that returns a 500 in production.
+ */
+export const INVALID = Symbol('invalid');
+
+function parseOverride(v: unknown): boolean | null | typeof INVALID {
+  // undefined and null both mean "follow the project policy" — a task created
+  // without mentioning verification is not a malformed request.
+  if (v === null || v === undefined) return null;
+  if (v === true || v === 'true') return true;
+  if (v === false || v === 'false') return false;
+  return INVALID;
+}
+
 /** TSK-0001, sequential per project. */
 async function nextTaskRef(projectId: string): Promise<string> {
   const count = await prisma.projectTask.count({ where: { projectId } });
@@ -34,42 +53,11 @@ async function nextTaskRef(projectId: string): Promise<string> {
 /**
  * Load a project and decide what this caller may do with it.
  *
- * Every handler here begins the same way, and the alternative — each one
- * remembering to check both read and write — is how the cross-tenant hole in
- * usageController happened.
+ * Lives in services/projectGuard so this file and the verification controller
+ * cannot drift on who may touch an engagement.
  */
-async function authorise(req: AuthenticatedRequest, projectId: string) {
-  const scope = await resolveTenantScope(str(req.user!.tenantId));
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { id: true, tenantId: true, providerTenantId: true, ref: true, status: true },
-  });
-  if (!project || !canReadProject(scope, project)) return { project: null, canWrite: false, scope };
-  return { project, canWrite: canWriteProject(scope, project.tenantId), scope };
-}
-
-/** Not found and not permitted read the same, so a 403 cannot confirm existence. */
-const notFound = (res: Response) =>
-  res.status(404).json({ status: 'error', message: 'Project not found' });
-
-const readOnly = (res: Response) =>
-  res.status(403).json({
-    status: 'error',
-    code: 'READ_ONLY_ENGAGEMENT',
-    message: 'You can view this engagement but not change it.',
-  });
-
-/** Closed work is a record. Adding to it after the fact would rewrite history. */
-function isFrozen(status: string): boolean {
-  return status === 'Closed' || status === 'Cancelled';
-}
-
-const frozen = (res: Response, projectStatus: string) =>
-  res.status(409).json({
-    status: 'error',
-    code: 'PROJECT_FROZEN',
-    message: `This project is ${projectStatus}. Reopen it before changing the plan.`,
-  });
+const authorise = (req: AuthenticatedRequest, projectId: string) =>
+  guardProject(str(req.user!.tenantId), projectId);
 
 // ─── The plan ───────────────────────────────────────────────────────────────
 
@@ -92,28 +80,29 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             id: true, ref: true, sequence: true, name: true, description: true,
             status: true, completionPercent: true, weight: true, priority: true,
             side: true, department: true, startDate: true, dueDate: true, completedAt: true,
+            verificationOverride: true, verificationRound: true,
+            submittedAt: true, verifiedAt: true,
             assignee: { select: { id: true, name: true, email: true } },
+            submittedBy: { select: { id: true, name: true } },
+            verifiedBy: { select: { id: true, name: true } },
           },
         },
       },
     });
 
     const now = new Date();
+    const policy = project.verificationPolicy;
+
     const decorated = phases.map((ph) => {
-      const tasks = ph.tasks.map((t) => ({ ...t, timing: taskTiming(t, now) }));
-      return {
-        ...ph,
-        tasks,
-        // The per-phase counts the drill-down in section 5 asks for, computed
-        // here so every client shows the same numbers.
-        counts: {
-          total: tasks.length,
-          done: tasks.filter((t) => isComplete(t.status)).length,
-          inProgress: tasks.filter((t) => t.status === 'InProgress').length,
-          blocked: tasks.filter((t) => t.status === 'Blocked').length,
-          overdue: tasks.filter((t) => t.timing.overdue).length,
-        },
-      };
+      // needsVerification is resolved once, here, and travels with the task.
+      // The alternative is every screen reimplementing the policy rule and one
+      // of them getting it wrong.
+      const tasks = ph.tasks.map((t) => ({
+        ...t,
+        needsVerification: requiresVerification(policy, t.verificationOverride),
+        timing: taskTiming(t, now),
+      }));
+      return { ...ph, tasks, counts: taskCounts(tasks, now) };
     });
 
     const allTasks = decorated.flatMap((p) => p.tasks);
@@ -121,15 +110,9 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
     res.json({
       status: 'success',
       projectId: project.id,
+      verificationPolicy: policy,
       phases: decorated,
-      totals: {
-        phases: decorated.length,
-        tasks: allTasks.length,
-        done: allTasks.filter((t) => isComplete(t.status)).length,
-        blocked: allTasks.filter((t) => t.status === 'Blocked').length,
-        overdue: allTasks.filter((t) => t.timing.overdue).length,
-        dueSoon: allTasks.filter((t) => t.timing.dueSoon).length,
-      },
+      totals: { phases: decorated.length, tasks: allTasks.length, ...taskCounts(allTasks, now) },
     });
   } catch (error: any) {
     console.error('[Plan Read Error]:', error);
@@ -340,7 +323,7 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const {
       name, description, assigneeId, priority, side, department,
-      startDate, dueDate, weight, sequence,
+      startDate, dueDate, weight, sequence, verificationOverride,
     } = req.body || {};
 
     if (!name) {
@@ -359,6 +342,17 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
     const parsedWeight = weight === undefined ? 1 : Number(weight);
     if (!Number.isFinite(parsedWeight) || parsedWeight < 1) {
       res.status(400).json({ status: 'error', message: 'weight must be a positive whole number' });
+      return;
+    }
+
+    // null is not "unset" here — it is the third value, meaning "follow the
+    // project policy", and is what the column holds by default.
+    const override = parseOverride(verificationOverride);
+    if (override === INVALID) {
+      res.status(400).json({
+        status: 'error',
+        message: 'verificationOverride must be true, false, or null to follow the project policy',
+      });
       return;
     }
 
@@ -383,6 +377,7 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
           weight: Math.round(parsedWeight),
           startDate: startDate ? new Date(startDate) : null,
           dueDate: dueDate ? new Date(dueDate) : null,
+          verificationOverride: override,
         },
       });
       await writeAudit(tx, {
@@ -422,7 +417,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       where: { id: taskId },
       select: {
         id: true, projectId: true, ref: true, name: true, status: true,
-        assigneeId: true, completionPercent: true,
+        assigneeId: true, completionPercent: true, verificationOverride: true,
       },
     });
     if (!existing) { notFound(res); return; }
@@ -449,14 +444,21 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     if (b.status !== undefined) {
-      const refusal = checkTaskTransition(existing.status, str(b.status));
+      const to = str(b.status);
+
+      const refusal = checkTaskUpdate(existing.status, to, requiresVerification(
+        project.verificationPolicy, existing.verificationOverride,
+      ));
+
       if (refusal) {
-        res.status(refusal.code === 'UNKNOWN_STATUS' ? 400 : 409).json({
+        const code = refusal.code === 'UNKNOWN_STATUS'
+          || refusal.code === 'VERIFICATION_NOT_REQUIRED' ? 400 : 409;
+        res.status(code).json({
           status: 'error', code: refusal.code, message: refusal.message,
         });
         return;
       }
-      data.status = str(b.status);
+      data.status = to;
 
       // Finishing sets the completion and the timestamp together; reopening
       // clears the timestamp so "when was this done" cannot answer for work that
@@ -471,8 +473,12 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     // ── Planning fields, project managers only ──
+    // verificationOverride sits here rather than with the reporting fields for
+    // the same reason weight does: a flag the assignee can clear is a review
+    // they can skip.
     const PLANNING = ['name', 'description', 'assigneeId', 'priority', 'side',
-                      'department', 'weight', 'sequence', 'startDate', 'dueDate'];
+                      'department', 'weight', 'sequence', 'startDate', 'dueDate',
+                      'verificationOverride'];
     const attemptedPlanning = PLANNING.filter((f) => b[f] !== undefined);
 
     if (attemptedPlanning.length > 0 && !canWrite) {
@@ -513,6 +519,22 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
           return;
         }
         data.weight = Math.round(w);
+      }
+      if (b.verificationOverride !== undefined) {
+        const override = parseOverride(b.verificationOverride);
+        if (override === INVALID) {
+          res.status(400).json({
+            status: 'error',
+            message: 'verificationOverride must be true, false, or null to follow the project policy',
+          });
+          return;
+        }
+        // Deliberately allowed on a finished task, and deliberately not
+        // restatusing it. Raising the bar on work already marked Done should
+        // make the verified figure fall — that is what raising the bar means —
+        // and silently moving the task back to InProgress to "fix" the
+        // inconsistency would hide the change from the person who made it.
+        data.verificationOverride = override;
       }
       for (const field of ['startDate', 'dueDate'] as const) {
         if (b[field] !== undefined) {
@@ -577,6 +599,23 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response): Prom
     if (!canWrite) { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
+    // Verification rows cascade with the task, so deleting work that a reviewer
+    // accepted would quietly remove a signed-off deliverable from the record —
+    // and the verification report is the artefact this module exists to produce.
+    // Reopening it first is the deliberate act that makes the removal visible.
+    const accepted = await prisma.projectVerification.count({
+      where: { taskId, outcome: 'Accepted' },
+    });
+    if (accepted > 0) {
+      res.status(409).json({
+        status: 'error',
+        code: 'VERIFIED_WORK',
+        message: 'This task has been independently verified. Reopen the verification '
+          + 'first if it genuinely needs to be removed.',
+      });
+      return;
+    }
+
     const rollup = await prisma.$transaction(async (tx) => {
       await tx.projectTask.delete({ where: { id: taskId } });
       await writeAudit(tx, {
@@ -597,7 +636,11 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response): Prom
   }
 };
 
-/** The statuses a client may offer, so the interface never invents one. */
+/** The vocabulary a client may offer, so the interface never invents a value. */
 export const taskStatuses = (_req: AuthenticatedRequest, res: Response): void => {
-  res.json({ status: 'success', statuses: TASK_STATUSES });
+  res.json({
+    status: 'success',
+    statuses: TASK_STATUSES,
+    verificationPolicies: VERIFICATION_POLICIES,
+  });
 };

@@ -16,7 +16,7 @@ import RBAC from './utils/rbacData.json';
  * What a real deployment still needs is the reference data the platform cannot
  * function without:
  *
- *   - the 34 capabilities, which every authorisation check resolves against
+ *   - the 37 capabilities, which every authorisation check resolves against
  *   - the 42 system roles from TRD Appendix A, which carry the capability
  *     grants — a user whose roleId is null gets an empty capability set and
  *     can see nothing, regardless of what their role *string* says
