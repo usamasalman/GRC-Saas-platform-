@@ -641,6 +641,17 @@ async function main() {
       ? ok('a rejection leaves the verified figure where it was')
       : bad('a rejection leaves the verified figure', `${rejected.json?.rollup?.verifiedProgress}`);
 
+    // A queue nobody is told about is a queue that sits. The reviewer is not a
+    // fixed person, so the people told are the ones accountable for the work.
+    const inbox = await api('/api/notifications', { token });
+    const told = (inbox.json?.notifications || []).some(
+      (n) => n.subjectType === 'ProjectTask' && n.event === 'PROJECT_TASK_REJECTED',
+    );
+    told
+      ? ok('the rejection reaches the inbox of whoever has to act on it')
+      : bad('the rejection reaches an inbox',
+            `${inbox.status} ${(inbox.json?.notifications || []).length} notifications`);
+
     // Rework: rejected work is ordinary work again.
     const rework = await api(`/api/projects/tasks/${scopeTask}`, {
       token, method: 'PATCH', body: { status: 'InProgress' },

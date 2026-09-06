@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { notify } from '../services/notificationService';
 import { hasCapability, CAP } from '../services/capabilityEngine';
 import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
@@ -49,7 +50,7 @@ async function loadTask(req: AuthenticatedRequest, taskId: string) {
     select: {
       id: true, projectId: true, ref: true, name: true, status: true,
       assigneeId: true, submittedById: true, completionPercent: true,
-      verificationOverride: true, verificationRound: true,
+      verificationOverride: true, verificationRound: true, verifiedById: true,
     },
   });
   if (!task) return null;
@@ -89,6 +90,10 @@ async function record(args: {
   reportedPercent: number;
   taskData: Record<string, unknown>;
   auditAction: string;
+  /** Who needs to know. Nulls and the actor are dropped by notify itself. */
+  tell: (string | null | undefined)[];
+  title: string;
+  body: string;
 }) {
   return prisma.$transaction(async (tx) => {
     const updated = await tx.projectTask.update({
@@ -123,6 +128,21 @@ async function record(args: {
         side: args.actorSide,
       },
     });
+
+    // Inside the transaction, so nobody is told about a decision that rolled
+    // back. Duplicated recipients would be duplicated inbox rows, so the list
+    // is deduplicated here rather than at each call site.
+    await notify(tx, Array.from(new Set(args.tell.filter(Boolean))).map((rid) => ({
+      tenantId: args.tenantId,
+      recipientId: rid as string,
+      actorId: str(args.req.user!.id),
+      event: `PROJECT_TASK_${args.outcome.toUpperCase()}`,
+      subjectType: 'ProjectTask',
+      subjectId: args.taskId,
+      title: args.title,
+      body: args.body,
+      link: 'project-delivery',
+    })));
 
     const rollup = await recomputeProject(tx, args.projectId);
     return { updated, rollup };
@@ -195,6 +215,12 @@ export const submitTask = async (req: AuthenticatedRequest, res: Response): Prom
         verifiedAt: null,
       },
       auditAction: 'PROJECT_TASK_SUBMITTED',
+      // The reviewer is not a fixed person — anyone holding the capability may
+      // decide — so the people told are the ones accountable for getting it
+      // reviewed. A queue nobody is told about is a queue that sits.
+      tell: [project.managerId, project.ownerId],
+      title: `${task.ref} is ready for verification`,
+      body: `"${task.name}" on ${project.name} has been submitted for review.`,
     });
 
     res.json({
@@ -299,6 +325,18 @@ export const verifyTask = async (req: AuthenticatedRequest, res: Response): Prom
           completedAt: null,
         },
       auditAction: accepted ? 'PROJECT_TASK_VERIFIED' : 'PROJECT_TASK_REJECTED',
+      // Whoever did the work and whoever put it forward, plus the manager on a
+      // rejection: work coming back changes the plan, and the manager finding
+      // out at the next status meeting is a week lost.
+      tell: accepted
+        ? [task.assigneeId, task.submittedById]
+        : [task.assigneeId, task.submittedById, project.managerId],
+      title: accepted
+        ? `${task.ref} has been verified`
+        : `${task.ref} was sent back`,
+      body: accepted
+        ? `"${task.name}" was independently confirmed.`
+        : note || `"${task.name}" needs rework before it can be verified.`,
     });
 
     res.json({
@@ -348,6 +386,9 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     const reopening = task.status === 'Verified';
+    // Captured before the update clears it — the whole point of telling them is
+    // that their sign-off is being overturned.
+    const previousVerifierId = task.verifiedById;
 
     if (reopening) {
       // Discarding a verification is a management act on the owning side, not
@@ -400,6 +441,18 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response): Prom
         submittedAt: null,
       },
       auditAction: reopening ? 'PROJECT_TASK_REOPENED' : 'PROJECT_TASK_WITHDRAWN',
+      // Reopening discards a confirmation, so the person who gave it is told —
+      // otherwise their sign-off disappears from the record without them ever
+      // learning it was overturned.
+      tell: reopening
+        ? [task.assigneeId, previousVerifierId, project.managerId]
+        : [project.managerId],
+      title: reopening
+        ? `${task.ref} has been reopened`
+        : `${task.ref} was withdrawn from review`,
+      body: reopening
+        ? note
+        : `"${task.name}" is back with the person doing the work.`,
     });
 
     res.json({

@@ -20,8 +20,12 @@ export interface GuardedProject {
   tenantId: string;
   providerTenantId: string | null;
   ref: string;
+  name: string;
   status: string;
   verificationPolicy: string;
+  /** Who to tell when something needs a decision. Accountable for delivery. */
+  ownerId: string;
+  managerId: string;
 }
 
 export interface ProjectGuard {
@@ -41,7 +45,8 @@ export async function guardProject(
     where: { id: projectId },
     select: {
       id: true, tenantId: true, providerTenantId: true,
-      ref: true, status: true, verificationPolicy: true,
+      ref: true, name: true, status: true, verificationPolicy: true,
+      ownerId: true, managerId: true,
     },
   });
 
