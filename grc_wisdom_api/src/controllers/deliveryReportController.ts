@@ -157,7 +157,7 @@ async function loadEngagement(projectId: string) {
                   clause: {
                     select: {
                       id: true, ref: true, title: true,
-                      standard: { select: { id: true, code: true, name: true } },
+                      standard: { select: { id: true, code: true, title: true } },
                     },
                   },
                 },

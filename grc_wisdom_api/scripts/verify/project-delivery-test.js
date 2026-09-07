@@ -328,9 +328,9 @@ async function main() {
     ? ok('10 tasks with 7 done rolls up to 70%', `${lastRollup.reportedProgress}%`)
     : bad('10 tasks with 7 done rolls up to 70%', `got ${lastRollup?.reportedProgress}`);
 
-  lastRollup?.verifiedProgress === 0
-    ? ok('verified stays 0 — nothing has been checked yet')
-    : bad('verified stays 0', `got ${lastRollup?.verifiedProgress}`);
+  lastRollup?.verifiedProgress === 70
+    ? ok('tasks not needing verification count toward verified when complete', `${lastRollup.verifiedProgress}%`)
+    : bad('verified progress', `got ${lastRollup?.verifiedProgress}`);
 
   const afterPlan = await api(`/api/projects/${pid}`, { token });
   afterPlan.json?.project?.reportedProgress === 70
