@@ -1114,20 +1114,20 @@ async function main() {
   // ── 25. Files are not publicly reachable ────────────────────────────────
   console.log('\n25. Evidence storage');
 
-  const evDownload = await api(`/api/projects/evidence/${evId}/evDownload`, { token });
+  const evDownload = await api(`/api/projects/evidence/${evId}/download`, { token });
   evDownload.status === 200
     ? ok('evidence downloads through an authenticated route')
     : bad('evidence downloads', `${evDownload.status}`);
 
-  const anonDownload = await api(`/api/projects/evidence/${evId}/evDownload`, {});
+  const anonDownload = await api(`/api/projects/evidence/${evId}/download`, {});
   anonDownload.status === 401 || anonDownload.status === 403
     ? ok('and refuses an unauthenticated caller', `${anonDownload.status}`)
     : bad('refuses an unauthenticated caller', `${anonDownload.status}`);
 
-  const evIntegrity = await api(`/api/projects/${eid}/evidence/evIntegrity`, { token });
+  const evIntegrity = await api(`/api/projects/${eid}/evidence/integrity`, { token });
   evIntegrity.json?.intact === 1 && evIntegrity.json?.altered === 0
     ? ok('stored bytes still hash to what was recorded')
-    : bad('evIntegrity check', JSON.stringify(evIntegrity.json).slice(0, 160));
+    : bad('integrity check', JSON.stringify(evIntegrity.json).slice(0, 160));
 
   // ── 26. Evidence cannot move under a signature ──────────────────────────
   console.log('\n26. Immutability');

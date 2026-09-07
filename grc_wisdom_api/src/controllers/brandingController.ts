@@ -30,20 +30,27 @@ import { decodeUpload, putEvidence, resolveEvidencePath } from '../services/evid
 const str = (v: unknown): string => String(v ?? '');
 
 /** What a caller may see and set. Never exposes the storage key. */
-const shape = (row: any, resolved: any) => ({
-  tenantId: row?.tenantId ?? null,
-  displayName: row?.displayName ?? null,
-  brandColour: row?.brandColour ?? null,
-  marking: row?.marking ?? null,
-  footerText: row?.footerText ?? null,
-  inheritsFromParent: row?.inheritsFromParent ?? true,
-  hasLogo: !!row?.logoKey,
-  logoFileName: row?.logoFileName ?? null,
-  logoBytes: row?.logoBytes ?? null,
-  updatedAt: row?.updatedAt ?? null,
-  /** What a report would actually use, after inheritance. */
-  effective: resolved,
-});
+const shape = (row: any, resolved: any) => {
+  let effective = null;
+  if (resolved) {
+    const { logoKey, ...rest } = resolved;
+    effective = { ...rest, hasLogo: !!logoKey };
+  }
+  return {
+    tenantId: row?.tenantId ?? null,
+    displayName: row?.displayName ?? null,
+    brandColour: row?.brandColour ?? null,
+    marking: row?.marking ?? null,
+    footerText: row?.footerText ?? null,
+    inheritsFromParent: row?.inheritsFromParent ?? true,
+    hasLogo: !!row?.logoKey,
+    logoFileName: row?.logoFileName ?? null,
+    logoBytes: row?.logoBytes ?? null,
+    updatedAt: row?.updatedAt ?? null,
+    /** What a report would actually use, after inheritance. */
+    effective,
+  };
+};
 
 /**
  * Resolve the branding that applies to a tenant, in one query.

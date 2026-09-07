@@ -173,6 +173,15 @@ export const linkTasks = async (req: AuthenticatedRequest, res: Response): Promi
       return;
     }
 
+    if (predecessorId === successorId) {
+      res.status(400).json({
+        status: 'error',
+        code: 'SELF_DEPENDENCY',
+        message: 'A task cannot depend on itself.',
+      });
+      return;
+    }
+
     // Both ends must belong to THIS engagement. A dependency spanning two
     // projects would make one plan's critical path depend on work the other
     // plan's owner can reschedule without ever seeing the consequence.
