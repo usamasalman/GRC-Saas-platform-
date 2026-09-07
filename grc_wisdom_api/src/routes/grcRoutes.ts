@@ -16,7 +16,7 @@ import {
   createControl, cloneControl, updateControl, deleteControl, listClauses,
 } from '../controllers/controlAuthoringController';
 import {
-  listStandards, enableStandard,
+  listStandards, enableStandard, disableStandard,
   listControls,
   listImplementations, getImplementation, createImplementation,
   updateImplementation, validateImplementation,
@@ -91,6 +91,9 @@ router.use(rejectIfMustChangePassword);
 // ── Standards ─────────────────────────────────────────────────────────────
 router.get('/standards', listStandards);
 router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableStandard);
+// The counterpart deleteStandard has always pointed at and which never existed,
+// leaving a standard created by mistake impossible to remove.
+router.post('/standards/disable', requireCapability(CAP.ENABLE_STANDARD), disableStandard);
 
 // ── Authoring your own framework ──────────────────────────────────────────
 // The capability is literally "import or enable a standard", so importing one

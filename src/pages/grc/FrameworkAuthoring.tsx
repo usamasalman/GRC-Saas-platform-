@@ -209,6 +209,40 @@ const FrameworkAuthoring: React.FC = () => {
     } catch (err) { window.alert(apiError(err)); }
   };
 
+  /**
+   * Stop assessing against a standard.
+   *
+   * Until this existed, deleteStandard refused while any tenant had the
+   * standard enabled and told the user to disable it everywhere first —
+   * pointing at a capability the product did not have. A standard created by
+   * mistake could never be removed.
+   */
+  const disableStandard = async (std: Standard) => {
+    setNotice('');
+    try {
+      const res = await apiClient.post('/api/grc/standards/disable', { standardId: std.id });
+      setNotice(res.data?.message || `${std.code} disabled`);
+      await load();
+    } catch (err) { setNotice(apiError(err)); }
+  };
+
+  /**
+   * Rename a standard, or correct its authority and version.
+   *
+   * PATCH /standards/:id has been implemented on the server the whole time and
+   * nothing ever called it, so a typo in a standard's name was permanent.
+   */
+  const renameStandard = async (std: Standard) => {
+    const name = window.prompt(`Name for ${std.code}`, std.name);
+    if (name === null || !name.trim()) return;
+    setNotice('');
+    try {
+      const res = await apiClient.patch(`/api/grc/standards/${std.id}`, { name: name.trim() });
+      setNotice(res.data?.message || `${std.code} updated`);
+      await load();
+    } catch (err) { setNotice(apiError(err)); }
+  };
+
   const removeStandard = async (std: Standard) => {
     if (!window.confirm(`Delete ${std.code}? This cannot be undone.`)) return;
     try {
@@ -390,6 +424,13 @@ const FrameworkAuthoring: React.FC = () => {
                       <td style={{ ...S.td, textAlign: 'right' }}>
                         {!s.isEnabledHere && <button onClick={() => enableStandard(s)} style={linkBtn('var(--brand)')}>enable</button>}
                         {s.isOwnedHere && <button onClick={() => addClauses(s)} style={linkBtn('var(--info)')}>add clauses</button>}
+                        {s.isOwnedHere && <button onClick={() => renameStandard(s)} style={linkBtn('var(--info)')}>rename</button>}
+                        {/* Only when it IS enabled — offering "disable" on
+                            something that is not enabled is a button that can
+                            only ever return an error. */}
+                        {s.isOwnedHere && s.isEnabledHere && (
+                          <button onClick={() => disableStandard(s)} style={linkBtn('var(--warning)')}>disable</button>
+                        )}
                         {s.isOwnedHere && <button onClick={() => removeStandard(s)} style={linkBtn('var(--danger)')}>delete</button>}
                         {!s.isOwnedHere && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>read-only</span>}
                       </td>

@@ -102,6 +102,84 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
   }
 };
 
+/**
+ * Stop assessing an entity against a standard.
+ *
+ * This existed nowhere until now, which left a dead end nobody could get out
+ * of: deleteStandard refuses while any tenant has the standard enabled and
+ * tells the caller to "disable it everywhere first" — advice that pointed at a
+ * capability the product did not have. A standard created by mistake could
+ * therefore never be removed.
+ *
+ * Disabling deletes the enablement row rather than flagging it, because
+ * TenantStandardEnablement has no status column and inventing one would mean a
+ * migration on a table whose only meaning is "this pairing exists". The
+ * assessment history does not live here — implementations and evidence hang off
+ * Control, not off the enablement — so removing the row stops future assessment
+ * without erasing what was already recorded.
+ */
+export const disableStandard = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { standardId, tenantId } = req.body || {};
+    if (!standardId) {
+      res.status(400).json({ status: 'error', message: 'standardId is required' });
+      return;
+    }
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const target = String(tenantId || req.user!.tenantId);
+
+    // Same guard as enabling: you may only change entities inside your scope.
+    if (!scope.tenantIds.includes(target)) {
+      res.status(403).json({
+        status: 'error',
+        code: 'OUT_OF_SCOPE',
+        message: 'You cannot change standards for an organisation outside your scope.',
+      });
+      return;
+    }
+
+    const standard = await prisma.standard.findUnique({
+      where: { id: String(standardId) },
+      select: { id: true, code: true },
+    });
+    if (!standard) {
+      res.status(404).json({ status: 'error', message: 'Standard not found' });
+      return;
+    }
+
+    const existing = await prisma.tenantStandardEnablement.findFirst({
+      where: { tenantId: target, standardId: String(standardId) },
+      select: { id: true },
+    });
+    if (!existing) {
+      res.status(404).json({
+        status: 'error',
+        code: 'NOT_ENABLED',
+        message: `${standard.code} is not enabled for this entity.`,
+      });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.tenantStandardEnablement.delete({ where: { id: existing.id } });
+      await writeAudit(tx, {
+        tenantId: target,
+        actorId: req.user!.id,
+        action: 'STANDARD_DISABLED',
+        subjectType: 'Standard',
+        subjectId: String(standardId),
+        payload: { code: standard.code },
+      });
+    });
+
+    res.json({ status: 'success', message: `${standard.code} disabled for this entity` });
+  } catch (error: any) {
+    console.error('[Disable Standard Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to disable standard' });
+  }
+};
+
 // ─── Controls (library) ────────────────────────────────────────────────────
 
 export const listControls = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
