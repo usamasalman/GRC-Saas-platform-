@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
+import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
+import ClauseMapDialog from './ClauseMapDialog';
 
 /**
  * Framework authoring — where a compliance manager or consultant builds the
@@ -36,6 +38,24 @@ const FrameworkAuthoring: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  // One piece of state for whatever dialog is open, rather than a boolean per
+  // dialog. Two cannot be open at once, and modelling it as a union makes that
+  // true by construction instead of by everyone remembering to close the others.
+  type Dialog =
+    | { kind: 'confirmDeleteStandard'; std: Standard }
+    | { kind: 'confirmDeleteControl'; ctrl: Control }
+    | { kind: 'confirmDiscardImport' }
+    | { kind: 'renameStandard'; std: Standard }
+    | { kind: 'addClauses'; std: Standard }
+    | { kind: 'cloneControl'; ctrl: Control }
+    | { kind: 'editClauseRef'; clause: Clause }
+    | { kind: 'editClauseTitle'; clause: Clause; ref: string }
+    | { kind: 'mapClauses'; ctrl: Control }
+    | null;
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [dialogBusy, setDialogBusy] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<'standards' | 'controls' | 'import'>('standards');
 
@@ -91,7 +111,7 @@ const FrameworkAuthoring: React.FC = () => {
     try {
       const res = await apiClient.get(`/api/grc/imports/${id}`);
       setOpenImport(res.data || null);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   /** Reads the chosen file as base64 — the same shape the API already takes. */
@@ -129,15 +149,20 @@ const FrameworkAuthoring: React.FC = () => {
     try {
       await apiClient.patch(`/api/grc/import-candidates/${candidateId}`, { decision, ...(edits || {}) });
       if (openImport?.import?.id) await openImportDetail(openImport.import.id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
-  const fixAndAccept = async (c: any) => {
-    const ref = window.prompt('Reference:', c.ref || '');
-    if (ref === null) return;
-    const title = window.prompt('Title:', c.title || '');
-    if (title === null) return;
-    await decide(c.id, 'Accepted', { ref, title });
+  // Two chained prompts became two chained dialogs: the reference is captured
+  // first, carried on the dialog state, and the title dialog then has both. The
+  // native version discarded the first value if the second was cancelled.
+  const fixAndAccept = (c: any) => setDialog({ kind: 'editClauseRef', clause: c });
+
+  const doFixAndAccept = async (c: any, ref: string, title: string) => {
+    setDialogBusy(true);
+    try {
+      await decide(c.id, 'Accepted', { ref: ref.trim(), title: title.trim() });
+      setDialog(null);
+    } finally { setDialogBusy(false); }
   };
 
   const acceptClean = async (id: string) => {
@@ -145,7 +170,7 @@ const FrameworkAuthoring: React.FC = () => {
       const res = await apiClient.post(`/api/grc/imports/${id}/accept-clean`, {});
       setNotice(res.data?.message || '');
       await openImportDetail(id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   const commitImport = async (id: string) => {
@@ -154,17 +179,17 @@ const FrameworkAuthoring: React.FC = () => {
       setNotice(res.data?.message || 'Committed');
       setOpenImport(null);
       await Promise.all([load(), loadImports()]);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   const discardImport = async (id: string) => {
-    if (!window.confirm('Discard this import? Nothing will be added to the library.')) return;
+    setDialogBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/imports/${id}/discard`, {});
       setNotice(res.data?.message || 'Discarded');
       setOpenImport(null);
       await loadImports();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   const parseClauses = (raw: string) =>
@@ -188,17 +213,17 @@ const FrameworkAuthoring: React.FC = () => {
     finally { setBusy(false); }
   };
 
-  const addClauses = async (std: Standard) => {
-    const raw = window.prompt(
-      `Add clauses to ${std.code} — one per line as:  ref | title | text`,
-      'A.5.1 | Policies for information security | Management direction is defined.',
-    );
-    if (!raw) return;
+  const addClauses = (std: Standard) => setDialog({ kind: 'addClauses', std });
+
+  const doAddClauses = async (std: Standard, raw: string) => {
+    setDialogBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/standards/${std.id}/clauses`, { clauses: parseClauses(raw) });
       setNotice(res.data?.message || 'Clauses added');
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
   const enableStandard = async (std: Standard) => {
@@ -206,7 +231,7 @@ const FrameworkAuthoring: React.FC = () => {
       const res = await apiClient.post('/api/grc/standards/enable', { standardId: std.id, applicability: 'Full' });
       setNotice(res.data?.message || `${std.code} enabled`);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   /**
@@ -232,26 +257,33 @@ const FrameworkAuthoring: React.FC = () => {
    * PATCH /standards/:id has been implemented on the server the whole time and
    * nothing ever called it, so a typo in a standard's name was permanent.
    */
-  const renameStandard = async (std: Standard) => {
-    // The column is `title`, both here and on the server — `name` would have
-    // been accepted silently by the PATCH and changed nothing.
-    const title = window.prompt(`Title for ${std.code}`, std.title);
-    if (title === null || !title.trim()) return;
+  const renameStandard = (std: Standard) => setDialog({ kind: 'renameStandard', std });
+
+  const doRenameStandard = async (std: Standard, title: string) => {
+    setDialogBusy(true);
     setNotice('');
     try {
+      // The column is `title`, both here and on the server — `name` would have
+      // been accepted silently by the PATCH and changed nothing.
       const res = await apiClient.patch(`/api/grc/standards/${std.id}`, { title: title.trim() });
       setNotice(res.data?.message || `${std.code} updated`);
+      setDialog(null);
       await load();
-    } catch (err) { setNotice(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
-  const removeStandard = async (std: Standard) => {
-    if (!window.confirm(`Delete ${std.code}? This cannot be undone.`)) return;
+  const removeStandard = (std: Standard) => setDialog({ kind: 'confirmDeleteStandard', std });
+
+  const doRemoveStandard = async (std: Standard) => {
+    setDialogBusy(true);
     try {
       const res = await apiClient.delete(`/api/grc/standards/${std.id}`);
       setNotice(res.data?.message || `${std.code} deleted`);
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
   const createControl = async (e: React.FormEvent) => {
@@ -269,45 +301,46 @@ const FrameworkAuthoring: React.FC = () => {
   };
 
   const cloneControl = async (c: Control) => {
-    const code = window.prompt(`Copy ${c.code} into your own control set as:`, `${c.code}-LOCAL`);
-    if (!code) return;
+    setDialog({ kind: 'cloneControl', ctrl: c });
+  };
+
+  const doCloneControl = async (c: Control, code: string) => {
+    setDialogBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/controls/${c.id}/clone`, { code });
+      const res = await apiClient.post(`/api/grc/controls/${c.id}/clone`, { code: code.trim() });
       setNotice(res.data?.message || 'Control copied');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); }
   };
 
   const remapControl = async (c: Control) => {
-    const picked = window.prompt(
-      `Clause refs for ${c.code}, comma separated.\nAvailable: ${[...new Set(clauses.map((x) => x.standardCode))].join(', ')}`,
-      c.mappedTo.map((m) => `${m.standardCode}:${m.clauseRef}`).join(', '),
-    );
-    if (picked === null) return;
-    const wanted = picked.split(',').map((p) => p.trim()).filter(Boolean);
-    const ids = wanted.map((w) => {
-      const [code, ref] = w.includes(':') ? w.split(':') : [null, w];
-      const hit = clauses.find((x) => x.ref === ref?.trim() && (!code || x.standardCode === code.trim()));
-      return hit?.id;
-    }).filter(Boolean) as string[];
-    if (ids.length !== wanted.length) {
-      window.alert('Some clause references were not recognised. Nothing was changed.');
-      return;
-    }
+    setDialog({ kind: 'mapClauses', ctrl: c });
+  };
+
+  const doMapClauses = async (c: Control, ids: string[]) => {
+    setDialogBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/controls/${c.id}/clauses`, { clauseIds: ids });
       setNotice(res.data?.message || 'Mapping updated');
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
   const removeControl = async (c: Control) => {
-    if (!window.confirm(`Delete ${c.code}?`)) return;
+    setDialog({ kind: 'confirmDeleteControl', ctrl: c });
+  };
+
+  const doRemoveControl = async (c: Control) => {
+    setDialogBusy(true);
     try {
       const res = await apiClient.delete(`/api/grc/controls/${c.id}`);
       setNotice(res.data?.message || `${c.code} deleted`);
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
   const ownStandards = standards.filter((s) => s.isOwnedHere).length;
@@ -756,6 +789,149 @@ const FrameworkAuthoring: React.FC = () => {
           </div>
         </>
       )}
+
+      {/* ── Dialogs ────────────────────────────────────────────────────────
+          Replacing twenty-one window.alert/confirm/prompt calls. The browser's
+          own dialogs put the server's IP at the top — "161.97.120.202 says" —
+          which reads as the machine talking rather than the product, and they
+          cannot explain what an action does or check what was typed before it
+          is too late. */}
+
+      {dialog?.kind === 'confirmDeleteStandard' && (
+        <ConfirmDialog
+          title={`Delete ${dialog.std.code}?`}
+          destructive
+          confirmLabel="Delete standard"
+          busy={dialogBusy}
+          message={(
+            <>
+              This removes the standard and every clause under it. Any control
+              mapped to those clauses loses the mapping.
+              {dialog.std.isEnabledHere && (
+                <div style={{ marginTop: 8, color: 'var(--warning)' }}>
+                  It is currently enabled here, so the delete will be refused until
+                  you disable it first.
+                </div>
+              )}
+            </>
+          )}
+          onConfirm={() => doRemoveStandard(dialog.std)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'confirmDeleteControl' && (
+        <ConfirmDialog
+          title={`Delete ${dialog.ctrl.code}?`}
+          destructive
+          confirmLabel="Delete control"
+          busy={dialogBusy}
+          message="This removes the control and its clause mappings. If any implementation
+            exists against it the delete will be refused."
+          onConfirm={() => doRemoveControl(dialog.ctrl)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'renameStandard' && (
+        <PromptDialog
+          title={`Rename ${dialog.std.code}`}
+          label="Title"
+          initialValue={dialog.std.title}
+          confirmLabel="Save title"
+          busy={dialogBusy}
+          help="The code stays as it is. This is the name people read on reports."
+          validate={(v) => (v.trim().length < 3 ? 'Give it a title of at least three characters.' : null)}
+          onSubmit={(v) => doRenameStandard(dialog.std, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'addClauses' && (
+        <PromptDialog
+          title={`Add clauses to ${dialog.std.code}`}
+          label="One clause per line"
+          multiline
+          confirmLabel="Add clauses"
+          busy={dialogBusy}
+          placeholder={'A.5.1 | Policies for information security | Management direction is defined.'}
+          help={'Format: reference | title | text. The text is optional. '
+            + 'A reference that already exists on this standard will be refused rather than duplicated.'}
+          validate={(v) => {
+            const lines = v.split('\n').map((l) => l.trim()).filter(Boolean);
+            if (lines.length === 0) return 'Add at least one clause.';
+            // Checked here rather than after submitting, which is the whole
+            // reason this is not a native prompt.
+            const bad = lines.find((l) => l.split('|').length < 2 || !l.split('|')[0].trim());
+            return bad ? `This line needs a reference and a title separated by | — "${bad.slice(0, 40)}"` : null;
+          }}
+          onSubmit={(v) => doAddClauses(dialog.std, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'cloneControl' && (
+        <PromptDialog
+          title={`Copy ${dialog.ctrl.code}`}
+          label="Code for your copy"
+          initialValue={`${dialog.ctrl.code}-LOCAL`}
+          confirmLabel="Create copy"
+          busy={dialogBusy}
+          help="A library control cannot be edited. Copying gives you one of your own that can be."
+          validate={(v) => {
+            if (!v.trim()) return 'Give the copy a code.';
+            return controls.some((x) => x.code === v.trim())
+              ? 'A control with that code already exists.' : null;
+          }}
+          onSubmit={(v) => doCloneControl(dialog.ctrl, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'editClauseRef' && (
+        <PromptDialog
+          title="Accept this candidate"
+          label="Reference"
+          initialValue={dialog.clause.ref || ''}
+          confirmLabel="Next"
+          busy={dialogBusy}
+          help="Then you will be asked for the title."
+          validate={(v) => (v.trim() ? null : 'A reference is required.')}
+          onSubmit={(v) => setDialog({ kind: 'editClauseTitle', clause: dialog.clause, ref: v })}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'editClauseTitle' && (
+        <PromptDialog
+          title={`Accept ${dialog.ref}`}
+          label="Title"
+          initialValue={dialog.clause.title || ''}
+          confirmLabel="Accept"
+          busy={dialogBusy}
+          validate={(v) => (v.trim() ? null : 'A title is required.')}
+          onSubmit={(v) => doFixAndAccept(dialog.clause, dialog.ref, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'mapClauses' && (
+        <ClauseMapDialog
+          subject={dialog.ctrl.code}
+          clauses={clauses.map((c) => ({
+            id: c.id, ref: c.ref, title: c.title, standardCode: c.standardCode,
+          }))}
+          initiallySelected={clauses
+            .filter((c) => dialog.ctrl.mappedTo.some(
+              (m) => m.clauseRef === c.ref && m.standardCode === c.standardCode,
+            ))
+            .map((c) => c.id)}
+          busy={dialogBusy}
+          onSubmit={(ids) => doMapClauses(dialog.ctrl, ids)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
     </div>
   );
 };
