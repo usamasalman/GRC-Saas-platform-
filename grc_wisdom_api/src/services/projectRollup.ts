@@ -191,10 +191,12 @@ export async function recomputeProject(
         select: {
           status: true, completionPercent: true, weight: true,
           verificationOverride: true, dueDate: true, submittedAt: true,
-          // Standing evidence only. Under the EvidenceTasks policy a withdrawn
-          // file must stop satisfying the requirement, or withdrawing becomes a
-          // way to keep the credit while removing the substance.
-          evidence: { where: { withdrawnAt: null }, select: { id: true } },
+          // Deliberately NOT filtered to standing evidence. Under EvidenceTasks
+          // the requirement follows whether this task ever produced something,
+          // because filtering to standing rows meant withdrawing a file removed
+          // the requirement and the task counted as verified — retracting proof
+          // raised the figure from 0% to 100%.
+          evidence: { select: { id: true } },
         },
       },
     },

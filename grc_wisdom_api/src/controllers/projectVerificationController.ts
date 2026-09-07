@@ -51,10 +51,10 @@ async function loadTask(req: AuthenticatedRequest, taskId: string) {
       id: true, projectId: true, ref: true, name: true, status: true,
       assigneeId: true, submittedById: true, completionPercent: true,
       verificationOverride: true, verificationRound: true, verifiedById: true,
-      // EvidenceTasks turns on verification only for work that produced
-      // something, so the standing evidence decides whether this task needs a
-      // reviewer at all.
-      evidence: { where: { withdrawnAt: null }, select: { id: true } },
+      // EvidenceTasks turns on verification for work that produced something.
+      // Unfiltered, so withdrawing a file cannot remove the obligation — that
+      // reading made retracting proof raise the assurance figure.
+      evidence: { select: { id: true } },
     },
   });
   if (!task) return null;

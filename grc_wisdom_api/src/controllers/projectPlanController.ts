@@ -90,12 +90,11 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             // A blocked task that does not say what is blocking it is the row
             // everyone asks about and nobody can answer.
             evidence: {
-              where: { withdrawnAt: null },
               orderBy: { uploadedAt: 'desc' },
               select: {
                 id: true, ref: true, title: true, fileName: true, fileSize: true,
                 mimeType: true, classification: true, side: true,
-                uploadedInRound: true, uploadedAt: true,
+                uploadedInRound: true, uploadedAt: true, withdrawnAt: true,
                 uploadedBy: { select: { id: true, name: true } },
               },
             },
@@ -464,9 +463,10 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
         id: true, projectId: true, ref: true, name: true, status: true,
         assigneeId: true, completionPercent: true, verificationOverride: true,
         dueDate: true, baselineDueDate: true,
-        // Under the EvidenceTasks policy this decides whether the task needs a
-        // reviewer at all, so it has to be loaded before the verdict is taken.
-        evidence: { where: { withdrawnAt: null }, select: { id: true } },
+        // Unfiltered on purpose: the EvidenceTasks requirement follows whether
+        // the task ever produced evidence, so that withdrawing a file cannot
+        // remove the obligation to have the work checked.
+        evidence: { select: { id: true } },
       },
     });
     if (!existing) { notFound(res); return; }

@@ -33,7 +33,7 @@ const {
   OWING_SIDES, IMPEDIMENT_CATEGORIES, IMPEDIMENT_KINDS,
 } = require('../../dist/services/projectDelay');
 const {
-  evidenceStanding, hasStandingEvidence, checkEvidenceAttachable,
+  evidenceStanding, hasStandingEvidence, hasEverHadEvidence, checkEvidenceAttachable,
   checkEvidenceWithdrawable, checkEvidenceFile, sniffMime, clauseCoverage,
   extensionOf, MAX_EVIDENCE_BYTES,
 } = require('../../dist/services/projectEvidence');
@@ -43,6 +43,9 @@ const {
   DEFAULT_BRAND, DEFAULT_MARKING, REPORT_MARKINGS, MAX_LOGO_BYTES,
   MIN_TEXT_CONTRAST, INK, PAPER, effectiveMarking, selectSections,
 } = require('../../dist/services/tenantBranding');
+const {
+  documentHash, snapshotOf, snapshotDelta, documentRefFor,
+} = require('../../dist/services/reportIssue');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -938,11 +941,25 @@ eq('retracted evidence reads as withdrawn, whatever else is true',
 eq('evidence from a later round was NOT in front of the person who signed',
    evidenceStanding(ev(4), tk('Verified', 2)), 'AddedLater');
 
-hasStandingEvidence([ev(1)]) ? ok('standing evidence counts') : bad('standing evidence counts');
+hasStandingEvidence([ev(1)]) ? ok('a task with a live file carries evidence') : bad('standing evidence counts');
 !hasStandingEvidence([ev(1, D('2026-01-01'))])
-  ? ok('withdrawn evidence does not — or withdrawing keeps the credit and drops the substance')
-  : bad('withdrawn evidence does not count');
+  ? ok('and one whose file was withdrawn no longer does')
+  : bad('withdrawn evidence does not stand');
 !hasStandingEvidence([]) ? ok('no evidence is no evidence') : bad('no evidence is no evidence');
+
+// The two predicates answer different questions, and reading one as the other
+// was a real bug: with the standing-only reading, a finished task whose
+// evidence was withdrawn stopped requiring a reviewer and counted as verified,
+// so RETRACTING PROOF RAISED the assurance figure from 0% to 100%.
+hasEverHadEvidence([ev(1, D('2026-01-01'))])
+  ? ok('but it has still, once, produced something')
+  : bad('withdrawn evidence was still produced');
+!hasEverHadEvidence([]) ? ok('while a task that produced nothing never did') : bad('never produced');
+
+// So the obligation survives the withdrawal.
+requiresVerification('EvidenceTasks', null, hasEverHadEvidence([ev(1, D('2026-01-01'))]))
+  ? ok('withdrawing evidence does not remove the need for a reviewer')
+  : bad('withdrawal removes the requirement — retracting proof would raise the figure');
 
 // ── 26. Evidence cannot move under a signature ──────────────────────────────
 console.log('\n26. Immutability rules');
@@ -1290,6 +1307,136 @@ eq('blank entries are dropped rather than matching nothing',
 const source = [sec('A'), sec('B')];
 selectSections(source, ['A']);
 source.length === 2 ? ok('filtering does not mutate the source') : bad('filtering mutates the source');
+
+// ── 39. What a report says, hashed ──────────────────────────────────────────
+// Two exports with the same hash carried the same figures, whether one was a
+// PDF and the other a spreadsheet. That property is what lets "the board saw
+// these numbers" be checked without comparing two files byte by byte.
+console.log('\n39. Document hash');
+
+const docOf = (over = {}) => Object.assign({
+  provenance: {
+    reportName: 'Engagement Status',
+    tenantName: 'Acme Group Ltd',
+    generatedBy: 'A Person <a@example.com>',
+    scopeKind: 'SELF',
+    subjectRef: 'PRJ-0001',
+    subjectStatus: 'Active',
+  },
+  sections: [
+    { kind: 'fields', title: 'Summary', fields: [{ label: 'Progress', value: '70%' }] },
+    {
+      kind: 'table', title: 'Tasks',
+      columns: [{ header: 'Ref', key: 'ref' }, { header: 'Status', key: 'status' }],
+      rows: [{ ref: 'TSK-0001', status: 'Done' }],
+    },
+  ],
+}, over);
+
+const baseHash = documentHash(docOf());
+/^[0-9a-f]{64}$/.test(baseHash) ? ok('a document hashes to a sha256') : bad('sha256 produced');
+eq('the same content hashes the same twice', documentHash(docOf()), baseHash);
+
+// The three exclusions, each of which would otherwise make the hash useless.
+const laterChrome = docOf();
+laterChrome.chrome = {
+  displayName: 'Acme', brandColour: '#123456', textColour: '#123456',
+  marking: 'Restricted', footerText: 'x', logo: null,
+  documentRef: 'TOTALLY-DIFFERENT', generatedAt: new Date('2030-01-01'),
+};
+eq('the timestamp, the reference and the branding do not change it',
+   documentHash(laterChrome), baseHash);
+
+// Key order says nothing about what a reader sees, so it must not move the hash.
+const reordered = docOf({
+  sections: [
+    { kind: 'fields', title: 'Summary', fields: [{ label: 'Progress', value: '70%' }] },
+    {
+      kind: 'table', title: 'Tasks',
+      columns: [{ header: 'Ref', key: 'ref' }, { header: 'Status', key: 'status' }],
+      rows: [{ status: 'Done', ref: 'TSK-0001' }],
+    },
+  ],
+});
+eq('JavaScript key order does not move the hash', documentHash(reordered), baseHash);
+
+// Everything a reader WOULD notice must move it.
+documentHash(docOf({
+  sections: [
+    { kind: 'fields', title: 'Summary', fields: [{ label: 'Progress', value: '71%' }] },
+    docOf().sections[1],
+  ],
+})) !== baseHash
+  ? ok('a changed figure moves the hash') : bad('a changed figure moves the hash');
+
+const colSwapped = docOf({
+  sections: [
+    docOf().sections[0],
+    {
+      kind: 'table', title: 'Tasks',
+      columns: [{ header: 'Status', key: 'status' }, { header: 'Ref', key: 'ref' }],
+      rows: [{ ref: 'TSK-0001', status: 'Done' }],
+    },
+  ],
+});
+documentHash(colSwapped) !== baseHash
+  ? ok('reordering COLUMNS moves it — a reader sees that')
+  : bad('reordering columns moves the hash');
+
+// The subject's status at the time bears on meaning: the same rows drawn while
+// an engagement was Active say something different from the same rows drawn
+// after it closed, and draftNotice() renders them differently.
+const closedDoc = docOf();
+closedDoc.provenance = { ...closedDoc.provenance, subjectStatus: 'Closed' };
+documentHash(closedDoc) !== baseHash
+  ? ok('and so does the subject status, which changes what the report means')
+  : bad('subject status moves the hash');
+
+// ── 40. Snapshots and what changed ──────────────────────────────────────────
+console.log('\n40. Snapshots');
+
+eq('scalars are kept',
+   snapshotOf({ reported: 70, verified: 41, health: 'Amber' }),
+   JSON.stringify({ reported: 70, verified: 41, health: 'Amber' }));
+// A snapshot that grows to mirror the report is a second copy that will
+// eventually disagree with the first.
+eq('structure is dropped rather than duplicating the document',
+   snapshotOf({ reported: 70, phases: [{ a: 1 }] }), JSON.stringify({ reported: 70 }));
+eq('an absent figure is kept as null, not skipped',
+   snapshotOf({ reported: 70, closedAt: null }),
+   JSON.stringify({ reported: 70, closedAt: null }));
+
+const before = snapshotOf({ reported: 70, verified: 41, health: 'Amber' });
+const after = snapshotOf({ reported: 85, verified: 41, health: 'Green' });
+const delta = snapshotDelta(before, after);
+eq('only what moved is reported', delta.length, 2);
+eq('and it is ordered so two reports can be compared', delta[0].figure, 'health');
+eq('with both sides shown', `${delta[1].from} -> ${delta[1].to}`, '70 -> 85');
+
+// A figure that appears or vanishes between issues is a change, not a skip.
+const appeared = snapshotDelta(snapshotOf({ reported: 70 }), snapshotOf({ reported: 70, verified: 41 }));
+appeared.length === 1 && appeared[0].from === '—'
+  ? ok('a figure that appears between issues reads as a change')
+  : bad('a new figure reads as a change', JSON.stringify(appeared));
+
+snapshotDelta(null, snapshotOf({ reported: 70 })).length === 1
+  ? ok('a first issue has everything to report') : bad('first issue reports everything');
+snapshotDelta('not json at all', snapshotOf({ reported: 70 })).length === 1
+  ? ok('and unparseable history does not throw') : bad('unparseable history is survivable');
+eq('an unchanged snapshot reports nothing', snapshotDelta(before, before).length, 0);
+
+// ── 41. Document references ─────────────────────────────────────────────────
+console.log('\n41. Document reference');
+
+const when = D('2026-09-11T14:30:00Z');
+eq('an ordinary export carries a timestamped reference',
+   documentRefFor('delivery-status', when, null), 'DELIVERY-STATUS-20260911143000');
+// The issue number is on the face of it, so a reader holding two copies can see
+// which is later without parsing a fourteen-digit string.
+eq('an issue carries its number too',
+   documentRefFor('delivery-status', when, 3), 'DELIVERY-STATUS-20260911143000-i3');
+eq('issue zero is not an issue', documentRefFor('delivery-audit', when, 0),
+   'DELIVERY-AUDIT-20260911143000');
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

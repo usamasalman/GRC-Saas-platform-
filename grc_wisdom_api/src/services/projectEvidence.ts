@@ -156,15 +156,31 @@ export function evidenceStanding(
 export const isStanding = (e: { withdrawnAt: Date | null }): boolean => e.withdrawnAt === null;
 
 /**
- * Does this task carry evidence?
+ * Does this task carry evidence RIGHT NOW?
  *
- * Withdrawn rows do not count. Retracted proof is not proof, and a task whose
- * only evidence was withdrawn must stop satisfying an evidence requirement — or
- * withdrawing becomes a way to keep the credit while removing the substance.
+ * For display: "this task has two files against it". Deliberately NOT the
+ * predicate behind the EvidenceTasks verification policy, which asks whether
+ * the task ever produced anything.
+ *
+ * That distinction was originally the other way round and it was wrong. With
+ * the standing-only reading a finished task whose evidence was withdrawn
+ * stopped requiring a reviewer, so it counted as verified and retracting proof
+ * raised the assurance figure from 0% to 100%. Producing a deliverable creates
+ * the obligation to have it checked; withdrawing the file does not un-produce
+ * it. See projectLifecycle.requiresVerification.
  */
 export const hasStandingEvidence = (
   list: readonly { withdrawnAt: Date | null }[],
 ): boolean => list.some(isStanding);
+
+/**
+ * Has this task EVER produced evidence, withdrawn or not?
+ *
+ * The predicate the EvidenceTasks policy uses. Named separately from
+ * hasStandingEvidence because the two answer different questions and reading
+ * one as the other is the bug described above.
+ */
+export const hasEverHadEvidence = (list: readonly unknown[]): boolean => list.length > 0;
 
 /**
  * Whether evidence may be attached to a task in this state.

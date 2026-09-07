@@ -40,6 +40,7 @@ model Tenant {
   impersonationSessions ImpersonationSession[]
   roles         Role[]
   branding      TenantBranding?
+  reportIssues  ReportIssue[]
   workflowDefinitions WorkflowDefinition[]
   workflowRuns  WorkflowRun[]
   catalogItems  ServiceCatalogItem[]
@@ -191,6 +192,7 @@ model User {
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
   brandingEdited TenantBranding[] @relation("BrandingEditor")
+  reportsIssued ReportIssue[] @relation("ReportIssuer")
 }
 
 model Plan {
@@ -2592,6 +2594,7 @@ model Project {
   verifications    ProjectVerification[]
   impediments      ProjectImpediment[]
   evidence         ProjectEvidence[]
+  reportIssues     ReportIssue[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2852,6 +2855,89 @@ model ProjectImpediment {
   @@index([projectId, owingSide])
   @@index([taskId, resolvedAt])
   @@index([phaseId, resolvedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Slice 7 — which version of this report did the board actually see?
+//
+//  The WORM audit log cannot answer it. Its payload is a JSON String column
+//  with no index into it, and reportController writes the report NAME into
+//  subjectId — so "every issue of this project's status report" has no key to
+//  query on. The log proves nothing was tampered with; it is not a structure
+//  you can build a register on.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// One export of one report.
+///
+/// Two things in one table, separated by `issued`, because they are the same
+/// act at different weights:
+///
+///   an EXPORT is somebody downloading a copy. Cheap, frequent, no bytes kept.
+///     It is a disclosure register — who took what, and when.
+///   an ISSUE is a numbered, deliberate act: this is version 3 of the board
+///     report, and here are the exact bytes the board saw.
+///
+/// Kept as one table with a flag rather than two, because every query worth
+/// asking spans both ("show me everything that left this engagement") and
+/// pruning the cheap half is one WHERE clause.
+///
+/// The bytes are stored for an issue, not regenerated on demand, because
+/// regeneration provably cannot reproduce them: draftNotice() drops the DRAFT
+/// banner once an engagement closes, every progress figure recomputes from the
+/// tasks as they stand now, and TenantBranding has no version history. A report
+/// re-run six months later is a different document that happens to share a name.
+model ReportIssue {
+  id           String   @id @default(uuid())
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Stable key for the kind of report — 'delivery-status', 'delivery-audit'.
+  /// Separate from reportName so a renamed report keeps its history.
+  reportKey    String
+  reportName   String
+
+  /// Null for an estate-wide report that is about no single engagement.
+  projectId    String?
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  /// Printed on every page of the artefact itself, so a reader holding a copy
+  /// can say which one it is.
+  documentRef  String
+
+  /// Sequential per report per subject. A programme on its fourth issued status
+  /// report is a different fact from one on its first.
+  issueNumber  Int      @default(0)
+
+  format       String
+  marking      String
+
+  /// Set only for an issue. An ordinary export keeps no bytes.
+  storageKey   String?
+  fileName     String
+  fileBytes    Int?
+  /// SHA-256 of the stored bytes, so the artefact can be proved unchanged.
+  sha256       String?
+
+  /// Hash of the format-independent ReportDocument, written into the WORM chain
+  /// alongside this row — so the queryable-but-mutable table is notarised by the
+  /// immutable-but-unqueryable one. Two documents with the same hash said the
+  /// same thing, whatever format they were drawn in.
+  documentHash String
+
+  issued       Boolean  @default(false)
+
+  /// The headline figures as they stood, so "what changed between issue 2 and
+  /// issue 3" is answerable without opening either file.
+  snapshot     String   @default("{}")
+
+  issuedById   String
+  issuedBy     User     @relation("ReportIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
+  issuedAt     DateTime @default(now())
+
+  @@index([tenantId, reportKey, issuedAt])
+  @@index([projectId, issuedAt])
+  @@index([tenantId, issued, issuedAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

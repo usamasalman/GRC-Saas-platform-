@@ -122,6 +122,14 @@ export type VerificationPolicy = (typeof VERIFICATION_POLICIES)[number];
  * through raises the bar on the work already planned, which is the only
  * behaviour a compliance officer would expect from a setting with that name.
  *
+ * `hasEvidence` means HAS EVER PRODUCED EVIDENCE, not "carries evidence right
+ * now", and the difference is not pedantic. With the standing-only reading, a
+ * finished task whose evidence was withdrawn stopped requiring a reviewer and
+ * therefore counted as verified — so retracting proof raised the assurance
+ * figure from 0% to 100%. Confirmed by running it. Producing a deliverable is
+ * what creates the obligation to have it checked, and withdrawing the file does
+ * not un-produce it.
+ *
  * `hasEvidence` is resolved by the caller and passed in rather than looked up
  * here. This file has no database handle by design — the 201-assertion suite
  * runs it straight off dist/ with no Postgres anywhere — and a query hidden
