@@ -4,7 +4,7 @@ import {
 } from 'docx';
 import {
   ReportDocument, ReportSection, Column,
-  draftNotice, provenanceRows, cellText,
+  draftNotice, provenanceRows, cellText, defaultChrome,
 } from './reportDocument';
 
 /**
@@ -21,6 +21,11 @@ const MUTED = '55627A';
 const FAINT = '646F85';
 const RULE = 'E1E7EF';
 const SUNK = 'F5F7FA';
+/**
+ * Fallback only. The warning colours below stay unbrandable for the same reason
+ * they do in the PDF renderer: a tenant whose livery reached the DRAFT banner
+ * could make it invisible, which is falsifying a report rather than theming it.
+ */
 const BRAND = '0F7A5A';
 const WARN = '9A6510';
 const WARN_BG = 'FDF3E2';
@@ -105,6 +110,8 @@ function renderSection(section: ReportSection): (Paragraph | Table)[] {
 
 export async function renderDocx(report: ReportDocument): Promise<Buffer> {
   const p = report.provenance;
+  const chrome = report.chrome || defaultChrome(p);
+  const brandText = chrome.textColour.replace('#', '');
   const wide = report.sections.some(
     (s) => s.kind === 'table' && s.columns.length > LANDSCAPE_THRESHOLD,
   );
@@ -137,7 +144,8 @@ export async function renderDocx(report: ReportDocument): Promise<Buffer> {
     children.push(text('', { after: 160 }));
   }
 
-  children.push(sectionHeading('Provenance'), fieldTable(provenanceRows(p)));
+  children.push(sectionHeading('Provenance'),
+    fieldTable(provenanceRows(p, chrome.generatedAt, chrome.documentRef)));
   for (const section of report.sections) children.push(...renderSection(section));
 
   const doc = new Document({
@@ -148,7 +156,7 @@ export async function renderDocx(report: ReportDocument): Promise<Buffer> {
       default: {
         document: { run: { font: 'Calibri', size: 20, color: INK } },
         title: { run: { size: 36, bold: true, color: INK } },
-        heading2: { run: { size: 24, bold: true, color: BRAND } },
+        heading2: { run: { size: 24, bold: true, color: brandText } },
       },
     },
     sections: [{

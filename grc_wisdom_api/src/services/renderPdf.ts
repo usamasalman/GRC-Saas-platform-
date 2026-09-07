@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import {
-  ReportDocument, ReportSection, Column,
-  draftNotice, provenanceRows, cellText,
+  ReportDocument, ReportSection, Column, ReportChrome,
+  draftNotice, provenanceRows, cellText, defaultChrome, stampOf,
 } from './reportDocument';
 
 /**
@@ -18,6 +18,15 @@ const INK = '#0B1524';
 const MUTED = '#55627A';
 const FAINT = '#646F85';
 const RULE = '#E1E7EF';
+/**
+ * The vendor's own, and now only a fallback.
+ *
+ * WARN below is deliberately NOT brandable. draftNotice() forces a DRAFT banner
+ * onto every report for an engagement that is not Closed, so a working copy
+ * cannot circulate looking like an issued opinion — and a tenant whose livery
+ * reached that banner could set a pale cream and render the warning invisible.
+ * That is not theming, it is falsifying a report.
+ */
 const BRAND = '#0F7A5A';
 const WARN = '#9A6510';
 
@@ -47,11 +56,11 @@ function ensureSpace(doc: PDFKit.PDFDocument, needed: number): boolean {
   return true;
 }
 
-function heading(doc: PDFKit.PDFDocument, text: string) {
+function heading(doc: PDFKit.PDFDocument, text: string, colour: string = INK) {
   ensureSpace(doc, 46);
   doc.moveDown(0.7);
   doc.x = left(doc);
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(12).text(text, left(doc), doc.y);
+  doc.fillColor(colour).font('Helvetica-Bold').fontSize(12).text(text, left(doc), doc.y);
   doc.moveTo(left(doc), doc.y + 3)
     .lineTo(left(doc) + pageWidth(doc), doc.y + 3)
     .lineWidth(0.7).strokeColor(RULE).stroke();
@@ -154,8 +163,8 @@ function stackedRecords(doc: PDFKit.PDFDocument, columns: Column[], rows: Record
   });
 }
 
-function renderSection(doc: PDFKit.PDFDocument, section: ReportSection) {
-  heading(doc, section.title);
+function renderSection(doc: PDFKit.PDFDocument, section: ReportSection, colour: string) {
+  heading(doc, section.title, colour);
   if (section.kind === 'fields') { fieldList(doc, section.fields); return; }
 
   if (section.rows.length === 0) {
@@ -177,6 +186,11 @@ export function renderPdf(report: ReportDocument): Promise<Buffer> {
     const doc = new PDFDocument({
       size: 'A4',
       layout: wide ? 'landscape' : 'portrait',
+      // Without this, bufferedPageRange() below reports only the CURRENT page:
+      // it returns {start: n-1, count: 1}, so a five-page report received one
+      // footer, on its last page, reading "page 1 of 1". Reproduced against
+      // pdfkit 0.19 before fixing.
+      bufferPages: true,
       margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
       info: {
         Title: report.provenance.reportName,
@@ -191,7 +205,23 @@ export function renderPdf(report: ReportDocument): Promise<Buffer> {
     doc.on('error', reject);
 
     const p = report.provenance;
+    const chrome = report.chrome || defaultChrome(p);
+
+    // The mark first, where a reader expects it. A logo that fails to embed
+    // must not take the report down with it — a corrupt PNG is a cosmetic
+    // problem and an unrenderable report is not.
+    if (chrome.logo) {
+      try {
+        doc.image(chrome.logo, left(doc), doc.y, { fit: [130, 38] });
+        doc.y += 46;
+      } catch {
+        doc.y += 0;
+      }
+    }
+
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(18).text(p.reportName);
+    doc.moveDown(0.15).font('Helvetica').fontSize(10.5).fillColor(chrome.textColour)
+      .text(chrome.displayName);
     if (p.subjectRef) {
       doc.moveDown(0.2).font('Helvetica').fontSize(11).fillColor(MUTED).text(p.subjectRef);
     }
@@ -208,21 +238,54 @@ export function renderPdf(report: ReportDocument): Promise<Buffer> {
       doc.y = boxTop + h + 6;
     }
 
-    heading(doc, 'Provenance');
-    fieldList(doc, provenanceRows(p));
+    heading(doc, 'Provenance', chrome.textColour);
+    fieldList(doc, provenanceRows(p, chrome.generatedAt, chrome.documentRef));
 
-    for (const section of report.sections) renderSection(doc, section);
+    for (const section of report.sections) renderSection(doc, section, chrome.textColour);
 
-    // Page numbers are added last, once the count is known.
+    // Page numbers and the marking are added last, once the count is known.
+    //
+    // Two separate traps here, and the first one hides the second.
+    //
+    // Without `bufferPages: true` above, bufferedPageRange() reports only the
+    // CURRENT page, so this loop ran once and a multi-page report carried a
+    // single footer reading "page 1 of 1".
+    //
+    // Then, with the range correct, writing at a y below the bottom margin makes
+    // pdfkit auto-paginate — so every footer written APPENDED a fresh page, and a
+    // five-page report grew to fifteen with five footers stranded in it. Dropping
+    // the bottom margin to zero for the duration is what stops the footer from
+    // being treated as overflowing content.
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      const restoreBottom = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+
+      const footer = [
+        chrome.marking.toUpperCase(),
+        chrome.displayName,
+        chrome.documentRef || null,
+        `page ${i + 1} of ${range.count}`,
+      ].filter(Boolean).join('  ·  ');
+
       doc.font('Helvetica').fontSize(7.5).fillColor(FAINT).text(
-        `${p.reportName} · ${p.tenantName} · page ${i + 1} of ${range.count}`,
+        footer,
         MARGIN,
         doc.page.height - MARGIN + 12,
         { width: doc.page.width - MARGIN * 2, align: 'center', lineBreak: false },
       );
+
+      if (chrome.footerText) {
+        doc.font('Helvetica').fontSize(6.5).fillColor(FAINT).text(
+          chrome.footerText,
+          MARGIN,
+          doc.page.height - MARGIN + 21,
+          { width: doc.page.width - MARGIN * 2, align: 'center', lineBreak: false },
+        );
+      }
+
+      doc.page.margins.bottom = restoreBottom;
     }
 
     doc.end();

@@ -39,6 +39,7 @@ model Tenant {
   phishCampaigns PhishCampaign[]
   impersonationSessions ImpersonationSession[]
   roles         Role[]
+  branding      TenantBranding?
   workflowDefinitions WorkflowDefinition[]
   workflowRuns  WorkflowRun[]
   catalogItems  ServiceCatalogItem[]
@@ -189,6 +190,7 @@ model User {
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
+  brandingEdited TenantBranding[] @relation("BrandingEditor")
 }
 
 model Plan {
@@ -2850,6 +2852,81 @@ model ProjectImpediment {
   @@index([projectId, owingSide])
   @@index([taskId, resolvedAt])
   @@index([phaseId, resolvedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Slice 6 — a report issued in the organisation's own name.
+//
+//  Until now renderPdf.ts and renderDocx.ts each hardcoded the vendor's green,
+//  so every customer's report went to their board and their external auditor
+//  in GRC Wisdom's livery. A compliance report is the organisation's own
+//  record; carrying the software supplier's branding makes it read as a tool's
+//  output rather than as something the organisation stands behind.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// How one tenant's reports are dressed.
+///
+/// One row per tenant at most, and every column nullable, because branding
+/// INHERITS: a branch that sets nothing renders under its parent organisation's
+/// identity rather than dropping to the vendor default. Resolution walks up
+/// Tenant.path field by field — see services/tenantBranding.resolveBranding —
+/// so a group can set its livery once and a single branch can still override
+/// just its footer without losing the group's colour.
+///
+/// A nullable column and an absent row therefore mean the same thing, which is
+/// deliberate: it makes "unset" one case rather than two.
+model TenantBranding {
+  id           String   @id @default(uuid())
+  tenantId     String   @unique
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// The name reports are issued under, when it differs from the tenant's own.
+  /// A legal entity name on a certificate is often not the name in the admin UI.
+  displayName  String?
+
+  /// #RRGGBB, normalised on write. Stored canonically because it is written
+  /// into a PDF, a DOCX theme and an XLSX fill, each wanting a different shape.
+  brandColour  String?
+
+  /// Public | Internal | Confidential | Restricted — stamped on every page.
+  /// A GRC report routinely lists an organisation's unremediated weaknesses,
+  /// and issuing one unmarked is the omission quoted in the post-mortem.
+  marking      String?
+
+  /// Free text on every page footer: a legal entity, a registration number, a
+  /// distribution restriction.
+  footerText   String?
+
+  /// False stops resolution climbing past this tenant. Default true, because
+  /// inheriting is what a branch of a group wants; false exists for the
+  /// acquired subsidiary that must not carry the acquirer's mark before the
+  /// deal is announced — where inheriting would leak a corporate transaction
+  /// onto a report cover.
+  inheritsFromParent Boolean @default(true)
+
+  // ── The logo ──────────────────────────────────────────────────────────────
+  //
+  // Stored under an opaque key in the same private store slice 5 built for
+  // evidence, and never served statically. A logo is less sensitive than a pen
+  // test report, but it is still a customer asset and the platform's existing
+  // uploads directory is world-readable by URL — so it gets the store that is
+  // not.
+  //
+  // The renderer reads the bytes server-side to embed them, which is why the
+  // store exposes a path rather than only an HTTP route.
+  logoKey      String?
+  logoFileName String?
+  logoMimeType String?
+  logoBytes    Int?
+  /// SHA-256 of the bytes on disk, so a swapped logo is detectable by the same
+  /// integrity check evidence uses.
+  logoSha256   String?
+
+  updatedById  String?
+  updatedBy    User?    @relation("BrandingEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

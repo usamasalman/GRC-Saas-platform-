@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import {
-  ReportDocument, draftNotice, provenanceRows, cellText,
+  ReportDocument, draftNotice, provenanceRows, cellText, defaultChrome,
 } from './reportDocument';
 
 /**
@@ -33,9 +33,15 @@ const safeSheetName = (name: string, taken: Set<string>): string => {
 
 export async function renderXlsx(report: ReportDocument): Promise<Buffer> {
   const p = report.provenance;
+  // A spreadsheet has no pages, so most of the chrome vocabulary does not apply
+  // here: no cover page, no footer, no page numbering. What DOES carry over is
+  // the organisation's name, the marking and the document reference — all of
+  // which belong on the provenance sheet, where a reader looking for "which
+  // copy is this" will look.
+  const chrome = report.chrome || defaultChrome(p);
   const wb = new ExcelJS.Workbook();
   wb.creator = p.generatedBy;
-  wb.created = new Date();
+  wb.created = chrome.generatedAt;
   wb.title = p.reportName;
 
   const taken = new Set<string>();
@@ -48,13 +54,17 @@ export async function renderXlsx(report: ReportDocument): Promise<Buffer> {
 
   const title = cover.addRow([p.reportName]);
   title.font = { bold: true, size: 14, color: { argb: INK } };
+  const org = cover.addRow([chrome.displayName]);
+  org.font = { bold: true, size: 11, color: { argb: `FF${chrome.textColour.replace('#', '')}` } };
+  const mark = cover.addRow([chrome.marking.toUpperCase()]);
+  mark.font = { bold: true, size: 9, color: { argb: FAINT } };
   if (p.subjectRef) {
     const sub = cover.addRow([p.subjectRef]);
     sub.font = { size: 11, color: { argb: FAINT } };
   }
   cover.addRow([]);
 
-  for (const { label, value } of provenanceRows(p)) {
+  for (const { label, value } of provenanceRows(p, chrome.generatedAt, chrome.documentRef)) {
     const r = cover.addRow([label, value]);
     r.getCell(1).font = { size: 9, color: { argb: FAINT } };
     r.getCell(2).font = { size: 9, bold: true, color: { argb: INK } };

@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
+  getBranding, updateBranding, uploadLogo, getLogo,
+} from '../controllers/brandingController';
+import {
   listTenants,
   getEntityTree,
   getTenant,
@@ -19,6 +22,23 @@ const router = Router();
 // spans tenants for the SaaS control plane.
 router.use(requireAuth);
 router.use(rejectIfMustChangePassword);
+
+// ── Branding ──────────────────────────────────────────────────────────────
+//
+// Authorised through TENANT scope, not project access. canReadProject and
+// sideOf deliberately admit a delivery partner to its client's engagement, so
+// routing a branding write through the project check would let a consultancy
+// rewrite its client's logo and legal name. These must precede '/:id', which
+// would otherwise shadow them.
+router.get('/branding', getBranding);
+router.patch('/branding', requireCapability(CAP.MANAGE_TENANT), updateBranding);
+router.post('/branding/logo', requireCapability(CAP.MANAGE_TENANT), uploadLogo);
+router.get('/branding/logo', getLogo);
+
+router.get('/:id/branding', getBranding);
+router.patch('/:id/branding', requireCapability(CAP.MANAGE_TENANT), updateBranding);
+router.post('/:id/branding/logo', requireCapability(CAP.MANAGE_TENANT), uploadLogo);
+router.get('/:id/branding/logo', getLogo);
 
 router.get('/', listTenants);
 router.get('/tree', getEntityTree);

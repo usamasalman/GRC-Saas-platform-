@@ -37,6 +37,7 @@ import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
 import DeliveryProjects from './grc/DeliveryProjects';
+import ReportBranding from './settings/ReportBranding';
 import AssetRegister from './grc/AssetRegister';
 import VendorRegister from './grc/VendorRegister';
 import SharedServices from './grc/SharedServices';
@@ -322,6 +323,9 @@ const AppShell = () => {
     }
 
     // Tenant provisioning + hierarchy (SaaS control plane, holding, franchise)
+    if (currentPage === 'report-branding') {
+      return <ReportBranding key={account.id} />;
+    }
     if (currentPage === 'tenants' || currentPage === 'hierarchy' || currentPage === 'branches' || currentPage === 'locations') {
       return <TenantManager key={`${account.id}-${currentPage}`} />;
     }

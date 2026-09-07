@@ -2,10 +2,12 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { brandingFor, logoBytesFor } from './brandingController';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { computeAging } from './issueController';
 import {
-  ReportDocument, ReportSection, ReportFormat, FORMATS, MIME, Provenance, fileNameFor,
+  ReportDocument, ReportSection, ReportFormat, ReportChrome,
+  FORMATS, MIME, Provenance, fileNameFor,
 } from '../services/reportDocument';
 import { renderXlsx } from '../services/renderXlsx';
 import { renderPdf } from '../services/renderPdf';
@@ -23,6 +25,18 @@ import { renderDocx } from '../services/renderDocx';
 function formatOf(req: AuthenticatedRequest): ReportFormat | null {
   const raw = String((req.query.format ?? 'xlsx')).toLowerCase();
   return (FORMATS as string[]).includes(raw) ? (raw as ReportFormat) : null;
+}
+
+/**
+ * Mint a document reference for one export.
+ *
+ * Printed on every page so two copies of a report that differ can be told
+ * apart. Derived from the tenant and the moment rather than a counter, because
+ * a counter needs a row and this needs to work for an export nobody records.
+ */
+function mintRef(tenantId: string, at: Date): string {
+  const stamp = at.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  return `${tenantId.slice(0, 4).toUpperCase()}-${stamp}`;
 }
 
 /** Content is decided once; the format only chooses how it is drawn. */
@@ -57,6 +71,44 @@ async function provenanceFor(req: AuthenticatedRequest, reportName: string, scop
     tenantName: tenant?.name ?? 'Unknown',
     generatedBy: `${user?.name ?? 'Unknown'} <${user?.email ?? ''}>`,
     scopeKind,
+  };
+}
+
+/**
+ * The dressing for one export.
+ *
+ * Resolved once per report rather than per renderer, so the cover, the footer
+ * and the provenance block cannot disagree about the time or the reference.
+ *
+ * `subjectTenantId` matters on consultant-led work: a report about a client's
+ * programme is issued in the CLIENT's name, not the consultancy's, even when a
+ * consultant pressed the button. The client shows it to their certification
+ * body and their board; a cover carrying the consultancy's mark would have the
+ * firm that did the work asserting the state of a system it does not own. The
+ * consultancy's contribution is disclosed in the provenance instead, where it
+ * is a fact rather than a letterhead.
+ */
+async function chromeFor(
+  req: AuthenticatedRequest, subjectTenantId?: string,
+): Promise<ReportChrome> {
+  const tenantId = subjectTenantId || String(req.user!.tenantId);
+  const at = new Date();
+
+  const [branding, logo] = await Promise.all([
+    brandingFor(tenantId),
+    logoBytesFor(tenantId),
+  ]);
+  const r = branding?.resolved;
+
+  return {
+    displayName: r?.displayName ?? 'Unknown',
+    brandColour: r?.brandColour ?? '#0F7A5A',
+    textColour: r?.textColour ?? '#0F7A5A',
+    marking: r?.marking ?? 'Confidential',
+    footerText: r?.footerText ?? null,
+    logo,
+    documentRef: mintRef(tenantId, at),
+    generatedAt: at,
   };
 }
 
@@ -160,7 +212,7 @@ export const exportRcm = async (req: AuthenticatedRequest, res: Response): Promi
     ], rows }];
 
     await logExport(req, 'RCM', { auditRef: audit.ref, rows: rows.length, engagementStatus: audit.status, format });
-    await send(res, { provenance: prov, sections }, format, 'RCM', audit.ref);
+    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'RCM', audit.ref);
   } catch (error: any) {
     console.error('[RCM Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the RCM export' });
@@ -263,7 +315,7 @@ export const exportAuditReport = async (req: AuthenticatedRequest, res: Response
       auditRef: audit.ref, findings: audit.issues.length,
       conclusion: audit.conclusion, engagementStatus: audit.status, format,
     });
-    await send(res, { provenance: prov, sections }, format, 'Audit_Report', audit.ref);
+    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Audit_Report', audit.ref);
   } catch (error: any) {
     console.error('[Audit Report Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the audit report' });
@@ -321,7 +373,7 @@ export const exportIssueRegister = async (req: AuthenticatedRequest, res: Respon
     }) }];
 
     await logExport(req, 'IssueRegister', { rows: issues.length, format });
-    await send(res, { provenance: prov, sections }, format, 'Issue_Register');
+    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Issue_Register');
   } catch (error: any) {
     console.error('[Issue Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the issue register' });
@@ -375,7 +427,7 @@ export const exportFrameworkCoverage = async (req: AuthenticatedRequest, res: Re
     ], rows: gaps.map((g) => ({ standard: g.standard, ref: g.ref, title: g.title })) });
 
     await logExport(req, 'FrameworkCoverage', { standards: standards.length, clauses: rows.length, unmapped: gaps.length, format });
-    await send(res, { provenance: prov, sections }, format, 'Framework_Coverage');
+    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Framework_Coverage');
   } catch (error: any) {
     console.error('[Coverage Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the coverage report' });
@@ -431,7 +483,7 @@ export const exportAnnualPlan = async (req: AuthenticatedRequest, res: Response)
     })) }];
 
     await logExport(req, 'AnnualPlan', { year: plan.year, items: plan.items.length, planStatus: plan.status, format });
-    await send(res, { provenance: prov, sections }, format, 'Annual_Plan', String(plan.year));
+    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Annual_Plan', String(plan.year));
   } catch (error: any) {
     console.error('[Plan Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the plan export' });

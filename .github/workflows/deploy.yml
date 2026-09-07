@@ -76,6 +76,14 @@ jobs:
         working-directory: grc_wisdom_api
         run: node scripts/verify/project-logic-test.js
 
+      # Renders real reports and reads them back. A renderer that accepts a
+      # brand colour and never draws it, or a footer loop that runs once on a
+      # five-page document, both produce a perfectly valid file — so parsing the
+      # output is the only way to see either. No database needed.
+      - name: API — report chrome renders and parses
+        working-directory: grc_wisdom_api
+        run: node scripts/verify/report-chrome-test.js
+
       - name: API — provision reference data against a real database
         working-directory: grc_wisdom_api
         env:

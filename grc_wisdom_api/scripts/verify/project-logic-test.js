@@ -37,6 +37,12 @@ const {
   checkEvidenceWithdrawable, checkEvidenceFile, sniffMime, clauseCoverage,
   extensionOf, MAX_EVIDENCE_BYTES,
 } = require('../../dist/services/projectEvidence');
+const {
+  normaliseHex, bareHex, argbHex, contrastRatio, readableOn, inkOn,
+  normaliseMarking, logoType, checkLogo, resolveBranding, ancestorsOf, isBrandable,
+  DEFAULT_BRAND, DEFAULT_MARKING, REPORT_MARKINGS, MAX_LOGO_BYTES,
+  MIN_TEXT_CONTRAST, INK, PAPER,
+} = require('../../dist/services/tenantBranding');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -1045,6 +1051,168 @@ const unmapped = clauseCoverage([T5('Done'), T5('Done')], isComplete);
 unmapped.mappedPercent === 0 && unmapped.clausesSatisfied === 0
   ? ok('finished work with no clause links proves nothing about a framework')
   : bad('unmapped work proves nothing', JSON.stringify(unmapped));
+
+// ── 30. Colour handling ─────────────────────────────────────────────────────
+console.log('\n30. Brand colour');
+
+eq('a hex colour normalises', normaliseHex('#0f7a5a'), '#0F7A5A');
+eq('the hash is optional on input', normaliseHex('0f7a5a'), '#0F7A5A');
+eq('surrounding space is tolerated', normaliseHex('  #0F7A5A '), '#0F7A5A');
+// Strict on purpose: this value is written into a PDF, a DOCX theme and an XLSX
+// fill, and guessing at shorthand would put a different colour in each.
+normaliseHex('#fff') === null ? ok('three-digit shorthand is refused') : bad('shorthand refused');
+normaliseHex('rebeccapurple') === null ? ok('a named colour is refused') : bad('named colour refused');
+normaliseHex('rgb(0,0,0)') === null ? ok('rgb() is refused') : bad('rgb refused');
+normaliseHex('') === null ? ok('empty is not a colour') : bad('empty is not a colour');
+normaliseHex(null) === null ? ok('null is not a colour') : bad('null is not a colour');
+
+eq('docx and xlsx want the bare digits', bareHex('#0F7A5A'), '0F7A5A');
+eq('xlsx wants ARGB', argbHex('#0F7A5A'), 'FF0F7A5A');
+
+// ── 31. Contrast ────────────────────────────────────────────────────────────
+// A pale corporate colour is a legitimate brand and an illegitimate heading.
+console.log('\n31. Contrast');
+
+eq('black on white is the maximum ratio', contrastRatio('#000000', '#FFFFFF'), 21);
+eq('a colour against itself has no contrast', contrastRatio('#0F7A5A', '#0F7A5A'), 1);
+contrastRatio('#0F7A5A', '#FFFFFF') >= MIN_TEXT_CONTRAST
+  ? ok('the default brand is readable on paper', String(contrastRatio('#0F7A5A', '#FFFFFF')))
+  : bad('default brand is readable');
+
+// The case that drove this: a real corporate cream, legitimate as a brand and
+// unreadable as a heading.
+const cream = '#FDF3E2';
+contrastRatio(cream, '#FFFFFF') < MIN_TEXT_CONTRAST
+  ? ok('a pale cream fails as text on white', String(contrastRatio(cream, '#FFFFFF')))
+  : bad('pale cream fails as text');
+eq('so text falls back to ink rather than vanishing', readableOn(cream), INK);
+eq('while a legible brand is kept for text', readableOn('#0F7A5A'), '#0F7A5A');
+// Contrast is symmetric — the ratio does not depend on which is foreground.
+eq('the ratio is symmetric',
+   contrastRatio('#0F7A5A', '#FFFFFF'), contrastRatio('#FFFFFF', '#0F7A5A'));
+
+eq('white reads on a dark brand', inkOn('#0B1524'), PAPER);
+eq('and ink reads on a pale one', inkOn(cream), INK);
+
+// ── 32. What branding may never colour ──────────────────────────────────────
+// draftNotice() forces a DRAFT banner onto every report for an engagement that
+// is not Closed. If a tenant's livery reached that banner they could set the
+// cream above and make the warning invisible — which is not theming, it is
+// falsifying a report.
+console.log('\n32. Unbrandable elements');
+
+!isBrandable('draftNotice') ? ok('the draft banner cannot be branded') : bad('draft banner unbrandable');
+!isBrandable('warning') ? ok('nor can a warning') : bad('warning unbrandable');
+!isBrandable('overdue') ? ok('nor an overdue marker') : bad('overdue unbrandable');
+isBrandable('heading') ? ok('but headings can be') : bad('headings brandable');
+isBrandable('rule') ? ok('and rules') : bad('rules brandable');
+
+// ── 33. Markings ────────────────────────────────────────────────────────────
+console.log('\n33. Confidentiality marking');
+
+eq('a valid marking survives', normaliseMarking('Restricted'), 'Restricted');
+// A GRC report lists an organisation's unremediated weaknesses. Defaulting to
+// the safest marking is the only defensible behaviour for an unknown value.
+eq('an unknown marking falls to the safest default', normaliseMarking('Whatever'), DEFAULT_MARKING);
+eq('so does nothing at all', normaliseMarking(null), DEFAULT_MARKING);
+DEFAULT_MARKING === 'Confidential'
+  ? ok('and that default is Confidential, not Public') : bad('default is Confidential');
+REPORT_MARKINGS.length === 4
+  ? ok('four markings, matching the document and evidence vocabulary')
+  : bad('four markings', REPORT_MARKINGS.join(','));
+
+// ── 34. Logo rules ──────────────────────────────────────────────────────────
+console.log('\n34. Logo');
+
+const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG = [0xff, 0xd8, 0xff, 0xe0];
+
+eq('a PNG is recognised by its signature', logoType(PNG), 'image/png');
+eq('so is a JPEG', logoType(JPEG), 'image/jpeg');
+logoType([0x3c, 0x73, 0x76, 0x67]) === null
+  ? ok('an SVG is not a logo here — it cannot embed, and carries script')
+  : bad('SVG refused');
+
+checkLogo(PNG, 4096) === null ? ok('a small PNG is accepted') : bad('small PNG accepted');
+eq('an empty file is refused', (checkLogo(PNG, 0) || {}).code, 'EMPTY_LOGO');
+eq('so is an oversized one',
+   (checkLogo(PNG, MAX_LOGO_BYTES + 1) || {}).code, 'LOGO_TOO_LARGE');
+// The type comes from the bytes: a file NAMED .png whose content is markup.
+eq('a mislabelled file is caught by its bytes',
+   (checkLogo([0x3c, 0x68, 0x74, 0x6d], 500) || {}).code, 'LOGO_TYPE');
+
+// ── 35. Inheritance up the tenant tree ──────────────────────────────────────
+// Tenant.path holds slash-separated tenant IDs — verified against
+// treeUtils.generateMaterializedPath, since the schema's own example comment
+// shows names and would send a reader looking for the wrong key.
+console.log('\n35. Branding inheritance');
+
+const row = (tenantId, o = {}) => Object.assign({
+  tenantId, displayName: null, brandColour: null, marking: null,
+  footerText: null, logoKey: null, inheritsFromParent: true,
+}, o);
+
+eq('ancestors come out nearest-first, self excluded',
+   JSON.stringify(ancestorsOf('/group/org/branch/')), JSON.stringify(['org', 'group']));
+eq('a root tenant has no ancestors', JSON.stringify(ancestorsOf('/group/')), JSON.stringify([]));
+eq('an absent path is not a crash', JSON.stringify(ancestorsOf(null)), JSON.stringify([]));
+
+// Nothing configured anywhere: the vendor default, and it says so.
+const bare = resolveBranding('branch', ['org', 'group'], [], 'Branch Ltd');
+bare.brandColour === DEFAULT_BRAND && bare.isDefault && bare.displayName === 'Branch Ltd'
+  ? ok('an unbranded tenant falls to the vendor default, and is marked as such')
+  : bad('unbranded falls to default', JSON.stringify(bare));
+
+// A group sets its livery once and the branch inherits it.
+const inherited = resolveBranding('branch', ['org', 'group'],
+  [row('group', { brandColour: '#123456', displayName: 'Acme Group Ltd' })], 'Branch Ltd');
+eq('a branch inherits its group colour', inherited.brandColour, '#123456');
+eq('and its group name', inherited.displayName, 'Acme Group Ltd');
+eq('the source is reported', inherited.sourceTenantId, 'group');
+!inherited.isDefault ? ok('and it is not the vendor default') : bad('not default');
+
+// The load-bearing case: per-field, not whole-row. A branch that is a separate
+// legal entity overrides ONLY its name and must keep the group's colour —
+// whole-row inheritance would drop it to the vendor green the moment it set one
+// field, which is the single most common branding edit in a group.
+const perField = resolveBranding('branch', ['org', 'group'], [
+  row('group', { brandColour: '#123456', displayName: 'Acme Group Ltd', footerText: 'Registered in England' }),
+  row('branch', { displayName: 'Acme GmbH' }),
+], 'Branch Ltd');
+eq('a branch may override just its name', perField.displayName, 'Acme GmbH');
+eq('while keeping the group colour', perField.brandColour, '#123456');
+eq('and the group footer', perField.footerText, 'Registered in England');
+
+// Nearest ancestor wins over a more distant one.
+const nearest = resolveBranding('branch', ['org', 'group'], [
+  row('group', { brandColour: '#111111' }),
+  row('org', { brandColour: '#222222' }),
+], 'Branch Ltd');
+eq('the nearest ancestor wins', nearest.brandColour, '#222222');
+
+// The opt-out: an acquired subsidiary that must not carry the acquirer's mark
+// before the deal is announced. Its own row is the whole answer.
+const opted = resolveBranding('branch', ['org', 'group'], [
+  row('group', { brandColour: '#111111', displayName: 'Acquirer PLC' }),
+  row('branch', { displayName: 'Standalone Ltd', inheritsFromParent: false }),
+], 'Branch Ltd');
+eq('opting out keeps the tenant its own name', opted.displayName, 'Standalone Ltd');
+eq('and refuses the parent colour rather than inheriting it',
+   opted.brandColour, DEFAULT_BRAND);
+
+// Opting out still applies the tenant's OWN settings — it means "my row is the
+// whole answer", not "I have no branding".
+const optedWithColour = resolveBranding('branch', ['group'], [
+  row('group', { brandColour: '#111111' }),
+  row('branch', { brandColour: '#999999', inheritsFromParent: false }),
+], 'Branch Ltd');
+eq('an opted-out tenant still uses its own colour', optedWithColour.brandColour, '#999999');
+
+// An unreadable inherited colour is still resolved, with text falling to ink.
+const pale = resolveBranding('branch', ['group'], [row('group', { brandColour: cream })], 'B');
+pale.brandColour === cream.toUpperCase() && pale.textColour === INK
+  ? ok('a pale inherited brand is kept for chrome and ink is used for text')
+  : bad('pale inherited brand', JSON.stringify(pale));
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);
