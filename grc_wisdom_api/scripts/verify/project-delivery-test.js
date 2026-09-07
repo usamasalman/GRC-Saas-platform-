@@ -42,7 +42,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-5 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-6 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -1221,6 +1221,132 @@ async function main() {
   reg.json?.vocabulary?.classifications?.length === 4
     ? ok('the classification vocabulary is served to the client')
     : bad('vocabulary served', JSON.stringify(reg.json?.vocabulary?.classifications));
+
+  // ── 29. Report branding over HTTP ───────────────────────────────────────
+  console.log('\n29. Branding');
+
+  const brandRead = await api('/api/tenants/branding', { token });
+  brandRead.status === 200 && brandRead.json?.branding?.effective
+    ? ok('branding resolves for the caller\'s own organisation')
+    : bad('branding resolves', `${brandRead.status}`);
+
+  const badColour = await api('/api/tenants/branding', {
+    token, method: 'PATCH', body: { brandColour: 'rebeccapurple' },
+  });
+  badColour.status === 400 && badColour.json?.code === 'BAD_COLOUR'
+    ? ok('a named colour is refused — the value goes into three file formats')
+    : bad('a named colour is refused', `${badColour.status} ${badColour.json?.code}`);
+
+  const badMarking = await api('/api/tenants/branding', {
+    token, method: 'PATCH', body: { marking: 'Whatever' },
+  });
+  badMarking.status === 400
+    ? ok('an invented marking is refused') : bad('invented marking refused', `${badMarking.status}`);
+
+  const setBrand = await api('/api/tenants/branding', {
+    token, method: 'PATCH',
+    body: {
+      displayName: 'Acme Group Ltd',
+      brandColour: '#123456',
+      marking: 'Restricted',
+      footerText: 'Registered in England 12345678',
+    },
+  });
+  setBrand.status === 200
+    ? ok('branding saves')
+    : bad('branding saves', `${setBrand.status} ${JSON.stringify(setBrand.json).slice(0, 140)}`);
+  setBrand.json?.branding?.effective?.brandColour === '#123456'
+    ? ok('and the resolved colour is what a report will use')
+    : bad('resolved colour', `${setBrand.json?.branding?.effective?.brandColour}`);
+  setBrand.json?.branding?.effective?.isDefault === false
+    ? ok('the organisation is no longer on the platform default')
+    : bad('no longer default');
+
+  // Accepted, because it is genuinely their brand — but the caller is told the
+  // renderer will draw headings in ink, which is better than discovering it on
+  // a report already sent to a board.
+  const paleBrand = await api('/api/tenants/branding', {
+    token, method: 'PATCH', body: { brandColour: '#FDF3E2' },
+  });
+  paleBrand.status === 200 && paleBrand.json?.warning
+    ? ok('a colour too pale to read is accepted with a warning', 'headings fall back to ink')
+    : bad('pale colour warns', `${paleBrand.status} ${paleBrand.json?.warning}`);
+  paleBrand.json?.branding?.effective?.textColour !== '#FDF3E2'
+    ? ok('and the resolved text colour is not the unreadable one')
+    : bad('text colour falls back', `${paleBrand.json?.branding?.effective?.textColour}`);
+
+  // Put a legible colour back so the export assertions below stay meaningful.
+  await api('/api/tenants/branding', {
+    token, method: 'PATCH', body: { brandColour: '#123456' },
+  });
+
+  // ── 30. Logo storage ────────────────────────────────────────────────────
+  console.log('\n30. Logo');
+
+  // A 1x1 PNG — the smallest thing carrying a real PNG signature.
+  const pngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  const svgAttempt = await api('/api/tenants/branding/logo', {
+    token, method: 'POST',
+    body: { fileName: 'logo.svg', fileData: Buffer.from('<svg></svg>').toString('base64') },
+  });
+  svgAttempt.status === 400 && svgAttempt.json?.code === 'LOGO_TYPE'
+    ? ok('an SVG is refused — it cannot embed, and carries script')
+    : bad('SVG refused', `${svgAttempt.status} ${svgAttempt.json?.code}`);
+
+  // Named .png, but the bytes are markup. The type comes from the bytes.
+  const liar = await api('/api/tenants/branding/logo', {
+    token, method: 'POST',
+    body: { fileName: 'logo.png', fileData: Buffer.from('<html></html>').toString('base64') },
+  });
+  liar.status === 400 && liar.json?.code === 'LOGO_TYPE'
+    ? ok('a file named .png whose bytes are markup is caught')
+    : bad('mislabelled logo caught', `${liar.status} ${liar.json?.code}`);
+
+  const logoUp = await api('/api/tenants/branding/logo', {
+    token, method: 'POST', body: { fileName: 'acme.png', fileData: pngB64 },
+  });
+  logoUp.status === 201 && logoUp.json?.branding?.hasLogo
+    ? ok('a PNG logo is stored')
+    : bad('PNG logo stored', `${logoUp.status} ${JSON.stringify(logoUp.json).slice(0, 140)}`);
+
+  // The storage key must never leave the server — it is the only thing standing
+  // between the private store and an enumerable customer list.
+  !JSON.stringify(logoUp.json || {}).includes('logoKey')
+    ? ok('and the storage key is never exposed to a client')
+    : bad('storage key is not exposed');
+
+  const logoGet = await api('/api/tenants/branding/logo', { token });
+  logoGet.status === 200
+    ? ok('the logo reads back through an authenticated route')
+    : bad('logo reads back', `${logoGet.status}`);
+
+  const logoAnon = await api('/api/tenants/branding/logo', {});
+  logoAnon.status === 401 || logoAnon.status === 403
+    ? ok('and refuses an unauthenticated caller', `${logoAnon.status}`)
+    : bad('logo refuses anonymous', `${logoAnon.status}`);
+
+  // ── 31. Branding reaches a real export ──────────────────────────────────
+  console.log('\n31. Branded exports');
+
+  const issuesXlsx = await api('/api/grc/reports/issues?format=xlsx', { token });
+  issuesXlsx.status === 200
+    ? ok('the issue register exports with chrome applied')
+    : bad('issue register exports', `${issuesXlsx.status}`);
+
+  // A caller may make one export MORE restricted, never less. A downgrade would
+  // let anyone re-export a Restricted report as Public and pass it on carrying
+  // the marking that makes it look distributable. It is ignored rather than
+  // refused, because failing an export over a query-string typo is worse.
+  const downgrade = await api('/api/grc/reports/issues?format=xlsx&marking=Public', { token });
+  downgrade.status === 200
+    ? ok('a marking downgrade is ignored rather than failing the export')
+    : bad('downgrade ignored', `${downgrade.status}`);
+
+  const filtered = await api('/api/grc/reports/issues?format=xlsx&sections=Nonexistent', { token });
+  filtered.status === 200
+    ? ok('a section filter matching nothing still produces a report')
+    : bad('empty filter still exports', `${filtered.status}`);
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);

@@ -85,23 +85,19 @@ export async function brandingFor(tenantId: string) {
  */
 export async function logoBytesFor(tenantId: string): Promise<Buffer | null> {
   const b = await brandingFor(tenantId);
-  if (!b) return null;
+  // The key comes from the SAME resolution as the name and the colour. Walking
+  // the chain a second time here would be a second chance to disagree, and a
+  // report carrying one organisation's name above another's mark is worse than
+  // one carrying no mark at all.
+  const key = b?.resolved.logoKey;
+  if (!key) return null;
 
-  const chain = [tenantId, ...ancestorsOf(b.tenant.path)];
-  const byTenant = new Map(b.rows.map((r) => [r.tenantId, r]));
-  for (const id of chain) {
-    const row = byTenant.get(id);
-    if (row?.logoKey) {
-      const full = resolveEvidencePath(row.logoKey);
-      // A missing file is not a reason to fail the whole report. The cover
-      // simply carries no mark, which a reader can see; a 500 on export is a
-      // report nobody gets.
-      if (full) { try { return fs.readFileSync(full); } catch { return null; } }
-      return null;
-    }
-    if (row && !row.inheritsFromParent) return null;
-  }
-  return null;
+  const full = resolveEvidencePath(key);
+  // A missing file is not a reason to fail the whole report. The cover simply
+  // carries no mark, which a reader can see; a 500 on export is a report
+  // nobody gets.
+  if (!full) return null;
+  try { return fs.readFileSync(full); } catch { return null; }
 }
 
 // ─── Read ───────────────────────────────────────────────────────────────────

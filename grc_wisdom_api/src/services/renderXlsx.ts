@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import {
   ReportDocument, draftNotice, provenanceRows, cellText, defaultChrome,
 } from './reportDocument';
+import { argbHex, inkOn, bareHex } from './tenantBranding';
 
 /**
  * Renders a report as a workbook — the working format, because auditors live
@@ -39,6 +40,7 @@ export async function renderXlsx(report: ReportDocument): Promise<Buffer> {
   // which belong on the provenance sheet, where a reader looking for "which
   // copy is this" will look.
   const chrome = report.chrome || defaultChrome(p);
+  const headerFill = argbHex(chrome.brandColour);
   const wb = new ExcelJS.Workbook();
   wb.creator = p.generatedBy;
   wb.created = chrome.generatedAt;
@@ -94,11 +96,14 @@ export async function renderXlsx(report: ReportDocument): Promise<Buffer> {
     }
 
     const header = sheet.addRow(section.columns.map((c) => c.header));
-    header.font = { bold: true, size: 10, color: { argb: INK } };
+    header.font = { bold: true, size: 10, color: { argb: `FF${bareHex(inkOn(chrome.brandColour))}` } };
     header.height = 22;
     header.alignment = { vertical: 'middle' };
     header.eachCell((c) => {
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUNK } };
+      // Branded to match the cover. inkOn picks white or ink for the text,
+      // whichever reads on the tenant's own colour — a dark navy and a pale
+      // gold both need a header that can be read.
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerFill } };
       c.border = { bottom: { style: 'thin', color: { argb: RULE } } };
     });
 

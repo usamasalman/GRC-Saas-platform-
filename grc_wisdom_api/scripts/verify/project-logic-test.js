@@ -41,7 +41,7 @@ const {
   normaliseHex, bareHex, argbHex, contrastRatio, readableOn, inkOn,
   normaliseMarking, logoType, checkLogo, resolveBranding, ancestorsOf, isBrandable,
   DEFAULT_BRAND, DEFAULT_MARKING, REPORT_MARKINGS, MAX_LOGO_BYTES,
-  MIN_TEXT_CONTRAST, INK, PAPER,
+  MIN_TEXT_CONTRAST, INK, PAPER, effectiveMarking, selectSections,
 } = require('../../dist/services/tenantBranding');
 
 let pass = 0, fail = 0;
@@ -1213,6 +1213,83 @@ const pale = resolveBranding('branch', ['group'], [row('group', { brandColour: c
 pale.brandColour === cream.toUpperCase() && pale.textColour === INK
   ? ok('a pale inherited brand is kept for chrome and ink is used for text')
   : bad('pale inherited brand', JSON.stringify(pale));
+
+// ── 36. The logo follows the same walk as everything else ───────────────────
+// Resolved here rather than by a second lookup: two walks are two chances to
+// disagree, and a report carrying one organisation's name above another's mark
+// is worse than one carrying no mark at all.
+console.log('\n36. Logo inheritance');
+
+eq('a logo is inherited from the group like any other field',
+   resolveBranding('branch', ['org', 'group'],
+     [row('group', { logoKey: 'aa/bb/group-logo' })], 'B').logoKey,
+   'aa/bb/group-logo');
+eq('a branch logo beats its group one',
+   resolveBranding('branch', ['group'], [
+     row('group', { logoKey: 'group-logo' }),
+     row('branch', { logoKey: 'branch-logo' }),
+   ], 'B').logoKey, 'branch-logo');
+resolveBranding('branch', ['group'], [], 'B').logoKey === null
+  ? ok('and no logo anywhere resolves to none, not to a default mark')
+  : bad('no logo resolves to none');
+// Opting out of inheritance drops the parent's mark too, which is the whole
+// point for an entity that must not carry it.
+resolveBranding('branch', ['group'], [
+  row('group', { logoKey: 'acquirer-logo' }),
+  row('branch', { displayName: 'Standalone Ltd', inheritsFromParent: false }),
+], 'B').logoKey === null
+  ? ok('opting out refuses the parent mark as well as its name')
+  : bad('opting out refuses the parent mark');
+
+// ── 37. A marking may be raised for one export, never lowered ───────────────
+// Allowing a downgrade would let anyone re-export a Restricted report as Public
+// and pass it on carrying the marking that makes it look distributable.
+console.log('\n37. Marking escalation');
+
+eq('no request keeps the organisation setting',
+   effectiveMarking('Internal', null), 'Internal');
+eq('a stricter marking is honoured',
+   effectiveMarking('Internal', 'Restricted'), 'Restricted');
+eq('one step up is honoured too',
+   effectiveMarking('Internal', 'Confidential'), 'Confidential');
+eq('a LOWER marking is refused and the setting stands',
+   effectiveMarking('Restricted', 'Public'), 'Restricted');
+eq('so is a request one step down',
+   effectiveMarking('Confidential', 'Internal'), 'Confidential');
+eq('the same marking is a no-op',
+   effectiveMarking('Confidential', 'Confidential'), 'Confidential');
+// This arrives as a query parameter. Failing an export because of a typo in a
+// URL is worse than quietly using the organisation's own setting.
+eq('a nonsense value is ignored rather than failing the export',
+   effectiveMarking('Internal', 'Squirrel'), 'Internal');
+eq('an unset organisation marking still defaults safely',
+   effectiveMarking('nonsense', null), DEFAULT_MARKING);
+
+// ── 38. Choosing which sections to export ───────────────────────────────────
+console.log('\n38. Section selection');
+
+const sec = (title) => ({ title, kind: 'table' });
+const all = [sec('Summary'), sec('Findings'), sec('Evidence')];
+
+eq('no filter means everything', selectSections(all, undefined).length, 3);
+eq('an empty filter means everything too', selectSections(all, []).length, 3);
+eq('a filter keeps only what was asked for', selectSections(all, ['Findings']).length, 1);
+eq('and keeps the right one', selectSections(all, ['Findings'])[0].title, 'Findings');
+eq('two names keep two sections', selectSections(all, ['Summary', 'Evidence']).length, 2);
+// These arrive from a query string typed by a person.
+eq('matching ignores case', selectSections(all, ['findings'])[0].title, 'Findings');
+eq('and surrounding space', selectSections(all, ['  Findings  '])[0].title, 'Findings');
+// A filter that matched nothing is a filter nobody meant. An empty report would
+// look like the data was empty rather than the request wrong.
+eq('a filter matching nothing falls back to everything',
+   selectSections(all, ['Nonexistent']).length, 3);
+eq('blank entries are dropped rather than matching nothing',
+   selectSections(all, ['', '  ']).length, 3);
+// The source list must not be mutated — the same sections array is reused
+// across formats when a caller exports the same report twice.
+const source = [sec('A'), sec('B')];
+selectSections(source, ['A']);
+source.length === 2 ? ok('filtering does not mutate the source') : bad('filtering mutates the source');
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

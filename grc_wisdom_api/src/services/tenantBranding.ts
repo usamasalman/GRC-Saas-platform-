@@ -202,6 +202,14 @@ export interface ResolvedBranding {
   textColour: string;
   marking: ReportMarking;
   footerText: string | null;
+  /**
+   * The logo to embed, resolved by the SAME walk as everything else.
+   *
+   * Returned here rather than looked up separately because a second walk is a
+   * second chance to disagree — and a report carrying one organisation's name
+   * above another's mark is worse than one carrying no mark at all.
+   */
+  logoKey: string | null;
   /** Tenant whose branding was used — not always the one being reported on. */
   sourceTenantId: string | null;
   /** True when nothing was configured and the vendor default is in use. */
@@ -288,6 +296,7 @@ export function resolveBranding(
     textColour: readableOn(colour),
     marking: normaliseMarking(pick('marking')),
     footerText: pick('footerText') as string | null,
+    logoKey: pick('logoKey') as string | null,
     sourceTenantId: source ? source.tenantId : null,
     isDefault: chain.length === 0 || !source,
   };
@@ -305,4 +314,70 @@ export function ancestorsOf(path: string | null | undefined): string[] {
   const segments = String(path).split('/').filter(Boolean);
   // Drop self, then reverse so the nearest ancestor is consulted first.
   return segments.slice(0, -1).reverse();
+}
+
+// ─── Generation options ─────────────────────────────────────────────────────
+
+/**
+ * Choices a caller may make about one export.
+ *
+ * Deliberately NOT passed to a renderer. A renderer that could decide to omit a
+ * section is a renderer every report has to be tested against separately; these
+ * are applied to the ReportDocument before it is handed over, so slice 7's
+ * reports need no renderer change to gain them.
+ */
+export interface ReportOptions {
+  /** Section titles to include. Empty or absent means all of them. */
+  sections?: string[];
+  /** Raise the marking for this export only. Never lowers it — see below. */
+  marking?: string;
+}
+
+/**
+ * The marking for one export, given the tenant's standing choice.
+ *
+ * A caller may make a single export MORE restricted — a copy going to a
+ * regulator, say — but never less. Allowing a downgrade would let anyone
+ * re-export a Restricted report as Public and hand it on with the marking that
+ * makes it look distributable, which is precisely the control the marking
+ * exists to be.
+ *
+ * An unrecognised value is ignored rather than refused: this arrives as a query
+ * parameter, and failing an export because of a typo in a URL is worse than
+ * quietly using the organisation's own setting.
+ */
+export function effectiveMarking(
+  tenantMarking: string,
+  requested: string | null | undefined,
+): ReportMarking {
+  const base = normaliseMarking(tenantMarking);
+  if (!requested) return base;
+
+  const order = REPORT_MARKINGS as readonly string[];
+  const want = order.indexOf(String(requested));
+  if (want === -1) return base;
+
+  return want > order.indexOf(base) ? (order[want] as ReportMarking) : base;
+}
+
+/**
+ * Keep only the sections a caller asked for.
+ *
+ * Matching is case-insensitive on the title, because these arrive from a query
+ * string typed by a person. An empty request means everything: a report with no
+ * sections at all is a cover page pretending to be a document, and is never
+ * what "include nothing" was meant to say.
+ */
+export function selectSections<T extends { title: string }>(
+  sections: readonly T[],
+  wanted: readonly string[] | undefined,
+): T[] {
+  if (!wanted || wanted.length === 0) return [...sections];
+  const want = new Set(wanted.map((w) => w.trim().toLowerCase()).filter(Boolean));
+  if (want.size === 0) return [...sections];
+
+  const kept = sections.filter((s) => want.has(s.title.toLowerCase()));
+  // A filter that matched nothing is a filter nobody meant. Returning an empty
+  // report would look like the data was empty rather than the request wrong.
+  return kept.length > 0 ? kept : [...sections];
 }

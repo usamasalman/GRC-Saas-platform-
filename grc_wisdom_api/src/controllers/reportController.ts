@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { brandingFor, logoBytesFor } from './brandingController';
+import { effectiveMarking, selectSections } from '../services/tenantBranding';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { computeAging } from './issueController';
 import {
@@ -37,6 +38,18 @@ function formatOf(req: AuthenticatedRequest): ReportFormat | null {
 function mintRef(tenantId: string, at: Date): string {
   const stamp = at.toISOString().replace(/[-:T]/g, '').slice(0, 14);
   return `${tenantId.slice(0, 4).toUpperCase()}-${stamp}`;
+}
+
+/**
+ * Apply the caller's `?sections=` filter, if any.
+ *
+ * Done here rather than in a renderer: a renderer that could omit a section is
+ * one every report has to be tested against separately, and slice 7's five
+ * reports gain this for free by not knowing about it.
+ */
+function pickSections(req: AuthenticatedRequest, sections: ReportSection[]): ReportSection[] {
+  const raw = req.query.sections ? String(req.query.sections) : '';
+  return selectSections(sections, raw ? raw.split(',') : undefined);
 }
 
 /** Content is decided once; the format only chooses how it is drawn. */
@@ -93,6 +106,7 @@ async function chromeFor(
 ): Promise<ReportChrome> {
   const tenantId = subjectTenantId || String(req.user!.tenantId);
   const at = new Date();
+  const requestedMarking = req.query.marking ? String(req.query.marking) : null;
 
   const [branding, logo] = await Promise.all([
     brandingFor(tenantId),
@@ -104,7 +118,11 @@ async function chromeFor(
     displayName: r?.displayName ?? 'Unknown',
     brandColour: r?.brandColour ?? '#0F7A5A',
     textColour: r?.textColour ?? '#0F7A5A',
-    marking: r?.marking ?? 'Confidential',
+    // A caller may make one export MORE restricted — a copy going to a
+    // regulator — but never less. A downgrade would let anyone re-export a
+    // Restricted report as Public and pass it on carrying the marking that
+    // makes it look distributable.
+    marking: effectiveMarking(r?.marking ?? 'Confidential', requestedMarking),
     footerText: r?.footerText ?? null,
     logo,
     documentRef: mintRef(tenantId, at),
@@ -212,7 +230,7 @@ export const exportRcm = async (req: AuthenticatedRequest, res: Response): Promi
     ], rows }];
 
     await logExport(req, 'RCM', { auditRef: audit.ref, rows: rows.length, engagementStatus: audit.status, format });
-    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'RCM', audit.ref);
+    await send(res, { provenance: prov, sections: pickSections(req, sections), chrome: await chromeFor(req) }, format, 'RCM', audit.ref);
   } catch (error: any) {
     console.error('[RCM Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the RCM export' });
@@ -315,7 +333,7 @@ export const exportAuditReport = async (req: AuthenticatedRequest, res: Response
       auditRef: audit.ref, findings: audit.issues.length,
       conclusion: audit.conclusion, engagementStatus: audit.status, format,
     });
-    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Audit_Report', audit.ref);
+    await send(res, { provenance: prov, sections: pickSections(req, sections), chrome: await chromeFor(req) }, format, 'Audit_Report', audit.ref);
   } catch (error: any) {
     console.error('[Audit Report Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the audit report' });
@@ -373,7 +391,7 @@ export const exportIssueRegister = async (req: AuthenticatedRequest, res: Respon
     }) }];
 
     await logExport(req, 'IssueRegister', { rows: issues.length, format });
-    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Issue_Register');
+    await send(res, { provenance: prov, sections: pickSections(req, sections), chrome: await chromeFor(req) }, format, 'Issue_Register');
   } catch (error: any) {
     console.error('[Issue Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the issue register' });
@@ -427,7 +445,7 @@ export const exportFrameworkCoverage = async (req: AuthenticatedRequest, res: Re
     ], rows: gaps.map((g) => ({ standard: g.standard, ref: g.ref, title: g.title })) });
 
     await logExport(req, 'FrameworkCoverage', { standards: standards.length, clauses: rows.length, unmapped: gaps.length, format });
-    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Framework_Coverage');
+    await send(res, { provenance: prov, sections: pickSections(req, sections), chrome: await chromeFor(req) }, format, 'Framework_Coverage');
   } catch (error: any) {
     console.error('[Coverage Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the coverage report' });
@@ -483,7 +501,7 @@ export const exportAnnualPlan = async (req: AuthenticatedRequest, res: Response)
     })) }];
 
     await logExport(req, 'AnnualPlan', { year: plan.year, items: plan.items.length, planStatus: plan.status, format });
-    await send(res, { provenance: prov, sections, chrome: await chromeFor(req) }, format, 'Annual_Plan', String(plan.year));
+    await send(res, { provenance: prov, sections: pickSections(req, sections), chrome: await chromeFor(req) }, format, 'Annual_Plan', String(plan.year));
   } catch (error: any) {
     console.error('[Plan Export Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the plan export' });
