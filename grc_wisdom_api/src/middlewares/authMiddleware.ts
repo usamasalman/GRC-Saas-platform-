@@ -51,6 +51,34 @@ export const requireAuth = async (
       role: decoded.role,
     };
 
+    // ── The token names an organisation that still has to exist ────────────
+    //
+    // Checked here rather than left to each controller, because the failure it
+    // catches is silent everywhere else: a token whose tenant is gone resolves
+    // to a scope over a dead id, every list filters to nothing, and the caller
+    // gets 200 with an empty array on every screen. That is indistinguishable
+    // from having lost all their data, and it is the exact symptom reported
+    // after the old container start-up wiped and reseeded the database.
+    //
+    // One indexed lookup on a primary key, once per request, to turn a silent
+    // wrong answer into a 401 that tells the user what to do about it.
+    {
+      const { prisma } = await import('../db');
+      const tenantExists = await prisma.tenant.findUnique({
+        where: { id: String(decoded.tenantId) },
+        select: { id: true },
+      });
+      if (!tenantExists) {
+        res.status(401).json({
+          status: 'error',
+          code: 'STALE_TENANT',
+          message: 'Your session refers to an organisation that no longer exists. '
+            + 'Sign in again.',
+        });
+        return;
+      }
+    }
+
     // ── Impersonation: validate live, then hard-block every write ──────────
     // Enforced here rather than per-route so a new route cannot forget it.
     if (decoded.imp) {

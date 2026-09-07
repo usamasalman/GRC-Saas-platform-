@@ -29,6 +29,23 @@ const PLATFORM_TYPES = new Set(['SAAS', 'SAAS_UNIT']);
 const SUBTREE_TYPES = new Set(['HOLDING', 'MULTIBRANCH', 'FRANCHISE', 'PARTNER']);
 
 /**
+ * The caller's token points at a tenant that is not there any more.
+ *
+ * Distinct from an ordinary authorisation failure because the cause and the
+ * remedy are different: nothing is wrong with the credential, the world moved
+ * underneath it, and signing in again fixes it.
+ */
+export class StaleTenantError extends Error {
+  readonly tenantId: string;
+
+  constructor(tenantId: string) {
+    super('Your session refers to an organisation that no longer exists. Sign in again.');
+    this.name = 'StaleTenantError';
+    this.tenantId = tenantId;
+  }
+}
+
+/**
  * Resolves which tenants the caller may read.
  * Pure lookup — call `auditCrossTenantRead` separately when the result is used.
  */
@@ -39,7 +56,18 @@ export async function resolveTenantScope(userTenantId: string): Promise<TenantSc
   });
 
   if (!own) {
-    return { kind: 'SELF', tenantIds: [userTenantId], isCrossTenant: false, ownTenantId: userTenantId };
+    // A token naming a tenant that no longer exists is not a usable session.
+    //
+    // Returning SELF scope over the dead id — which this used to do — makes
+    // every query filter `tenantId IN [deadId]`, match nothing, and answer 200
+    // with an empty list. The user then sees every screen blank and concludes
+    // their data was deleted, when in a recoverable case it is sitting intact
+    // under a different tenant. Silence is the worst possible answer here: it
+    // is indistinguishable from total data loss and it cannot be acted on.
+    //
+    // Throwing sends a 401 instead, the browser clears the stale token, and
+    // signing in again mints one naming a tenant that exists.
+    throw new StaleTenantError(userTenantId);
   }
 
   if (PLATFORM_TYPES.has(own.type)) {

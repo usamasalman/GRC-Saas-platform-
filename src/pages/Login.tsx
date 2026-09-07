@@ -21,7 +21,15 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  // Being bounced here by an expired session and arriving here by choice look
+  // identical otherwise, and a blank login page after fifteen minutes of work
+  // reads as the application having lost your session for no reason.
+  const [error, setError] = useState(
+    typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('expired') === '1'
+      ? 'Your session ended. Sign in again to carry on — nothing you saved was lost.'
+      : '',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
