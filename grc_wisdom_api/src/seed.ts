@@ -62,7 +62,67 @@ function tenantTypeFor(ctx: string): string {
   return 'BRANCH';
 }
 
+/**
+ * Refuse to run anywhere the data might be real.
+ *
+ * This script's first act is fifty-eight deleteMany() calls ending in
+ * prisma.tenant.deleteMany(), and roughly forty models cascade from Tenant — so
+ * that one line destroys every risk, control, audit, issue, document, piece of
+ * evidence, user and audit-log row in the product.
+ *
+ * That is exactly what happened. Between 2026-08-04 and 2026-08-29 the API
+ * container started with `prisma db push --accept-data-loss && node
+ * dist/seed.js`, so every deploy, every restart and every crash-loop recovery
+ * wiped the customer's database and refilled it with eight fictional demo
+ * tenants. The Dockerfile was fixed; nothing stopped it happening again.
+ *
+ * Two locks, because one is not enough. NODE_ENV can be unset by accident in a
+ * container — it is a default, not a decision — so an explicit argv flag is
+ * required as well. Someone typing that flag has said out loud what they are
+ * about to do.
+ *
+ * dbAdminController.ts:158 already refuses the HTTP route in production. This
+ * closes the same door on the command line, which is the one that was actually
+ * used.
+ */
+function refuseIfDataCouldBeReal(): void {
+  const CONSENT = '--i-know-this-deletes-everything';
+  const consented = process.argv.includes(CONSENT);
+  const url = process.env.DATABASE_URL || '';
+
+  const reasons: string[] = [];
+  if (process.env.NODE_ENV === 'production') reasons.push('NODE_ENV is production');
+  // A hostname that is not the developer's own machine is the strongest signal
+  // available here, and it catches the case NODE_ENV misses.
+  if (url && !/@(localhost|127\.0\.0\.1|db|postgres)[:/]/.test(url)) {
+    reasons.push('DATABASE_URL does not point at a local database');
+  }
+
+  if (reasons.length > 0 && !consented) {
+    console.error('');
+    console.error('  REFUSING TO SEED.');
+    console.error('');
+    console.error('  This script deletes every tenant and everything that cascades from');
+    console.error('  one — risks, controls, audits, issues, documents, evidence, users');
+    console.error('  and the audit log — and then inserts demo data.');
+    console.error('');
+    reasons.forEach((r) => console.error('    - ' + r));
+    console.error('');
+    console.error('  If you are certain, re-run with ' + CONSENT);
+    console.error('  If you wanted reference data rather than demo data, you want');
+    console.error('  `npm run provision`, which is upsert-only and destroys nothing.');
+    console.error('');
+    process.exit(1);
+  }
+
+  if (consented) {
+    console.warn('[seed] Consent flag given — deleting all data before reseeding.');
+  }
+}
+
 async function main() {
+  refuseIfDataCouldBeReal();
+
   console.log('Seeding database…');
   const data = GW_DATA as any;
   const seed = SEED as any;
