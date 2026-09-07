@@ -233,11 +233,13 @@ const FrameworkAuthoring: React.FC = () => {
    * nothing ever called it, so a typo in a standard's name was permanent.
    */
   const renameStandard = async (std: Standard) => {
-    const name = window.prompt(`Name for ${std.code}`, std.name);
-    if (name === null || !name.trim()) return;
+    // The column is `title`, both here and on the server — `name` would have
+    // been accepted silently by the PATCH and changed nothing.
+    const title = window.prompt(`Title for ${std.code}`, std.title);
+    if (title === null || !title.trim()) return;
     setNotice('');
     try {
-      const res = await apiClient.patch(`/api/grc/standards/${std.id}`, { name: name.trim() });
+      const res = await apiClient.patch(`/api/grc/standards/${std.id}`, { title: title.trim() });
       setNotice(res.data?.message || `${std.code} updated`);
       await load();
     } catch (err) { setNotice(apiError(err)); }
