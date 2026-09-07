@@ -84,12 +84,18 @@ import {
   reviewRiskCandidate, acceptCleanRiskRows, commitRiskImport, discardRiskImport,
 } from '../controllers/riskImportController';
 
+import { getGrcSummary } from '../controllers/grcSummaryController';
+
 const router = Router();
 
 router.use(requireAuth);
 router.use(rejectIfMustChangePassword);
 
 // ── Standards ─────────────────────────────────────────────────────────────
+// The GRC status summary. Every figure counted from rows — see the controller
+// for why that is worth saying out loud.
+router.get('/summary', getGrcSummary);
+
 router.get('/standards', listStandards);
 router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableStandard);
 // The counterpart deleteStandard has always pointed at and which never existed,

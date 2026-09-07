@@ -69,6 +69,7 @@ import BrdTraceability from './system/BrdTraceability';
 
 // Realtime Dashboard Component
 import RealtimeDashboardPage from './dashboard/RealtimeDashboardPage';
+import GrcSummaryDashboard from './dashboard/GrcSummaryDashboard';
 
 // User Guide Components
 import { UserGuideModal } from '../components/UserGuideModal';
@@ -127,6 +128,17 @@ const ImpersonationBanner = () => {
     </div>
   );
 };
+
+/**
+ * Portals whose dashboard is the risk-and-assurance summary.
+ *
+ * Left out on purpose: 'saas' is the platform operator's own console, where the
+ * question is how the business is doing rather than how one customer's risk is
+ * doing; 'document' is a records portal with no risk register behind it.
+ */
+const GRC_DASHBOARD_PORTALS = new Set([
+  'holding', 'multibranch', 'branch', 'franchise', 'partner', 'auditor',
+]);
 
 const NAV: Record<string, any[]> = {
   saas: [
@@ -474,6 +486,15 @@ const AppShell = () => {
       return <AuditLogViewer key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'dashboard') {
+      // Every portal that carries a risk register and an audit programme opens
+      // on where those actually stand. RealtimeDashboardPage counts tenants,
+      // subscriptions and ARR, which is the platform operator's view of its own
+      // business, not the customer's view of their compliance -- and it carries
+      // a literal ARR figure and churn percentage in its source that no query
+      // produces.
+      if (GRC_DASHBOARD_PORTALS.has(account.portal)) {
+        return <GrcSummaryDashboard key={`${account.id}-${currentPage}`} />;
+      }
       return <RealtimeDashboardPage key={`${account.id}-${currentPage}`} account={account} />;
     }
     return null;
