@@ -659,7 +659,13 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response): Prom
     const taskId = str(req.params.taskId);
     const existing = await prisma.projectTask.findUnique({
       where: { id: taskId },
-      select: { id: true, projectId: true, ref: true, name: true },
+      select: {
+        id: true, projectId: true, ref: true, name: true,
+        // Both directions. A task in the middle of a chain has one of each, and
+        // checking only one would let exactly that task be deleted silently.
+        dependsOn: { select: { id: true, predecessor: { select: { ref: true } } } },
+        blocksTasks: { select: { id: true, successor: { select: { ref: true } } } },
+      },
     });
     if (!existing) { notFound(res); return; }
 
@@ -667,6 +673,27 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response): Prom
     if (!project) { notFound(res); return; }
     if (!canWrite) { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+
+    // The database would cascade these away without a word, and a plan that
+    // quietly loses its shape is worse than one that refuses to change: delete
+    // the middle of A -> B -> C and you are left with A and C, unlinked, with
+    // nobody aware the sequence is gone. Same reasoning as PHASE_NOT_EMPTY —
+    // make the operator break it deliberately.
+    const links = [
+      ...existing.dependsOn.map((d) => `waits on ${d.predecessor.ref}`),
+      ...existing.blocksTasks.map((d) => `blocks ${d.successor.ref}`),
+    ];
+    if (links.length > 0) {
+      res.status(409).json({
+        status: 'error',
+        code: 'TASK_SEQUENCED',
+        message: `${existing.ref} is part of the plan's sequence (${links.join(', ')}). `
+          + 'Remove those dependencies first — deleting it would leave the tasks '
+          + 'either side unlinked without anyone noticing.',
+        dependencies: links.length,
+      });
+      return;
+    }
 
     // Verification rows cascade with the task, so deleting work that a reviewer
     // accepted would quietly remove a signed-off deliverable from the record —

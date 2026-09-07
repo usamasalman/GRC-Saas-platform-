@@ -1604,6 +1604,41 @@ async function main() {
   gone.status === 404
     ? ok('removing it twice is not found') : bad('double removal is 404', `${gone.status}`);
 
+  // ── 39. A sequenced task cannot vanish quietly ──────────────────────────
+  // The database would cascade its edges away without a word. Delete the middle
+  // of A -> B -> C and you are left with A and C unlinked, and nobody aware the
+  // sequence is gone.
+  console.log('\n39. Deleting sequenced work');
+
+  const relink = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: aId, successorId: bId },
+  });
+  relink.status === 201 ? ok('a dependency is back in place') : bad('dependency relinked');
+
+  const delSequenced = await api(`/api/projects/tasks/${aId}`, { token, method: 'DELETE' });
+  delSequenced.status === 409 && delSequenced.json?.code === 'TASK_SEQUENCED'
+    ? ok('a task other work waits on cannot be deleted')
+    : bad('sequenced task is guarded', `${delSequenced.status} ${delSequenced.json?.code}`);
+  String(delSequenced.json?.message || '').includes('blocks')
+    ? ok('and the refusal names what it is holding up')
+    : bad('refusal names the links', `${delSequenced.json?.message}`);
+
+  // The other direction: the task at the receiving end is equally guarded, and
+  // checking only one side would let exactly the middle task through.
+  const delSuccessor = await api(`/api/projects/tasks/${bId}`, { token, method: 'DELETE' });
+  delSuccessor.status === 409 && delSuccessor.json?.code === 'TASK_SEQUENCED'
+    ? ok('so is the task on the receiving end')
+    : bad('successor guarded', `${delSuccessor.status} ${delSuccessor.json?.code}`);
+
+  const freed = await api(`/api/projects/dependencies/${relink.json?.dependency?.id}`, {
+    token, method: 'DELETE',
+  });
+  freed.status === 200 ? ok('removing the link frees them') : bad('link removed');
+  const delFreed = await api(`/api/projects/tasks/${aId}`, { token, method: 'DELETE' });
+  delFreed.status === 200
+    ? ok('and an unsequenced task deletes normally')
+    : bad('unsequenced task deletes', `${delFreed.status} ${delFreed.json?.code}`);
+
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);
 }

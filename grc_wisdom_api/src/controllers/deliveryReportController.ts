@@ -19,6 +19,9 @@ import {
   parseFrameworks, isComplete, isConfirmed, requiresVerification, taskTiming,
 } from '../services/deliveryReportData';
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
+import {
+  criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
+} from '../services/projectDependency';
 
 /**
  * The five delivery reports.
@@ -163,6 +166,11 @@ async function loadEngagement(projectId: string) {
           },
         },
       },
+      dependencies: {
+        select: {
+          predecessorId: true, successorId: true, kind: true, lagDays: true,
+        },
+      },
       impediments: {
         orderBy: [{ raisedAt: 'asc' }],
         select: {
@@ -195,6 +203,80 @@ function nameLookup(e: Engagement): (id: string | null) => string {
 }
 
 // ─── Section builders, one per report ───────────────────────────────────────
+
+/**
+ * Whether the things going wrong actually move the end date.
+ *
+ * A task off the critical path can run late without costing anything; one on it
+ * cannot. Reporting lateness without that distinction makes every slip look
+ * equally urgent, which is the same as making none of them urgent.
+ *
+ * Stated as prose rather than a bare count because a committee reading "3 of 7
+ * overdue tasks are on the critical path" has to work out for itself what that
+ * means, and the number that matters is the one it can act on.
+ */
+function criticalFields(e: Engagement, now: Date): { label: string; value: string }[] {
+  const tasks = allTasks(e);
+  const edges = e.dependencies;
+
+  if (edges.length === 0) {
+    return [{
+      label: 'Not answerable yet',
+      value: 'No task in this plan records what it waits on, so whether a delay '
+        + 'moves the end date cannot be determined from the plan. Sequencing the '
+        + 'work is what makes that question answerable.',
+    }];
+  }
+
+  const cp = criticalPath(tasks as any, edges as any);
+  const handovers = crossSideLinks(tasks as any, edges as any, cp.onPath);
+  const violations = scheduleViolations(tasks as any, edges as any);
+
+  const late = tasks.filter((t) => taskTiming(t as any, now).overdue);
+  const lateAndCritical = late.filter((t) => cp.onPath.has(t.id));
+  const criticalHandovers = handovers.filter((h) => h.onCriticalPath);
+
+  const out = [
+    {
+      label: 'Longest chain of dependent work',
+      value: `${cp.lengthDays} days across ${cp.path.length} task(s). Anything on `
+        + 'it that runs late moves the end date; anything off it has slack.',
+    },
+    {
+      label: 'Overdue work that moves the end date',
+      value: late.length === 0
+        ? 'Nothing is overdue.'
+        : lateAndCritical.length === 0
+          ? `${late.length} task(s) overdue, none of them on the critical chain — `
+            + 'the date is not yet at risk from these.'
+          : `${lateAndCritical.length} of ${late.length} overdue task(s) sit on the `
+            + 'critical chain. These are the ones costing time.',
+    },
+  ];
+
+  if (criticalHandovers.length > 0) {
+    out.push({
+      label: 'Handovers that can move the date on their own',
+      value: `${criticalHandovers.length} point(s) where one side waits on the `
+        + 'other, on the critical chain: '
+        + criticalHandovers
+          .map((h) => `${h.waiting} waiting on ${h.waitingOn}`)
+          .join('; ')
+        + '. A single missed handover here moves the end date.',
+    });
+  }
+
+  if (violations.length > 0) {
+    out.push({
+      label: 'Dates that do not respect the sequence',
+      value: `${violations.length} task(s) are dated to start before the work they `
+        + 'wait on finishes. Either the sequence is wrong or the dates are, and '
+        + 'the plan cannot be relied on until one of them is corrected.',
+    });
+  }
+
+  return out;
+}
 
 /**
  * What this committee is being asked to decide.
@@ -353,6 +435,16 @@ function statusSections(e: Engagement, now: Date): ReportSection[] {
       kind: 'fields',
       title: 'Decisions requested of this committee',
       fields: decisionsRequested(e, f, now),
+    },
+    // Without this, a committee is told a task is late but not whether being
+    // late costs anything. That distinction is the whole reason the plan
+    // records what waits on what, and a status paper that omits it makes every
+    // slip look equally urgent — which is the same as making none of them
+    // urgent.
+    {
+      kind: 'fields',
+      title: 'Whether the delays matter',
+      fields: criticalFields(e, now),
     },
     {
       kind: 'fields',
@@ -783,6 +875,33 @@ function delaySections(e: Engagement, now: Date): ReportSection[] {
       ],
     },
   ];
+
+  // A slip that costs the end date and one that eats slack are different
+  // facts, and a contract review is exactly where that difference is argued.
+  if (e.dependencies.length > 0) {
+    const cp = criticalPath(tasks as any, e.dependencies as any);
+    const slippedCritical = slipped.filter((x) => cp.onPath.has(x.t.id));
+    sections.push({
+      kind: 'fields',
+      title: 'Which slips reached the end date',
+      fields: [
+        {
+          label: 'Tasks whose date moved',
+          value: `${slipped.length}, of which ${slippedCritical.length} sit on the `
+            + 'critical chain',
+        },
+        {
+          label: 'What that means',
+          value: slippedCritical.length === 0
+            ? 'None of the movement so far has been on the chain that determines '
+              + 'the end date. It consumed slack rather than time.'
+            : 'Movement on the critical chain moves the end date directly. '
+              + 'Movement off it consumed slack, which is a real cost but a '
+              + 'different one, and the two should not be argued as if equal.',
+        },
+      ],
+    });
+  }
 
   const byCategory = Object.entries(att.byCategory).sort((a, b) => b[1] - a[1]);
   if (byCategory.length) {

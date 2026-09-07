@@ -2596,6 +2596,7 @@ model Project {
   impediments      ProjectImpediment[]
   evidence         ProjectEvidence[]
   reportIssues     ReportIssue[]
+  dependencies     ProjectDependency[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2885,7 +2886,13 @@ model ProjectDependency {
   /// Denormalised so the whole graph for one engagement is a single indexed
   /// read. Cycle detection needs every edge at once, and walking the relation
   /// per task would make it O(tasks) queries on a screen that repaints often.
+  ///
+  /// Declared as a relation rather than a bare column: without one Prisma emits
+  /// no foreign key, so nothing would stop an edge outliving the engagement it
+  /// belongs to. The denormalisation is for speed, not an excuse to drop
+  /// referential integrity.
   projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   /// The task that must happen first.
   predecessorId String
