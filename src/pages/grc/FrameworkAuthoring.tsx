@@ -52,9 +52,25 @@ const FrameworkAuthoring: React.FC = () => {
     | { kind: 'editClauseRef'; clause: Clause }
     | { kind: 'editClauseTitle'; clause: Clause; ref: string }
     | { kind: 'mapClauses'; ctrl: Control }
+    | { kind: 'bulkMapClauses' }
     | null;
   const [dialog, setDialog] = useState<Dialog>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
+
+  // Controls picked for a bulk action. A Set rather than an array because the
+  // only operations are has/add/delete and the list runs to hundreds.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Only the controls this caller could actually map. Library controls are
+  // shared platform-wide, so the server refuses them; excluding them from
+  // "select all" avoids assembling a selection that can only be rejected.
+  const mappable = controls.filter((c) => !c.isLibrary);
+  const allMappablePicked = mappable.length > 0 && mappable.every((c) => picked.has(c.id));
+
+  const togglePicked = (id: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<'standards' | 'controls' | 'import'>('standards');
@@ -317,6 +333,27 @@ const FrameworkAuthoring: React.FC = () => {
     setDialog({ kind: 'mapClauses', ctrl: c });
   };
 
+  /**
+   * Map every selected control to the same clauses.
+   *
+   * Adds rather than replaces. Controls in a batch rarely share a mapping, so
+   * "set all of these to A.5.1" would silently discard whatever else each of
+   * them already satisfied — the server defaults to add for the same reason.
+   */
+  const doBulkMap = async (ids: string[]) => {
+    setDialogBusy(true);
+    try {
+      const res = await apiClient.post('/api/grc/controls/bulk/clauses', {
+        controlIds: [...picked], clauseIds: ids, mode: 'add',
+      });
+      setNotice(res.data?.message || 'Controls mapped');
+      setDialog(null);
+      setPicked(new Set());
+      await load();
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
+  };
+
   const doMapClauses = async (c: Control, ids: string[]) => {
     setDialogBusy(true);
     try {
@@ -539,15 +576,63 @@ const FrameworkAuthoring: React.FC = () => {
             </form>
           )}
 
+          {/* Appears only once something is selected. A permanently visible bar
+              that says "0 selected" is a row of dead controls on every visit. */}
+          {picked.size > 0 && (
+            <div style={{
+              ...S.card, padding: '12px 16px', marginBottom: 12,
+              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+              borderLeft: '3px solid var(--info)',
+            }}>
+              <strong style={{ color: 'var(--ink)', fontSize: 13.5 }}>
+                {picked.size} control{picked.size === 1 ? '' : 's'} selected
+              </strong>
+              <button style={primaryBtn()} onClick={() => setDialog({ kind: 'bulkMapClauses' })}>
+                Map to clauses
+              </button>
+              <button style={ghostBtn} onClick={() => setPicked(new Set())}>Clear selection</button>
+              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
+                Clauses are added to whatever each control already satisfies.
+              </span>
+            </div>
+          )}
+
           <div style={{ ...S.card, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr>
+                <th style={{ ...S.th, width: 34 }}>
+                  <input
+                    type="checkbox"
+                    checked={allMappablePicked}
+                    onChange={() => setPicked(allMappablePicked
+                      ? new Set()
+                      : new Set(mappable.map((c) => c.id)))}
+                    aria-label="Select all mappable controls"
+                    disabled={mappable.length === 0}
+                  />
+                </th>
                 <th style={S.th}>Control</th><th style={S.th}>Domain</th>
                 <th style={S.th}>Satisfies</th><th style={S.th}>Origin</th><th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
               </tr></thead>
               <tbody>
                 {controls.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                  <tr key={c.id} style={{
+                    borderBottom: '1px solid var(--line-soft)',
+                    background: picked.has(c.id) ? 'var(--surface-sunk)' : undefined,
+                  }}>
+                    <td style={S.td}>
+                      {/* Library controls are shared by every tenant, so the
+                          server refuses to remap them. Offering the checkbox
+                          would be offering a selection that can only fail. */}
+                      {!c.isLibrary && (
+                        <input
+                          type="checkbox"
+                          checked={picked.has(c.id)}
+                          onChange={() => togglePicked(c.id)}
+                          aria-label={`Select ${c.code}`}
+                        />
+                      )}
+                    </td>
                     <td style={S.td}>
                       <strong style={{ color: 'var(--ink)' }}>{c.code}</strong>
                       <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>{c.title}</div>
@@ -911,6 +996,26 @@ const FrameworkAuthoring: React.FC = () => {
           busy={dialogBusy}
           validate={(v) => (v.trim() ? null : 'A title is required.')}
           onSubmit={(v) => doFixAndAccept(dialog.clause, dialog.ref, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'bulkMapClauses' && (
+        <ClauseMapDialog
+          subject={`${picked.size} selected control${picked.size === 1 ? '' : 's'}`}
+          clauses={clauses.map((c) => ({
+            id: c.id, ref: c.ref, title: c.title, standardCode: c.standardCode,
+          }))}
+          // Nothing is pre-selected across a batch. Showing one control's
+          // mapping as though it were the group's would invite someone to
+          // uncheck a clause and expect it removed everywhere, which is not what
+          // this does.
+          initiallySelected={[]}
+          busy={dialogBusy}
+          bulkWarning={'These clauses are ADDED to every selected control. Nothing '
+            + 'already mapped is removed, so a control that satisfies other clauses '
+            + 'keeps them.'}
+          onSubmit={(ids) => doBulkMap(ids)}
           onCancel={() => setDialog(null)}
         />
       )}

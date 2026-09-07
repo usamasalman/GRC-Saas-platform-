@@ -3,6 +3,7 @@ import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMidd
 import { requireCapability, requireAnyCapability, CAP } from '../services/capabilityEngine';
 import {
   createStandard, addClauses, updateStandard, deleteStandard, mapControlToClauses,
+  bulkMapControlsToClauses,
 } from '../controllers/standardsAuthoringController';
 import {
   uploadImport, listImports, getImport, reviewCandidate,
@@ -103,6 +104,10 @@ router.post('/standards/:id/clauses', requireCapability(CAP.ENABLE_STANDARD), ad
 router.patch('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), updateStandard);
 router.delete('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), deleteStandard);
 // Mapping a control to clauses is what makes the framework auditable.
+// Must precede '/controls/:controlId/clauses' — Express matches in order, and
+// a literal declared after a parameter is shadowed by it: this would be read
+// as a control whose id is the string "bulk".
+router.post('/controls/bulk/clauses', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), bulkMapControlsToClauses);
 router.post('/controls/:controlId/clauses', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), mapControlToClauses);
 
 // ── Importing a framework from a file ─────────────────────────────────────

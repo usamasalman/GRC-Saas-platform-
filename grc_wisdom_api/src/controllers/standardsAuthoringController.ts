@@ -277,6 +277,167 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
  * auditable — without mappings the clauses are text nobody is accountable for.
  * One control may satisfy clauses across several frameworks at once.
  */
+/**
+ * Map many controls to the same clauses in one act.
+ *
+ * The single-control endpoint replaces a mapping wholesale, which is right when
+ * a request describes one control's end state. Across a selection it would be
+ * destructive: controls in a batch rarely share a mapping, and "set all of
+ * these to A.5.1" would silently discard whatever else each of them already
+ * satisfied.
+ *
+ * So this ADDS. The clauses given are unioned into each control's existing set,
+ * and `mode: 'replace'` is available for the case where someone genuinely means
+ * to overwrite — but it is never the default, because the default is what gets
+ * clicked by someone who has not read this.
+ *
+ * Written because 731 imported controls arrived with no mappings at all: the
+ * bulk import path creates controls with createMany and never touches
+ * ControlClauseLink, and the only way to map one was a dialog nobody can drive
+ * 731 times.
+ */
+export const bulkMapControlsToClauses = async (
+  req: AuthenticatedRequest, res: Response,
+): Promise<void> => {
+  try {
+    const { controlIds, clauseIds, mode } = req.body || {};
+    if (!Array.isArray(controlIds) || controlIds.length === 0) {
+      res.status(400).json({ status: 'error', message: 'controlIds must be a non-empty array' });
+      return;
+    }
+    if (!Array.isArray(clauseIds)) {
+      res.status(400).json({ status: 'error', message: 'clauseIds must be an array' });
+      return;
+    }
+    if (mode && mode !== 'add' && mode !== 'replace') {
+      res.status(400).json({ status: 'error', message: "mode must be 'add' or 'replace'" });
+      return;
+    }
+    const replacing = mode === 'replace';
+
+    // A ceiling, so one request cannot rewrite an entire library by accident.
+    // Generous enough for a filtered page of controls, small enough that a
+    // mistake is recoverable by hand.
+    if (controlIds.length > 500) {
+      res.status(400).json({
+        status: 'error',
+        code: 'TOO_MANY',
+        message: 'Map at most 500 controls at a time. Filter the list and work through it.',
+      });
+      return;
+    }
+
+    const scope = await resolveTenantScope(req.user!.tenantId);
+
+    const controls = await prisma.control.findMany({
+      where: {
+        id: { in: controlIds },
+        OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }],
+      },
+      select: { id: true, code: true, tenantId: true },
+    });
+    if (controls.length !== controlIds.length) {
+      res.status(400).json({
+        status: 'error',
+        message: 'One or more controls do not exist in your scope',
+      });
+      return;
+    }
+
+    // A library control is shared by every tenant, so remapping one here would
+    // rewrite it for all of them. Refused by name rather than skipped silently:
+    // a caller who selected 40 controls and had 6 quietly ignored would believe
+    // all 40 were mapped.
+    const library = controls.filter((c) => c.tenantId === null);
+    if (library.length > 0 && scope.kind !== 'PLATFORM') {
+      res.status(403).json({
+        status: 'error',
+        code: 'LIBRARY_CONTROL',
+        message: `${library.length} of the selected controls come from the shared library `
+          + `(${library.slice(0, 3).map((c) => c.code).join(', ')}`
+          + `${library.length > 3 ? ', …' : ''}) and are the same for every tenant. `
+          + 'Copy them into your own set first, or deselect them.',
+        controlCodes: library.map((c) => c.code),
+      });
+      return;
+    }
+
+    const clauses = await prisma.standardClause.findMany({
+      where: { id: { in: clauseIds } },
+      include: { standard: { select: { code: true, tenantId: true } } },
+    });
+    if (clauses.length !== clauseIds.length) {
+      res.status(400).json({ status: 'error', message: 'One or more clauseIds do not exist' });
+      return;
+    }
+    const unreachable = clauses.filter(
+      (c) => c.standard.tenantId !== null && !scope.tenantIds.includes(c.standard.tenantId),
+    );
+    if (unreachable.length > 0) {
+      res.status(403).json({
+        status: 'error',
+        code: 'CLAUSE_OUT_OF_SCOPE',
+        message: 'You cannot map to clauses from another organisation\'s private framework '
+          + `(${[...new Set(unreachable.map((c) => c.standard.code))].join(', ')}).`,
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      if (replacing) {
+        await tx.controlClauseLink.deleteMany({ where: { controlId: { in: controlIds } } });
+      }
+
+      let created = 0;
+      if (clauseIds.length > 0) {
+        // skipDuplicates carries the whole "add" semantic: a control already
+        // mapped to one of these keeps its single link rather than erroring on
+        // the (controlId, clauseId) unique constraint. It also makes the whole
+        // operation idempotent, so running it twice is not a way to break it.
+        const links = controlIds.flatMap((controlId: string) =>
+          clauseIds.map((clauseId: string) => ({ controlId, clauseId })));
+        const done = await tx.controlClauseLink.createMany({
+          data: links,
+          skipDuplicates: true,
+        });
+        created = done.count;
+      }
+
+      // One audit entry for one act. Writing one per control would bury the
+      // fact that this was a single deliberate decision under 500 rows.
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId,
+        actorId: req.user!.id,
+        action: replacing ? 'CONTROL_CLAUSES_BULK_REPLACED' : 'CONTROL_CLAUSES_BULK_MAPPED',
+        subjectType: 'Control',
+        subjectId: controlIds[0],
+        payload: {
+          controls: controls.length,
+          clauses: clauseIds.length,
+          linksCreated: created,
+          mode: replacing ? 'replace' : 'add',
+          controlCodes: controls.slice(0, 20).map((c) => c.code),
+        },
+      });
+
+      return created;
+    });
+
+    res.json({
+      status: 'success',
+      // The link count rather than the control count, because with skipDuplicates
+      // they differ whenever something was already mapped — and a caller told
+      // "40 controls mapped" when 12 already were has been told the wrong thing.
+      message: `${controls.length} control(s) mapped — ${result} new link(s)`,
+      controls: controls.length,
+      linksCreated: result,
+    });
+  } catch (error: any) {
+    console.error('[Bulk Map Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to map the controls' });
+  }
+};
+
 export const mapControlToClauses = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const controlId = req.params.controlId as string;
