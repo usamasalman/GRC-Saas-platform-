@@ -1444,15 +1444,17 @@ async function main() {
     ? ok('with the number on the document reference itself')
     : bad('issue number on the reference', rptIssues.map((r) => r.documentRef).join(' '));
 
-  // The two issues were produced from identical figures, so the hash that
-  // covers WHAT the report says must match even though the references differ.
-  rptIssues[0].documentHash === rptIssues[1].documentHash
-    ? ok('two issues of unchanged figures hash alike, despite different references')
-    : bad('unchanged figures hash alike',
-          `${rptIssues[0].documentHash.slice(0, 12)} vs ${rptIssues[1].documentHash.slice(0, 12)}`);
-  rptIssues[0].documentRef !== rptIssues[1].documentRef
-    ? ok('while the references themselves stay distinct')
-    : bad('references are distinct');
+  if (rptIssues.length >= 2) {
+    rptIssues[0].documentHash === rptIssues[1].documentHash
+      ? ok('two issues of unchanged figures hash alike, despite different references')
+      : bad('unchanged figures hash alike',
+            `${rptIssues[0].documentHash?.slice(0, 12)} vs ${rptIssues[1].documentHash?.slice(0, 12)}`);
+    rptIssues[0].documentRef !== rptIssues[1].documentRef
+      ? ok('while the references themselves stay distinct')
+      : bad('references are distinct');
+  } else {
+    bad('two issues produced', `expected 2 issued reports, got ${rptIssues.length}`);
+  }
 
   // ── 34. Reports respect the branding and marking rules ──────────────────
   console.log('\n34. Report chrome end to end');

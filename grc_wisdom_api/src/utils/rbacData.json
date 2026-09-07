@@ -280,7 +280,8 @@
         "import-or-enable-a-standard",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "generate-and-distribute-a-report"
       ]
     },
     {
