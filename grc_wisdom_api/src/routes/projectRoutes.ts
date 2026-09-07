@@ -20,6 +20,12 @@ import {
   taskStatuses,
 } from '../controllers/projectPlanController';
 import {
+  getTimeline,
+  linkTasks,
+  unlinkTasks,
+  getImpact,
+} from '../controllers/projectTimelineController';
+import {
   exportDeliveryReport,
   getReportRegister,
 } from '../controllers/deliveryReportController';
@@ -148,5 +154,15 @@ router.delete('/clauses/:linkId', requireCapability(CAP.MANAGE_PROJECT), unlinkC
 // unremediated weaknesses, and a register with no row for that cannot say who.
 router.get('/:id/reports', getReportRegister);
 router.get('/:id/reports/:kind', requireCapability(CAP.REPORT), exportDeliveryReport);
+
+// ── Timeline and dependencies ─────────────────────────────────────────────
+//
+// Sequencing is a planning act, so linking carries MANAGE_PROJECT. Reading the
+// timeline does not: "if this slips, what else moves" is a question anyone
+// working the engagement should be able to answer without asking a manager.
+router.get('/:id/timeline', getTimeline);
+router.post('/:id/dependencies', requireCapability(CAP.MANAGE_PROJECT), linkTasks);
+router.delete('/dependencies/:dependencyId', requireCapability(CAP.MANAGE_PROJECT), unlinkTasks);
+router.get('/tasks/:taskId/impact', getImpact);
 
 export default router;

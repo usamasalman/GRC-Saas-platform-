@@ -122,7 +122,7 @@ jobs:
           # strangers, and login rate limiting.
           node scripts/verify/production-readiness-test.js
 
-          # Slices 1-5 of the delivery module: creation, derived schedule,
+          # Slices 1-8 of the delivery module: creation, derived schedule,
           # lifecycle transitions, tenant isolation, the audit trail, the
           # phase/task rollup, and separation of duties on verification —
           # that last one is the control the dual progress figure rests on,

@@ -42,7 +42,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-7 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-8 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -1470,6 +1470,139 @@ async function main() {
   filteredRpt.status === 200
     ? ok('a section filter matching nothing still produces a report')
     : bad('empty section filter still builds', `${filteredRpt.status}`);
+
+  // ── 35. Sequencing the plan ─────────────────────────────────────────────
+  console.log('\n35. Dependencies');
+
+  const tlBase = `/api/projects/${eid}`;
+
+  // Two more tasks so there is a chain to reason about.
+  const seqA = await api(`/api/projects/phases/${ePhaseId}/tasks`, {
+    token, method: 'POST',
+    body: { name: 'Collect the asset register', assigneeId: myUserId, side: 'Client' },
+  });
+  const seqB = await api(`/api/projects/phases/${ePhaseId}/tasks`, {
+    token, method: 'POST',
+    body: { name: 'Run the gap assessment', assigneeId: myUserId, side: 'Provider' },
+  });
+  const aId = seqA.json?.task?.id;
+  const bId = seqB.json?.task?.id;
+  aId && bId ? ok('two tasks to sequence') : bad('two tasks to sequence');
+
+  const selfLink = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: aId, successorId: aId },
+  });
+  selfLink.status === 400 && selfLink.json?.code === 'SELF_DEPENDENCY'
+    ? ok('a task cannot wait on itself')
+    : bad('self-dependency refused', `${selfLink.status} ${selfLink.json?.code}`);
+
+  const badKind = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: aId, successorId: bId, kind: 'Whenever' },
+  });
+  badKind.status === 400 && badKind.json?.code === 'UNKNOWN_KIND'
+    ? ok('and an invented relationship is refused')
+    : bad('unknown kind refused', `${badKind.status} ${badKind.json?.code}`);
+
+  // A lead expressed as a negative lag hides an overlap nobody agreed to.
+  const negLag = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: aId, successorId: bId, lagDays: -5 },
+  });
+  negLag.status === 400 && negLag.json?.code === 'NEGATIVE_LAG'
+    ? ok('so is a negative gap')
+    : bad('negative lag refused', `${negLag.status} ${negLag.json?.code}`);
+
+  const linked = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST',
+    body: { predecessorId: aId, successorId: bId, kind: 'FinishToStart', lagDays: 2 },
+  });
+  linked.status === 201
+    ? ok('a well-formed dependency links')
+    : bad('dependency links', `${linked.status} ${JSON.stringify(linked.json).slice(0, 140)}`);
+  const depId = linked.json?.dependency?.id;
+
+  const dupe = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: aId, successorId: bId },
+  });
+  dupe.status === 409 && dupe.json?.code === 'DUPLICATE'
+    ? ok('the same link twice is refused')
+    : bad('duplicate refused', `${dupe.status} ${dupe.json?.code}`);
+
+  // The one that matters: nothing in a loop can ever be scheduled.
+  const loopLink = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST', body: { predecessorId: bId, successorId: aId },
+  });
+  loopLink.status === 409 && loopLink.json?.code === 'CYCLE'
+    ? ok('and a link that would make the plan wait on itself is refused')
+    : bad('cycle refused', `${loopLink.status} ${loopLink.json?.code}`);
+
+  // A dependency spanning two engagements would make one plan's critical path
+  // depend on work the other plan's owner can reschedule unseen.
+  const foreign = await api(`${tlBase}/dependencies`, {
+    token, method: 'POST',
+    body: { predecessorId: aId, successorId: '00000000-0000-0000-0000-000000000000' },
+  });
+  foreign.status === 400 && foreign.json?.code === 'CROSS_PROJECT'
+    ? ok('and so is one reaching into another engagement')
+    : bad('cross-project refused', `${foreign.status} ${foreign.json?.code}`);
+
+  // ── 36. What the timeline can now answer ────────────────────────────────
+  console.log('\n36. Timeline');
+
+  const tl = await api(`${tlBase}/timeline`, { token });
+  tl.status === 200 ? ok('the timeline loads') : bad('timeline loads', `${tl.status}`);
+  tl.json?.summary?.dependencies === 1
+    ? ok('with the edge that was created')
+    : bad('edge present', `${tl.json?.summary?.dependencies}`);
+  tl.json?.cycle === null
+    ? ok('and no loop in it') : bad('no loop', JSON.stringify(tl.json?.cycle));
+
+  // The GRC angle: one side waiting on the other is where a slip gets
+  // contested, and slice 4 exists because of that argument.
+  (tl.json?.handovers || []).length === 1
+    ? ok('a Client-to-Provider handover is identified as one')
+    : bad('handover identified', `${(tl.json?.handovers || []).length}`);
+  tl.json?.handovers?.[0]?.waitingOn === 'Client'
+    && tl.json?.handovers?.[0]?.waiting === 'Provider'
+    ? ok('naming which side waits on which')
+    : bad('handover direction', JSON.stringify(tl.json?.handovers?.[0]));
+
+  const sequencedTask = (tl.json?.phases || [])
+    .flatMap((p) => p.tasks || []).find((t) => t.id === aId);
+  (sequencedTask?.blocks || []).includes(bId)
+    ? ok('and each task carries what it blocks')
+    : bad('task carries what it blocks', JSON.stringify(sequencedTask?.blocks));
+
+  // ── 37. If this moves, what else moves ──────────────────────────────────
+  console.log('\n37. Impact');
+
+  const impact = await api(`/api/projects/tasks/${aId}/impact`, { token });
+  impact.status === 200 && impact.json?.summary?.blocksInTotal === 1
+    ? ok('the blast radius of a task is answerable')
+    : bad('impact answerable', `${impact.status} ${JSON.stringify(impact.json?.summary)}`);
+  (impact.json?.blocks || []).some((t) => t.id === bId)
+    ? ok('naming the work that would move with it')
+    : bad('impact names the work', JSON.stringify((impact.json?.blocks || []).map((t) => t.ref)));
+
+  const tlNoImpact = await api(`/api/projects/tasks/${bId}/impact`, { token });
+  tlNoImpact.json?.summary?.blocksInTotal === 0
+    ? ok('and a task nothing waits on moves nothing')
+    : bad('leaf task moves nothing', `${tlNoImpact.json?.summary?.blocksInTotal}`);
+
+  // ── 38. Unlinking ───────────────────────────────────────────────────────
+  console.log('\n38. Unlinking');
+
+  const unlinked = await api(`/api/projects/dependencies/${depId}`, { token, method: 'DELETE' });
+  unlinked.status === 200
+    ? ok('a dependency can be removed') : bad('dependency removed', `${unlinked.status}`);
+
+  const afterUnlink = await api(`${tlBase}/timeline`, { token });
+  afterUnlink.json?.summary?.dependencies === 0
+    ? ok('and the timeline reflects it')
+    : bad('timeline reflects removal', `${afterUnlink.json?.summary?.dependencies}`);
+
+  const gone = await api(`/api/projects/dependencies/${depId}`, { token, method: 'DELETE' });
+  gone.status === 404
+    ? ok('removing it twice is not found') : bad('double removal is 404', `${gone.status}`);
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);

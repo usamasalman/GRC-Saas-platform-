@@ -193,6 +193,7 @@ model User {
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
   brandingEdited TenantBranding[] @relation("BrandingEditor")
   reportsIssued ReportIssue[] @relation("ReportIssuer")
+  dependenciesLinked ProjectDependency[] @relation("DependencyLinker")
 }
 
 model Plan {
@@ -2772,6 +2773,8 @@ model ProjectTask {
   impediments   ProjectImpediment[]
   evidence      ProjectEvidence[]
   clauseLinks   ProjectTaskClause[]
+  dependsOn     ProjectDependency[] @relation("DependencySuccessor")
+  blocksTasks   ProjectDependency[] @relation("DependencyPredecessor")
 
   @@unique([projectId, ref])
   @@index([phaseId, sequence])
@@ -2855,6 +2858,65 @@ model ProjectImpediment {
   @@index([projectId, owingSide])
   @@index([taskId, resolvedAt])
   @@index([phaseId, resolvedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Slice 8 — what has to happen before what, and where a slip costs the plan.
+//
+//  Until now a plan was an ordered list with dates on it, and nothing recorded
+//  that the gap assessment cannot start before the asset register arrives. So a
+//  date could be moved without anyone seeing what else had to move with it, and
+//  the question a steering committee actually asks — "if this slips, does the
+//  end date slip" — had no answer in the data.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// One task must wait on another.
+///
+/// A join table rather than a column, because a task routinely waits on several
+/// things and blocks several others — the ISMS scope statement gates the risk
+/// assessment, the SoA and the internal audit programme all at once.
+///
+/// The edges form a DAG. A cycle makes a plan unschedulable, so one is refused
+/// when the link is created rather than discovered later by a scheduler that
+/// cannot terminate — see services/projectDependency.detectCycle.
+model ProjectDependency {
+  id            String   @id @default(uuid())
+
+  /// Denormalised so the whole graph for one engagement is a single indexed
+  /// read. Cycle detection needs every edge at once, and walking the relation
+  /// per task would make it O(tasks) queries on a screen that repaints often.
+  projectId     String
+
+  /// The task that must happen first.
+  predecessorId String
+  predecessor   ProjectTask @relation("DependencyPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  /// The task that waits.
+  successorId   String
+  successor     ProjectTask @relation("DependencySuccessor", fields: [successorId], references: [id], onDelete: Cascade)
+
+  /// FinishToStart | StartToStart | FinishToFinish
+  ///
+  /// StartToFinish is deliberately absent. It is the fourth textbook type,
+  /// almost nobody uses it correctly, and an enum value that gets picked by
+  /// mistake produces a plan that is wrong in a way nobody can see. The three
+  /// here cover what delivery work actually needs.
+  kind          String   @default("FinishToStart")
+
+  /// Days of deliberate gap after the predecessor's condition is met — a
+  /// fourteen-day regulator notice period, or curing time before a test.
+  /// Negative values are refused: a "lead" is a different plan, not a negative
+  /// lag, and expressing it this way hides an overlap nobody agreed to.
+  lagDays       Int      @default(0)
+
+  note          String?
+
+  linkedById    String
+  linkedBy      User     @relation("DependencyLinker", fields: [linkedById], references: [id], onDelete: Cascade)
+  linkedAt      DateTime @default(now())
+
+  @@unique([predecessorId, successorId])
+  @@index([projectId])
+  @@index([successorId])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

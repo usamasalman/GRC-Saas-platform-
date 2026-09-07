@@ -50,6 +50,11 @@ const {
   statusFigures, attentionLists, verificationRows, verificationIntegrity,
   unmappedClauses, isConfirmed,
 } = require('../../dist/services/deliveryReportData');
+const {
+  wouldCycle, detectCycle, checkDependency, topologicalOrder,
+  scheduleViolations, criticalPath, crossSideLinks, downstreamOf,
+  DEPENDENCY_KINDS,
+} = require('../../dist/services/projectDependency');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -1636,6 +1641,229 @@ eq('a fully mapped standard has no gaps',
    unmappedClauses(clauseList, new Set(['A5', 'A8', 'A12'])).length, 0);
 eq('and a plan mapping nothing has every clause as a gap',
    unmappedClauses(clauseList, new Set()).length, 3);
+
+// ── 48. Loops, which make a plan unschedulable ──────────────────────────────
+// Every task in a loop waits on itself by some route, so no start date can be
+// derived and a naive scheduler runs forever. Refused at creation rather than
+// discovered later by something that hangs.
+console.log('\n48. Cycles');
+
+const dep = (p, s, kind = 'FinishToStart', lag = 0) =>
+  ({ predecessorId: p, successorId: s, kind, lagDays: lag });
+
+wouldCycle([], 'a', 'a') ? ok('a task cannot wait on itself') : bad('self-dependency is a cycle');
+!wouldCycle([dep('a', 'b')], 'b', 'c')
+  ? ok('extending a chain is not a loop') : bad('extending a chain is fine');
+wouldCycle([dep('a', 'b')], 'b', 'a')
+  ? ok('and reversing an existing edge is') : bad('reversing an edge is a loop');
+
+// The case a check comparing only the two endpoints would miss, and the one a
+// person actually builds without noticing.
+wouldCycle([dep('a', 'b'), dep('b', 'c')], 'c', 'a')
+  ? ok('a three-task loop is caught, not just a direct reversal')
+  : bad('three-task loop caught');
+wouldCycle([dep('a', 'b'), dep('b', 'c'), dep('c', 'd'), dep('d', 'e')], 'e', 'a')
+  ? ok('and a five-task one') : bad('five-task loop caught');
+
+// A diamond is not a loop: two routes to the same place is ordinary planning.
+!wouldCycle([dep('a', 'b'), dep('a', 'c'), dep('b', 'd')], 'c', 'd')
+  ? ok('a diamond is not a loop — two routes to one place is normal')
+  : bad('a diamond is not a loop');
+
+detectCycle([dep('a', 'b'), dep('b', 'c')]) === null
+  ? ok('a clean graph reports no cycle') : bad('clean graph has no cycle');
+const loop = detectCycle([dep('a', 'b'), dep('b', 'c'), dep('c', 'a')]);
+loop && loop.length >= 3
+  ? ok('and a broken one names the tasks to break', loop.join(' -> '))
+  : bad('a cycle is named', JSON.stringify(loop));
+
+// ── 49. Refusing a bad link ─────────────────────────────────────────────────
+console.log('\n49. Dependency rules');
+
+checkDependency([], { predecessorId: 'a', successorId: 'b' }) === null
+  ? ok('a well-formed link is accepted') : bad('well-formed link accepted');
+eq('a self-link is refused',
+   (checkDependency([], { predecessorId: 'a', successorId: 'a' }) || {}).code, 'SELF_DEPENDENCY');
+eq('an invented kind is refused',
+   (checkDependency([], { predecessorId: 'a', successorId: 'b', kind: 'Whenever' }) || {}).code,
+   'UNKNOWN_KIND');
+eq('a duplicate is refused',
+   (checkDependency([dep('a', 'b')], { predecessorId: 'a', successorId: 'b' }) || {}).code,
+   'DUPLICATE');
+eq('and a link closing a loop is refused',
+   (checkDependency([dep('a', 'b'), dep('b', 'c')], { predecessorId: 'c', successorId: 'a' }) || {}).code,
+   'CYCLE');
+// A negative lag is an overlap somebody should agree to explicitly, not a
+// minus sign hidden inside a dependency.
+eq('negative lag is refused rather than treated as a lead',
+   (checkDependency([], { predecessorId: 'a', successorId: 'b', lagDays: -3 }) || {}).code,
+   'NEGATIVE_LAG');
+checkDependency([], { predecessorId: 'a', successorId: 'b', lagDays: 14 }) === null
+  ? ok('while a positive lag — a notice period — is fine') : bad('positive lag accepted');
+
+// StartToFinish is deliberately absent: almost nobody uses it correctly, and an
+// enum value picked by mistake makes a plan wrong in a way nobody can see.
+!DEPENDENCY_KINDS.includes('StartToFinish')
+  ? ok('StartToFinish is not offered, on purpose') : bad('StartToFinish is absent');
+eq('three kinds, not four', DEPENDENCY_KINDS.length, 3);
+
+// ── 50. Ordering ────────────────────────────────────────────────────────────
+console.log('\n50. Topological order');
+
+const chain = topologicalOrder(['c', 'a', 'b'], [dep('a', 'b'), dep('b', 'c')]);
+JSON.stringify(chain) === JSON.stringify(['a', 'b', 'c'])
+  ? ok('every predecessor comes before its successors', chain.join(' -> '))
+  : bad('topological order', JSON.stringify(chain));
+eq('unconnected tasks are all still present',
+   topologicalOrder(['a', 'b', 'c'], []).length, 3);
+// A cyclic graph has no such order, and a partial one must never be returned
+// for a caller to treat as complete.
+topologicalOrder(['a', 'b'], [dep('a', 'b'), dep('b', 'a')]) === null
+  ? ok('and a loop has no order at all, rather than a partial one')
+  : bad('a loop has no order');
+// An edge naming a task outside the set is ignored rather than corrupting the
+// indegree count and silently dropping tasks from the result.
+eq('an edge to a task outside the set does not drop anything',
+   topologicalOrder(['a', 'b'], [dep('a', 'b'), dep('b', 'elsewhere')]).length, 2);
+
+// ── 51. Dates that do not respect their dependencies ────────────────────────
+// Reported, never enforced. A task genuinely starting early because its
+// predecessor finished early is normal, and refusing the date would teach
+// people to delete the dependency instead — losing the information entirely.
+console.log('\n51. Schedule violations');
+
+const st = (id, start, due, status = 'InProgress') =>
+  ({ id, startDate: start ? D(start) : null, dueDate: due ? D(due) : null, status });
+
+const ok8 = scheduleViolations(
+  [st('a', '2026-01-01', '2026-01-10'), st('b', '2026-01-11', '2026-01-20')],
+  [dep('a', 'b')],
+);
+eq('a plan whose dates respect its edges has no violations', ok8.length, 0);
+
+const early = scheduleViolations(
+  [st('a', '2026-01-01', '2026-01-10'), st('b', '2026-01-05', '2026-01-20')],
+  [dep('a', 'b')],
+);
+eq('a task starting before its predecessor finishes is reported', early.length, 1);
+eq('by how many days', early[0].byDays, 5);
+
+// Lag is part of the constraint: a fourteen-day notice period means the
+// successor cannot start the next morning.
+const lagged = scheduleViolations(
+  [st('a', '2026-01-01', '2026-01-10'), st('b', '2026-01-15', '2026-01-30')],
+  [dep('a', 'b', 'FinishToStart', 14)],
+);
+eq('lag is respected in the check', lagged.length, 1);
+eq('and counted', lagged[0].byDays, 9);
+
+const ss = scheduleViolations(
+  [st('a', '2026-01-10', '2026-01-20'), st('b', '2026-01-05', '2026-01-25')],
+  [dep('a', 'b', 'StartToStart')],
+);
+eq('start-to-start compares starts', ss.length, 1);
+
+const ff = scheduleViolations(
+  [st('a', '2026-01-01', '2026-01-20'), st('b', '2026-01-05', '2026-01-15')],
+  [dep('a', 'b', 'FinishToFinish')],
+);
+eq('finish-to-finish compares finishes', ff.length, 1);
+
+// An undated task cannot violate anything — absence of a date is not a breach.
+eq('an undated task is not a violation',
+   scheduleViolations([st('a', null, null), st('b', '2026-01-01', '2026-01-05')],
+     [dep('a', 'b')]).length, 0);
+
+// ── 52. Where a slip actually costs the end date ────────────────────────────
+// A task off the critical path can run late without moving the end date; one
+// on it cannot. That is the whole difference between a slip that matters and
+// one that does not.
+console.log('\n52. Critical path');
+
+// Two routes: a->b->d is 10+10=20 days, a->c->d is 10+2+10=22.
+const branchTasks = [
+  st('a', '2026-01-01', '2026-01-11'),
+  st('b', '2026-01-11', '2026-01-13'),
+  st('c', '2026-01-11', '2026-01-21'),
+  st('d', '2026-01-21', '2026-01-31'),
+];
+const branchEdges = [dep('a', 'b'), dep('a', 'c'), dep('b', 'd'), dep('c', 'd')];
+const cp = criticalPath(branchTasks, branchEdges);
+
+cp.onPath.has('c') && !cp.onPath.has('b')
+  ? ok('the longer of two routes is the critical one', cp.path.join(' -> '))
+  : bad('the longer route is critical', cp.path.join(' -> '));
+cp.path[0] === 'a' && cp.path[cp.path.length - 1] === 'd'
+  ? ok('and it runs end to end') : bad('path runs end to end', cp.path.join(' -> '));
+eq('its length is the sum of the chain', cp.lengthDays, 30);
+
+// Lag lengthens a path: a notice period is time the plan actually spends.
+const withLag = criticalPath(branchTasks, [dep('a', 'b'), dep('b', 'd', 'FinishToStart', 30)]);
+withLag.lengthDays > 30
+  ? ok('lag counts toward the length — a notice period is time spent', `${withLag.lengthDays}d`)
+  : bad('lag counts toward length', `${withLag.lengthDays}`);
+
+// A cyclic graph has no longest path; refusing to guess is the honest answer.
+const cyclic = criticalPath([st('a', '2026-01-01', '2026-01-10'), st('b', '2026-01-10', '2026-01-20')],
+  [dep('a', 'b'), dep('b', 'a')]);
+cyclic.path.length === 0
+  ? ok('a looped plan has no critical path rather than a guessed one')
+  : bad('looped plan has no path');
+
+// An undated task on the chain contributes zero, but is not dropped — dropping
+// it would shorten the path and report the wrong tasks as critical.
+const gUndated = criticalPath(
+  [st('a', '2026-01-01', '2026-01-11'), st('b', null, null), st('c', '2026-02-01', '2026-02-11')],
+  [dep('a', 'b'), dep('b', 'c')],
+);
+gUndated.onPath.has('b')
+  ? ok('an unscheduled task stays on the chain, contributing nothing')
+  : bad('unscheduled task stays on the chain', gUndated.path.join(' -> '));
+
+// ── 53. Where a slip gets contested ─────────────────────────────────────────
+// Slice 4 exists because every steering meeting argues about whose fault a slip
+// was. A cross-side dependency is precisely where one is manufactured.
+console.log('\n53. Cross-side handovers');
+
+const sided = [
+  { id: 'a', side: 'Client' },
+  { id: 'b', side: 'Provider' },
+  { id: 'c', side: 'Provider' },
+];
+const handovers = crossSideLinks(sided, [dep('a', 'b'), dep('b', 'c')], new Set(['a', 'b']));
+
+eq('only links crossing sides are returned', handovers.length, 1);
+eq('naming the side being waited on', handovers[0].waitingOn, 'Client');
+eq('and the side waiting', handovers[0].waiting, 'Provider');
+// A handover on the critical path is the highest-risk item on an engagement:
+// one dropped ball that moves the end date.
+handovers[0].onCriticalPath
+  ? ok('a handover on the critical path is flagged as such')
+  : bad('critical handover flagged');
+
+// Both ends must be critical. A handover INTO critical work from something with
+// slack can safely be late, and calling it critical sends attention to the
+// wrong task.
+const halfCritical = crossSideLinks(sided, [dep('a', 'b')], new Set(['b']));
+!halfCritical[0].onCriticalPath
+  ? ok('but not one whose giving end has slack')
+  : bad('half-critical handover is not critical');
+
+eq('same-side sequencing is not a handover',
+   crossSideLinks([{ id: 'a', side: 'Provider' }, { id: 'b', side: 'Provider' }],
+     [dep('a', 'b')], new Set()).length, 0);
+
+// ── 54. If this moves, what else moves ──────────────────────────────────────
+console.log('\n54. Blast radius');
+
+const web = [dep('a', 'b'), dep('b', 'c'), dep('b', 'd'), dep('x', 'y')];
+const hit = downstreamOf(web, 'a');
+hit.size === 3 && hit.has('b') && hit.has('c') && hit.has('d')
+  ? ok('everything downstream is found, transitively', [...hit].sort().join(', '))
+  : bad('downstream is transitive', [...hit].join(','));
+!hit.has('a') ? ok('and the task itself is not in its own blast radius') : bad('self excluded');
+!hit.has('y') ? ok('nor is an unrelated chain') : bad('unrelated chain excluded');
+eq('a task nothing waits on moves nothing', downstreamOf(web, 'd').size, 0);
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);
