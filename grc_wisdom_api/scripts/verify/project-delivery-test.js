@@ -42,7 +42,7 @@ const iso = (daysFromNow) =>
   new Date(Date.now() + daysFromNow * 86400000).toISOString();
 
 async function main() {
-  console.log(`\n─── Delivery projects · slices 1-6 · ${API} ───\n`);
+  console.log(`\n─── Delivery projects · slices 1-7 · ${API} ───\n`);
 
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     console.error('ADMIN_EMAIL and ADMIN_PASSWORD must be set.');
@@ -1347,6 +1347,129 @@ async function main() {
   filtered.status === 200
     ? ok('a section filter matching nothing still produces a report')
     : bad('empty filter still exports', `${filtered.status}`);
+
+  // ── 32. The five delivery reports ───────────────────────────────────────
+  console.log('\n32. Delivery reports');
+
+  const rptBase = `/api/projects/${eid}`;
+
+  const unknownKind = await api(`${rptBase}/reports/nonsense?format=pdf`, { token });
+  unknownKind.status === 404 && unknownKind.json?.code === 'UNKNOWN_REPORT'
+    ? ok('an unknown report kind is refused by name')
+    : bad('unknown report refused', `${unknownKind.status} ${unknownKind.json?.code}`);
+
+  const badFmt = await api(`${rptBase}/reports/status?format=csv`, { token });
+  badFmt.status === 400 && badFmt.json?.code === 'UNSUPPORTED_FORMAT'
+    ? ok('and an unsupported format too')
+    : bad('unsupported format refused', `${badFmt.status} ${badFmt.json?.code}`);
+
+  // A phase report has to know which phase. Defaulting to the first would
+  // produce a plausible document about the wrong thing.
+  const noPhase = await api(`${rptBase}/reports/phase?format=pdf`, { token });
+  noPhase.status === 400 && noPhase.json?.code === 'PHASE_REQUIRED'
+    ? ok('a phase report will not guess which phase it is about')
+    : bad('phase report needs a phase', `${noPhase.status} ${noPhase.json?.code}`);
+
+  // Every kind, in every format the platform draws.
+  for (const kind of ['status', 'audit', 'delay', 'evidence']) {
+    const r = await api(`${rptBase}/reports/${kind}?format=pdf`, { token });
+    r.status === 200
+      ? ok(`the ${kind} report builds`)
+      : bad(`the ${kind} report builds`, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`);
+  }
+  const phaseReport = await api(`${rptBase}/reports/phase?format=pdf&phaseId=${ePhaseId}`, { token });
+  phaseReport.status === 200
+    ? ok('the phase report builds for a named phase')
+    : bad('phase report builds', `${phaseReport.status}`);
+
+  for (const fmt of ['docx', 'xlsx']) {
+    const r = await api(`${rptBase}/reports/status?format=${fmt}`, { token });
+    r.status === 200
+      ? ok(`and the status report draws as ${fmt.toUpperCase()}`)
+      : bad(`status report as ${fmt}`, `${r.status}`);
+  }
+
+  const wrongPhase = await api(
+    `${rptBase}/reports/phase?format=pdf&phaseId=00000000-0000-0000-0000-000000000000`, { token });
+  wrongPhase.status === 404
+    ? ok('a phase from another engagement is not found')
+    : bad('foreign phase refused', `${wrongPhase.status}`);
+
+  // ── 33. The register of what left ───────────────────────────────────────
+  console.log('\n33. Report register');
+
+  const rptReg = await api(`${rptBase}/reports`, { token });
+  rptReg.status === 200 && Array.isArray(rptReg.json?.register)
+    ? ok('the register lists what has been produced')
+    : bad('register lists', `${rptReg.status}`);
+
+  // Every export is recorded, not only formal issues: somebody now holds a copy
+  // of this organisation's unremediated weaknesses, and a register with no row
+  // for that cannot say who.
+  (rptReg.json?.register || []).length >= 7
+    ? ok('including plain exports, not only issues', `${rptReg.json.register.length} rows`)
+    : bad('exports are recorded', `${(rptReg.json?.register || []).length} rows`);
+
+  (rptReg.json?.register || []).every((r) => /^[0-9a-f]{64}$/.test(r.documentHash || ''))
+    ? ok('each carrying a content hash of what the report said')
+    : bad('every row carries a hash');
+
+  (rptReg.json?.register || []).every((r) => r.issued === false)
+    ? ok('and none of them issued, because none were asked to be')
+    : bad('plain exports are not rptMarked issued');
+
+  const issue1 = await api(`${rptBase}/reports/status?format=pdf&issue=true`, { token });
+  issue1.status === 200
+    ? ok('a formal issue builds') : bad('formal issue builds', `${issue1.status}`);
+
+  const issue2 = await api(`${rptBase}/reports/status?format=pdf&issue=true`, { token });
+  issue2.status === 200 ? ok('and a second one') : bad('second issue builds', `${issue2.status}`);
+
+  const afterIssue = await api(`${rptBase}/reports?issued=true`, { token });
+  const rptIssues = afterIssue.json?.register || [];
+  rptIssues.length === 2 && rptIssues.every((r) => r.issued)
+    ? ok('the issued filter returns only the numbered ones', `${rptIssues.length}`)
+    : bad('issued filter', `${rptIssues.length} rows`);
+
+  // A programme on its second issued status report is a different fact from one
+  // on its first, and the number is on the face of the document.
+  const rptNumbers = rptIssues.map((r) => r.issueNumber).sort();
+  rptNumbers.join(',') === '1,2'
+    ? ok('and they are numbered in sequence', rptNumbers.join(', '))
+    : bad('issues are numbered', rptNumbers.join(','));
+  rptIssues.every((r) => /-i\d+$/.test(r.documentRef))
+    ? ok('with the number on the document reference itself')
+    : bad('issue number on the reference', rptIssues.map((r) => r.documentRef).join(' '));
+
+  // The two issues were produced from identical figures, so the hash that
+  // covers WHAT the report says must match even though the references differ.
+  rptIssues[0].documentHash === rptIssues[1].documentHash
+    ? ok('two issues of unchanged figures hash alike, despite different references')
+    : bad('unchanged figures hash alike',
+          `${rptIssues[0].documentHash.slice(0, 12)} vs ${rptIssues[1].documentHash.slice(0, 12)}`);
+  rptIssues[0].documentRef !== rptIssues[1].documentRef
+    ? ok('while the references themselves stay distinct')
+    : bad('references are distinct');
+
+  // ── 34. Reports respect the branding and marking rules ──────────────────
+  console.log('\n34. Report chrome end to end');
+
+  const rptMarked = await api(`${rptBase}/reports/status?format=pdf&marking=Restricted`, { token });
+  rptMarked.status === 200
+    ? ok('an export can be rptMarked more restricted for one copy')
+    : bad('marking raised', `${rptMarked.status}`);
+
+  const rptAfterMark = await api(`${rptBase}/reports`, { token });
+  (rptAfterMark.json?.register || []).some((r) => r.marking === 'Restricted')
+    ? ok('and the register records the marking that was applied')
+    : bad('marking recorded', JSON.stringify(
+        (rptAfterMark.json?.register || []).slice(0, 2).map((r) => r.marking)));
+
+  const filteredRpt = await api(
+    `${rptBase}/reports/status?format=pdf&sections=Nonexistent`, { token });
+  filteredRpt.status === 200
+    ? ok('a section filter matching nothing still produces a report')
+    : bad('empty section filter still builds', `${filteredRpt.status}`);
 
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
   process.exit(fail === 0 ? 0 : 1);
