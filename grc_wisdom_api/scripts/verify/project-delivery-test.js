@@ -35,6 +35,9 @@ async function api(path, { token, method = 'GET', body } = {}) {
 
 async function login(email, password) {
   const r = await api('/api/auth/login', { method: 'POST', body: { email, password } });
+  if (!r.json?.token) {
+    console.error(`Login failed for ${email} (HTTP ${r.status}):`, JSON.stringify(r.json || r.raw || 'no response body'));
+  }
   return r.json?.token || null;
 }
 

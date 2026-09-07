@@ -122,6 +122,27 @@ jobs:
           # strangers, and login rate limiting.
           node scripts/verify/production-readiness-test.js
 
+          PID=$(cat /tmp/server.pid)
+          kill "$PID" || true
+          wait "$PID" 2>/dev/null || true
+          rm -f /tmp/server.pid
+
+      - name: API — delivery projects suite
+        working-directory: grc_wisdom_api
+        env:
+          NODE_ENV: production
+          ADMIN_EMAIL: ci@example.com
+          ADMIN_PASSWORD: ci-only-password-not-a-secret
+        run: |
+          node dist/server.js &
+          echo $! > /tmp/server.pid
+
+          for i in $(seq 1 30); do
+            curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
+
           # Slices 1-8 of the delivery module: creation, derived schedule,
           # lifecycle transitions, tenant isolation, the audit trail, the
           # phase/task rollup, and separation of duties on verification —
@@ -138,7 +159,10 @@ jobs:
           # unreachable without an Authorization header.
           node scripts/verify/project-delivery-test.js
 
-          kill "$(cat /tmp/server.pid)" || true
+          PID=$(cat /tmp/server.pid)
+          kill "$PID" || true
+          wait "$PID" 2>/dev/null || true
+          rm -f /tmp/server.pid
 
   build:
     name: Build and push images
