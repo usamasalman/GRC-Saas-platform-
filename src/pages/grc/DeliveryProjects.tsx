@@ -7,6 +7,7 @@ import ProjectImpediments from './project/ProjectImpediments';
 import ProjectEvidence from './project/ProjectEvidence';
 import ProjectReports from './project/ProjectReports';
 import ProjectTimeline from './project/ProjectTimeline';
+import NewProject from './project/NewProject';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -19,7 +20,7 @@ import ProjectTimeline from './project/ProjectTimeline';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline';
+type TabKey = 'portfolio' | 'plan' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -110,7 +111,15 @@ const DeliveryProjects: React.FC = () => {
         )}
       </div>
 
-      {tab === 'portfolio' && <ProjectPortfolio onOpen={open} />}
+      {tab === 'portfolio' && (
+        <ProjectPortfolio onOpen={open} onCreate={() => setTab('new')} />
+      )}
+      {tab === 'new' && (
+        <NewProject
+          onCreated={(p) => open(p)}
+          onCancel={() => setTab('portfolio')}
+        />
+      )}
       {tab === 'plan' && selected && <ProjectPlan key={selected.id} projectId={selected.id} />}
       {tab === 'verification' && selected && (
         <ProjectVerification key={selected.id} projectId={selected.id} />

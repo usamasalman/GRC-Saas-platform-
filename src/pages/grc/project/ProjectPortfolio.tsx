@@ -92,9 +92,10 @@ const ProgressBars: React.FC<{ reported: number; verified: number }> = ({ report
 interface Props {
   /** Opens a project's plan. Supplied by the workspace host. */
   onOpen?: (p: { id: string; ref: string; name: string }) => void;
+  onCreate?: () => void;
 }
 
-const ProjectPortfolio: React.FC<Props> = ({ onOpen }) => {
+const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [totals, setTotals] = useState({ active: 0, atRisk: 0, delayed: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
@@ -155,6 +156,9 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen }) => {
           ))}
         </select>
         <button style={ghostBtn} onClick={load}>Refresh</button>
+        <button style={{ ...ghostBtn, marginLeft: 8 }} onClick={() => onCreate?.()}>
+          New engagement
+        </button>
       </div>
 
       {error && (
@@ -177,7 +181,7 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen }) => {
             A delivery project tracks a compliance programme end to end — an ISO 27001 readiness
             effort, a SOC 2 preparation, a remediation plan — with its phases, owners and dates.
           </div>
-          <button style={primaryBtn(true)} disabled title="Project creation arrives with the planning screen">
+          <button style={primaryBtn(false)} onClick={() => onCreate?.()}>
             Create a project
           </button>
         </div>
