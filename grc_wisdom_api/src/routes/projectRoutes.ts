@@ -20,6 +20,10 @@ import {
   taskStatuses,
 } from '../controllers/projectPlanController';
 import {
+  exportDeliveryReport,
+  getReportRegister,
+} from '../controllers/deliveryReportController';
+import {
   attachEvidence,
   downloadEvidence,
   withdrawEvidence,
@@ -132,5 +136,17 @@ router.post('/evidence/:evidenceId/withdraw',
 
 router.post('/tasks/:taskId/clauses', requireCapability(CAP.MANAGE_PROJECT), linkClauses);
 router.delete('/clauses/:linkId', requireCapability(CAP.MANAGE_PROJECT), unlinkClause);
+
+// ── Reports ───────────────────────────────────────────────────────────────
+//
+// One route for five reports, because they differ only in their sections — the
+// chrome, the issue record and the three renderers are identical, and five
+// near-copies would be five places for the provenance block to drift.
+//
+// ?issue=true makes it a numbered issue rather than an ordinary export. Both
+// are recorded either way: somebody now holds a copy of this organisation's
+// unremediated weaknesses, and a register with no row for that cannot say who.
+router.get('/:id/reports', getReportRegister);
+router.get('/:id/reports/:kind', requireCapability(CAP.REPORT), exportDeliveryReport);
 
 export default router;

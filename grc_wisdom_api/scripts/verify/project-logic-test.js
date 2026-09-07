@@ -46,6 +46,10 @@ const {
 const {
   documentHash, snapshotOf, snapshotDelta, documentRefFor,
 } = require('../../dist/services/reportIssue');
+const {
+  statusFigures, attentionLists, verificationRows, verificationIntegrity,
+  unmappedClauses, isConfirmed,
+} = require('../../dist/services/deliveryReportData');
 
 let pass = 0, fail = 0;
 const ok = (l, d = '') => { pass++; console.log(`   PASS  ${l}${d ? ` — ${d}` : ''}`); };
@@ -1437,6 +1441,201 @@ eq('an issue carries its number too',
    documentRefFor('delivery-status', when, 3), 'DELIVERY-STATUS-20260911143000-i3');
 eq('issue zero is not an issue', documentRefFor('delivery-audit', when, 0),
    'DELIVERY-AUDIT-20260911143000');
+
+// ── 42. The steering committee's two readings ───────────────────────────────
+console.log('\n42. Status figures');
+
+const proj = (o = {}) => Object.assign({
+  status: 'Active', health: 'Green', reportedProgress: 50, verifiedProgress: 50,
+  startDate: D('2026-01-01'), targetEndDate: D('2026-04-01'), actualEndDate: null,
+  baselineTargetEndDate: D('2026-04-01'), baselineVersion: 1,
+}, o);
+
+const mid2 = statusFigures(proj({ reportedProgress: 87, verifiedProgress: 41 }), D('2026-02-15'));
+eq('the claimed figure is passed through untouched', mid2.reported, 87);
+eq('so is the confirmed one', mid2.verified, 41);
+// The gap gets its own number because a committee reading "87% complete"
+// behaves differently from one reading "46 points unconfirmed".
+eq('and the gap between them is stated on its own', mid2.unverifiedGap, 46);
+eq('a fully confirmed engagement has no gap',
+   statusFigures(proj({ reportedProgress: 60, verifiedProgress: 60 }), D('2026-02-01')).unverifiedGap, 0);
+
+// Where opinion and arithmetic part company is the most informative line on the
+// page. A project 80% done and Red because the last 20% is the hard part is
+// exactly what a committee must hear.
+const quietlyWorried = statusFigures(
+  proj({ health: 'Red', reportedProgress: 80 }), D('2026-02-01'));
+quietlyWorried.healthDisagrees
+  ? ok('a manager worried where the arithmetic is not, is flagged')
+  : bad('manager concern above arithmetic is flagged');
+
+const blindlyOptimistic = statusFigures(
+  proj({ health: 'Green', reportedProgress: 5 }), D('2026-03-20'));
+blindlyOptimistic.healthDisagrees
+  ? ok('and arithmetic worried where the manager is not, equally')
+  : bad('arithmetic concern above manager is flagged');
+
+!statusFigures(proj({ health: 'Green', reportedProgress: 50 }), D('2026-02-15')).healthDisagrees
+  ? ok('agreement is not flagged as disagreement') : bad('agreement is not flagged');
+
+// Slip is meaningless without an agreed date to slip from. An unbaselined
+// engagement has not slipped by zero — summing naively would report a project
+// that never agreed a plan as perfectly on it.
+const moved = statusFigures(proj({ targetEndDate: D('2026-05-01') }), D('2026-02-01'));
+eq('slip is measured against the agreed date', moved.scheduleSlipDays, 30);
+statusFigures(proj({ baselineTargetEndDate: null }), D('2026-02-01')).baselined === false
+  ? ok('and an unbaselined engagement is marked as such, not as on plan')
+  : bad('unbaselined is marked');
+
+// ── 43. Four chase chase, not one ───────────────────────────────────────────
+// An overdue task and one sitting past the review window are both late, on two
+// different people. Merging them sends the manager to the assignee for work
+// that has been finished for a week.
+console.log('\n43. Attention chase');
+
+const NOW = D('2026-03-01');
+const tk7 = (o) => Object.assign({ status: 'InProgress', dueDate: null, submittedAt: null }, o);
+
+const chase = attentionLists([
+  tk7({ status: 'InProgress', dueDate: D('2026-02-01') }),          // overdue
+  tk7({ status: 'SubmittedForVerification', submittedAt: D('2026-02-01') }), // reviewer
+  tk7({ status: 'Rejected' }),
+  tk7({ status: 'Blocked' }),
+  tk7({ status: 'Done', dueDate: D('2026-01-01') }),                 // finished, not late
+], NOW);
+
+eq('work past its date is owed by the assignee', chase.overdue.length, 1);
+eq('work past the review window is owed by a reviewer', chase.awaitingReview.length, 1);
+eq('sent-back work is its own list', chase.rejected.length, 1);
+eq('and so is stopped work', chase.blocked.length, 1);
+// The one that matters: submitted work must never appear in the overdue list,
+// or the reviewer's queue is attributed to the person who delivered on time.
+chase.overdue.every((t) => t.status !== 'SubmittedForVerification')
+  ? ok('delivered work never appears as the assignee being late')
+  : bad('delivered work is not the assignee being late');
+chase.overdue.every((t) => t.status !== 'Done')
+  ? ok('nor does finished work, however late it was')
+  : bad('finished work is not overdue');
+
+// ── 44. Testing the confirmed figure ────────────────────────────────────────
+// A report asserting "we enforce separation of duties" is worth nothing to a
+// sceptical reader. One showing the acceptor differed from the doer on every
+// line lets them check it.
+console.log('\n44. Verification record');
+
+const vt = (o = {}) => Object.assign({
+  ref: 'TSK-0001', name: 'Scope statement', status: 'Verified',
+  assigneeId: 'alice', submittedById: 'alice', verifiedById: 'bob',
+  verifiedAt: D('2026-02-10'), verificationRound: 1,
+  verifications: [
+    { outcome: 'Submitted', round: 1, actorId: 'alice', actorSide: 'Provider', createdAt: D('2026-02-01') },
+    { outcome: 'Accepted', round: 1, actorId: 'bob', actorSide: 'Client', createdAt: D('2026-02-10') },
+  ],
+  evidence: [],
+}, o);
+
+const nameOf7 = (id) => (id ? { alice: 'Alice', bob: 'Bob', carol: 'Carol' }[id] || id : '—');
+
+const vClean = verificationRows([vt()], nameOf7);
+eq('only confirmed work appears', vClean.length, 1);
+eq('named by whoever accepted it', vClean[0].acceptedBy, 'Bob');
+eq('with the side they answered to', vClean[0].acceptedSide, 'Client');
+vClean[0].independent === true
+  ? ok('and independence demonstrated, not asserted') : bad('independence demonstrated');
+
+// Unfinished work is not evidence of anything.
+eq('work not yet confirmed is absent',
+   verificationRows([vt({ status: 'InProgress' })], nameOf7).length, 0);
+
+// The hole this closes: ProjectTask.submittedById is nulled on withdraw and on
+// reopen, so comparing the acceptor against that column was sometimes comparing
+// against null — trivially "not equal", reporting independence unchecked.
+const selfAccepted = vt({
+  submittedById: null,
+  verifications: [
+    { outcome: 'Submitted', round: 1, actorId: 'alice', actorSide: 'Provider', createdAt: D('2026-02-01') },
+    { outcome: 'Accepted', round: 1, actorId: 'alice', actorSide: 'Provider', createdAt: D('2026-02-10') },
+  ],
+});
+verificationRows([selfAccepted], nameOf7)[0].independent === false
+  ? ok('a self-acceptance is caught even when the task column was cleared')
+  : bad('self-acceptance caught from the history, not the column');
+
+// An unverifiable control is not a passed control.
+const noHistory = vt({ submittedById: null, verifications: [
+  { outcome: 'Accepted', round: 1, actorId: 'bob', actorSide: 'Client', createdAt: D('2026-02-10') },
+] });
+verificationRows([noHistory], nameOf7)[0].independent === null
+  ? ok('and an untestable acceptance reports as untestable, not as passed')
+  : bad('untestable acceptance is not reported as passed');
+
+eq('rework attempts are counted',
+   verificationRows([vt({ verifications: [
+     { outcome: 'Submitted', round: 1, actorId: 'alice', actorSide: 'Provider', createdAt: D('2026-02-01') },
+     { outcome: 'Rejected', round: 1, actorId: 'bob', actorSide: 'Client', createdAt: D('2026-02-02') },
+     { outcome: 'Submitted', round: 2, actorId: 'alice', actorSide: 'Provider', createdAt: D('2026-02-05') },
+     { outcome: 'Accepted', round: 2, actorId: 'bob', actorSide: 'Client', createdAt: D('2026-02-10') },
+   ], verificationRound: 2 })], nameOf7)[0].rejections, 1);
+
+// ── 45. The one figure an auditor checks first ──────────────────────────────
+console.log('\n45. Verification integrity');
+
+const vGood = verificationIntegrity(verificationRows([vt(), vt({ ref: 'TSK-0002' })], nameOf7));
+vGood.clean ? ok('a clean set reads as clean') : bad('clean set reads as clean');
+eq('every acceptance independent', vGood.independentCount, 2);
+eq('and none failing', vGood.notIndependent, 0);
+
+const vDirty = verificationIntegrity(verificationRows([vt(), selfAccepted], nameOf7));
+!vDirty.clean ? ok('one self-acceptance stops the set being clean') : bad('self-acceptance is not clean');
+eq('and is counted as a failure', vDirty.notIndependent, 1);
+
+// Failures and untestables are counted apart, because they send the reader to
+// different places: one control did not hold, the other cannot be shown.
+const untestable = verificationIntegrity(verificationRows([vt(), noHistory], nameOf7));
+untestable.unestablished === 1 && untestable.notIndependent === 0
+  ? ok('an untestable acceptance is counted apart from a failed one')
+  : bad('untestable counted apart', JSON.stringify(untestable));
+!untestable.clean
+  ? ok('but still stops the set being clean — an auditor cannot rely on what cannot be shown')
+  : bad('untestable is not clean');
+
+// ── 46. Coverage on the auditor's stricter reading ──────────────────────────
+// clauseCoverage's default predicate admits Done, so a clause counts as
+// satisfied once every task mapped to it is ticked. For a certification body
+// that is the same conflation the claimed/confirmed split exists to prevent.
+console.log('\n46. Confirmed coverage');
+
+const clauseTask = (status, clause) => ({
+  id: 't' + status + clause, status,
+  clauseLinks: [{ clauseId: clause, standardCode: 'ISO27001' }],
+});
+const coverageMix = [clauseTask('Done', 'A5'), clauseTask('Verified', 'A8')];
+
+eq('on the ticked reading, both clauses look satisfied',
+   clauseCoverage(coverageMix, isComplete).clausesSatisfied, 2);
+eq('on the confirmed reading, only the checked one is',
+   clauseCoverage(coverageMix, isConfirmed).clausesSatisfied, 1);
+isConfirmed('Verified') && !isConfirmed('Done')
+  ? ok('because confirmed means a second person looked, not that somebody ticked')
+  : bad('isConfirmed admits only Verified');
+
+// ── 47. The gap nobody asks for ─────────────────────────────────────────────
+// A coverage figure computed only over mapped clauseList always looks vGood. The
+// clause nobody planned for is the one that surfaces in a certification audit.
+console.log('\n47. Unmapped clauses');
+
+const clauseList = [
+  { id: 'A5', ref: 'A.5', title: 'Policies', standardCode: 'ISO27001' },
+  { id: 'A8', ref: 'A.8', title: 'Asset management', standardCode: 'ISO27001' },
+  { id: 'A12', ref: 'A.12', title: 'Operations', standardCode: 'ISO27001' },
+];
+const clauseGaps = unmappedClauses(clauseList, new Set(['A5']));
+eq('clauses no task addresses are found', clauseGaps.length, 2);
+eq('and ordered so a reader can work down them', clauseGaps[0].ref, 'A.12');
+eq('a fully mapped standard has no gaps',
+   unmappedClauses(clauseList, new Set(['A5', 'A8', 'A12'])).length, 0);
+eq('and a plan mapping nothing has every clause as a gap',
+   unmappedClauses(clauseList, new Set()).length, 3);
 
 console.log('\n─── ' + pass + ' passed, ' + fail + ' failed ───\n');
 process.exit(fail === 0 ? 0 : 1);

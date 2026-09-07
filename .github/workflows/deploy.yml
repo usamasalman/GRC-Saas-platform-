@@ -84,6 +84,14 @@ jobs:
         working-directory: grc_wisdom_api
         run: node scripts/verify/report-chrome-test.js
 
+      # The five delivery reports, rendered and read back. A committee paper
+      # that prints the flattering figure without the other, or a percentage
+      # with no statement of the standard it was measured to, produces a
+      # perfectly valid PDF — so parsing the output is the only way to see it.
+      - name: API — delivery reports say what they should
+        working-directory: grc_wisdom_api
+        run: node scripts/verify/delivery-report-test.js
+
       - name: API — provision reference data against a real database
         working-directory: grc_wisdom_api
         env:

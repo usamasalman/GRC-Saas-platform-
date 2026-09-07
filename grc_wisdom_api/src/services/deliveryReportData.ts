@@ -148,8 +148,15 @@ export interface VerifiedTaskRow {
   evidenceSeen: number;
   /** Evidence attached after the acceptance it appears to support. */
   evidenceAddedLater: number;
-  /** Whether the acceptor was someone other than the doer and the submitter. */
-  independent: boolean;
+  /**
+   * Whether the acceptor was demonstrably someone other than the doer and the
+   * person who put the work forward.
+   *
+   * Three states, not two. `null` means it could not be established from the
+   * record — and an unverifiable control is not a passed control, so it must
+   * never be presented as one.
+   */
+  independent: boolean | null;
 }
 
 /**
@@ -173,7 +180,7 @@ export function verificationRows(
     verifiedAt: Date | null;
     verificationRound: number;
     verifications: readonly {
-      outcome: string; actorId: string; actorSide: string; createdAt: Date;
+      outcome: string; round: number; actorId: string; actorSide: string; createdAt: Date;
     }[];
     evidence: readonly { uploadedInRound: number; withdrawnAt: Date | null }[];
   }[],
@@ -185,6 +192,17 @@ export function verificationRows(
       const accepted = [...t.verifications].reverse().find((v) => v.outcome === 'Accepted');
       const standings = t.evidence.map((e) => evidenceStanding(e, t));
 
+      // The submitter is read from the verification history for the SAME round,
+      // not from ProjectTask.submittedById. That column is nulled on withdraw
+      // and on reopen, so comparing against it would sometimes be comparing
+      // against null — which is trivially "not equal" and would report
+      // independence without having checked anything.
+      const submission = accepted
+        ? t.verifications.find((v) => v.outcome === 'Submitted' && v.round === accepted.round)
+        : undefined;
+
+      const submitterId = submission?.actorId ?? t.submittedById;
+
       return {
         ref: t.ref,
         name: t.name,
@@ -195,9 +213,9 @@ export function verificationRows(
         rejections: t.verifications.filter((v) => v.outcome === 'Rejected').length,
         evidenceSeen: standings.filter((s) => s === 'Seen').length,
         evidenceAddedLater: standings.filter((s) => s === 'AddedLater').length,
-        independent: !!accepted
-          && accepted.actorId !== t.assigneeId
-          && accepted.actorId !== t.submittedById,
+        independent: !accepted || !submitterId
+          ? null
+          : accepted.actorId !== t.assigneeId && accepted.actorId !== submitterId,
       };
     });
 }
@@ -212,21 +230,41 @@ export function verificationIntegrity(rows: readonly VerifiedTaskRow[]): {
   verifiedCount: number;
   independentCount: number;
   notIndependent: number;
+  unestablished: number;
   withEvidenceAddedLater: number;
   acceptedFirstTime: number;
   clean: boolean;
 } {
-  const notIndependent = rows.filter((r) => !r.independent).length;
+  // Counted apart from failures, because they mean different things: one is a
+  // control that did not hold, the other a control whose operation cannot be
+  // demonstrated. Both stop the set being clean — an auditor cannot rely on
+  // what cannot be shown — but conflating them would tell the reader the wrong
+  // thing to go and look at.
+  const notIndependent = rows.filter((r) => r.independent === false).length;
+  const unestablished = rows.filter((r) => r.independent === null).length;
   const addedLater = rows.filter((r) => r.evidenceAddedLater > 0).length;
   return {
     verifiedCount: rows.length,
-    independentCount: rows.filter((r) => r.independent).length,
+    independentCount: rows.filter((r) => r.independent === true).length,
     notIndependent,
+    unestablished,
     withEvidenceAddedLater: addedLater,
     acceptedFirstTime: rows.filter((r) => r.rejections === 0).length,
-    clean: notIndependent === 0 && addedLater === 0,
+    clean: notIndependent === 0 && unestablished === 0 && addedLater === 0,
   };
 }
+
+/**
+ * Complete AND independently confirmed.
+ *
+ * The predicate the audit report uses for clause coverage, in place of
+ * isComplete. clauseCoverage() otherwise calls a clause "satisfied" once every
+ * task mapped to it is finished — reviewed or not — which for a sceptical
+ * reader is the same conflation the claimed/confirmed split exists to prevent,
+ * one level down. A certification body is not interested in what somebody
+ * ticked.
+ */
+export const isConfirmed = (status: string): boolean => status === 'Verified';
 
 // ─── Traceability gaps ──────────────────────────────────────────────────────
 
