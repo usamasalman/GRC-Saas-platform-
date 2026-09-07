@@ -39,18 +39,25 @@ router.get('/stats', getDocumentStats);
 router.get('/', listDocuments);
 router.get('/:id', getDocument);
 router.get('/:id/download', downloadDocument);
-router.post('/', createDocument);
-router.put('/:id', updateDocument);
-router.delete('/:id', deleteDocument);
+// Authoring and approving are separate capabilities on purpose: whoever writes
+// a policy should not be the one who signs it off, and both already existed —
+// SIGN_DOCUMENT was defined and attached to no route at all.
+//
+// acknowledge is deliberately left open below. Acknowledging a policy assigned
+// to you is the whole of a staff employee's job in this module, and gating it
+// would lock out the people it exists for.
+router.post('/', requireCapability(CAP.VERSION_DOCUMENT), createDocument);
+router.put('/:id', requireCapability(CAP.VERSION_DOCUMENT), updateDocument);
+router.delete('/:id', requireCapability(CAP.VERSION_DOCUMENT), deleteDocument);
 
 // Lifecycle
-router.post('/:id/checkout', checkoutDocument);
-router.post('/:id/checkin', checkinDocument);
-router.post('/:id/submit', submitForApproval);
-router.post('/:id/approve', approveDocument);
-router.post('/:id/reject', rejectDocument);
-router.post('/:id/publish', publishDocument);
-router.post('/:id/archive', archiveDocument);
+router.post('/:id/checkout', requireCapability(CAP.VERSION_DOCUMENT), checkoutDocument);
+router.post('/:id/checkin', requireCapability(CAP.VERSION_DOCUMENT), checkinDocument);
+router.post('/:id/submit', requireCapability(CAP.VERSION_DOCUMENT), submitForApproval);
+router.post('/:id/approve', requireCapability(CAP.SIGN_DOCUMENT), approveDocument);
+router.post('/:id/reject', requireCapability(CAP.SIGN_DOCUMENT), rejectDocument);
+router.post('/:id/publish', requireCapability(CAP.SIGN_DOCUMENT), publishDocument);
+router.post('/:id/archive', requireCapability(CAP.VERSION_DOCUMENT), archiveDocument);
 
 // Admin-tier document operations (require admin role + justification)
 router.post('/:id/force-release', requireCapability(CAP.RETENTION_HOLD), forceReleaseCheckout);
