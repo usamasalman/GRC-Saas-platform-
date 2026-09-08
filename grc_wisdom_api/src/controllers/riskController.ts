@@ -508,6 +508,129 @@ export const completeTreatment = async (req: AuthenticatedRequest, res: Response
   }
 };
 
+/**
+ * Correct a treatment action.
+ *
+ * Actions could be added and completed and nothing else, so an owner assigned
+ * to the wrong person or a date agreed before the work was scoped stayed as it
+ * was -- and the overdue-actions figure on the risk cockpit is computed from
+ * exactly those dates. A register whose deadlines cannot be corrected reports
+ * overdue work that nobody agreed to.
+ *
+ * A completed action is left alone: it is the record of what was done and when.
+ */
+export const updateTreatment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const t = await prisma.riskTreatmentAction.findFirst({
+      where: { id, risk: { tenantId: { in: scope.tenantIds } } },
+      include: { risk: { select: { id: true, ref: true, tenantId: true } } },
+    });
+    if (!t) { res.status(404).json({ status: 'error', message: 'Treatment action not found' }); return; }
+
+    if (t.status === 'Done') {
+      res.status(409).json({
+        status: 'error',
+        code: 'TREATMENT_COMPLETED',
+        message: 'This action is already completed, and the record of what was done and when '
+          + 'is not editable. Raise a new action if further work is needed.',
+      });
+      return;
+    }
+
+    const { title, ownerId, dueDate } = req.body || {};
+    const data: any = {};
+    if (title) data.title = String(title).trim();
+    if (ownerId) data.ownerId = String(ownerId);
+    if (dueDate !== undefined) {
+      if (dueDate === null || dueDate === '') {
+        data.dueDate = null;
+      } else {
+        const d = new Date(dueDate);
+        if (Number.isNaN(d.getTime())) {
+          res.status(400).json({ status: 'error', message: 'dueDate is not a valid date' });
+          return;
+        }
+        data.dueDate = d;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.riskTreatmentAction.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: t.risk.tenantId, actorId: req.user!.id, action: 'RISK_TREATMENT_UPDATED',
+        subjectType: SUBJ_RISK, subjectId: t.risk.id,
+        payload: {
+          treatmentId: id, riskRef: t.risk.ref,
+          before: {
+            title: t.title, ownerId: t.ownerId,
+            dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+          },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', treatment: updated });
+  } catch (error: any) {
+    console.error('[Treatment Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update the treatment action' });
+  }
+};
+
+/**
+ * Remove a treatment action raised in error.
+ *
+ * Only while it is still open. A completed action is the evidence that a risk
+ * was actually treated rather than merely written down, and deleting it would
+ * quietly raise the residual position the register reports.
+ */
+export const deleteTreatment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const t = await prisma.riskTreatmentAction.findFirst({
+      where: { id, risk: { tenantId: { in: scope.tenantIds } } },
+      include: { risk: { select: { id: true, ref: true, tenantId: true } } },
+    });
+    if (!t) { res.status(404).json({ status: 'error', message: 'Treatment action not found' }); return; }
+
+    if (t.status === 'Done') {
+      res.status(409).json({
+        status: 'error',
+        code: 'TREATMENT_COMPLETED',
+        message: 'A completed action is the evidence that this risk was treated. Removing it '
+          + 'would leave the register claiming less was done than was.',
+      });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: t.risk.tenantId, actorId: req.user!.id, action: 'RISK_TREATMENT_DELETED',
+        subjectType: SUBJ_RISK, subjectId: t.risk.id,
+        payload: {
+          treatmentId: id, riskRef: t.risk.ref, title: t.title,
+          ownerId: t.ownerId, dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+        },
+      });
+      await tx.riskTreatmentAction.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: 'Treatment action removed' });
+  } catch (error: any) {
+    console.error('[Treatment Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to remove the treatment action' });
+  }
+};
+
 // ─── Time-bound acceptance (approval record, not just a flag) ──────────────
 
 export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {

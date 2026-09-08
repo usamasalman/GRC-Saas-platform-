@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { createIssueRecord } from '../services/issueFactory';
 import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
@@ -450,5 +451,139 @@ export const closeCampaign = async (req: AuthenticatedRequest, res: Response): P
   } catch (error: any) {
     console.error('[RCSA Close Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to close campaign' });
+  }
+};
+
+/**
+ * Correct a campaign before it goes out.
+ *
+ * Campaigns were create-then-launch, so a title or a due date typed wrongly at
+ * setup went out to every assessor that way -- and the due date is what the
+ * whole exercise is chased against.
+ *
+ * Editable only in Draft. Once launched, the period and the deadline are what
+ * respondents were asked to work to, and changing them underneath people who
+ * have already answered makes the responses answer a question nobody was asked.
+ */
+export const updateCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const campaign = await prisma.rcsaCampaign.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+    });
+    if (!campaign) { res.status(404).json({ status: 'error', message: 'Campaign not found' }); return; }
+
+    if (campaign.status !== 'Draft') {
+      res.status(409).json({
+        status: 'error',
+        code: 'CAMPAIGN_LAUNCHED',
+        message: `${campaign.ref} is ${campaign.status}. Its period and deadline are what `
+          + 'assessors were asked to work to, so changing them now would make the answers '
+          + 'already given respond to a question nobody was asked.',
+        currentStatus: campaign.status,
+      });
+      return;
+    }
+
+    const { title, period, dueDate } = req.body || {};
+    const data: any = {};
+    if (title) data.title = String(title).trim();
+    if (period) data.period = String(period).trim();
+    if (dueDate) {
+      const d = new Date(dueDate);
+      if (Number.isNaN(d.getTime())) {
+        res.status(400).json({ status: 'error', message: 'dueDate is not a valid date' });
+        return;
+      }
+      data.dueDate = d;
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.rcsaCampaign.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: campaign.tenantId, actorId: req.user!.id, action: 'RCSA_CAMPAIGN_UPDATED',
+        subjectType: 'RcsaCampaign', subjectId: id,
+        payload: {
+          ref: campaign.ref,
+          before: {
+            title: campaign.title, period: campaign.period,
+            dueDate: campaign.dueDate.toISOString(),
+          },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', campaign: updated });
+  } catch (error: any) {
+    console.error('[RCSA Campaign Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update the campaign' });
+  }
+};
+
+/**
+ * Remove a campaign that was never sent.
+ *
+ * A launched campaign has assessments hanging off it -- people's answers about
+ * their own controls -- and those are the output of the exercise. Closing is
+ * how a campaign ends; this is for the draft created twice.
+ */
+export const deleteCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const campaign = await prisma.rcsaCampaign.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: { _count: { select: { assessments: true } } },
+    });
+    if (!campaign) { res.status(404).json({ status: 'error', message: 'Campaign not found' }); return; }
+
+    // Allow-listed rather than forbid-listed: the statuses are Draft, Launched
+    // and Closed, and anything that is not a draft has been put in front of
+    // assessors. Enumerating the ones that block deletion means a status added
+    // later is deletable by default, and the default has to be the safe way.
+    if (campaign.status !== 'Draft') {
+      res.status(409).json({
+        status: 'error',
+        code: 'CAMPAIGN_LAUNCHED',
+        message: `${campaign.ref} is ${campaign.status}, so it has already gone out to `
+          + 'assessors. Close it instead — that ends the exercise and keeps what people answered.',
+        currentStatus: campaign.status,
+      });
+      return;
+    }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'campaign',
+      dependants: [
+        { label: 'assessments in it', count: campaign._count.assessments },
+      ],
+      alternative: 'Close it instead — that ends the exercise and keeps what people answered.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: campaign.tenantId, actorId: req.user!.id, action: 'RCSA_CAMPAIGN_DELETED',
+        subjectType: 'RcsaCampaign', subjectId: id,
+        payload: {
+          ref: campaign.ref, title: campaign.title, period: campaign.period,
+          dueDate: campaign.dueDate.toISOString(),
+        },
+      });
+      await tx.rcsaCampaign.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${campaign.ref} removed` });
+  } catch (error: any) {
+    console.error('[RCSA Campaign Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to remove the campaign' });
   }
 };

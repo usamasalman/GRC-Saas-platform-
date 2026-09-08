@@ -25,6 +25,7 @@ import {
 } from '../controllers/grcController';
 import {
   listRisks, createRisk, updateRisk, deleteRisk, unlinkRelatedRisk, setRiskControls,
+  updateTreatment, deleteTreatment,
   addTreatment, completeTreatment, acceptRisk,
   setRiskEntities, linkRelatedRisk, reviewRisk, riskAnalytics,
 } from '../controllers/riskController';
@@ -47,6 +48,8 @@ import {
 import {
   listCampaigns, getCampaign, createCampaign, addScope,
   launchCampaign, submitAssessment, closeCampaign,
+  updateCampaign,
+  deleteCampaign
 } from '../controllers/rcsaController';
 import {
   listKris, createKri, updateKri, deleteKri, recordReading,
@@ -177,6 +180,10 @@ router.delete('/risks/:id', requireCapability(CAP.ASSESS_RISK), deleteRisk);
 router.post('/risks/:id/links', requireCapability(CAP.ASSESS_RISK), setRiskControls);
 router.post('/risks/:id/treatments', requireCapability(CAP.ASSESS_RISK), addTreatment);
 router.post('/treatments/:id/complete', requireCapability(CAP.ASSESS_RISK), completeTreatment);
+// Actions could be added and completed and nothing else, so an owner or a date
+// set wrongly stayed wrong — and the overdue figure is computed from those dates.
+router.patch('/treatments/:id', requireCapability(CAP.ASSESS_RISK), updateTreatment);
+router.delete('/treatments/:id', requireCapability(CAP.ASSESS_RISK), deleteTreatment);
 router.post('/risks/:id/accept', requireCapability(CAP.ASSESS_RISK), acceptRisk);
 // The linkage spine: where a risk sits in the audit universe, what it causes,
 // and confirming it has been looked at.
@@ -286,6 +293,11 @@ router.post('/rcsa', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTA
 router.post('/rcsa/:id/scope', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), addScope);
 router.post('/rcsa/:id/launch', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), launchCampaign);
 router.post('/rcsa/:id/close', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), closeCampaign);
+// Draft campaigns only: once launched, the period and deadline are what
+// assessors were asked to work to, so changing them makes the answers already
+// given respond to a question nobody was asked.
+router.patch('/rcsa/:id', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), updateCampaign);
+router.delete('/rcsa/:id', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), deleteCampaign);
 // Any control owner can be a respondent, so this route is deliberately open to
 // authenticated users — the controller checks they are the assigned respondent.
 router.post('/rcsa-assessments/:assessmentId/submit', submitAssessment);

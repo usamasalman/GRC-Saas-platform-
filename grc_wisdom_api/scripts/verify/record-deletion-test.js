@@ -167,6 +167,42 @@ for (const c of CASES) {
   }
 }
 
+// Guards that allow-list instead of forbid-listing. Each names the one status
+// deletion is permitted from, so a status added later is refused by default.
+// deleteCampaign and the treatment guards were written as forbid-lists first
+// and had the same defect the vendor and issue guards had: 'Open' and
+// 'InProgress' are not RCSA campaign statuses at all.
+{
+  const rcsa = read('controllers/rcsaController.ts');
+  const start = rcsa.indexOf('export const deleteCampaign');
+  ok(start >= 0, 'deleteCampaign exists');
+  const body = rcsa.slice(start);
+  ok(
+    body.includes("campaign.status !== 'Draft'"),
+    'deleteCampaign permits only Draft — the statuses are Draft, Launched and Closed, '
+    + 'and anything past Draft has gone out to assessors',
+  );
+  is(forbiddenIn(rcsa, 'deleteCampaign'), [],
+    'and carries no enumerated forbidden list that could drift from the real statuses');
+
+  const campaignStatuses = (rcsa.match(/status: '([A-Za-z]+)'/g) || []).map((q) => q.split("'")[1]);
+  ok(campaignStatuses.includes('Draft'), "'Draft' is a status the campaign controller actually sets");
+}
+
+{
+  const risk = read('controllers/riskController.ts');
+  for (const fn of ['updateTreatment', 'deleteTreatment']) {
+    const start = risk.indexOf(`export const ${fn}`);
+    ok(start >= 0, `${fn} exists`);
+    const body = risk.slice(start, start + 3000);
+    ok(
+      body.includes("t.status === 'Done'"),
+      `${fn} refuses a completed action — it is the evidence the risk was actually treated, `
+      + 'and removing it would quietly raise the residual position the register reports',
+    );
+  }
+}
+
 // deleteIssue guards with the AWAITING_RESPONSE allow-list instead of a
 // forbidden list. Confirm that is still what it does — swapping it back to an
 // enumerated forbid-list is the regression this catches.
