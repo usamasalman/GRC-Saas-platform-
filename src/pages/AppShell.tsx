@@ -1,6 +1,6 @@
 import Icon from '../components/Icon';
 import type { IconName } from '../components/Icon';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 // @ts-ignore
@@ -353,7 +353,7 @@ const AppShell = () => {
    * is the server that decides — see navCapabilities for why most keys are
    * deliberately unmapped and therefore always shown.
    */
-  const navGroups = React.useMemo(() => {
+  const navGroups = useMemo(() => {
     const groups = NAV[account.portal] || [];
     const caps: string[] | undefined = account.capabilities;
     return groups
