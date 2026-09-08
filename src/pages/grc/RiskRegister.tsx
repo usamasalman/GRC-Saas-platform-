@@ -7,6 +7,7 @@ import type { Grid } from './risk/RiskHeatmaps';
 import Icon from '../../components/Icon';
 import RiskImport from './risk/RiskImport';
 import { ConfirmDialog } from '../../components/Dialog';
+import FormDialog from '../../components/FormDialog';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -79,6 +80,16 @@ const RiskRegister: React.FC = () => {
   const [editing, setEditing] = useState<any | null>(null);
   const [removing, setRemoving] = useState<any | null>(null);
   const [removeErr, setRemoveErr] = useState('');
+  /**
+   * The risk whose acceptance is being authorized, or null.
+   *
+   * Acceptance needs an expiry and a justification, and asking for them one
+   * after the other meant the date was off the screen by the time the
+   * justification was being written -- and abandoning the justification threw
+   * the date away. They are one decision, so they are one form.
+   */
+  const [accepting, setAccepting] = useState<any | null>(null);
+  const [acceptErr, setAcceptErr] = useState('');
   const [showAddTreatmentModal, setShowAddTreatmentModal] = useState<string | null>(null); // riskId
   const [treatmentForm, setTreatmentForm] = useState({ title: '', dueDate: '', ownerId: '' });
 
