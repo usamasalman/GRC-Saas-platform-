@@ -70,6 +70,7 @@ import BrdTraceability from './system/BrdTraceability';
 // Realtime Dashboard Component
 import RealtimeDashboardPage from './dashboard/RealtimeDashboardPage';
 import GrcSummaryDashboard from './dashboard/GrcSummaryDashboard';
+import { navVisible } from './navCapabilities';
 
 // User Guide Components
 import { UserGuideModal } from '../components/UserGuideModal';
@@ -285,6 +286,24 @@ const AppShell = () => {
 
     setAccount({ ...user, color: user.color || 'var(--info)' });
     setTokenReady(true);
+
+    // Re-read the user from the server rather than trusting only what was
+    // stored at sign-in. Sessions that predate the capability field carry a
+    // stored user without one, and a role changed by an administrator does not
+    // reach a browser that never signs out. Both would leave the menu showing
+    // what the API will refuse.
+    //
+    // Failure is ignored on purpose: the stored user is already rendering, and
+    // a transient /me error should not blank a working shell. The API is the
+    // thing enforcing access either way.
+    apiClient.get('/api/auth/me')
+      .then((res) => {
+        const fresh = res.data?.user;
+        if (!fresh?.id) return;
+        localStorage.setItem('grc_user_json', JSON.stringify(fresh));
+        setAccount((prev: any) => ({ ...prev, ...fresh, color: prev?.color || 'var(--info)' }));
+      })
+      .catch(() => undefined);
   }, [navigate]);
 
   // Supporting records for the dashboard views. All optional: each call is
@@ -318,7 +337,29 @@ const AppShell = () => {
 
   if (!account) return null;
 
-  const navGroups = NAV[account.portal] || [];
+  /**
+   * The portal's menu, with entries this person cannot act on removed.
+   *
+   * Previously every role saw every entry in its portal, so a read-only auditor
+   * was shown Manage Tenants, Roles & Permissions, Subscriptions and Feature
+   * Flags and had to click one to discover it was not theirs. The API has
+   * refused those calls since the capability guards went on; this stops the
+   * menu offering them in the first place.
+   *
+   * A group whose every entry is filtered out is dropped rather than left as a
+   * heading with nothing under it.
+   *
+   * Presentation only. Every route still checks the grants server-side, and it
+   * is the server that decides — see navCapabilities for why most keys are
+   * deliberately unmapped and therefore always shown.
+   */
+  const navGroups = React.useMemo(() => {
+    const groups = NAV[account.portal] || [];
+    const caps: string[] | undefined = account.capabilities;
+    return groups
+      .map((group: any) => [group[0], group[1].filter((item: any) => navVisible(item[0], caps))])
+      .filter((group: any) => group[1].length > 0);
+  }, [account.portal, account.capabilities]);
 
   const handleLogout = () => {
     localStorage.removeItem('authPersonaId');

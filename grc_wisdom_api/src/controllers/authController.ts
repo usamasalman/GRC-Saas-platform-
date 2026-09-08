@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { prisma } from '../db';
+import { capabilitiesOfRole } from '../services/capabilityEngine';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { generateMfaSecret, generateQrCodeUrl, verifyMfaToken } from '../utils/mfaUtils';
 
@@ -66,8 +67,27 @@ function resolvePortal(user: { tenant?: { type?: string | null } | null }): stri
   return PORTAL_BY_TENANT_TYPE[type] || 'multibranch';
 }
 
+/**
+ * What the browser is told about the signed-in user.
+ *
+ * `capabilities` is here so the sidebar can show a person only the things they
+ * can actually do. Until now the menu rendered every entry for every role, so a
+ * read-only auditor saw Create, Edit and Delete throughout and found out which
+ * ones were real by clicking them and reading a 403.
+ *
+ * It is read from the same place the route middleware reads it -- the linked
+ * Role's grants, via capabilitiesOfRole -- so the menu and the API cannot
+ * disagree about what someone may do. A user with no linked role resolves to an
+ * empty list, which fails closed: they see the portal, and nothing that acts.
+ *
+ * This is for presentation only. It is not a permission check, and nothing here
+ * is trusted by the server; every one of these routes checks the grants again
+ * on the way in. Hiding a button the API would refuse is a courtesy, not a
+ * control.
+ */
 function toUserResponse(user: any) {
   return {
+    capabilities: capabilitiesOfRole(user.roleRef ?? null),
     id: user.id,
     email: user.email,
     name: user.name,
@@ -99,7 +119,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const cleanEmail = String(email).trim().toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email: cleanEmail },
-      include: { tenant: true },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -171,7 +191,7 @@ export const mfaChallenge = async (req: Request, res: Response): Promise<void> =
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      include: { tenant: true },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
     });
     if (!user || !user.mfaEnabled || !user.mfaSecret) {
       res.status(401).json({ status: 'error', message: 'MFA is not enabled for this account' });
@@ -205,7 +225,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     const tokenHash = hashRefreshToken(String(refreshToken));
     const user = await prisma.user.findFirst({
       where: { refreshTokenHash: tokenHash },
-      include: { tenant: true },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
     });
 
     if (!user || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
@@ -348,7 +368,7 @@ export const registerAdmin = async (req: Request, res: Response): Promise<void> 
         profile: 'Platform Owner',
         status: 'Active',
       },
-      include: { tenant: true },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
     });
 
     console.log(`[Bootstrap]: first administrator created (${cleanEmail}). Endpoint now closed.`);
@@ -369,7 +389,7 @@ export const me = async (req: AuthenticatedRequest, res: Response): Promise<void
     const userId = req.user?.id;
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { tenant: true },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
     });
 
     if (!user) {
