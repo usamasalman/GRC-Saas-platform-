@@ -282,7 +282,7 @@ const RiskRegister: React.FC = () => {
       setTreatmentForm({ title: '', dueDate: '', ownerId: '' });
       await load();
     } catch (err) {
-      window.alert(apiError(err, 'Failed to assign treatment action'));
+      setError(apiError(err, 'Failed to assign treatment action'));
     } finally {
       setBusy(false);
     }
@@ -294,25 +294,42 @@ const RiskRegister: React.FC = () => {
       setNotice('Treatment action marked completed');
       await load();
     } catch (err) {
-      window.alert(apiError(err));
+      setError(apiError(err));
     }
   };
 
-  const accept = async (risk: any) => {
+  /**
+   * The segregation-of-duties guard runs before anything is asked for. There is
+   * no point collecting a justification the server will refuse to record.
+   */
+  const accept = (risk: any) => {
     if (risk.ownerId === me?.id) {
-      window.alert('SoD Violation: The risk owner cannot approve acceptance of their own risk. An independent officer is required.');
+      setError('SoD Violation: The risk owner cannot approve acceptance of their own risk. An independent officer is required.');
       return;
     }
-    const until = window.prompt('Accept until (YYYY-MM-DD):', new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10));
-    if (!until) return;
-    const reason = window.prompt('Formal acceptance justification & compensating factors:');
-    if (!reason) return;
+    setAcceptErr('');
+    setAccepting(risk);
+  };
+
+  const submitAccept = async (values: Record<string, string>) => {
+    if (!accepting) return;
+    setBusy(true);
+    setAcceptErr('');
     try {
-      const res = await apiClient.post(`/api/grc/risks/${risk.id}/accept`, { until, reason });
+      const res = await apiClient.post(`/api/grc/risks/${accepting.id}/accept`, {
+        until: values.until,
+        reason: values.reason,
+      });
+      setAccepting(null);
       setNotice(res.data?.message || 'Risk accepted successfully');
       await load();
     } catch (err) {
-      window.alert(apiError(err));
+      // Kept in the open dialog: a refusal here is usually "beyond tolerance,
+      // this one has to be treated down", and the justification just written
+      // should survive reading it.
+      setAcceptErr(apiError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -322,7 +339,7 @@ const RiskRegister: React.FC = () => {
       setNotice(res.data?.message || 'Controls updated and residual score recomputed');
       await load();
     } catch (err) {
-      window.alert(apiError(err));
+      setError(apiError(err));
     }
   };
 
