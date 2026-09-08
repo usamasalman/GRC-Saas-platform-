@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import DeleteRecordButton from '../../../components/DeleteRecordButton';
 
 /**
  * One register for every issue, whatever raised it.
@@ -46,6 +47,15 @@ const IssueRegister: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [filter, setFilter] = useState({ source: '', status: '', overdue: false });
   const [showNew, setShowNew] = useState(false);
+  /**
+   * The finding being corrected, or null when raising a new one.
+   *
+   * The register had eight endpoints and not one could fix a typo — every
+   * operation moved the finding forward through its lifecycle. Auditors write
+   * findings in the field against a deadline; a wrong rating or a half-finished
+   * recommendation was permanent.
+   */
+  const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState({
     source: 'SelfIdentified', sourceReference: '', title: '',
     condition: '', recommendation: '', riskRating: 'Medium', targetCloseDate: '',
@@ -75,6 +85,52 @@ const IssueRegister: React.FC = () => {
   }, []);
 
   const needsSourceRef = form.source === 'Regulator' || form.source === 'ExternalAudit';
+
+  const BLANK_ISSUE = {
+    source: 'SelfIdentified', sourceReference: '', title: '',
+    condition: '', recommendation: '', riskRating: 'Medium', targetCloseDate: '',
+  };
+
+  const openCreate = () => { setEditing(null); setForm(BLANK_ISSUE); setShowNew(true); };
+
+  const openEdit = (i: any) => {
+    setEditing(i);
+    setForm({
+      source: i.source || 'SelfIdentified',
+      sourceReference: i.sourceReference || '',
+      title: i.title || '',
+      condition: i.condition || '',
+      recommendation: i.recommendation || '',
+      riskRating: i.riskRating || 'Medium',
+      targetCloseDate: i.targetCloseDate ? String(i.targetCloseDate).slice(0, 10) : '',
+    });
+    setShowNew(true);
+  };
+
+  /**
+   * Save a corrected finding.
+   *
+   * Source is not sent. It decides which lifecycle and which SoD rules apply --
+   * a regulator finding is not the same object as a self-identified one -- and
+   * the server does not accept it on a PATCH either.
+   */
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      await apiClient.patch(`/api/grc/issues/${editing.id}`, {
+        title: form.title,
+        condition: form.condition,
+        recommendation: form.recommendation,
+        riskRating: form.riskRating,
+        targetCloseDate: form.targetCloseDate || undefined,
+      });
+      setShowNew(false);
+      setEditing(null);
+      setNotice(`${editing.ref} updated`);
+      await load();
+    } catch (err) { setNotice(apiError(err)); }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,21 +228,32 @@ const IssueRegister: React.FC = () => {
           Overdue only
         </label>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button style={primaryBtn()} onClick={() => setShowNew(!showNew)}>
+          <button style={primaryBtn()} onClick={() => (showNew ? (setShowNew(false), setEditing(null)) : openCreate())}>
             {showNew ? 'Cancel' : '+ Raise issue'}
           </button>
         </div>
       </div>
 
       {showNew && (
-        <form onSubmit={create} style={{ ...S.card, padding: 16, marginBottom: 14, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        <form onSubmit={editing ? saveEdit : create} style={{ ...S.card, padding: 16, marginBottom: 14, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--ink-muted)' }}>
-            Internal audit findings are raised against their engagement so they inherit its reference and
-            workpaper trail. This form is for issues from every other source.
+            {editing
+              ? `Correcting ${editing.ref}. Changing the rating moves the target close date to `
+                + 'match the remediation window for the new rating, unless you set a date yourself.'
+              : 'Internal audit findings are raised against their engagement so they inherit its '
+                + 'reference and workpaper trail. This form is for issues from every other source.'}
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 3 }}>Source</label>
-            <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} style={S.input}>
+            <select
+              value={form.source}
+              onChange={(e) => setForm({ ...form, source: e.target.value })}
+              style={S.input}
+              // Fixed once raised. Source selects which lifecycle and which
+              // separation-of-duties rules apply, so a regulator finding is not the
+              // same object as a self-identified one; the server ignores it here too.
+              disabled={!!editing}
+            >
               {SOURCES.map((s) => <option key={s} value={s}>{SOURCE_LABEL[s]}</option>)}
             </select>
           </div>
@@ -225,7 +292,9 @@ const IssueRegister: React.FC = () => {
             <textarea required rows={2} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} style={{ ...S.input, resize: 'vertical' }} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <button type="submit" style={primaryBtn()}>Raise issue</button>
+            <button type="submit" style={primaryBtn()}>
+              {editing ? `Save ${editing.ref}` : 'Raise issue'}
+            </button>
           </div>
         </form>
       )}
@@ -307,6 +376,28 @@ const IssueRegister: React.FC = () => {
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 {['Open', 'Reopened'].includes(i.status) && (
                   <button style={linkBtn('var(--info)')} onClick={() => respond(i)}>management response</button>
+                )}
+                {/* Both are offered only while the finding is awaiting a response.
+                    Once management has answered, editing the wording underneath
+                    their response would record them as agreeing to something they
+                    never read — the server refuses for the same reason. */}
+                {['Open', 'Reopened'].includes(i.status) && (
+                  <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(i)}>edit</button>
+                )}
+                {['Open', 'Reopened'].includes(i.status) && (
+                  <DeleteRecordButton
+                    endpoint={`/api/grc/issues/${i.id}`}
+                    what="finding"
+                    reference={i.ref}
+                    name={i.title}
+                    guidance="A finding that was genuinely raised and should not stand is closed with a reason instead, which records both the finding and the judgement about it."
+                    onDone={(m) => { setNotice(m); load(); }}
+                    label="delete"
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      textDecoration: 'underline', fontWeight: 500, fontSize: 12,
+                    }}
+                  />
                 )}
                 {i.status === 'Responded' && (
                   <button style={linkBtn('var(--warning)')} onClick={() => assignCap(i)}>assign CAP</button>

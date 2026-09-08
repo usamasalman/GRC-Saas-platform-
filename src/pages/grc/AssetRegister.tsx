@@ -172,6 +172,17 @@ const AssetRegister: React.FC = () => {
     setShowNew(true);
   };
 
+  const detachRisk = async (asset: any, link: any) => {
+    setBusy(true);
+    try {
+      const res = await apiClient.delete(`/api/grc/assets/${asset.id}/risks/${link.riskId}`);
+      setNotice(res.data?.message || 'Risk detached');
+      setDetail(null);
+      await load();
+    } catch (err) { setNotice(apiError(err, 'Could not detach the risk')); }
+    finally { setBusy(false); }
+  };
+
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
@@ -855,6 +866,18 @@ const AssetRegister: React.FC = () => {
                     </span>
                     <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-muted)' }}>
                       inherent {l.risk?.inherentScore} → residual <strong style={{ color: 'var(--ink)' }}>{l.risk?.residualScore}</strong>
+                      {/* Linking was one-way: pick the wrong asset from a list of
+                          several hundred and the association was permanent. The link
+                          only says "this risk applies to this asset" and carries no
+                          assessment of its own, so detaching removes exactly that
+                          statement and leaves both records intact. */}
+                      <button
+                        onClick={() => detachRisk(detail, l)}
+                        style={{ ...linkBtn('var(--danger)'), marginLeft: 10, fontSize: 11.5 }}
+                        title={`Detach ${l.risk?.ref} from ${detail.ref}`}
+                      >
+                        detach
+                      </button>
                     </span>
                   </div>
                   {l.threat && (

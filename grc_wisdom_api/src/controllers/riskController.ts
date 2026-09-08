@@ -1045,3 +1045,63 @@ export const deleteRisk = async (req: AuthenticatedRequest, res: Response): Prom
     res.status(500).json({ status: 'error', message: 'Failed to delete risk' });
   }
 };
+
+/**
+ * Break a cause-and-effect link between two risks.
+ *
+ * linkRelatedRisk could only ever add. The causal network is the part of a
+ * register people get wrong most often -- deciding whether A causes B or B
+ * causes A is a judgement, and the first attempt is frequently backwards -- and
+ * a wrong direction there is not cosmetic: it is what the network view uses to
+ * show which risks are root causes worth treating first.
+ *
+ * The link itself carries no assessment, no approval and no evidence. Nothing
+ * hangs off it, so this genuinely deletes rather than withdraws. The audit entry
+ * records what the link said.
+ */
+export const unlinkRelatedRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const targetId = req.params.targetId as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+
+    const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
+
+    // Either direction. The caller knows the two risks, not which one the row
+    // happens to store as the cause.
+    const link = await prisma.riskLink.findFirst({
+      where: {
+        OR: [
+          { causeId: id, effectId: targetId },
+          { causeId: targetId, effectId: id },
+        ],
+      },
+    });
+    if (!link) {
+      res.status(404).json({
+        status: 'error',
+        code: 'LINK_NOT_FOUND',
+        message: 'These two risks are not linked.',
+      });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: risk.tenantId, actorId: req.user!.id, action: 'RISK_LINK_REMOVED',
+        subjectType: SUBJ_RISK, subjectId: id,
+        payload: {
+          ref: risk.ref, causeId: link.causeId, effectId: link.effectId,
+          nature: link.nature, note: link.note,
+        },
+      });
+      await tx.riskLink.delete({ where: { id: link.id } });
+    });
+
+    res.json({ status: 'success', message: 'Link removed' });
+  } catch (error: any) {
+    console.error('[Unlink Related Risk Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to remove the link' });
+  }
+};

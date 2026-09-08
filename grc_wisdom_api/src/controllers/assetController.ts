@@ -710,3 +710,54 @@ export const deleteAsset = async (req: AuthenticatedRequest, res: Response): Pro
     res.status(500).json({ status: 'error', message: 'Failed to delete asset' });
   }
 };
+
+/**
+ * Detach a risk from an asset.
+ *
+ * linkExistingRisk could only add, so picking the wrong asset from a dropdown
+ * of several hundred was permanent. The link says "this risk applies to this
+ * asset" and carries nothing else -- no assessment, no evidence -- so removing
+ * it removes exactly that statement and neither record is touched.
+ */
+export const unlinkAssetRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const assetId = req.params.id as string;
+    const riskId = req.params.riskId as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+
+    const asset = await prisma.asset.findFirst({
+      where: { id: assetId, tenantId: { in: scope.tenantIds } },
+    });
+    if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
+
+    const link = await prisma.assetRiskLink.findUnique({
+      where: { assetId_riskId: { assetId, riskId } },
+      include: { risk: { select: { ref: true, title: true } } },
+    });
+    if (!link) {
+      res.status(404).json({
+        status: 'error',
+        code: 'LINK_NOT_FOUND',
+        message: 'That risk is not linked to this asset.',
+      });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: asset.tenantId, actorId: req.user!.id, action: 'ASSET_RISK_UNLINKED',
+        subjectType: 'Asset', subjectId: assetId,
+        payload: {
+          assetRef: asset.ref, assetName: asset.name,
+          riskRef: link.risk?.ref, riskTitle: link.risk?.title,
+        },
+      });
+      await tx.assetRiskLink.delete({ where: { id: link.id } });
+    });
+
+    res.json({ status: 'success', message: `${link.risk?.ref ?? 'Risk'} detached from ${asset.ref}` });
+  } catch (error: any) {
+    console.error('[Unlink Asset Risk Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to detach the risk' });
+  }
+};

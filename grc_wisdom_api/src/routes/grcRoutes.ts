@@ -24,7 +24,7 @@ import {
   addEvidence, reviewEvidence,
 } from '../controllers/grcController';
 import {
-  listRisks, createRisk, updateRisk, deleteRisk, setRiskControls,
+  listRisks, createRisk, updateRisk, deleteRisk, unlinkRelatedRisk, setRiskControls,
   addTreatment, completeTreatment, acceptRisk,
   setRiskEntities, linkRelatedRisk, reviewRisk, riskAnalytics,
 } from '../controllers/riskController';
@@ -58,7 +58,7 @@ import {
 } from '../controllers/auditPlanningController';
 
 import {
-  listAssets, createAsset, updateAsset, deleteAsset, raiseRiskFromAsset,
+  listAssets, createAsset, updateAsset, deleteAsset, unlinkAssetRisk, raiseRiskFromAsset,
   setAssetControls, linkExistingRisk, reviewAsset, assetAnalytics,
 } from '../controllers/assetController';
 
@@ -178,6 +178,10 @@ router.post('/risks/:id/accept', requireCapability(CAP.ASSESS_RISK), acceptRisk)
 // and confirming it has been looked at.
 router.post('/risks/:id/entities', requireCapability(CAP.ASSESS_RISK), setRiskEntities);
 router.post('/risks/:id/related', requireCapability(CAP.ASSESS_RISK), linkRelatedRisk);
+// The causal network could only be added to. A cause and effect entered the
+// wrong way round is the commonest mistake in a register and drives which risks
+// the network view calls root causes.
+router.delete('/risks/:id/related/:targetId', requireCapability(CAP.ASSESS_RISK), unlinkRelatedRisk);
 router.post('/risks/:id/review', requireCapability(CAP.ASSESS_RISK), reviewRisk);
 router.get('/risk-analytics', riskAnalytics);
 
@@ -200,6 +204,7 @@ router.post('/assets/:id/controls', MAY_MAINTAIN_ASSETS, setAssetControls);
 router.post('/assets/:id/review', MAY_MAINTAIN_ASSETS, reviewAsset);
 router.post('/assets/:id/risks', requireCapability(CAP.ASSESS_RISK), raiseRiskFromAsset);
 router.post('/assets/:id/link-risk', requireCapability(CAP.ASSESS_RISK), linkExistingRisk);
+router.delete('/assets/:id/risks/:riskId', MAY_MAINTAIN_ASSETS, unlinkAssetRisk);
 
 // -- Bulk asset import (staged) -------------------------------------------
 // Extraction produces candidates, never assets. Criticality becomes the impact
