@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { judgeDeletion } from '../services/recordDeletion';
 import {
   VENDOR_CATEGORIES, VENDOR_STATUSES, DATA_ACCESS, DATA_ACCESS_HELP,
   ASSESSMENT_KINDS, ASSESSMENT_OUTCOMES, VENDOR_FORMULAS,
@@ -594,5 +595,64 @@ export const vendorAnalytics = async (req: AuthenticatedRequest, res: Response):
   } catch (error: any) {
     console.error('[Vendor Analytics Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to compute vendor analytics' });
+  }
+};
+
+/**
+ * Remove a vendor that should not be in the register.
+ *
+ * Refused once anything has happened to the relationship. An assessment is the
+ * due diligence record -- the thing a regulator asks to see when they ask how a
+ * third party was vetted -- and deleting the vendor cascades it away. Assets
+ * supplied by the vendor and findings raised against it are the same story.
+ * Offboarding is the route for a vendor the organisation genuinely stopped
+ * using.
+ */
+export const deleteVendor = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const vendor = await prisma.vendor.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: {
+        _count: { select: { assessments: true, assets: true, riskLinks: true, issues: true } },
+      },
+    });
+    if (!vendor) { res.status(404).json({ status: 'error', message: 'Vendor not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'vendor',
+      status: vendor.status,
+      // VENDOR_STATUSES is Prospective | Active | UnderReview | Exiting |
+      // Terminated. Exiting and Terminated both mean a decision was taken about
+      // the relationship, and that decision is the record.
+      forbiddenStatuses: ['Exiting', 'Terminated'],
+      dependants: [
+        { label: 'assessments', count: vendor._count.assessments },
+        { label: 'supplied assets', count: vendor._count.assets },
+        { label: 'linked risks', count: vendor._count.riskLinks },
+        { label: 'findings raised against it', count: vendor._count.issues },
+      ],
+      alternative: 'Set it to Terminated instead — that is what records the relationship '
+        + 'ending, and it keeps the due diligence you already did.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: vendor.tenantId, actorId: req.user!.id, action: 'VENDOR_DELETED',
+        subjectType: 'Vendor', subjectId: id,
+        payload: {
+          ref: vendor.ref, name: vendor.name, category: vendor.category,
+          tier: vendor.tier, contractRef: vendor.contractRef,
+        },
+      });
+      await tx.vendor.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${vendor.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Delete Vendor Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete vendor' });
   }
 };

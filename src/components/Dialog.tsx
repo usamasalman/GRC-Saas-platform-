@@ -242,4 +242,101 @@ export const PromptDialog: React.FC<PromptProps> = ({
   );
 };
 
+// -- Withdraw with a reason ------------------------------------------------
+
+export interface ReasonProps {
+  title: string;
+  /** What is about to happen, in the caller's own words. */
+  message: React.ReactNode;
+  /** Label for the reason field. "Why is this being withdrawn?" reads better than "Reason". */
+  label?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  /** Shortest reason worth recording. Two words is not an explanation. */
+  minLength?: number;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+  busy?: boolean;
+}
+
+/**
+ * For destroying something that is also a record.
+ *
+ * Most of this product's registers are evidence: a risk somebody accepted, a
+ * finding an auditor raised, a control an assessor tested. The right way to
+ * remove one of those is rarely DELETE FROM -- it is to mark it withdrawn, keep
+ * the row, and record who withdrew it and why. Regulators ask what used to be
+ * there; a hard delete cannot answer, and neither can a soft delete with a null
+ * reason column.
+ *
+ * So the reason is mandatory rather than optional. An optional reason field is
+ * empty on every row that matters, because the moment someone is withdrawing
+ * something is exactly the moment they are in a hurry.
+ */
+export const ReasonDialog: React.FC<ReasonProps> = ({
+  title, message, label = 'Reason', placeholder, confirmLabel = 'Withdraw',
+  minLength = 10, onConfirm, onCancel, busy,
+}) => {
+  const [reason, setReason] = useState('');
+  const [touched, setTouched] = useState(false);
+
+  const trimmed = reason.trim();
+  const problem = trimmed.length === 0
+    ? 'A reason is required.'
+    : trimmed.length < minLength
+      ? `Give a little more detail — at least ${minLength} characters. This is what someone reads a year from now when they ask what happened to this record.`
+      : null;
+
+  const submit = () => {
+    setTouched(true);
+    if (problem) return;
+    onConfirm(trimmed);
+  };
+
+  return (
+    <DialogShell title={title} onClose={busy ? () => undefined : onCancel} width={520}>
+      <div style={{ fontSize: 13, color: 'var(--ink-body)', lineHeight: 1.6 }}>
+        {message}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>{label}</span>
+        <textarea
+          style={{ ...S.input, width: '100%', marginTop: 4, minHeight: 84, resize: 'vertical' }}
+          value={reason}
+          autoFocus
+          placeholder={placeholder}
+          onChange={(e) => setReason(e.target.value)}
+          onBlur={() => setTouched(true)}
+        />
+        {touched && problem ? (
+          <div style={{ fontSize: 11.5, color: 'var(--danger)', marginTop: 6, lineHeight: 1.5 }}>
+            {problem}
+          </div>
+        ) : (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.5 }}>
+            Recorded against this record in the audit log, with your name and the time.
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 18, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <button style={ghostBtn} onClick={onCancel} disabled={busy}>Cancel</button>
+        <button
+          style={{
+            ...primaryBtn(busy || !!problem),
+            ...(!problem && !busy
+              ? { background: 'var(--danger)', borderColor: 'var(--danger)' }
+              : {}),
+          }}
+          onClick={submit}
+          disabled={busy || !!problem}
+        >
+          {busy ? 'Working…' : confirmLabel}
+        </button>
+      </div>
+    </DialogShell>
+  );
+};
+
 export default DialogShell;

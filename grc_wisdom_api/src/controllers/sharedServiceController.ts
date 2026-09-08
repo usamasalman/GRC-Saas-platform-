@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope } from '../services/scopeResolver';
 
 /**
@@ -332,5 +333,127 @@ export const setServiceControls = async (req: AuthenticatedRequest, res: Respons
   } catch (error: any) {
     console.error('[Shared Service Controls Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to attach controls' });
+  }
+};
+
+/**
+ * Correct a shared service.
+ *
+ * Create-only until now, so an SLA summary or a reporting cadence typed wrongly
+ * at setup stayed wrong for every consuming entity that reads it.
+ *
+ * Status is editable here and Retired is reachable, which is the intended way
+ * to take a service out of use: the consumers and the controls it carried stay
+ * attached, so the entities that relied on it can still show what they relied
+ * on and when it stopped.
+ */
+export const updateSharedService = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const svc = await prisma.sharedService.findFirst({
+      where: { id, providerTenantId: { in: scope.tenantIds } },
+    });
+    if (!svc) { res.status(404).json({ status: 'error', message: 'Shared service not found' }); return; }
+
+    const { name, function: fn, description, serviceOwnerId, slaSummary, reportingCadence, status } = req.body || {};
+    const data: any = {};
+    if (name) data.name = String(name).trim();
+    if (description !== undefined) data.description = description ? String(description).trim() : null;
+    if (serviceOwnerId) data.serviceOwnerId = serviceOwnerId;
+    if (slaSummary !== undefined) data.slaSummary = slaSummary ? String(slaSummary).trim() : null;
+
+    if (fn) {
+      if (!SERVICE_FUNCTIONS.includes(fn)) {
+        res.status(400).json({ status: 'error', message: `function must be one of: ${SERVICE_FUNCTIONS.join(', ')}` });
+        return;
+      }
+      data.function = fn;
+    }
+    if (reportingCadence) {
+      if (!CADENCES.includes(reportingCadence)) {
+        res.status(400).json({ status: 'error', message: `reportingCadence must be one of: ${CADENCES.join(', ')}` });
+        return;
+      }
+      data.reportingCadence = reportingCadence;
+    }
+    if (status) {
+      if (!SERVICE_STATUSES.includes(status)) {
+        res.status(400).json({ status: 'error', message: `status must be one of: ${SERVICE_STATUSES.join(', ')}` });
+        return;
+      }
+      data.status = status;
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.sharedService.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: svc.providerTenantId, actorId: req.user!.id, action: 'SHARED_SERVICE_UPDATED',
+        subjectType: 'SharedService', subjectId: id,
+        payload: {
+          ref: svc.ref,
+          before: { status: svc.status, reportingCadence: svc.reportingCadence },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', service: updated });
+  } catch (error: any) {
+    console.error('[Shared Service Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update shared service' });
+  }
+};
+
+/**
+ * Remove a shared service nobody consumed.
+ *
+ * Once an entity has accepted it, the acceptance is that entity's record of
+ * what it relies on somebody else to do -- which is precisely the thing a group
+ * auditor comes looking for. Retiring keeps it; deleting cascades the consumer
+ * rows and the control assignments away together.
+ */
+export const deleteSharedService = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const svc = await prisma.sharedService.findFirst({
+      where: { id, providerTenantId: { in: scope.tenantIds } },
+      include: { _count: { select: { consumers: true, controls: true } } },
+    });
+    if (!svc) { res.status(404).json({ status: 'error', message: 'Shared service not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'shared service',
+      status: svc.status,
+      forbiddenStatuses: ['Retired'],
+      dependants: [
+        { label: 'consuming entities', count: svc._count.consumers },
+        { label: 'controls it carries', count: svc._count.controls },
+      ],
+      alternative: 'Set it to Retired instead — the entities that relied on it keep the record '
+        + 'that they did, and when it stopped.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: svc.providerTenantId, actorId: req.user!.id, action: 'SHARED_SERVICE_DELETED',
+        subjectType: 'SharedService', subjectId: id,
+        payload: { ref: svc.ref, name: svc.name, function: svc.function, status: svc.status },
+      });
+      await tx.sharedService.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${svc.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Shared Service Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete shared service' });
   }
 };

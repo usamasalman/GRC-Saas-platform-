@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { judgeDeletion } from '../services/recordDeletion';
 
 /**
  * Authoring frameworks you can audit against.
@@ -296,6 +297,132 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
  * ControlClauseLink, and the only way to map one was a dialog nobody can drive
  * 731 times.
  */
+/**
+ * Correct a clause.
+ *
+ * Clauses were add-only: `POST /standards/:id/clauses` and nothing else, so a
+ * mistyped reference or a title pasted from the wrong row was permanent, and
+ * the only way out was to delete the whole standard and re-import it. That is
+ * not a hypothetical -- clause text gets transcribed by hand from a PDF.
+ *
+ * `ref` is editable but stays unique within its standard, because the mapping
+ * table, the coverage report and the delivery projects all address clauses by
+ * reference. A duplicate ref does not fail loudly; it makes two rows that look
+ * identical in every dropdown.
+ */
+export const updateClause = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const clause = await prisma.standardClause.findUnique({
+      where: { id }, include: { standard: true },
+    });
+    if (!clause) { res.status(404).json({ status: 'error', message: 'Clause not found' }); return; }
+
+    const denied = await refuseIfNotYours(req, clause.standard);
+    if (denied) { res.status(denied.status).json(denied.body); return; }
+
+    const { ref, title, text } = req.body || {};
+    const data: any = {};
+    if (ref) data.ref = String(ref).trim();
+    if (title) data.title = String(title).trim();
+    if (text !== undefined) data.text = text ? String(text).trim() : null;
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    if (data.ref && data.ref !== clause.ref) {
+      const clash = await prisma.standardClause.findFirst({
+        where: { standardId: clause.standardId, ref: data.ref, id: { not: id } },
+      });
+      if (clash) {
+        res.status(409).json({
+          status: 'error',
+          code: 'CLAUSE_REF_TAKEN',
+          message: `${clause.standard.code} already has a clause ${data.ref} ("${clash.title}"). `
+            + 'Two clauses with one reference are indistinguishable everywhere they are picked from.',
+        });
+        return;
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.standardClause.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId, actorId: req.user!.id, action: 'CLAUSE_UPDATED',
+        subjectType: 'StandardClause', subjectId: id,
+        payload: {
+          standardCode: clause.standard.code,
+          before: { ref: clause.ref, title: clause.title },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', clause: updated });
+  } catch (error: any) {
+    console.error('[Clause Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update clause' });
+  }
+};
+
+/**
+ * Remove a clause that should not be in the standard.
+ *
+ * StandardClause cascades to ControlClauseLink and ProjectTaskClause, so an
+ * unguarded delete silently unmaps every control that satisfied this clause and
+ * severs whatever a delivery project cited it for -- with no error and nothing
+ * in the coverage report to show a clause used to be there. Both are counted,
+ * and both refuse.
+ */
+export const deleteClause = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const clause = await prisma.standardClause.findUnique({
+      where: { id },
+      include: {
+        standard: true,
+        _count: { select: { links: true, taskLinks: true } },
+      },
+    });
+    if (!clause) { res.status(404).json({ status: 'error', message: 'Clause not found' }); return; }
+
+    const denied = await refuseIfNotYours(req, clause.standard);
+    if (denied) { res.status(denied.status).json(denied.body); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'clause',
+      dependants: [
+        { label: 'controls mapped to it', count: clause._count.links },
+        { label: 'project tasks citing it', count: clause._count.taskLinks },
+      ],
+      alternative: 'Unmap those first — from the control, or from the task that cites it — '
+        + 'so the coverage report shows the change instead of the clause simply disappearing.',
+    });
+    if (!verdict.allowed) {
+      res.status(409).json({ status: 'error', ...verdict, allowed: undefined });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId, actorId: req.user!.id, action: 'CLAUSE_DELETED',
+        subjectType: 'StandardClause', subjectId: id,
+        payload: {
+          standardCode: clause.standard.code, ref: clause.ref, title: clause.title,
+        },
+      });
+      await tx.standardClause.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `Clause ${clause.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Clause Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete clause' });
+  }
+};
+
 export const bulkMapControlsToClauses = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {

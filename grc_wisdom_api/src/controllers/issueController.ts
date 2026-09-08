@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
 import { createIssueRecord } from '../services/issueFactory';
@@ -596,5 +597,187 @@ export const escalateIssue = async (req: AuthenticatedRequest, res: Response): P
   } catch (error: any) {
     console.error('[Issue Escalate Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to escalate issue' });
+  }
+};
+
+/**
+ * Correct a finding before anyone has answered it.
+ *
+ * The issue register had eight endpoints and not one of them could fix a typo.
+ * Every operation was a lifecycle move -- respond, assign a CAP, submit for
+ * closure, close, reopen, escalate -- so a finding raised with the wrong rating
+ * or a half-written recommendation could only be pushed forwards, never
+ * corrected. Auditors write findings in the field, often against a deadline;
+ * this is not an unusual case.
+ *
+ * Editable only while the finding is awaiting a response. Once management has
+ * answered it, the wording is what they answered, and changing it underneath
+ * their response would make the register say they agreed to something they
+ * never saw. A finding that is genuinely wrong at that point gets withdrawn
+ * through closure with a reason, which leaves both halves visible.
+ */
+export const updateIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    if (!issue) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
+
+    if (!AWAITING_RESPONSE.includes(issue.status)) {
+      res.status(409).json({
+        status: 'error',
+        code: 'ISSUE_ALREADY_ANSWERED',
+        message: `${issue.ref} is ${issue.status}. Management has already responded to the wording `
+          + 'as it stands, so editing it now would record them as agreeing to something they '
+          + 'never read. Close it with the reason instead, and raise a corrected finding.',
+        currentStatus: issue.status,
+      });
+      return;
+    }
+
+    const {
+      title, criterion, condition, cause, recommendation, riskRating, targetCloseDate,
+    } = req.body || {};
+    const data: any = {};
+    if (title) data.title = String(title).trim();
+    if (criterion !== undefined) data.criterion = criterion ? String(criterion).trim() : null;
+    if (condition !== undefined) data.condition = condition ? String(condition).trim() : null;
+    if (cause !== undefined) data.cause = cause ? String(cause).trim() : null;
+    if (recommendation) data.recommendation = String(recommendation).trim();
+
+    if (riskRating) {
+      if (!RATINGS.includes(riskRating)) {
+        res.status(400).json({ status: 'error', message: `riskRating must be one of: ${RATINGS.join(', ')}` });
+        return;
+      }
+      data.riskRating = riskRating;
+      // The rating drives the remediation window. Re-rating a finding without
+      // moving its date leaves a High finding on a Low finding's deadline,
+      // which is how a register reports itself as compliant while it is not.
+      if (targetCloseDate === undefined) {
+        data.targetCloseDate = new Date(
+          issue.identifiedDate.getTime() + TARGET_DAYS[riskRating] * DAY_MS,
+        );
+      }
+    }
+
+    if (targetCloseDate !== undefined) {
+      if (targetCloseDate === null) {
+        data.targetCloseDate = null;
+      } else {
+        const d = new Date(targetCloseDate);
+        if (Number.isNaN(d.getTime())) {
+          res.status(400).json({ status: 'error', message: 'targetCloseDate is not a valid date' });
+          return;
+        }
+        data.targetCloseDate = d;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.issue.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: issue.tenantId, actorId: req.user!.id, action: 'ISSUE_UPDATED',
+        subjectType: SUBJ_ISSUE, subjectId: id,
+        payload: {
+          ref: issue.ref,
+          before: {
+            title: issue.title, riskRating: issue.riskRating,
+            targetCloseDate: issue.targetCloseDate ? issue.targetCloseDate.toISOString() : null,
+          },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', issue: updated });
+  } catch (error: any) {
+    console.error('[Issue Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update finding' });
+  }
+};
+
+/**
+ * Remove a finding raised in error.
+ *
+ * Narrow on purpose. A finding is an assertion an auditor made, and the ability
+ * to make one disappear is exactly the ability an audit function must not have
+ * -- it is the difference between a register and a draft. So this only applies
+ * while nobody has responded, nothing was derived from it, and it was raised by
+ * hand rather than thrown off by a control test, an RCSA or a KRI breach. A
+ * finding with a source behind it stays, because deleting it would leave the
+ * test result pointing at nothing and the coverage silently short.
+ */
+export const deleteIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const issue = await prisma.issue.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: {
+        _count: {
+          select: {
+            testResults: true, rcsaAssessments: true, kriReadings: true, lossEvents: true,
+          },
+        },
+      },
+    });
+    if (!issue) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
+
+    // Allow-listed rather than forbid-listed. The statuses are Open, Reopened,
+    // Responded, Disputed, CAPAssigned, PendingClosure and Closed; enumerating
+    // the ones that block deletion means a status added next year is deletable
+    // by default, and the default here has to be the safe direction.
+    if (!AWAITING_RESPONSE.includes(issue.status)) {
+      res.status(409).json({
+        status: 'error',
+        code: 'ISSUE_ALREADY_ANSWERED',
+        message: `${issue.ref} is ${issue.status}, so somebody has already acted on it. `
+          + 'Close it with a reason instead — that records both the finding and the judgement '
+          + 'that it should not have been raised, which is what an audit trail is for.',
+        currentStatus: issue.status,
+      });
+      return;
+    }
+
+    const c = issue._count;
+    const verdict = judgeDeletion({
+      recordLabel: 'finding',
+      dependants: [
+        { label: 'control tests that raised it', count: c.testResults },
+        { label: 'RCSA assessments that raised it', count: c.rcsaAssessments },
+        { label: 'indicator breaches that raised it', count: c.kriReadings },
+        { label: 'loss events that raised it', count: c.lossEvents },
+        { label: 'prior reopenings', count: issue.reopenedCount },
+        { label: 'management responses', count: issue.respondedAt ? 1 : 0 },
+        { label: 'corrective action plans', count: issue.capDescription ? 1 : 0 },
+      ],
+      alternative: 'Close it with a reason instead — that records both the finding and the '
+        + 'judgement that it should not have been raised, which is what an audit trail is for.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: issue.tenantId, actorId: req.user!.id, action: 'ISSUE_DELETED',
+        subjectType: SUBJ_ISSUE, subjectId: id,
+        payload: {
+          ref: issue.ref, title: issue.title, source: issue.source,
+          riskRating: issue.riskRating, recommendation: issue.recommendation,
+        },
+      });
+      await tx.issue.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${issue.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Issue Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete finding' });
   }
 };

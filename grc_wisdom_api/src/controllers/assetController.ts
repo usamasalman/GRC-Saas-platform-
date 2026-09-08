@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { judgeDeletion } from '../services/recordDeletion';
 import {
   ASSET_TYPES, ASSET_OWNERSHIP, CLASSIFICATIONS, ASSET_STATUSES, TYPE_HELP,
   computeCriticality, criticalityTierOf, tangibilityOf, drivingDimension,
@@ -650,5 +651,62 @@ export const assetAnalytics = async (req: AuthenticatedRequest, res: Response): 
   } catch (error: any) {
     console.error('[Asset Analytics Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to compute asset analytics' });
+  }
+};
+
+/**
+ * Remove an asset that should not be in the register.
+ *
+ * The register was create-and-amend only, so a machine entered twice stayed
+ * twice and inflated every criticality roll-up that counted it. Assets cascade
+ * to their risk links, control links and child assets, and an asset is what a
+ * finding points at, so anything with those attached is refused rather than
+ * quietly taking them with it. Retiring is the route for an asset that existed
+ * and no longer does -- the row is the evidence it was ever in scope.
+ */
+export const deleteAsset = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const asset = await prisma.asset.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: {
+        _count: { select: { children: true, riskLinks: true, controlLinks: true, issues: true } },
+      },
+    });
+    if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'asset',
+      status: asset.status,
+      // A retired asset is a record that something was in scope and came out of
+      // it. Deleting one rewrites the history of what was ever assessed.
+      forbiddenStatuses: ['Retired'],
+      dependants: [
+        { label: 'child assets', count: asset._count.children },
+        { label: 'linked risks', count: asset._count.riskLinks },
+        { label: 'linked controls', count: asset._count.controlLinks },
+        { label: 'findings raised against it', count: asset._count.issues },
+      ],
+      alternative: 'Set it to Retired instead — it leaves the live register and keeps its history.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: asset.tenantId, actorId: req.user!.id, action: 'ASSET_DELETED',
+        subjectType: 'Asset', subjectId: id,
+        payload: {
+          ref: asset.ref, name: asset.name, type: asset.type,
+          classification: asset.classification, criticalityTier: asset.criticalityTier,
+        },
+      });
+      await tx.asset.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${asset.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Delete Asset Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete asset' });
   }
 };

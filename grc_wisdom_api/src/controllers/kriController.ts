@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { kriBreachLevel, validateKriThresholds } from '../services/riskThresholds';
 import { createIssueRecord } from '../services/issueFactory';
@@ -204,5 +205,138 @@ export const recordReading = async (req: AuthenticatedRequest, res: Response): P
   } catch (error: any) {
     console.error('[KRI Reading Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to record KRI reading' });
+  }
+};
+
+/**
+ * Correct a key risk indicator.
+ *
+ * KRIs were create-only, which is a bad property for the one object in the
+ * register whose whole job is to be calibrated. An amber threshold set too low
+ * cries wolf every month until people stop reading it; set too high it never
+ * fires. Both are discovered from the readings, i.e. after creation, and until
+ * now the only remedy was a second KRI measuring the same thing.
+ *
+ * Thresholds are re-validated against the direction on every change, because a
+ * direction flip with the old numbers left in place inverts every future
+ * breach silently -- green becomes red and nothing errors.
+ */
+export const updateKri = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const kri = await prisma.kri.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    if (!kri) { res.status(404).json({ status: 'error', message: 'KRI not found' }); return; }
+
+    const { name, unit, direction, amberThreshold, redThreshold, frequency, ownerId, isActive } = req.body || {};
+    const data: any = {};
+    if (name) data.name = String(name).trim();
+    if (unit !== undefined) data.unit = unit === null ? '' : String(unit).trim();
+    if (ownerId) data.ownerId = ownerId;
+    if (typeof isActive === 'boolean') data.isActive = isActive;
+
+    if (frequency) {
+      if (!FREQUENCIES.includes(frequency)) {
+        res.status(400).json({ status: 'error', message: `frequency must be one of: ${FREQUENCIES.join(', ')}` });
+        return;
+      }
+      data.frequency = frequency;
+    }
+
+    // Direction and thresholds are validated together even when only one of the
+    // three was sent. Checking a new threshold against the stored direction, or
+    // a new direction against stored thresholds, is the same check.
+    const nextDirection = direction || kri.direction;
+    const nextAmber = amberThreshold === undefined ? kri.amberThreshold : Number(amberThreshold);
+    const nextRed = redThreshold === undefined ? kri.redThreshold : Number(redThreshold);
+    const touchesThresholds = direction !== undefined
+      || amberThreshold !== undefined || redThreshold !== undefined;
+
+    if (touchesThresholds) {
+      if (!Number.isFinite(nextAmber) || !Number.isFinite(nextRed)) {
+        res.status(400).json({ status: 'error', message: 'amberThreshold and redThreshold must be numbers' });
+        return;
+      }
+      const thresholdError = validateKriThresholds(nextDirection, nextAmber, nextRed);
+      if (thresholdError) {
+        res.status(400).json({ status: 'error', code: 'INVALID_THRESHOLDS', message: thresholdError });
+        return;
+      }
+      data.direction = nextDirection;
+      data.amberThreshold = nextAmber;
+      data.redThreshold = nextRed;
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.kri.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: kri.tenantId, actorId: req.user!.id, action: 'KRI_UPDATED',
+        subjectType: 'Kri', subjectId: id,
+        payload: {
+          name: kri.name,
+          before: {
+            direction: kri.direction, amberThreshold: kri.amberThreshold,
+            redThreshold: kri.redThreshold, frequency: kri.frequency, isActive: kri.isActive,
+          },
+          after: data,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', kri: updated });
+  } catch (error: any) {
+    console.error('[KRI Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update KRI' });
+  }
+};
+
+/**
+ * Remove a KRI that should not exist.
+ *
+ * Readings are the indicator's history and the evidence behind every breach it
+ * ever raised, so a KRI that has been measured is retired rather than deleted:
+ * set isActive false and it stops being collected while the series survives.
+ * Deleting it would cascade the readings away and take the breaches with them.
+ */
+export const deleteKri = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const kri = await prisma.kri.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: { _count: { select: { readings: true } } },
+    });
+    if (!kri) { res.status(404).json({ status: 'error', message: 'KRI not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'indicator',
+      dependants: [{ label: 'readings recorded', count: kri._count.readings }],
+      alternative: 'Deactivate it instead — it stops being collected and the series it '
+        + 'already produced stays readable.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: kri.tenantId, actorId: req.user!.id, action: 'KRI_DELETED',
+        subjectType: 'Kri', subjectId: id,
+        payload: {
+          name: kri.name, unit: kri.unit, direction: kri.direction,
+          amberThreshold: kri.amberThreshold, redThreshold: kri.redThreshold,
+        },
+      });
+      await tx.kri.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${kri.name} deleted` });
+  } catch (error: any) {
+    console.error('[KRI Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete KRI' });
   }
 };

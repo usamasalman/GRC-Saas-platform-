@@ -6,6 +6,7 @@ import RiskCriteriaPanel from './risk/RiskCriteriaPanel';
 import type { Grid } from './risk/RiskHeatmaps';
 import Icon from '../../components/Icon';
 import RiskImport from './risk/RiskImport';
+import { ConfirmDialog } from '../../components/Dialog';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -66,6 +67,18 @@ const RiskRegister: React.FC = () => {
   const [detail, setDetail] = useState<any>(null);
   const [drawerTab, setDrawerTab] = useState<'overview' | 'controls' | 'treatments' | 'acceptance' | 'review'>('overview');
   const [showNew, setShowNew] = useState(false);
+  /**
+   * The risk being edited, or null when the modal is creating a new one.
+   *
+   * The same form serves both. PATCH /risks/:id has existed since the register
+   * was built -- it validates the category, enforces the status transitions,
+   * recomputes the residual score and writes an audit entry -- and no screen
+   * ever called it, so a risk logged with the wrong impact could not be
+   * corrected from the product at all.
+   */
+  const [editing, setEditing] = useState<any | null>(null);
+  const [removing, setRemoving] = useState<any | null>(null);
+  const [removeErr, setRemoveErr] = useState('');
   const [showAddTreatmentModal, setShowAddTreatmentModal] = useState<string | null>(null); // riskId
   const [treatmentForm, setTreatmentForm] = useState({ title: '', dueDate: '', ownerId: '' });
 
@@ -133,6 +146,88 @@ const RiskRegister: React.FC = () => {
   }, [risks]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
+
+  const BLANK_RISK = {
+    title: '', description: '', category: 'Operational', direction: 'Threat',
+    likelihood: 3, impact: 3, treatmentType: 'Mitigate', reviewCadenceMonths: 6,
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(BLANK_RISK);
+    setFormErr('');
+    setDupes(null);
+    setShowNew(true);
+  };
+
+  const openEdit = (r: any) => {
+    setEditing(r);
+    setForm({
+      title: r.title || '',
+      description: r.description || '',
+      category: r.category || 'Operational',
+      direction: r.direction || 'Threat',
+      // The stored likelihood and impact, not the score. Re-deriving them from
+      // the score would be guesswork -- 12 is 3x4 and 4x3, and they mean
+      // different things to whoever set them.
+      likelihood: r.inherentLikelihood ?? 3,
+      impact: r.inherentImpact ?? 3,
+      treatmentType: r.treatmentType || 'Mitigate',
+      reviewCadenceMonths: r.reviewCadenceMonths ?? 6,
+    });
+    setFormErr('');
+    setDupes(null);
+    setShowNew(true);
+  };
+
+  const submitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true);
+    setFormErr('');
+    try {
+      await apiClient.patch(`/api/grc/risks/${editing.id}`, {
+        title: form.title,
+        description: form.description,
+        category: form.category,
+        likelihood: form.likelihood,
+        impact: form.impact,
+        treatmentType: form.treatmentType,
+      });
+      setShowNew(false);
+      setEditing(null);
+      setNotice('Risk updated');
+      await load();
+    } catch (err: any) {
+      setFormErr(apiError(err, 'Could not update risk'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Delete a risk that should never have been raised.
+   *
+   * The server refuses once anything is attached and returns what and why, so
+   * the refusal is shown in the dialog rather than swallowed into a generic
+   * failure. "3 treatment actions and 2 linked controls reference this risk;
+   * close it instead" is the useful half of a delete feature.
+   */
+  const confirmRemove = async () => {
+    if (!removing) return;
+    setBusy(true);
+    setRemoveErr('');
+    try {
+      const res = await apiClient.delete(`/api/grc/risks/${removing.id}`);
+      setRemoving(null);
+      setNotice(res.data?.message || 'Risk deleted');
+      await load();
+    } catch (err: any) {
+      setRemoveErr(apiError(err, 'Could not delete risk'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submitNew = async (e: React.FormEvent, force = false) => {
     e.preventDefault();
@@ -371,11 +466,7 @@ const RiskRegister: React.FC = () => {
             <Icon name="refresh" size={15} /> Refresh
           </button>
           <button
-            onClick={() => {
-              setFormErr('');
-              setDupes(null);
-              setShowNew(true);
-            }}
+            onClick={openCreate}
             style={{
               ...primaryBtn(),
               display: 'flex',
@@ -1087,6 +1178,45 @@ const RiskRegister: React.FC = () => {
                               Treatments
                             </button>
 
+                            <button
+                              onClick={() => openEdit(r)}
+                              style={{
+                                background: 'var(--surface-sunk)',
+                                border: '1px solid var(--line)',
+                                color: 'var(--ink-body)',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                              }}
+                              title="Correct the title, category, scoring or treatment type"
+                            >
+                              Edit
+                            </button>
+
+                            {/* Offered only where it can succeed. The server refuses to
+                                delete an accepted or closed risk, and a button whose only
+                                outcome is a refusal is worse than no button. */}
+                            {r.status !== 'Accepted' && r.status !== 'Closed' && (
+                              <button
+                                onClick={() => { setRemoveErr(''); setRemoving(r); }}
+                                style={{
+                                  background: 'var(--surface-sunk)',
+                                  border: '1px solid var(--line)',
+                                  color: 'var(--danger)',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: '4px 8px',
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                }}
+                                title="Remove a risk raised in error"
+                              >
+                                Delete
+                              </button>
+                            )}
+
                             {r.status !== 'Accepted' && r.status !== 'Closed' && (
                               <button
                                 onClick={() => accept(r)}
@@ -1687,7 +1817,7 @@ const RiskRegister: React.FC = () => {
             </div>
 
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}>{formErr}</div>}
-            {dupes && (
+            {dupes && !editing && (
               <div style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-line)', borderRadius: 6, padding: 12, marginBottom: 14, fontSize: 12 }}>
                 <strong style={{ color: 'var(--warning)' }}>Potential Duplicates Found:</strong>
                 {dupes.map((d) => (
@@ -1701,7 +1831,7 @@ const RiskRegister: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={(e) => submitNew(e)}>
+            <form onSubmit={(e) => (editing ? submitEdit(e) : submitNew(e))}>
               <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Risk Title</label>
               <input
                 required
@@ -1785,15 +1915,51 @@ const RiskRegister: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button type="submit" disabled={busy} style={{ ...primaryBtn(busy), flex: 1 }}>
-                  {busy ? 'Validating…' : 'Create Risk'}
+                  {busy ? 'Validating…' : editing ? `Save ${editing.ref}` : 'Create Risk'}
                 </button>
-                <button type="button" onClick={() => setShowNew(false)} style={ghostBtn}>
+                <button type="button" onClick={() => { setShowNew(false); setEditing(null); }} style={ghostBtn}>
                   Cancel
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {removing && (
+        <ConfirmDialog
+          title={`Delete ${removing.ref}?`}
+          destructive
+          confirmLabel="Delete risk"
+          busy={busy}
+          message={(
+            <>
+              <div>
+                <strong style={{ color: 'var(--ink)' }}>{removing.title}</strong> will be removed
+                from the register entirely.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                This is for a risk raised in error — a duplicate, or a test entry. A risk that was
+                genuinely managed should be closed instead, so the register keeps the record of how
+                it was handled.
+              </div>
+              {/* The server decides, not this dialog. It counts treatments, control
+                  links, snapshots and the rest, and refuses with the specifics —
+                  which is more useful than anything guessable from the row. */}
+              {removeErr && (
+                <div style={{
+                  marginTop: 12, padding: '10px 12px', borderRadius: 6,
+                  background: 'var(--danger-bg)', border: '1px solid var(--danger-line)',
+                  color: 'var(--danger)', fontSize: 12.5, lineHeight: 1.6,
+                }}>
+                  {removeErr}
+                </div>
+              )}
+            </>
+          )}
+          onConfirm={confirmRemove}
+          onCancel={() => { setRemoving(null); setRemoveErr(''); }}
+        />
       )}
 
       {/* ── ASSIGN TREATMENT ACTION MODAL ─────────────────────────────────── */}

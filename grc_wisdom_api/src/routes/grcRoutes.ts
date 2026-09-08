@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
 import { requireCapability, requireAnyCapability, CAP } from '../services/capabilityEngine';
 import {
-  createStandard, addClauses, updateStandard, deleteStandard, mapControlToClauses,
+  createStandard, addClauses, updateClause, deleteClause, updateStandard, deleteStandard, mapControlToClauses,
   bulkMapControlsToClauses,
 } from '../controllers/standardsAuthoringController';
 import {
@@ -24,7 +24,7 @@ import {
   addEvidence, reviewEvidence,
 } from '../controllers/grcController';
 import {
-  listRisks, createRisk, updateRisk, setRiskControls,
+  listRisks, createRisk, updateRisk, deleteRisk, setRiskControls,
   addTreatment, completeTreatment, acceptRisk,
   setRiskEntities, linkRelatedRisk, reviewRisk, riskAnalytics,
 } from '../controllers/riskController';
@@ -48,7 +48,9 @@ import {
   launchCampaign, submitAssessment, closeCampaign,
 } from '../controllers/rcsaController';
 import { listKris, createKri, recordReading } from '../controllers/kriController';
-import { listLossEvents, createLossEvent, updateLossEvent } from '../controllers/lossEventController';
+import {
+  listLossEvents, createLossEvent, updateLossEvent, deleteLossEvent,
+} from '../controllers/lossEventController';
 import {
   listUniverse, createEntity, scoreEntity,
   listPlans, createPlan, addPlanItem, submitPlan, approvePlan,
@@ -56,7 +58,7 @@ import {
 } from '../controllers/auditPlanningController';
 
 import {
-  listAssets, createAsset, updateAsset, raiseRiskFromAsset,
+  listAssets, createAsset, updateAsset, deleteAsset, raiseRiskFromAsset,
   setAssetControls, linkExistingRisk, reviewAsset, assetAnalytics,
 } from '../controllers/assetController';
 
@@ -65,7 +67,7 @@ import {
 } from '../controllers/riskCriteriaController';
 
 import {
-  listVendors, createVendor, updateVendor,
+  listVendors, createVendor, updateVendor, deleteVendor,
   requestAssessment, submitAssessment as submitVendorAssessment,
   reviewAssessment, vendorAnalytics,
 } from '../controllers/vendorController';
@@ -107,6 +109,10 @@ router.post('/standards/disable', requireCapability(CAP.ENABLE_STANDARD), disabl
 // belongs to the same people who enable them.
 router.post('/standards', requireCapability(CAP.ENABLE_STANDARD), createStandard);
 router.post('/standards/:id/clauses', requireCapability(CAP.ENABLE_STANDARD), addClauses);
+// Clauses were add-only. A mistyped reference used to mean deleting the whole
+// standard and re-importing it.
+router.patch('/clauses/:id', requireCapability(CAP.ENABLE_STANDARD), updateClause);
+router.delete('/clauses/:id', requireCapability(CAP.ENABLE_STANDARD), deleteClause);
 router.patch('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), updateStandard);
 router.delete('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), deleteStandard);
 // Mapping a control to clauses is what makes the framework auditable.
@@ -162,6 +168,8 @@ router.post('/evidence/:id/review', requireCapability(CAP.MANAGE_IMPLEMENTATION)
 router.get('/risks', listRisks);
 router.post('/risks', requireCapability(CAP.ASSESS_RISK), createRisk);
 router.patch('/risks/:id', requireCapability(CAP.ASSESS_RISK), updateRisk);
+// Refuses once anything is attached, and says what. See services/recordDeletion.
+router.delete('/risks/:id', requireCapability(CAP.ASSESS_RISK), deleteRisk);
 router.post('/risks/:id/links', requireCapability(CAP.ASSESS_RISK), setRiskControls);
 router.post('/risks/:id/treatments', requireCapability(CAP.ASSESS_RISK), addTreatment);
 router.post('/treatments/:id/complete', requireCapability(CAP.ASSESS_RISK), completeTreatment);
@@ -187,6 +195,7 @@ const MAY_MAINTAIN_ASSETS = requireAnyCapability(
 );
 router.post('/assets', MAY_MAINTAIN_ASSETS, createAsset);
 router.patch('/assets/:id', MAY_MAINTAIN_ASSETS, updateAsset);
+router.delete('/assets/:id', MAY_MAINTAIN_ASSETS, deleteAsset);
 router.post('/assets/:id/controls', MAY_MAINTAIN_ASSETS, setAssetControls);
 router.post('/assets/:id/review', MAY_MAINTAIN_ASSETS, reviewAsset);
 router.post('/assets/:id/risks', requireCapability(CAP.ASSESS_RISK), raiseRiskFromAsset);
@@ -215,6 +224,7 @@ router.get('/vendors', listVendors);
 router.get('/vendor-analytics', vendorAnalytics);
 router.post('/vendors', MAY_MANAGE_VENDORS, createVendor);
 router.patch('/vendors/:id', MAY_MANAGE_VENDORS, updateVendor);
+router.delete('/vendors/:id', MAY_MANAGE_VENDORS, deleteVendor);
 router.post('/vendors/:id/assessments', MAY_MANAGE_VENDORS, requestAssessment);
 router.post('/vendor-assessments/:assessmentId/submit', MAY_MANAGE_VENDORS, submitVendorAssessment);
 router.post('/vendor-assessments/:assessmentId/review', MAY_MANAGE_VENDORS, reviewAssessment);
@@ -278,6 +288,7 @@ router.post('/kris/:kriId/readings', requireAnyCapability(CAP.ASSESS_RISK, CAP.M
 router.get('/loss-events', listLossEvents);
 router.post('/loss-events', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), createLossEvent);
 router.patch('/loss-events/:id', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), updateLossEvent);
+router.delete('/loss-events/:id', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), deleteLossEvent);
 
 // ── Audit universe (IIA Std 9.4 — the plan must be risk-based) ────────────
 router.get('/universe', listUniverse);

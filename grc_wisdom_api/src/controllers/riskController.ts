@@ -12,6 +12,7 @@ import {
   RISK_DIRECTIONS, THREAT_TREATMENTS, OPPORTUNITY_TREATMENTS,
 } from '../services/riskLifecycle';
 import { activeCriteria, bandFor } from '../services/riskCriteria';
+import { judgeDeletion } from '../services/recordDeletion';
 
 const SUBJ_RISK = 'Risk';
 const TREATMENTS = [...THREAT_TREATMENTS, ...OPPORTUNITY_TREATMENTS];
@@ -957,5 +958,90 @@ export const riskAnalytics = async (req: AuthenticatedRequest, res: Response): P
   } catch (error: any) {
     console.error('[Risk Analytics Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch risk analytics' });
+  }
+};
+
+/**
+ * Remove a risk that should never have been in the register.
+ *
+ * Not the same thing as closing one. A risk that was managed and is no longer
+ * relevant gets closed -- the row stays, because how it was handled is part of
+ * the register's value. This is for the duplicate, the typo and the test row:
+ * entries with nothing attached to them, which are simply noise.
+ *
+ * Everything else is refused, and the refusal names what is attached. Risk
+ * cascades to its treatments, score snapshots, control links, asset links,
+ * entity links and cause/effect relations, so an unguarded delete here would
+ * quietly destroy the entire management history of a risk and leave a register
+ * that reads as though it had never been raised.
+ */
+export const deleteRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const risk = await prisma.risk.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+      include: {
+        _count: {
+          select: {
+            treatments: true, controlLinks: true, assetLinks: true, entityLinks: true,
+            snapshots: true, kris: true, lossEvents: true, issues: true,
+            causes: true, effects: true, vendorLinks: true, engagementRisks: true,
+          },
+        },
+      },
+    });
+    if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
+
+    const c = risk._count;
+    const verdict = judgeDeletion({
+      recordLabel: 'risk',
+      status: risk.status,
+      // Accepted is a formal decision with an approver and an expiry behind it;
+      // Closed is the outcome of managing the risk. Both are the register doing
+      // its job, and neither should be erasable.
+      forbiddenStatuses: ['Accepted', 'Closed'],
+      dependants: [
+        { label: 'treatment actions', count: c.treatments },
+        { label: 'linked controls', count: c.controlLinks },
+        { label: 'linked assets', count: c.assetLinks },
+        { label: 'linked entities', count: c.entityLinks },
+        { label: 'score changes on record', count: c.snapshots },
+        { label: 'key risk indicators', count: c.kris },
+        { label: 'loss events', count: c.lossEvents },
+        { label: 'audit findings', count: c.issues },
+        { label: 'causal links', count: c.causes + c.effects },
+        { label: 'vendor links', count: c.vendorLinks },
+        { label: 'audit engagements', count: c.engagementRisks },
+      ],
+      alternative: 'Close it instead — the row stays, it drops out of every live figure, '
+        + 'and the record of how it was managed survives.',
+    });
+
+    if (!verdict.allowed) {
+      res.status(409).json({ status: 'error', ...verdict, allowed: undefined });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // The audit entry is written BEFORE the row goes, so the WORM chain keeps
+      // a record of a risk that no longer exists anywhere else. Writing it after
+      // would be a hash over a subject the log cannot resolve.
+      await writeAudit(tx, {
+        tenantId: risk.tenantId, actorId: req.user!.id, action: 'RISK_DELETED',
+        subjectType: SUBJ_RISK, subjectId: id,
+        payload: {
+          ref: risk.ref, title: risk.title, category: risk.category,
+          status: risk.status, inherentScore: risk.inherentScore,
+          residualScore: risk.residualScore,
+        },
+      });
+      await tx.risk.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${risk.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Delete Risk Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete risk' });
   }
 };

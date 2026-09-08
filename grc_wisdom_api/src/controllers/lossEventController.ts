@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { judgeDeletion } from '../services/recordDeletion';
 import { createIssueRecord } from '../services/issueFactory';
 
 const SUBJ_LOSS = 'LossEvent';
@@ -263,5 +264,57 @@ export const updateLossEvent = async (req: AuthenticatedRequest, res: Response):
   } catch (error: any) {
     console.error('[Loss Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update loss event' });
+  }
+};
+
+/**
+ * Remove a loss event entered in error.
+ *
+ * Loss data is the empirical half of an operational risk programme: it is what
+ * says the register's estimates were right or wrong. So this is deliberately
+ * narrow -- only an Open event with nothing derived from it. Once an event has
+ * been linked to a finding or closed, it is part of that argument and stays.
+ */
+export const deleteLossEvent = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const scope = await resolveTenantScope(req.user!.tenantId);
+    const event = await prisma.lossEvent.findFirst({
+      where: { id, tenantId: { in: scope.tenantIds } },
+    });
+    if (!event) { res.status(404).json({ status: 'error', message: 'Loss event not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'loss event',
+      status: event.status,
+      forbiddenStatuses: ['Closed'],
+      dependants: [
+        { label: 'findings raised from it', count: event.issueId ? 1 : 0 },
+        {
+          label: 'recovered amounts recorded against it',
+          count: event.recoveredAmount > 0 ? 1 : 0,
+        },
+      ],
+      alternative: 'Close it instead, with the recovered amount set to what was actually recovered.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: event.tenantId, actorId: req.user!.id, action: 'LOSS_EVENT_DELETED',
+        subjectType: 'LossEvent', subjectId: id,
+        payload: {
+          ref: event.ref, title: event.title, category: event.category,
+          grossAmount: event.grossAmount, currency: event.currency,
+          occurredAt: event.occurredAt.toISOString(),
+        },
+      });
+      await tx.lossEvent.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `${event.ref} deleted` });
+  } catch (error: any) {
+    console.error('[Delete Loss Event Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete loss event' });
   }
 };
