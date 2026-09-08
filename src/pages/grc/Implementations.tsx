@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
+import FormDialog from '../../components/FormDialog';
 
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Verified: pill('var(--success)', 'var(--success-line)'),
@@ -14,6 +15,13 @@ const EFFECT_COLOR: Record<string, string> = {
 const JUDGE_COLOR: Record<string, string> = {
   Yes: 'var(--success)', Partial: 'var(--warning)', No: 'var(--danger)', NotAssessed: 'var(--ink-body)',
 };
+
+const EFFECTIVENESS = ['Effective', 'PartiallyEffective', 'Ineffective'] as const;
+const JUDGEMENTS = ['Yes', 'Partial', 'No'] as const;
+// The three supporting judgements can be left unassessed — an evidence review
+// that only speaks to relevance is still worth recording, and NotAssessed is
+// what the row shows for a dimension nobody has ruled on.
+const JUDGEMENTS_OPTIONAL = ['Yes', 'Partial', 'No', 'NotAssessed'] as const;
 
 const Implementations: React.FC = () => {
   const [impls, setImpls] = useState<any[]>([]);
@@ -33,6 +41,24 @@ const Implementations: React.FC = () => {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ controlId: '', successCriteria: '', frequency: 'Quarterly' });
   const [formErr, setFormErr] = useState('');
+
+  /**
+   * Every dialog this screen opens, in one state.
+   *
+   * Both of them are answered about a specific record, and the row or evidence
+   * card they were opened from can be gone by the time the dialog submits — a
+   * refresh in between reloads the list — so the record travels with the dialog
+   * rather than being looked up again afterwards.
+   */
+  type Dlg =
+    | null
+    | { kind: 'validate'; impl: any }
+    | { kind: 'reviewEvidence'; ev: any };
+  const [dlg, setDlg] = useState<Dlg>(null);
+  const [dlgBusy, setDlgBusy] = useState(false);
+  // A server refusal belongs in the dialog that caused it. The banner at the top
+  // of the page sits behind the detail modal both of these are reachable from.
+  const [dlgError, setDlgError] = useState('');
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
 
@@ -58,7 +84,7 @@ const Implementations: React.FC = () => {
       const res = await apiClient.get(`/api/grc/implementations/${id}`);
       setDetail(res.data?.implementation || null);
       setEvTitle('');
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const setStatus = async (id: string, status: string) => {
@@ -67,19 +93,19 @@ const Implementations: React.FC = () => {
       setNotice(`Status set to ${status}`);
       await load();
       if (detail?.id === id) await openDetail(id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
-  const validate = async (id: string) => {
-    const effectiveness = window.prompt('Effectiveness (Effective / PartiallyEffective / Ineffective):', 'Effective');
-    if (!effectiveness) return;
-    const note = window.prompt('Validation note (audit evidence):') || '';
+  const recordValidation = async (impl: any, effectiveness: string, note: string) => {
+    setDlgBusy(true); setDlgError('');
     try {
-      const res = await apiClient.post(`/api/grc/implementations/${id}/validate`, { effectiveness, note });
+      const res = await apiClient.post(`/api/grc/implementations/${impl.id}/validate`, { effectiveness, note });
+      setDlg(null);
       setNotice(res.data?.message || 'Validated');
       await load();
-      if (detail?.id === id) await openDetail(id);
-    } catch (err) { window.alert(apiError(err)); }
+      if (detail?.id === impl.id) await openDetail(impl.id);
+    } catch (err) { setDlgError(apiError(err)); }
+    finally { setDlgBusy(false); }
   };
 
   const addEvidence = async () => {
@@ -90,20 +116,23 @@ const Implementations: React.FC = () => {
       setEvTitle('');
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
-  const reviewEvidence = async (evId: string) => {
-    const relevance = window.prompt('Relevance (Yes / Partial / No):', 'Yes');
-    if (!relevance) return;
-    const sufficiency = window.prompt('Sufficiency (Yes / Partial / No):', 'Yes') || 'NotAssessed';
-    const authenticity = window.prompt('Authenticity (Yes / Partial / No):', 'Yes') || 'NotAssessed';
-    const currency = window.prompt('Currency (Yes / Partial / No):', 'Yes') || 'NotAssessed';
+  const reviewEvidence = async (ev: any, v: Record<string, string>) => {
+    setDlgBusy(true); setDlgError('');
     try {
-      await apiClient.post(`/api/grc/evidence/${evId}/review`, { relevance, sufficiency, authenticity, currency });
+      await apiClient.post(`/api/grc/evidence/${ev.id}/review`, {
+        relevance: v.relevance,
+        sufficiency: v.sufficiency,
+        authenticity: v.authenticity,
+        currency: v.currency,
+      });
+      setDlg(null);
       if (detail) await openDetail(detail.id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDlgError(apiError(err)); }
+    finally { setDlgBusy(false); }
   };
 
   const submitNew = async (e: React.FormEvent) => {
@@ -196,7 +225,9 @@ const Implementations: React.FC = () => {
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                     {i.status === 'NotStarted' && <button onClick={() => setStatus(i.id, 'InProgress')} style={linkBtn('var(--info)')}>start</button>}
                     {i.status === 'InProgress' && <button onClick={() => setStatus(i.id, 'Implemented')} style={linkBtn('var(--info)')}>submit</button>}
-                    {i.canValidate && <button onClick={() => validate(i.id)} style={linkBtn('var(--success)')}>validate</button>}
+                    {i.canValidate && (
+                      <button onClick={() => { setDlgError(''); setDlg({ kind: 'validate', impl: i }); }} style={linkBtn('var(--success)')}>validate</button>
+                    )}
                     {i.awaitingValidation && !i.canValidate && (
                       <span style={{ fontSize: 11, color: 'var(--warning)' }}>awaiting independent validation</span>
                     )}
@@ -293,7 +324,7 @@ const Implementations: React.FC = () => {
                 {e.reviewedBy
                   ? <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 5 }}>reviewed by {e.reviewedBy.name}</div>
                   : e.uploadedBy.id !== me?.id && (
-                    <button onClick={() => reviewEvidence(e.id)} style={{ ...linkBtn('var(--info)'), marginTop: 5, padding: 0 }}>review evidence</button>
+                    <button onClick={() => { setDlgError(''); setDlg({ kind: 'reviewEvidence', ev: e }); }} style={{ ...linkBtn('var(--info)'), marginTop: 5, padding: 0 }}>review evidence</button>
                   )}
               </div>
             ))}
@@ -312,6 +343,81 @@ const Implementations: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Dialogs sit above the detail modal, so an evidence review opened from
+          inside it is answered without losing the implementation behind. */}
+
+      {dlg?.kind === 'validate' && (
+        <FormDialog
+          title={`Validate ${dlg.impl.control.code}`}
+          intro={(
+            <>
+              <div><strong style={{ color: 'var(--ink)' }}>{dlg.impl.title}</strong></div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>
+                Verified status is only reached this way. The judgement and the note are stored on the
+                implementation under your name and shown whenever it is opened.
+              </div>
+            </>
+          )}
+          submitLabel="Record validation"
+          busy={dlgBusy}
+          error={dlgError}
+          fields={[
+            {
+              name: 'effectiveness', label: 'Effectiveness', type: 'select',
+              options: EFFECTIVENESS, initial: 'Effective',
+              help: 'What the evidence supports, not what the control was designed to achieve.',
+            },
+            {
+              name: 'note', label: 'Validation note (audit evidence)', type: 'textarea',
+              placeholder: 'What you examined, and what it showed.',
+              help: 'Optional, but it is the only account of how the judgement was reached — it is '
+                + 'shown under the validation from then on.',
+            },
+          ]}
+          onSubmit={(v) => recordValidation(dlg.impl, v.effectiveness, v.note)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'reviewEvidence' && (
+        <FormDialog
+          title="Review evidence"
+          intro={(
+            <>
+              <div><strong style={{ color: 'var(--ink)' }}>{dlg.ev.title}</strong></div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>
+                Four judgements on the same item, recorded together under your name: whether it speaks
+                to this control, whether there is enough of it, whether it can be trusted, and whether
+                it is recent enough to say anything about today.
+              </div>
+            </>
+          )}
+          submitLabel="Record review"
+          busy={dlgBusy}
+          error={dlgError}
+          fields={[
+            {
+              name: 'relevance', label: 'Relevance', type: 'select', options: JUDGEMENTS,
+              help: 'Does this evidence bear on the control it is attached to?',
+            },
+            {
+              name: 'sufficiency', label: 'Sufficiency', type: 'select', options: JUDGEMENTS_OPTIONAL,
+              help: 'Is there enough of it to support a conclusion?',
+            },
+            {
+              name: 'authenticity', label: 'Authenticity', type: 'select', options: JUDGEMENTS_OPTIONAL,
+              help: 'Is it what it claims to be, from a source that can be relied on?',
+            },
+            {
+              name: 'currency', label: 'Currency', type: 'select', options: JUDGEMENTS_OPTIONAL,
+              help: 'Is it recent enough to say anything about the control as it operates now?',
+            },
+          ]}
+          onSubmit={(v) => reviewEvidence(dlg.ev, v)}
+          onCancel={() => setDlg(null)}
+        />
       )}
     </div>
   );
