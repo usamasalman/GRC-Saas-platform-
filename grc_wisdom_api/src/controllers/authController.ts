@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { prisma } from '../db';
 import { capabilitiesOfRole } from '../services/capabilityEngine';
+import { checkEntrance } from '../services/loginEntrance';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { generateMfaSecret, generateQrCodeUrl, verifyMfaToken } from '../utils/mfaUtils';
 
@@ -109,7 +110,7 @@ function toUserResponse(user: any) {
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, entrance } = req.body || {};
 
     if (!email || !password) {
       res.status(400).json({ status: 'error', message: 'Email and password are required' });
@@ -141,6 +142,29 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         status: 'error',
         code: 'TEMP_CREDENTIAL_EXPIRED',
         message: 'This temporary password has expired. Ask an administrator to reissue your invitation.',
+      });
+      return;
+    }
+
+    // Right credentials, wrong door.
+    //
+    // Checked only AFTER the password verifies, which is the whole point of
+    // where it sits. Refusing before would turn either page into an oracle: type
+    // an email, read the response, learn whether that address belongs to a
+    // platform operator. Someone who already holds the correct password learns
+    // nothing they did not know, so they get a message that actually helps
+    // instead of a third guess at their own password.
+    //
+    // An absent `entrance` is treated as matching. Older clients and the
+    // password-reset flow post without it, and breaking their sign-in to enforce
+    // a page separation would be a poor trade.
+    const door = checkEntrance(user.tenant?.type, entrance);
+    if (!door.ok) {
+      res.status(403).json({
+        status: 'error',
+        code: 'WRONG_ENTRANCE',
+        message: door.message,
+        entrance: door.belongs,
       });
       return;
     }

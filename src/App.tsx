@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
+import PlatformLogin from './pages/PlatformLogin';
 import Setup from './pages/Setup';
 import AppShell from './pages/AppShell';
 import DbConsole from './pages/DbConsole';
@@ -20,6 +21,12 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
+
+        {/* The platform operator's own entrance. Nothing links here on purpose —
+            it is reached by typing the address. See PlatformLogin for why, and
+            for why this is a separation of audiences rather than a security
+            boundary. */}
+        <Route path="/control-plane" element={<PlatformLogin />} />
         <Route path="/setup" element={<Setup />} />
 
         {/* Old per-portal login URLs still exist in bookmarks and links. */}

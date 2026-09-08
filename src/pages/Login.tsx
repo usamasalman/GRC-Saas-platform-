@@ -62,6 +62,10 @@ const Login: React.FC = () => {
       const res = await apiClient.post('/api/auth/login', {
         email: email.trim().toLowerCase(),
         password,
+        // The customer entrance. A platform operator's account is refused here
+        // and told so — but only once their password has verified, so this page
+        // cannot be used to find out which addresses are operator accounts.
+        entrance: 'tenant',
       });
       const data = res.data;
       if (data?.status === 'success' && data?.token) {
@@ -78,6 +82,12 @@ const Login: React.FC = () => {
         // Deliberately the same message whether the address is unknown or the
         // password is wrong — anything else is a user-enumeration oracle.
         setError('Email or password is incorrect.');
+      } else if (status === 403 && err?.response?.data?.code === 'WRONG_ENTRANCE') {
+        // Says which entrance, deliberately not where it is. An operator has
+        // been given their own address; anyone else reading this has already
+        // supplied a working operator password and is not learning a URL from
+        // this line.
+        setError(serverMsg || 'This account does not sign in here.');
       } else if (status === 429) {
         setError(serverMsg || 'Too many attempts. Try again in a few minutes.');
       } else if (status === 400) {

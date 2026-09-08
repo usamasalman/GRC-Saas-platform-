@@ -335,8 +335,6 @@ const AppShell = () => {
     document.documentElement.lang = newRtl ? 'ar' : 'en';
   };
 
-  if (!account) return null;
-
   /**
    * The portal's menu, with entries this person cannot act on removed.
    *
@@ -354,12 +352,16 @@ const AppShell = () => {
    * deliberately unmapped and therefore always shown.
    */
   const navGroups = useMemo(() => {
+    if (!account) return [];
     const groups = NAV[account.portal] || [];
     const caps: string[] | undefined = account.capabilities;
     return groups
       .map((group: any) => [group[0], group[1].filter((item: any) => navVisible(item[0], caps))])
       .filter((group: any) => group[1].length > 0);
-  }, [account.portal, account.capabilities]);
+  }, [account]);
+
+  if (!account) return null;
+
 
   const handleLogout = () => {
     localStorage.removeItem('authPersonaId');
@@ -601,10 +603,6 @@ const AppShell = () => {
           <button className="nav-item" id="helpBtn" onClick={() => setShowUserGuide(true)} title="Open Comprehensive User Guide & Feature Manual">
             <span className="nav-ico"><Icon name="help" size={17} /></span>
             <span>User Guide &amp; Help</span>
-          </button>
-          <button className="nav-item" id="switchBtn" onClick={() => navigate('/')}>
-            <span className="nav-ico"><Icon name="switch" size={17} /></span>
-            <span>Switch login portal</span>
           </button>
         </div>
       </aside>
