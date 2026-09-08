@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 
 function str(val: unknown): string {
@@ -167,6 +168,319 @@ export const createPlan = async (req: AuthenticatedRequest, res: Response): Prom
     });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to create plan' });
+  }
+};
+
+/**
+ * Amend a plan in the catalogue.
+ *
+ * Plans were create-only, so a price typed with the wrong number of zeros, or a
+ * user cap set before anyone knew what it should be, was permanent -- and since
+ * the catalogue is what every tenant picks from, the only workaround was to add
+ * a second plan with a similar name and hope people chose the right one.
+ *
+ * Repricing is treated as a separate act from renaming. A plan with live
+ * subscriptions is a price several tenants are already paying, and changing it
+ * silently re-prices all of them on their next invoice. So a price change with
+ * active subscribers is refused unless the caller says so explicitly, and the
+ * refusal reports exactly how many tenants would be affected. Everything else --
+ * name, user cap, feature list -- changes freely.
+ */
+export const updatePlan = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = str(req.params.id);
+    const plan = await prisma.plan.findUnique({
+      where: { id },
+      include: { _count: { select: { subscriptions: true } } },
+    });
+    if (!plan) { res.status(404).json({ status: 'error', message: 'Plan not found' }); return; }
+
+    const { name, priceMonthly, maxUsers, features, confirmRepricing } = req.body || {};
+    const data: any = {};
+    if (name) data.name = String(name).trim();
+    if (maxUsers !== undefined) {
+      const n = Number(maxUsers);
+      if (!Number.isFinite(n) || n < 1) {
+        res.status(400).json({ status: 'error', message: 'maxUsers must be a positive number' });
+        return;
+      }
+      data.maxUsers = Math.floor(n);
+    }
+    if (features !== undefined) {
+      data.features = typeof features === 'string' ? features : JSON.stringify(features || {});
+    }
+
+    if (priceMonthly !== undefined) {
+      const price = Number(priceMonthly);
+      if (!Number.isFinite(price) || price < 0) {
+        res.status(400).json({ status: 'error', message: 'priceMonthly must be a number, zero or above' });
+        return;
+      }
+      const changed = price !== Number(plan.priceMonthly);
+      if (changed) {
+        const live = await prisma.subscription.count({
+          where: { planId: id, status: { in: ['ACTIVE', 'PENDING'] } },
+        });
+        if (live > 0 && confirmRepricing !== true) {
+          res.status(409).json({
+            status: 'error',
+            code: 'PLAN_HAS_SUBSCRIBERS',
+            message: `${live} tenant${live === 1 ? ' is' : 's are'} subscribed to ${plan.name} at `
+              + `${plan.priceMonthly}. Changing the price re-prices ${live === 1 ? 'that tenant' : 'all of them'} `
+              + 'on the next invoice. Send confirmRepricing to go ahead, or add a new plan and '
+              + 'move tenants across so the old price stays on record.',
+            affectedSubscriptions: live,
+            currentPrice: plan.priceMonthly,
+            proposedPrice: price,
+          });
+          return;
+        }
+        data.priceMonthly = price;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.plan.update({ where: { id }, data });
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId,
+        actorId: req.user!.id,
+        action: 'billing.plan.update',
+        subjectType: 'Plan',
+        subjectId: id,
+        payload: {
+          before: {
+            name: plan.name, priceMonthly: String(plan.priceMonthly), maxUsers: plan.maxUsers,
+          },
+          after: { ...data, priceMonthly: data.priceMonthly ?? undefined },
+          subscriptions: plan._count.subscriptions,
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', message: `Plan "${updated.name}" updated.`, plan: updated });
+  } catch (error: any) {
+    console.error('[Plan Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update plan' });
+  }
+};
+
+/**
+ * Remove a plan from the catalogue.
+ *
+ * Refused while any subscription references it, cancelled ones included. A
+ * cancelled subscription is what an invoice is explained by -- delete the plan
+ * and last year's billing history points at a name that no longer exists, which
+ * is the sort of thing a finance audit asks about and nobody can answer.
+ */
+export const deletePlan = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = str(req.params.id);
+    const plan = await prisma.plan.findUnique({
+      where: { id },
+      include: { _count: { select: { subscriptions: true } } },
+    });
+    if (!plan) { res.status(404).json({ status: 'error', message: 'Plan not found' }); return; }
+
+    const verdict = judgeDeletion({
+      recordLabel: 'plan',
+      dependants: [
+        { label: 'subscriptions on it, past and present', count: plan._count.subscriptions },
+      ],
+      alternative: 'Move those tenants to another plan first. A plan nobody has ever been '
+        + 'billed under can be removed; one that appears in billing history cannot, or the '
+        + 'invoices stop explaining themselves.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: req.user!.tenantId,
+        actorId: req.user!.id,
+        action: 'billing.plan.delete',
+        subjectType: 'Plan',
+        subjectId: id,
+        payload: {
+          name: plan.name, priceMonthly: String(plan.priceMonthly),
+          maxUsers: plan.maxUsers, features: plan.features,
+        },
+      });
+      await tx.plan.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: `Plan "${plan.name}" removed from the catalogue.` });
+  } catch (error: any) {
+    console.error('[Plan Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete plan' });
+  }
+};
+
+/**
+ * Change a subscription: move it between plans, or end it.
+ *
+ * Subscriptions were create-only too, so a tenant put on the wrong plan stayed
+ * on it and there was no way to record that one had ended. Both are ordinary
+ * things a billing administrator does weekly.
+ *
+ * Ending a subscription sets CANCELLED and stamps an end date rather than
+ * removing the row, because the row is what the invoices raised against it are
+ * explained by.
+ */
+export const updateSubscription = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = str(req.params.id);
+    const sub = await prisma.subscription.findUnique({
+      where: { id },
+      include: { plan: true, tenant: { select: { name: true } } },
+    });
+    if (!sub) { res.status(404).json({ status: 'error', message: 'Subscription not found' }); return; }
+
+    const { planId, status, endDate } = req.body || {};
+    const data: any = {};
+
+    if (planId && planId !== sub.planId) {
+      const plan = await prisma.plan.findUnique({ where: { id: str(planId) } });
+      if (!plan) { res.status(404).json({ status: 'error', message: 'Plan not found' }); return; }
+      data.planId = plan.id;
+    }
+
+    if (status) {
+      const allowed = ['ACTIVE', 'PENDING', 'CANCELLED'];
+      if (!allowed.includes(String(status))) {
+        res.status(400).json({
+          status: 'error',
+          message: `status must be one of: ${allowed.join(', ')}`,
+        });
+        return;
+      }
+      data.status = String(status);
+      // A subscription that ends needs to say when. Without a date, "cancelled"
+      // is a fact with no position in time and the invoice run cannot tell
+      // whether it should still bill this month.
+      if (String(status) === 'CANCELLED' && !sub.endDate && endDate === undefined) {
+        data.endDate = new Date();
+      }
+    }
+
+    if (endDate !== undefined) {
+      if (endDate === null) {
+        data.endDate = null;
+      } else {
+        const d = new Date(endDate);
+        if (Number.isNaN(d.getTime())) {
+          res.status(400).json({ status: 'error', message: 'endDate is not a valid date' });
+          return;
+        }
+        if (d < sub.startDate) {
+          res.status(400).json({
+            status: 'error',
+            code: 'END_BEFORE_START',
+            message: 'A subscription cannot end before it started.',
+          });
+          return;
+        }
+        data.endDate = d;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ status: 'error', message: 'No updatable fields provided' });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.subscription.update({
+        where: { id }, data, include: { plan: true, tenant: { select: { name: true } } },
+      });
+      await writeAudit(tx, {
+        tenantId: sub.tenantId,
+        actorId: req.user!.id,
+        action: 'billing.subscription.update',
+        subjectType: 'Subscription',
+        subjectId: id,
+        payload: {
+          tenant: sub.tenant?.name,
+          before: {
+            plan: sub.plan?.name, status: sub.status,
+            endDate: sub.endDate ? sub.endDate.toISOString() : null,
+          },
+          after: {
+            plan: u.plan?.name, status: u.status,
+            endDate: u.endDate ? u.endDate.toISOString() : null,
+          },
+        },
+      });
+      return u;
+    });
+
+    res.json({ status: 'success', message: 'Subscription updated.', subscription: updated });
+  } catch (error: any) {
+    console.error('[Subscription Update Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update subscription' });
+  }
+};
+
+/**
+ * Remove a subscription created by mistake.
+ *
+ * Narrow, because a subscription is a billing relationship: once the tenant has
+ * been invoiced under it, the row is what those invoices refer to. Cancelling
+ * is the route for a real subscription that is ending; this is for the one
+ * raised against the wrong tenant a minute ago.
+ */
+export const deleteSubscription = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const id = str(req.params.id);
+    const sub = await prisma.subscription.findUnique({
+      where: { id },
+      include: { plan: true, tenant: { select: { name: true } } },
+    });
+    if (!sub) { res.status(404).json({ status: 'error', message: 'Subscription not found' }); return; }
+
+    // Invoices are raised against the tenant rather than the subscription, so
+    // they cannot be counted through a relation. Any invoice dated after this
+    // subscription began is one it plausibly explains, and that is enough to
+    // stop the row being removed.
+    const invoices = await prisma.invoice.count({
+      where: { tenantId: sub.tenantId, createdAt: { gte: sub.startDate } },
+    });
+
+    const verdict = judgeDeletion({
+      recordLabel: 'subscription',
+      status: sub.status,
+      forbiddenStatuses: ['CANCELLED'],
+      dependants: [
+        { label: 'invoices raised since it started', count: invoices },
+      ],
+      alternative: 'Cancel it instead — that records the relationship ending and keeps the '
+        + 'row the invoices refer to.',
+    });
+    if (!verdict.allowed) { res.status(409).json({ status: 'error', ...verdict, allowed: undefined }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        tenantId: sub.tenantId,
+        actorId: req.user!.id,
+        action: 'billing.subscription.delete',
+        subjectType: 'Subscription',
+        subjectId: id,
+        payload: {
+          tenant: sub.tenant?.name, plan: sub.plan?.name,
+          status: sub.status, startDate: sub.startDate.toISOString(),
+        },
+      });
+      await tx.subscription.delete({ where: { id } });
+    });
+
+    res.json({ status: 'success', message: 'Subscription removed.' });
+  } catch (error: any) {
+    console.error('[Subscription Delete Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete subscription' });
   }
 };
 
