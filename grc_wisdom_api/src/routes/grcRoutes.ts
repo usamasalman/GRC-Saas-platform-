@@ -34,6 +34,7 @@ import {
 import {
   listIssues, createIssue, respondToIssue, assignCap,
   submitForClosure, closeIssue, reopenIssue, escalateIssue,
+  updateIssue, deleteIssue,
 } from '../controllers/issueController';
 import {
   getMatrix, addMatrixRow, addProcedure, recordResult, linkResultToFinding,
@@ -47,7 +48,9 @@ import {
   listCampaigns, getCampaign, createCampaign, addScope,
   launchCampaign, submitAssessment, closeCampaign,
 } from '../controllers/rcsaController';
-import { listKris, createKri, recordReading } from '../controllers/kriController';
+import {
+  listKris, createKri, updateKri, deleteKri, recordReading,
+} from '../controllers/kriController';
 import {
   listLossEvents, createLossEvent, updateLossEvent, deleteLossEvent,
 } from '../controllers/lossEventController';
@@ -74,6 +77,7 @@ import {
 import {
   listSharedServices, createSharedService, setConsumers,
   acceptService, setServiceControls,
+  updateSharedService, deleteSharedService,
 } from '../controllers/sharedServiceController';
 
 import {
@@ -242,6 +246,8 @@ router.post('/shared-services', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANA
 router.post('/shared-services/:id/consumers', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setConsumers);
 router.post('/shared-services/:id/controls', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), setServiceControls);
 router.post('/shared-services/:id/accept', requireAnyCapability(CAP.MANAGE_TENANT, CAP.ASSESS_RISK), acceptService);
+router.patch('/shared-services/:id', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), updateSharedService);
+router.delete('/shared-services/:id', requireAnyCapability(CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION), deleteSharedService);
 
 // -- Bulk risk import (staged) --------------------------------------------
 // Same discipline as creating one risk by hand, including the duplicate check:
@@ -288,6 +294,11 @@ router.post('/rcsa-assessments/:assessmentId/submit', submitAssessment);
 router.get('/kris', listKris);
 router.post('/kris', requireCapability(CAP.ASSESS_RISK), createKri);
 router.post('/kris/:kriId/readings', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION), recordReading);
+// An indicator is the one object here whose whole job is to be calibrated, and
+// it was create-only. Thresholds are re-validated against the direction on
+// every change: a direction flip with the old numbers inverts every breach.
+router.patch('/kris/:id', requireCapability(CAP.ASSESS_RISK), updateKri);
+router.delete('/kris/:id', requireCapability(CAP.ASSESS_RISK), deleteKri);
 
 // ── Loss events ───────────────────────────────────────────────────────────
 router.get('/loss-events', listLossEvents);
@@ -322,6 +333,10 @@ router.post('/audits/:id/findings', requireCapability(CAP.EXECUTE_AUDIT), raiseF
 // gaps share one register so aging and escalation are managed in one place.
 router.get('/issues', listIssues);
 router.post('/issues', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION, CAP.MONITOR_SECURITY), createIssue);
+// Both refuse once management has responded. Whoever may raise a finding may
+// correct it while it is still theirs; the same capabilities apply.
+router.patch('/issues/:id', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION, CAP.MONITOR_SECURITY), updateIssue);
+router.delete('/issues/:id', requireAnyCapability(CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION, CAP.MONITOR_SECURITY), deleteIssue);
 // The response belongs to management, not the audit function — auditors are
 // deliberately excluded here so they cannot write the auditee's acceptance.
 router.post('/issues/:id/respond', requireAnyCapability(CAP.MANAGE_IMPLEMENTATION, CAP.ASSESS_RISK, CAP.MANAGE_TENANT), respondToIssue);
