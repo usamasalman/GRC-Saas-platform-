@@ -3,6 +3,7 @@ import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
+import DeleteRecordButton from '../../components/DeleteRecordButton';
 
 /**
  * Shared services inside a group.
@@ -49,6 +50,14 @@ const SharedServices: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState('');
   const blank = { name: '', function: 'IT', description: '', slaSummary: '', reportingCadence: 'Quarterly' };
+  /**
+   * The service being edited, or null when creating one.
+   *
+   * There was no update endpoint at all until now, so an SLA summary typed
+   * wrongly at setup stayed wrong for every entity that read it to find out
+   * what it was entitled to expect.
+   */
+  const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState<any>(blank);
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
@@ -73,6 +82,37 @@ const SharedServices: React.FC = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const openCreate = () => {
+    setEditing(null); setForm(blank); setFormErr(''); setShowNew(true);
+  };
+
+  const openEdit = (svc: any) => {
+    setEditing(svc);
+    setForm({
+      name: svc.name || '',
+      function: svc.function || 'IT',
+      description: svc.description || '',
+      slaSummary: svc.slaSummary || '',
+      reportingCadence: svc.reportingCadence || 'Quarterly',
+      status: svc.status || 'Active',
+    });
+    setFormErr('');
+    setShowNew(true);
+  };
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true); setFormErr('');
+    try {
+      const res = await apiClient.patch(`/api/grc/shared-services/${editing.id}`, form);
+      setShowNew(false); setEditing(null);
+      setNotice(res.data?.message || `${editing.ref} updated`);
+      await load();
+    } catch (err) { setFormErr(apiError(err, 'Could not update the service')); }
+    finally { setBusy(false); }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,7 +194,7 @@ const SharedServices: React.FC = () => {
           <button onClick={load} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button onClick={() => { setFormErr(''); setShowNew(true); }} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="plus" size={15} /> New service
           </button>
         </div>
@@ -279,6 +319,25 @@ const SharedServices: React.FC = () => {
                   <>
                     <button style={linkBtn('var(--info)')} onClick={() => setConsumers(s)}>who relies on this</button>
                     <button style={linkBtn('var(--info)')} onClick={() => setControls(s)}>controls operated</button>
+                    <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(s)}>edit</button>
+                    {/* A retired service is refused by the server, as is one any entity
+                        has enrolled on — that enrolment is the consuming entity's record
+                        of what it relies on somebody else to do. */}
+                    {s.status !== 'Retired' && (
+                      <DeleteRecordButton
+                        endpoint={`/api/grc/shared-services/${s.id}`}
+                        what="shared service"
+                        reference={s.ref}
+                        name={s.name}
+                        guidance="A service that genuinely ran and has stopped should be set to Retired instead, so the entities that relied on it keep the record that they did."
+                        onDone={(m) => { setNotice(m); load(); }}
+                        label="delete"
+                        style={{
+                          background: 'none', border: 'none', padding: 0,
+                          textDecoration: 'underline', fontWeight: 500,
+                        }}
+                      />
+                    )}
                   </>
                 )}
                 {myLink && !myLink.acceptedAt && (
@@ -299,8 +358,10 @@ const SharedServices: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 560, padding: 26, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>New shared service</h3>
-              <button onClick={() => setShowNew(false)} style={linkBtn('var(--ink-muted)')} aria-label="Close">
+              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>
+                {editing ? `Edit ${editing.ref}` : 'New shared service'}
+              </h3>
+              <button onClick={() => { setShowNew(false); setEditing(null); }} style={linkBtn('var(--ink-muted)')} aria-label="Close">
                 <Icon name="close" size={15} label="Close" />
               </button>
             </div>
@@ -310,7 +371,7 @@ const SharedServices: React.FC = () => {
               dependency visible on both sides.
             </p>
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}><Icon name="warning" size={15} />{formErr}</div>}
-            <form onSubmit={create}>
+            <form onSubmit={editing ? saveEdit : create}>
               <label style={label}>Service name</label>
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 style={{ ...S.input, marginBottom: 12 }} placeholder="Group Identity & Access" />
@@ -330,6 +391,19 @@ const SharedServices: React.FC = () => {
                 </div>
               </div>
 
+              {editing && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={label}>Status</label>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={S.input}>
+                    {['Active', 'Transitioning', 'Retired'].map((st) => <option key={st}>{st}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 4, lineHeight: 1.5 }}>
+                    Retiring is how a service is taken out of use. The entities that relied on
+                    it keep the record that they did, which deleting would remove.
+                  </div>
+                </div>
+              )}
+
               <label style={label}>What consuming entities are entitled to expect</label>
               <textarea rows={3} value={form.slaSummary} onChange={(e) => setForm({ ...form, slaSummary: e.target.value })}
                 style={{ ...S.input, marginBottom: 20, resize: 'vertical' }}
@@ -337,9 +411,9 @@ const SharedServices: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button type="submit" disabled={busy} style={{ ...primaryBtn(busy), flex: 1, padding: 11 }}>
-                  {busy ? 'Creating…' : 'Create service'}
+                  {busy ? 'Saving…' : editing ? `Save ${editing.ref}` : 'Create service'}
                 </button>
-                <button type="button" onClick={() => setShowNew(false)} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
+                <button type="button" onClick={() => { setShowNew(false); setEditing(null); }} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
               </div>
             </form>
           </div>

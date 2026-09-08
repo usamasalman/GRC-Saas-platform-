@@ -3,6 +3,8 @@ import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
 import ClauseMapDialog from './ClauseMapDialog';
+import ClauseEditDialog from './ClauseEditDialog';
+import ControlEditDialog from './ControlEditDialog';
 
 /**
  * Framework authoring — where a compliance manager or consultant builds the
@@ -53,6 +55,9 @@ const FrameworkAuthoring: React.FC = () => {
     | { kind: 'editClauseTitle'; clause: Clause; ref: string }
     | { kind: 'mapClauses'; ctrl: Control }
     | { kind: 'bulkMapClauses' }
+    | { kind: 'editClause'; clause: Clause }
+    | { kind: 'editControl'; ctrl: Control }
+    | { kind: 'confirmDeleteClause'; clause: Clause }
     | null;
   const [dialog, setDialog] = useState<Dialog>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -274,6 +279,60 @@ const FrameworkAuthoring: React.FC = () => {
    * nothing ever called it, so a typo in a standard's name was permanent.
    */
   const renameStandard = (std: Standard) => setDialog({ kind: 'renameStandard', std });
+
+  /**
+   * Save a corrected clause.
+   *
+   * Clauses were add-only, so a reference transcribed wrongly from a PDF -- and
+   * they are transcribed by hand -- could only be fixed by deleting the whole
+   * standard and re-importing it.
+   */
+  const saveClause = async (clause: Clause, ref: string, title: string, text: string) => {
+    setDialogBusy(true);
+    try {
+      await apiClient.patch(`/api/grc/clauses/${clause.id}`, { ref, title, text });
+      setNotice(`${clause.ref} updated`);
+      setDialog(null);
+      await load();
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
+  };
+
+  /**
+   * Save a corrected control.
+   *
+   * PATCH /controls/:id has existed as long as the authoring screen and nothing
+   * ever called it, so a control created with the wrong objective could be
+   * remapped and deleted but not fixed. The code is not editable: it is what
+   * implementations, test results and the coverage report address, and the
+   * server does not accept it either.
+   */
+  const saveControl = async (ctrl: Control, title: string, objective: string, domain: string) => {
+    setDialogBusy(true);
+    try {
+      await apiClient.patch(`/api/grc/controls/${ctrl.id}`, { title, objective, domain });
+      setNotice(`${ctrl.code} updated`);
+      setDialog(null);
+      await load();
+    } catch (err) { setNotice(apiError(err)); setDialog(null); }
+    finally { setDialogBusy(false); }
+  };
+
+  const removeClause = async (clause: Clause) => {
+    setDialogBusy(true);
+    try {
+      const res = await apiClient.delete(`/api/grc/clauses/${clause.id}`);
+      setNotice(res.data?.message || `${clause.ref} deleted`);
+      setDialog(null);
+      await load();
+    } catch (err) {
+      // The server refuses when controls or project tasks reference the clause,
+      // and says which. Surfacing that is the point — a clause that vanishes
+      // takes every mapping with it and the coverage report never mentions it.
+      setNotice(apiError(err));
+      setDialog(null);
+    } finally { setDialogBusy(false); }
+  };
 
   const doRenameStandard = async (std: Standard, title: string) => {
     setDialogBusy(true);
@@ -515,6 +574,25 @@ const FrameworkAuthoring: React.FC = () => {
                               <strong style={{ color: 'var(--ink)', fontFamily: 'ui-monospace, monospace' }}>{c.ref}</strong>
                               <span style={{ color: 'var(--ink-body)' }}> — {c.title}</span>
                               <span style={{ float: 'right', fontSize: 11, color: c.mappedControlCount ? 'var(--success)' : 'var(--warning)' }}>
+                                {s.isOwnedHere && (
+                                  <>
+                                    <button
+                                      onClick={() => setDialog({ kind: 'editClause', clause: c })}
+                                      style={{ ...linkBtn('var(--ink-body)'), marginRight: 10 }}
+                                    >
+                                      edit
+                                    </button>
+                                    {/* Offered whatever the mapping count, because the
+                                        refusal is the useful part: it names the controls
+                                        and tasks that would lose their reference. */}
+                                    <button
+                                      onClick={() => setDialog({ kind: 'confirmDeleteClause', clause: c })}
+                                      style={{ ...linkBtn('var(--danger)'), marginRight: 10 }}
+                                    >
+                                      delete
+                                    </button>
+                                  </>
+                                )}
                                 {c.mappedControlCount} control{c.mappedControlCount === 1 ? '' : 's'}
                               </span>
                               {c.text && <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>{c.text}</div>}
@@ -654,6 +732,7 @@ const FrameworkAuthoring: React.FC = () => {
                       {c.isLibrary
                         ? <button onClick={() => cloneControl(c)} style={linkBtn('var(--brand)')}>copy to my set</button>
                         : <>
+                            <button onClick={() => setDialog({ kind: 'editControl', ctrl: c })} style={linkBtn('var(--ink-body)')}>edit</button>
                             <button onClick={() => remapControl(c)} style={linkBtn('var(--info)')}>remap</button>
                             <button onClick={() => removeControl(c)} style={linkBtn('var(--danger)')}>delete</button>
                           </>}
@@ -996,6 +1075,51 @@ const FrameworkAuthoring: React.FC = () => {
           busy={dialogBusy}
           validate={(v) => (v.trim() ? null : 'A title is required.')}
           onSubmit={(v) => doFixAndAccept(dialog.clause, dialog.ref, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'editControl' && (
+        <ControlEditDialog
+          control={dialog.ctrl}
+          busy={dialogBusy}
+          onSubmit={(t, o, d) => saveControl(dialog.ctrl, t, o, d)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'editClause' && (
+        <ClauseEditDialog
+          clause={dialog.clause}
+          busy={dialogBusy}
+          onSubmit={(ref, title, text) => saveClause(dialog.clause, ref, title, text)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'confirmDeleteClause' && (
+        <ConfirmDialog
+          title={`Delete ${dialog.clause.ref}?`}
+          destructive
+          confirmLabel="Delete clause"
+          busy={dialogBusy}
+          message={(
+            <>
+              <div>
+                <strong style={{ color: 'var(--ink)' }}>{dialog.clause.title}</strong> will be
+                removed from this standard.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                {dialog.clause.mappedControlCount > 0
+                  ? `${dialog.clause.mappedControlCount} control${dialog.clause.mappedControlCount === 1 ? ' is' : 's are'} mapped to it. `
+                    + 'The server will refuse until those are unmapped — deleting would '
+                    + 'silently unmap them and the coverage report would never show a clause '
+                    + 'had been there.'
+                  : 'Nothing is mapped to it, so removing it costs nothing.'}
+              </div>
+            </>
+          )}
+          onConfirm={() => removeClause(dialog.clause)}
           onCancel={() => setDialog(null)}
         />
       )}

@@ -4,6 +4,7 @@ import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
 import AssetImport from './asset/AssetImport';
+import DeleteRecordButton from '../../components/DeleteRecordButton';
 
 /**
  * The asset register — ISO/IEC 27001 A.5.9 inventory, valued the ISO 27005 way.
@@ -71,6 +72,14 @@ const AssetRegister: React.FC = () => {
 
   const [detail, setDetail] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
+  /**
+   * The asset being edited, or null when registering a new one.
+   *
+   * PATCH /assets/:id existed and no screen called it, so a machine registered
+   * with the wrong classification kept it — and classification drives the
+   * criticality tier, which drives what the register says needs protecting.
+   */
+  const [editing, setEditing] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState('');
   const [form, setForm] = useState<any>({
@@ -132,6 +141,53 @@ const AssetRegister: React.FC = () => {
       return true;
     });
   }, [assets, search, typeFilter, ownershipFilter, tierFilter]);
+
+  const BLANK_ASSET = {
+    name: '', description: '', type: 'Information', ownership: 'Internal',
+    classification: 'Internal', confidentiality: 3, integrity: 3, availability: 3,
+    location: '', vendorName: '', contractRef: '', replacementValue: '',
+    auditableEntityId: '', reviewCadenceMonths: 12,
+  };
+
+  const openCreate = () => {
+    setEditing(null); setForm(BLANK_ASSET); setFormErr(''); setShowNew(true);
+  };
+
+  const openEdit = (a: any) => {
+    setEditing(a);
+    setForm({
+      name: a.name || '', description: a.description || '',
+      type: a.type || 'Information', ownership: a.ownership || 'Internal',
+      classification: a.classification || 'Internal',
+      confidentiality: a.confidentiality ?? 3,
+      integrity: a.integrity ?? 3,
+      availability: a.availability ?? 3,
+      location: a.location || '', vendorName: a.vendorName || '',
+      contractRef: a.contractRef || '',
+      replacementValue: a.replacementValue ?? '',
+      auditableEntityId: a.auditableEntityId || '',
+      reviewCadenceMonths: a.reviewCadenceMonths ?? 12,
+    });
+    setFormErr('');
+    setShowNew(true);
+  };
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true); setFormErr('');
+    try {
+      const res = await apiClient.patch(`/api/grc/assets/${editing.id}`, {
+        ...form,
+        replacementValue: form.replacementValue ? Number(form.replacementValue) : undefined,
+        auditableEntityId: form.auditableEntityId || undefined,
+      });
+      setShowNew(false); setEditing(null);
+      setNotice(res.data?.message || `${editing.ref} updated`);
+      await load();
+    } catch (err) { setFormErr(apiError(err, 'Could not update the asset')); }
+    finally { setBusy(false); }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +279,7 @@ const AssetRegister: React.FC = () => {
           <button onClick={load} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button onClick={() => { setFormErr(''); setShowNew(true); }} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="plus" size={15} /> Register asset
           </button>
         </div>
@@ -366,6 +422,24 @@ const AssetRegister: React.FC = () => {
                         </button>
                         <button style={linkBtn('var(--info)')} onClick={() => linkControls(a)}>controls</button>
                         <button style={linkBtn('var(--ink-muted)')} onClick={() => review(a)}>review</button>
+                        <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(a)}>edit</button>
+                        {/* Retired assets are refused by the server — the row is the
+                            record that something was once in scope. */}
+                        {a.status !== 'Retired' && (
+                          <DeleteRecordButton
+                            endpoint={`/api/grc/assets/${a.id}`}
+                            what="asset"
+                            reference={a.ref}
+                            name={a.name}
+                            guidance="An asset that genuinely existed and was decommissioned should be set to Retired instead, so it leaves the live register while keeping its history."
+                            onDone={(m) => { setNotice(m); load(); }}
+                            label="delete"
+                            style={{
+                              background: 'none', border: 'none', padding: 0,
+                              marginLeft: 8, textDecoration: 'underline', fontWeight: 500,
+                            }}
+                          />
+                        )}
                       </td>
                     </tr>
                   );
@@ -514,8 +588,10 @@ const AssetRegister: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 640, padding: 26, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>Register an asset</h3>
-              <button onClick={() => setShowNew(false)} style={linkBtn('var(--ink-muted)')} aria-label="Close">
+              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>
+                {editing ? `Edit ${editing.ref}` : 'Register an asset'}
+              </h3>
+              <button onClick={() => { setShowNew(false); setEditing(null); }} style={linkBtn('var(--ink-muted)')} aria-label="Close">
                 <Icon name="close" size={15} label="Close" />
               </button>
             </div>
@@ -525,7 +601,7 @@ const AssetRegister: React.FC = () => {
             </p>
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}><Icon name="warning" size={15} />{formErr}</div>}
 
-            <form onSubmit={create}>
+            <form onSubmit={editing ? saveEdit : create}>
               <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={label}>Name</label>
@@ -634,9 +710,9 @@ const AssetRegister: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                 <button type="submit" disabled={busy} style={{ ...primaryBtn(busy), flex: 1, padding: 11 }}>
-                  {busy ? 'Registering…' : 'Register asset'}
+                  {busy ? 'Saving…' : editing ? `Save ${editing.ref}` : 'Register asset'}
                 </button>
-                <button type="button" onClick={() => setShowNew(false)} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
+                <button type="button" onClick={() => { setShowNew(false); setEditing(null); }} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
               </div>
             </form>
           </div>

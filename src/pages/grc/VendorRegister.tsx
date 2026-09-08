@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
+import DeleteRecordButton from '../../components/DeleteRecordButton';
 
 /**
  * Third-party risk management.
@@ -64,6 +65,14 @@ const VendorRegister: React.FC = () => {
 
   const [detail, setDetail] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
+  /**
+   * The vendor being edited, or null when onboarding a new one.
+   *
+   * PATCH /vendors/:id existed and nothing called it. Data access and service
+   * criticality drive the tier, and both are the fields most likely to be wrong
+   * at onboarding — they are answered before anyone has read the contract.
+   */
+  const [editing, setEditing] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState('');
   const blank = {
@@ -123,6 +132,47 @@ const VendorRegister: React.FC = () => {
     });
   }, [vendors, search, tierFilter, postureFilter]);
 
+  const openCreate = () => {
+    setEditing(null); setForm(blank); setFormErr(''); setShowNew(true);
+  };
+
+  const openEdit = (v: any) => {
+    setEditing(v);
+    setForm({
+      name: v.name || '', legalName: v.legalName || '',
+      category: v.category || 'Other', description: v.description || '',
+      country: v.country || '', dataLocation: v.dataLocation || '',
+      dataAccess: v.dataAccess || 'None',
+      hasSystemAccess: !!v.hasSystemAccess,
+      serviceCriticality: v.serviceCriticality ?? 3,
+      substitutability: v.substitutability ?? 3,
+      contractRef: v.contractRef || '',
+      contractEnd: v.contractEnd ? String(v.contractEnd).slice(0, 10) : '',
+      noticePeriodDays: v.noticePeriodDays ?? '',
+      annualSpend: v.annualSpend ?? '',
+    });
+    setFormErr('');
+    setShowNew(true);
+  };
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true); setFormErr('');
+    try {
+      const res = await apiClient.patch(`/api/grc/vendors/${editing.id}`, {
+        ...form,
+        noticePeriodDays: form.noticePeriodDays ? Number(form.noticePeriodDays) : undefined,
+        annualSpend: form.annualSpend ? Number(form.annualSpend) : undefined,
+        contractEnd: form.contractEnd || undefined,
+      });
+      setShowNew(false); setEditing(null);
+      setNotice(res.data?.message || `${editing.ref} updated`);
+      await load();
+    } catch (err) { setFormErr(apiError(err, 'Could not update the supplier')); }
+    finally { setBusy(false); }
+  };
+
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setFormErr('');
@@ -178,7 +228,7 @@ const VendorRegister: React.FC = () => {
           <button onClick={load} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button onClick={() => { setFormErr(''); setShowNew(true); }} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="plus" size={15} /> Onboard supplier
           </button>
         </div>
@@ -308,6 +358,25 @@ const VendorRegister: React.FC = () => {
                       <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                         <button style={linkBtn('var(--info)')} onClick={() => issueAssessment(v)}>assess</button>
                         <button style={linkBtn('var(--ink-muted)')} onClick={() => setDetail(v)}>open</button>
+                        <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(v)}>edit</button>
+                        {/* Exiting and Terminated are refused by the server: both mean a
+                            decision was taken about the relationship, and the decision is
+                            the record. */}
+                        {v.status !== 'Exiting' && v.status !== 'Terminated' && (
+                          <DeleteRecordButton
+                            endpoint={`/api/grc/vendors/${v.id}`}
+                            what="vendor"
+                            reference={v.ref}
+                            name={v.name}
+                            guidance="A supplier the organisation genuinely used and stopped using should be set to Terminated instead, which keeps the due diligence already done."
+                            onDone={(m) => { setNotice(m); load(); }}
+                            label="delete"
+                            style={{
+                              background: 'none', border: 'none', padding: 0,
+                              marginLeft: 8, textDecoration: 'underline', fontWeight: 500,
+                            }}
+                          />
+                        )}
                       </td>
                     </tr>
                   );
@@ -527,8 +596,10 @@ const VendorRegister: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
           <div style={{ ...S.card, width: '100%', maxWidth: 660, padding: 26, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>Onboard a supplier</h3>
-              <button onClick={() => setShowNew(false)} style={linkBtn('var(--ink-muted)')} aria-label="Close">
+              <h3 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>
+                {editing ? `Edit ${editing.ref}` : 'Onboard a supplier'}
+              </h3>
+              <button onClick={() => { setShowNew(false); setEditing(null); }} style={linkBtn('var(--ink-muted)')} aria-label="Close">
                 <Icon name="close" size={15} label="Close" />
               </button>
             </div>
@@ -538,7 +609,7 @@ const VendorRegister: React.FC = () => {
             </p>
             {formErr && <div style={{ ...S.error, marginBottom: 14 }}><Icon name="warning" size={15} />{formErr}</div>}
 
-            <form onSubmit={create}>
+            <form onSubmit={editing ? saveEdit : create}>
               <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={label}>Trading name</label>
@@ -645,9 +716,9 @@ const VendorRegister: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                 <button type="submit" disabled={busy} style={{ ...primaryBtn(busy), flex: 1, padding: 11 }}>
-                  {busy ? 'Onboarding…' : 'Onboard supplier'}
+                  {busy ? 'Saving…' : editing ? `Save ${editing.ref}` : 'Onboard supplier'}
                 </button>
-                <button type="button" onClick={() => setShowNew(false)} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
+                <button type="button" onClick={() => { setShowNew(false); setEditing(null); }} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
               </div>
             </form>
           </div>
