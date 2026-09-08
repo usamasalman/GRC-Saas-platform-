@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import DeleteRecordButton from '../../../components/DeleteRecordButton';
+import { PromptDialog } from '../../../components/Dialog';
+import FormDialog from '../../../components/FormDialog';
 
 /**
  * One register for every issue, whatever raised it.
@@ -28,6 +30,7 @@ const STATUS_PILL: Record<string, React.CSSProperties> = {
 };
 
 const SOURCES = ['ExternalAudit', 'Regulator', 'SelfIdentified', 'Incident', 'RiskAssessment'];
+const RESPONSE_TYPES = ['Agree', 'PartiallyAgree', 'Disagree'];
 const SOURCE_LABEL: Record<string, string> = {
   InternalAudit: 'Internal audit',
   ExternalAudit: 'External audit',
@@ -60,6 +63,24 @@ const IssueRegister: React.FC = () => {
     source: 'SelfIdentified', sourceReference: '', title: '',
     condition: '', recommendation: '', riskRating: 'Medium', targetCloseDate: '',
   });
+
+  /**
+   * Every lifecycle dialog this screen opens, in one state.
+   *
+   * The issue travels with the dialog rather than being looked up on submit: the
+   * register reloads under the dialog on every action, so the row it was opened
+   * from is a different object by the time the answer comes back.
+   */
+  type Dlg =
+    | null
+    | { kind: 'respond'; i: any }
+    | { kind: 'assignCap'; i: any }
+    | { kind: 'submitClosure'; i: any }
+    | { kind: 'close'; i: any }
+    | { kind: 'reopen'; i: any }
+    | { kind: 'escalate'; i: any };
+  const [dlg, setDlg] = useState<Dlg>(null);
+  const [dlgBusy, setDlgBusy] = useState(false);
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
 
@@ -144,7 +165,7 @@ const IssueRegister: React.FC = () => {
       setForm({ source: 'SelfIdentified', sourceReference: '', title: '', condition: '', recommendation: '', riskRating: 'Medium', targetCloseDate: '' });
       setNotice('Issue raised — it now needs a management response before remediation can start');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const act = async (url: string, body: any, fallback: string) => {
@@ -152,41 +173,65 @@ const IssueRegister: React.FC = () => {
       const res = await apiClient.post(url, body);
       setNotice(res.data?.message || fallback);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
-  const respond = (i: any) => {
+  // Every transition below is the same shape, so the dialog bookkeeping is too:
+  // hold the dialog open while the request is in flight, then close it either
+  // way. A refusal lands in the page banner with the rest of this screen's.
+  const actFromDialog = async (url: string, body: any, fallback: string) => {
+    setDlgBusy(true);
+    try { await act(url, body, fallback); }
+    finally { setDlgBusy(false); setDlg(null); }
+  };
+
+  // The SoD checks run on the click, not on submit, so the dialog never opens
+  // for someone who is not allowed to fill it in.
+  const openRespond = (i: any) => {
     if (i.raisedBy?.id === me?.id) {
-      window.alert('SoD: whoever raised an issue cannot supply management’s response to it.');
+      setError('SoD: whoever raised an issue cannot supply management’s response to it.');
       return;
     }
-    const responseType = window.prompt('Response — Agree / PartiallyAgree / Disagree:', 'Agree');
-    if (!responseType) return;
-    const responseNarrative = window.prompt(
-      responseType === 'Disagree'
-        ? 'Why does management dispute this finding? A disputed issue gets no CAP and must be escalated.'
-        : 'Management’s narrative response:',
-    );
-    if (!responseNarrative) return;
-    const managementActionPlan = responseType === 'Disagree'
-      ? undefined
-      : window.prompt('What will management do about it?') || undefined;
-    act(`/api/grc/issues/${i.id}/respond`, { responseType, responseNarrative, managementActionPlan }, 'Response recorded');
+    setDlg({ kind: 'respond', i });
   };
 
-  const assignCap = (i: any) => {
-    if (users.length === 0) { window.alert('No users available to own the action.'); return; }
-    const choice = window.prompt(
-      `Who owns the corrective action?\n${users.slice(0, 20).map((u, n) => `${n + 1}. ${u.name} (${u.email})`).join('\n')}`,
-      '1',
+  const respond = (i: any, values: Record<string, string>) => {
+    // Disputing commits management to nothing, so no action plan is sent — not
+    // even one left in the field before the position was changed to Disagree.
+    const managementActionPlan = values.responseType === 'Disagree'
+      ? undefined
+      : values.managementActionPlan || undefined;
+    actFromDialog(
+      `/api/grc/issues/${i.id}/respond`,
+      { responseType: values.responseType, responseNarrative: values.responseNarrative, managementActionPlan },
+      'Response recorded',
     );
-    if (!choice) return;
-    const owner = users[Number(choice) - 1];
-    if (!owner) { window.alert('No user at that position.'); return; }
-    const capDueDate = window.prompt('Due date (YYYY-MM-DD):', i.aging?.targetDate ? String(i.aging.targetDate).slice(0, 10) : '');
-    if (!capDueDate) return;
-    const capDescription = window.prompt('What is the corrective action?');
-    act(`/api/grc/issues/${i.id}/cap`, { capOwnerId: owner.id, capDueDate, capDescription }, 'CAP assigned');
+  };
+
+  // One line per user, and the same line is the value — the id is looked back up
+  // on submit, since the picker can only offer lines it built from this list.
+  const ownerOption = (u: any) => `${u.name} (${u.email})`;
+
+  const openAssignCap = (i: any) => {
+    if (users.length === 0) { setError('No users available to own the action.'); return; }
+    setDlg({ kind: 'assignCap', i });
+  };
+
+  const assignCap = (i: any, values: Record<string, string>) => {
+    const owner = users.find((u) => ownerOption(u) === values.owner);
+    actFromDialog(
+      `/api/grc/issues/${i.id}/cap`,
+      { capOwnerId: owner?.id, capDueDate: values.capDueDate, capDescription: values.capDescription },
+      'CAP assigned',
+    );
+  };
+
+  // Independence cuts both ways: whoever raised it and whoever remediated it are
+  // both barred from validating the fix.
+  const openClose = (i: any) => {
+    if (i.raisedBy?.id === me?.id) { setError('SoD: whoever raised an issue cannot close it.'); return; }
+    if (i.capOwner?.id === me?.id) { setError('SoD: the CAP owner cannot validate their own remediation.'); return; }
+    setDlg({ kind: 'close', i });
   };
 
   // Filtering happens server-side so the totals and the rows always agree.
@@ -375,7 +420,7 @@ const IssueRegister: React.FC = () => {
 
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 {['Open', 'Reopened'].includes(i.status) && (
-                  <button style={linkBtn('var(--info)')} onClick={() => respond(i)}>management response</button>
+                  <button style={linkBtn('var(--info)')} onClick={() => openRespond(i)}>management response</button>
                 )}
                 {/* Both are offered only while the finding is awaiting a response.
                     Once management has answered, editing the wording underneath
@@ -400,59 +445,25 @@ const IssueRegister: React.FC = () => {
                   />
                 )}
                 {i.status === 'Responded' && (
-                  <button style={linkBtn('var(--warning)')} onClick={() => assignCap(i)}>assign CAP</button>
+                  <button style={linkBtn('var(--warning)')} onClick={() => openAssignCap(i)}>assign CAP</button>
                 )}
                 {i.status === 'CAPAssigned' && (
-                  <button
-                    style={linkBtn('var(--info)')}
-                    onClick={() => {
-                      const evidenceNote = window.prompt('What evidence shows the remediation is complete?');
-                      if (!evidenceNote) return;
-                      act(`/api/grc/issues/${i.id}/submit-closure`, { evidenceNote }, 'Submitted for validation');
-                    }}
-                  >
+                  <button style={linkBtn('var(--info)')} onClick={() => setDlg({ kind: 'submitClosure', i })}>
                     submit for closure
                   </button>
                 )}
                 {i.status === 'PendingClosure' && (
-                  <button
-                    style={linkBtn('var(--success)')}
-                    onClick={() => {
-                      if (raisedByMe) { window.alert('SoD: whoever raised an issue cannot close it.'); return; }
-                      if (capOwnerIsMe) { window.alert('SoD: the CAP owner cannot validate their own remediation.'); return; }
-                      const note = window.prompt('Closure note — this is the validation evidence:');
-                      if (!note) return;
-                      act(`/api/grc/issues/${i.id}/close`, { note }, 'Closed');
-                    }}
-                  >
+                  <button style={linkBtn('var(--success)')} onClick={() => openClose(i)}>
                     validate and close
                   </button>
                 )}
                 {i.status === 'Closed' && (
-                  <button
-                    style={linkBtn('var(--danger)')}
-                    onClick={() => {
-                      const reason = window.prompt('Why is this being reopened?');
-                      if (!reason) return;
-                      act(`/api/grc/issues/${i.id}/reopen`, { reason }, 'Reopened');
-                    }}
-                  >
+                  <button style={linkBtn('var(--danger)')} onClick={() => setDlg({ kind: 'reopen', i })}>
                     reopen
                   </button>
                 )}
                 {i.status !== 'Closed' && (i.status === 'Disputed' || i.aging?.isOverdue) && i.escalationLevel < 2 && (
-                  <button
-                    style={linkBtn('var(--danger)')}
-                    onClick={() => {
-                      const reason = window.prompt(
-                        i.escalationLevel === 0
-                          ? 'Escalate to executive management — why?'
-                          : 'Escalate to the audit committee — why?',
-                      );
-                      if (!reason) return;
-                      act(`/api/grc/issues/${i.id}/escalate`, { reason }, 'Escalated');
-                    }}
-                  >
+                  <button style={linkBtn('var(--danger)')} onClick={() => setDlg({ kind: 'escalate', i })}>
                     escalate
                   </button>
                 )}
@@ -461,6 +472,140 @@ const IssueRegister: React.FC = () => {
           </div>
         );
       })}
+
+      {dlg?.kind === 'respond' && (
+        <FormDialog
+          title={`Management response — ${dlg.i.ref}`}
+          intro={(
+            <>
+              <div><strong style={{ color: 'var(--ink)' }}>{dlg.i.title}</strong></div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>
+                Recommendation: {dlg.i.recommendation}
+              </div>
+            </>
+          )}
+          submitLabel="Record response"
+          busy={dlgBusy}
+          fields={[
+            {
+              name: 'responseType', label: 'Position', type: 'select', options: RESPONSE_TYPES,
+              help: 'Disagree disputes the finding: no corrective action plan can be assigned to it, '
+                + 'and escalation is the only route forward.',
+            },
+            {
+              name: 'responseNarrative', label: 'Management’s position', type: 'textarea', required: true,
+              help: 'Management’s own words on the finding — this is what is shown against it from here on.',
+            },
+            {
+              name: 'managementActionPlan', label: 'What will management do about it?', type: 'textarea',
+              help: 'Not required, and not recorded, if the position is Disagree.',
+            },
+          ]}
+          validate={(v) => (v.responseType !== 'Disagree' && !v.managementActionPlan?.trim()
+            ? 'An action plan is required unless management disagrees with the finding.'
+            : null)}
+          onSubmit={(v) => respond(dlg.i, v)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'assignCap' && (
+        <FormDialog
+          title={`Corrective action plan — ${dlg.i.ref}`}
+          intro={'The owner is answerable for the remediation and is notified of it, which also bars '
+            + 'them from validating their own fix later.'}
+          submitLabel="Assign CAP"
+          busy={dlgBusy}
+          fields={[
+            { name: 'owner', label: 'Who owns the corrective action?', type: 'select', options: users.map(ownerOption) },
+            {
+              name: 'capDueDate', label: 'Due date', type: 'date', required: true,
+              initial: dlg.i.aging?.targetDate ? String(dlg.i.aging.targetDate).slice(0, 10) : '',
+              help: 'Pre-filled with the target close date for this rating. A later date does not move '
+                + 'the target, so the issue still ages as overdue against the original.',
+            },
+            {
+              name: 'capDescription', label: 'What is the corrective action?', type: 'textarea',
+              placeholder: dlg.i.recommendation || '',
+              help: 'Left blank, whatever is already recorded on the issue stands.',
+            },
+          ]}
+          onSubmit={(v) => assignCap(dlg.i, v)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'submitClosure' && (
+        <PromptDialog
+          title={`Submit ${dlg.i.ref} for closure`}
+          label="What evidence shows the remediation is complete?"
+          multiline
+          confirmLabel="Submit for closure"
+          busy={dlgBusy}
+          placeholder="e.g. MFA enforced on all 34 admin accounts on 3 March. Screenshots and the change ticket are on the shared drive."
+          help={'The issue moves to pending closure. Someone other than you and whoever raised it has '
+            + 'to validate this before it actually closes.'}
+          validate={(v) => (v.trim() ? null : 'A note is required.')}
+          onSubmit={(evidenceNote) => actFromDialog(
+            `/api/grc/issues/${dlg.i.id}/submit-closure`, { evidenceNote }, 'Submitted for validation',
+          )}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'close' && (
+        <PromptDialog
+          title={`Validate and close ${dlg.i.ref}`}
+          label="Closure note — this is the validation evidence"
+          multiline
+          confirmLabel="Validate and close"
+          busy={dlgBusy}
+          placeholder="e.g. Re-tested the control on 12 April across 20 accounts; all enforced."
+          help={'What you checked, not what you were told. This is the record that the fix was verified '
+            + 'rather than taken on trust.'}
+          validate={(v) => (v.trim() ? null : 'A closure note is required.')}
+          onSubmit={(note) => actFromDialog(`/api/grc/issues/${dlg.i.id}/close`, { note }, 'Closed')}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'reopen' && (
+        <PromptDialog
+          title={`Reopen ${dlg.i.ref}`}
+          label="Why is this being reopened?"
+          multiline
+          confirmLabel="Reopen issue"
+          busy={dlgBusy}
+          placeholder="e.g. The control failed again in the September walkthrough."
+          help={'The issue goes back to Reopened and its reopen count goes up, which is what a repeat '
+            + 'failure looks like on the report. The management response is voided with it, so '
+            + 'management has to go on record again before a new CAP can be assigned.'}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(reason) => actFromDialog(`/api/grc/issues/${dlg.i.id}/reopen`, { reason }, 'Reopened')}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'escalate' && (
+        <PromptDialog
+          title={dlg.i.escalationLevel === 0
+            ? `Escalate ${dlg.i.ref} to executive management`
+            : `Escalate ${dlg.i.ref} to the audit committee`}
+          label={dlg.i.escalationLevel === 0
+            ? 'Why does this need executive management?'
+            : 'Why does this need the audit committee?'}
+          multiline
+          confirmLabel="Escalate"
+          busy={dlgBusy}
+          placeholder="e.g. Management disputes the criterion and two meetings have not resolved it."
+          help={dlg.i.escalationLevel === 0
+            ? 'The issue is badged as escalated from then on, and the reason is written to its audit trail with your name and the time.'
+            : 'This issue is already with executive management. The audit committee is the last level, so it cannot be escalated again after this.'}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(reason) => actFromDialog(`/api/grc/issues/${dlg.i.id}/escalate`, { reason }, 'Escalated')}
+          onCancel={() => setDlg(null)}
+        />
+      )}
     </div>
   );
 };

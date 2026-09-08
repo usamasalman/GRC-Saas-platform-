@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import FormDialog from '../../../components/FormDialog';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 
 /**
@@ -23,6 +24,7 @@ const CONCLUSION_PILL: Record<string, React.CSSProperties> = {
 
 const TEST_TYPES = ['DesignEffectiveness', 'OperatingEffectiveness', 'Both'];
 const SAMPLING = ['Statistical', 'Judgmental', 'FullPopulation', 'Inquiry', 'Observation'];
+const CONCLUSIONS = ['Satisfactory', 'SatisfactoryWithExceptions', 'Unsatisfactory'];
 
 const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) => {
   const [matrix, setMatrix] = useState<any[]>([]);
@@ -38,6 +40,24 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
     title: '', description: '', riskRating: 'Medium',
     implementationId: '', controlType: 'Preventive', controlNature: 'Manual',
   });
+
+  /**
+   * Every dialog this screen opens, in one state.
+   *
+   * The row or procedure a dialog is about has to travel with it: the matrix
+   * reloads under the dialog on its way out, so the record it was opened from
+   * cannot be read back off the page when it submits.
+   */
+  type Dlg =
+    | null
+    | { kind: 'procedure'; row: any }
+    | { kind: 'result'; proc: any }
+    | { kind: 'linkFinding'; proc: any };
+  const [dlg, setDlg] = useState<Dlg>(null);
+  const [dlgBusy, setDlgBusy] = useState(false);
+  // A server refusal belongs inside the dialog that caused it, not in the
+  // banner at the top of a matrix the user has scrolled well past.
+  const [dlgError, setDlgError] = useState('');
 
   const load = useCallback(async () => {
     if (!auditId) { setMatrix([]); setAudit(null); return; }
@@ -72,75 +92,80 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
       setRowForm({ title: '', description: '', riskRating: 'Medium', implementationId: '', controlType: 'Preventive', controlNature: 'Manual' });
       setNotice('Risk added to the matrix');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
-  const addProcedure = async (row: any) => {
-    const objective = window.prompt(`Test objective for ${row.ref} — ${row.title}:`);
-    if (!objective) return;
-    const procedure = window.prompt('Describe the procedure the tester will follow:');
-    if (!procedure) return;
-    const testType = window.prompt(`Test type — ${TEST_TYPES.join(' / ')}:`, 'OperatingEffectiveness');
-    if (!testType) return;
-    const samplingMethod = window.prompt(`Sampling — ${SAMPLING.join(' / ')}:`, 'Judgmental');
-    if (!samplingMethod) return;
-    const sampleSize = window.prompt('Sample size:', '25');
+  const openProcedure = (row: any) => { setDlgError(''); setDlg({ kind: 'procedure', row }); };
+
+  const addProcedure = async (row: any, v: Record<string, string>) => {
+    setDlgBusy(true); setDlgError('');
     try {
       await apiClient.post(`/api/grc/matrix/${row.id}/procedures`, {
-        objective, procedure, testType, samplingMethod, sampleSize: Number(sampleSize) || 25,
+        objective: v.objective,
+        procedure: v.procedure,
+        testType: v.testType,
+        samplingMethod: v.samplingMethod,
+        // A blank sample size is the planned 25 rather than a refusal — the
+        // server falls back to the same number if it arrives empty.
+        sampleSize: Number(v.sampleSize) || 25,
       });
+      setDlg(null);
       setNotice(`Procedure added under ${row.ref}`);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDlgError(apiError(err)); }
+    finally { setDlgBusy(false); }
   };
+
+  const openResult = (proc: any) => { setDlgError(''); setDlg({ kind: 'result', proc }); };
 
   /**
    * Recording a result is a one-way door — the backend rejects a second one.
-   * It also rejects a conclusion that contradicts the exception count, so the
-   * prompts collect exceptions first and suggest the consistent conclusion.
+   * It also rejects a conclusion that contradicts the exception count, which is
+   * why the count and the conclusion are answered on the same form and checked
+   * against each other before the request goes anywhere.
    */
-  const recordResult = async (proc: any) => {
-    const itemsTested = window.prompt(`Items tested (planned sample ${proc.sampleSize}):`, String(proc.sampleSize ?? 25));
-    if (!itemsTested) return;
-    const exceptionsFound = window.prompt('Exceptions found:', '0');
-    if (exceptionsFound === null) return;
-    const ex = Number(exceptionsFound) || 0;
-    const suggested = ex === 0 ? 'Satisfactory' : 'SatisfactoryWithExceptions';
-    const conclusion = window.prompt(
-      ex === 0
-        ? 'Conclusion — Satisfactory (an Unsatisfactory conclusion needs at least one exception):'
-        : `${ex} exception(s) recorded, so the conclusion must be SatisfactoryWithExceptions or Unsatisfactory:`,
-      suggested,
-    );
-    if (!conclusion) return;
-    const narrative = window.prompt('Narrative — this is the test evidence, at least 10 characters:');
-    if (!narrative) return;
+  const recordResult = async (proc: any, v: Record<string, string>) => {
+    setDlgBusy(true); setDlgError('');
     try {
       const res = await apiClient.post(`/api/grc/procedures/${proc.id}/result`, {
-        itemsTested: Number(itemsTested), exceptionsFound: ex, conclusion, narrative,
+        itemsTested: Number(v.itemsTested),
+        exceptionsFound: Number(v.exceptionsFound) || 0,
+        conclusion: v.conclusion,
+        narrative: v.narrative,
       });
+      setDlg(null);
       setNotice(res.data?.message || 'Result recorded');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDlgError(apiError(err)); }
+    finally { setDlgBusy(false); }
   };
 
-  const linkFinding = async (proc: any) => {
+  const findingChoice = (f: any) => `${f.ref} — ${f.title}`;
+
+  const openLinkFinding = (proc: any) => {
+    // Nothing to pick from, so there is no dialog worth opening.
     if (issues.length === 0) {
-      window.alert('No findings on this engagement yet. Raise one on the Issues tab first, then link it here.');
+      setError('No findings on this engagement yet. Raise one on the Issues tab first, then link it here.');
       return;
     }
-    const choice = window.prompt(
-      `Link the result to which finding?\n${issues.map((f, n) => `${n + 1}. ${f.ref} — ${f.title}`).join('\n')}`,
-      '1',
-    );
-    if (!choice) return;
-    const finding = issues[Number(choice) - 1];
-    if (!finding) { window.alert('No finding at that position.'); return; }
+    setDlgError('');
+    setDlg({ kind: 'linkFinding', proc });
+  };
+
+  const linkFinding = async (proc: any, choice: string) => {
+    // The picker's options were built from this same list, so an exact label
+    // match is the finding that was chosen. It can only miss if the matrix
+    // reloaded under the open dialog and the finding left the engagement.
+    const finding = issues.find((f) => findingChoice(f) === choice);
+    if (!finding) { setDlgError('That finding is no longer on this engagement.'); return; }
+    setDlgBusy(true); setDlgError('');
     try {
       const res = await apiClient.post(`/api/grc/procedures/${proc.id}/link-finding`, { findingId: finding.id });
+      setDlg(null);
       setNotice(res.data?.message || 'Linked');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDlgError(apiError(err)); }
+    finally { setDlgBusy(false); }
   };
 
   if (!auditId) {
@@ -249,7 +274,7 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
                   : <span style={{ color: 'var(--warning)' }}>No control mapped to this risk</span>}
               </div>
             </div>
-            {!closed && <button style={linkBtn('var(--info)')} onClick={() => addProcedure(row)}>+ procedure</button>}
+            {!closed && <button style={linkBtn('var(--info)')} onClick={() => openProcedure(row)}>+ procedure</button>}
           </div>
 
           {(row.procedures || []).length > 0 && (
@@ -283,10 +308,10 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
                     </div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {!p.result && !closed && (
-                        <button style={linkBtn('var(--success)')} onClick={() => recordResult(p)}>record result</button>
+                        <button style={linkBtn('var(--success)')} onClick={() => openResult(p)}>record result</button>
                       )}
                       {p.result && !p.result.findingId && p.result.conclusion !== 'Satisfactory' && !closed && (
-                        <button style={linkBtn('var(--warning)')} onClick={() => linkFinding(p)}>link finding</button>
+                        <button style={linkBtn('var(--warning)')} onClick={() => openLinkFinding(p)}>link finding</button>
                       )}
                       {p.result && <span style={{ fontSize: 11, color: 'var(--ink-faint)', alignSelf: 'center' }}>result is final</span>}
                     </div>
@@ -297,6 +322,110 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
           )}
         </div>
       ))}
+
+      {dlg?.kind === 'procedure' && (
+        <FormDialog
+          title={`Test procedure for ${dlg.row.ref}`}
+          intro={(
+            <>
+              <div><strong style={{ color: 'var(--ink)' }}>{dlg.row.title}</strong></div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>{dlg.row.description}</div>
+            </>
+          )}
+          submitLabel="Add procedure"
+          busy={dlgBusy}
+          error={dlgError}
+          fields={[
+            {
+              name: 'objective', label: 'Test objective', type: 'text', required: true,
+              placeholder: 'What this test is meant to establish about the control.',
+            },
+            {
+              name: 'procedure', label: 'Describe the procedure the tester will follow',
+              type: 'textarea', required: true,
+              help: 'Specific enough that a reviewer can repeat it and reach the same answer.',
+            },
+            { name: 'testType', label: 'Test type', type: 'select', options: TEST_TYPES, initial: 'OperatingEffectiveness' },
+            { name: 'samplingMethod', label: 'Sampling', type: 'select', options: SAMPLING, initial: 'Judgmental' },
+            {
+              name: 'sampleSize', label: 'Sample size', type: 'number', initial: '25',
+              help: 'How many items the tester will examine. Left blank, the sample is 25.',
+            },
+          ]}
+          onSubmit={(v) => addProcedure(dlg.row, v)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'result' && (
+        <FormDialog
+          title={`Record the result — ${dlg.proc.ref}`}
+          intro={(
+            <>
+              <div>{dlg.proc.objective}</div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>
+                A result can be recorded once and cannot be edited afterwards. Re-testing means
+                raising another procedure, so that both attempts stay on the record.
+              </div>
+            </>
+          )}
+          submitLabel="Record result"
+          busy={dlgBusy}
+          error={dlgError}
+          fields={[
+            {
+              name: 'itemsTested', label: 'Items tested', type: 'number', required: true,
+              initial: String(dlg.proc.sampleSize ?? 25),
+              help: `Planned sample was ${dlg.proc.sampleSize ?? 25}.`,
+            },
+            { name: 'exceptionsFound', label: 'Exceptions found', type: 'number', initial: '0' },
+            { name: 'conclusion', label: 'Conclusion', type: 'select', options: CONCLUSIONS },
+            {
+              name: 'narrative', label: 'Narrative', type: 'textarea', required: true,
+              placeholder: 'What was examined, and what it showed.',
+              help: 'This is the test evidence. At least 10 characters.',
+            },
+          ]}
+          // The count and the conclusion have to agree, and the server refuses
+          // each combination below. Checking them here means a rejected
+          // conclusion no longer takes the narrative down with it.
+          validate={(v) => {
+            const tested = Number(v.itemsTested);
+            const ex = Number(v.exceptionsFound) || 0;
+            if (!Number.isFinite(tested) || tested < 1) return 'At least one item has to have been tested.';
+            if (ex > tested) return 'There cannot be more exceptions than items tested.';
+            if (ex > 0 && v.conclusion === 'Satisfactory') {
+              return `${ex} exception(s) recorded, so the conclusion has to be SatisfactoryWithExceptions or Unsatisfactory.`;
+            }
+            if (ex === 0 && v.conclusion === 'Unsatisfactory') {
+              return 'An Unsatisfactory conclusion needs at least one exception to support it.';
+            }
+            if (String(v.narrative ?? '').trim().length < 10) {
+              return 'The narrative is the test evidence — give it at least 10 characters.';
+            }
+            return null;
+          }}
+          onSubmit={(v) => recordResult(dlg.proc, v)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'linkFinding' && (
+        <FormDialog
+          title={`Link ${dlg.proc.ref} to a finding`}
+          intro={'Only findings raised on this engagement can be linked. The link is what shows a '
+            + 'reviewer which test produced the finding.'}
+          submitLabel="Link finding"
+          busy={dlgBusy}
+          error={dlgError}
+          fields={[{
+            name: 'finding', label: 'Finding', type: 'select', required: true,
+            options: issues.map(findingChoice),
+          }]}
+          onSubmit={(v) => linkFinding(dlg.proc, v.finding)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
     </div>
   );
 };

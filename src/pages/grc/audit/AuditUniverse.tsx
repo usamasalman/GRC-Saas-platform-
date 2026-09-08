@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import { PromptDialog, ReasonDialog } from '../../../components/Dialog';
+import FormDialog from '../../../components/FormDialog';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 
 /**
@@ -23,6 +25,17 @@ const PLAN_PILL: Record<string, React.CSSProperties> = {
   Closed: pill('var(--ink-muted)', 'var(--line)'),
 };
 
+/**
+ * How an entity reads in the plan's entity picker.
+ *
+ * The leading position is what makes each option unique — two entities can share
+ * a name, a tier and a score — so the selected string maps back to exactly one
+ * row. The suggested hours ride along because the hours field below is filled in
+ * before the entity is chosen.
+ */
+const rankedLabel = (e: any, i: number) =>
+  `${i + 1}. ${e.name} — ${e.riskTier} risk, score ${e.riskScore}, ${e.suggestedHours ?? 80}h suggested`;
+
 const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngagementCreated }) => {
   const [entities, setEntities] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -35,6 +48,24 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
   const [openPlan, setOpenPlan] = useState<string | null>(null);
   const [showEntity, setShowEntity] = useState(false);
   const [entityForm, setEntityForm] = useState({ name: '', type: 'Process', description: '' });
+
+  // One piece of state for whatever dialog is open rather than a boolean each.
+  // Two cannot be open at once, and a union makes that true by construction.
+  // `ranked` is captured when the add-entity dialog opens so the picker cannot
+  // reorder underneath a selection that has already been made.
+  type Dlg =
+    | { kind: 'rescore'; entity: any }
+    | { kind: 'newPlan' }
+    | { kind: 'addItem'; plan: any; ranked: any[] }
+    | { kind: 'export'; plan: any }
+    | { kind: 'approve'; plan: any }
+    | { kind: 'defer'; item: any }
+    | null;
+  const [dialog, setDialog] = useState<Dlg>(null);
+  const [dialogBusy, setDialogBusy] = useState(false);
+  // A refusal from the server, shown inside the form that caused it. Closing the
+  // dialog to put it in the page banner would throw away everything typed.
+  const [dialogError, setDialogError] = useState('');
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
 
@@ -64,71 +95,63 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
       setEntityForm({ name: '', type: 'Process', description: '' });
       setNotice('Entity added to the universe — score it to place it in the plan');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   /** Six weighted factors, each 1–5. The composite is derived server-side. */
-  const rescore = async (entity: any) => {
+  const rescore = (entity: any) => { setDialogError(''); setDialog({ kind: 'rescore', entity }); };
+
+  const doRescore = async (entity: any, values: Record<string, string>) => {
+    setDialogBusy(true); setDialogError('');
     const factors: Record<string, number> = {};
-    for (const [key, label] of Object.entries(factorLabels)) {
-      // The scores arrive nested under `factors`, not flat on the entity.
-      const current = entity.factors?.[key] ?? 3;
-      const answer = window.prompt(`${label} (1–5):`, String(current));
-      if (answer === null) return;
-      const n = Number(answer);
-      if (!Number.isInteger(n) || n < 1 || n > 5) {
-        window.alert(`${label} must be a whole number from 1 to 5.`);
-        return;
-      }
-      factors[key] = n;
-    }
+    for (const key of Object.keys(factorLabels)) factors[key] = Number(values[key]);
     try {
       const res = await apiClient.patch(`/api/grc/universe/${entity.id}/score`, factors);
       setNotice(res.data?.message || 'Rescored');
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDialogError(apiError(err)); }
+    finally { setDialogBusy(false); }
   };
 
-  const createPlan = async () => {
-    const year = window.prompt('Fiscal year:', String(new Date().getFullYear()));
-    if (!year) return;
-    const title = window.prompt('Plan title:', `Annual internal audit plan ${year}`);
-    if (!title) return;
-    const hours = window.prompt('Total auditor capacity for the year, in hours:', '2000');
-    if (!hours) return;
+  const createPlan = () => { setDialogError(''); setDialog({ kind: 'newPlan' }); };
+
+  const doCreatePlan = async (v: Record<string, string>) => {
+    setDialogBusy(true); setDialogError('');
     try {
       const res = await apiClient.post('/api/grc/plans', {
-        year: Number(year), title, totalBudgetHours: Number(hours),
+        year: Number(v.year), title: v.title, totalBudgetHours: Number(v.hours),
       });
       setNotice(`Plan ${res.data?.plan?.year} created — add the entities it will cover`);
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDialogError(apiError(err)); }
+    finally { setDialogBusy(false); }
   };
 
-  const addItem = async (plan: any) => {
-    const highFirst = [...entities].sort((a, b) => b.riskScore - a.riskScore);
-    const choice = window.prompt(
-      `Which entity? Highest risk first:\n${highFirst.slice(0, 12).map((e, i) => `${i + 1}. ${e.name} (${e.riskTier}, ${e.riskScore})`).join('\n')}`,
-      '1',
-    );
-    if (!choice) return;
-    const entity = highFirst[Number(choice) - 1];
-    if (!entity) { window.alert('No entity at that position.'); return; }
-    const quarter = window.prompt('Planned quarter (1–4):', '1');
-    if (!quarter) return;
-    const hours = window.prompt('Budget hours:', String(entity.suggestedHours ?? 80));
-    if (!hours) return;
-    const rationale = window.prompt('Why is this in the plan?', `${entity.riskTier} risk — score ${entity.riskScore}`);
+  const addItem = (plan: any) => {
+    setDialogError('');
+    setDialog({ kind: 'addItem', plan, ranked: [...entities].sort((a, b) => b.riskScore - a.riskScore) });
+  };
+
+  const doAddItem = async (plan: any, ranked: any[], v: Record<string, string>) => {
+    // The picker's options were built from this same array, so an exact label
+    // match is the position that was chosen.
+    const entity = ranked[ranked.findIndex((e, i) => rankedLabel(e, i) === v.entity)];
+    if (!entity) { setDialogError('Choose an entity from the list.'); return; }
+    setDialogBusy(true); setDialogError('');
     try {
       await apiClient.post(`/api/grc/plans/${plan.id}/items`, {
         auditableEntityId: entity.id,
-        plannedQuarter: Number(quarter),
-        budgetHours: Number(hours),
-        rationale,
+        plannedQuarter: Number(v.quarter),
+        budgetHours: Number(v.hours),
+        rationale: v.rationale,
       });
       setNotice(`${entity.name} added to the ${plan.year} plan`);
+      setDialog(null);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setDialogError(apiError(err)); }
+    finally { setDialogBusy(false); }
   };
 
   const act = async (url: string, body: any, ok: string) => {
@@ -137,12 +160,40 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
       setNotice(res.data?.message || ok);
       await load();
       onEngagementCreated?.();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
-  const exportPlan = async (plan: any) => {
-    const format = window.prompt('Format — xlsx, pdf or docx:', 'xlsx');
-    if (!format) return;
+  const approvePlan = (plan: any) => {
+    // Checked here as well as on the server so the dialog never opens on a plan
+    // this person could only ever be refused for.
+    if (plan.preparedBy?.id === me?.id) {
+      setError('SoD: the person who prepared the plan cannot approve it. A second approver is required.');
+      return;
+    }
+    setError('');
+    setDialog({ kind: 'approve', plan });
+  };
+
+  const doApprovePlan = async (plan: any, approvalNote: string) => {
+    setDialogBusy(true);
+    try {
+      await act(`/api/grc/plans/${plan.id}/approve`, { approvalNote }, 'Approved');
+      setDialog(null);
+    } finally { setDialogBusy(false); }
+  };
+
+  const doDefer = async (item: any, reason: string) => {
+    setDialogBusy(true);
+    try {
+      await act(`/api/grc/plan-items/${item.id}/defer`, { reason }, 'Deferred');
+      setDialog(null);
+    } finally { setDialogBusy(false); }
+  };
+
+  const exportPlan = (plan: any) => { setDialogError(''); setDialog({ kind: 'export', plan }); };
+
+  const doExportPlan = async (plan: any, format: string) => {
+    setDialogBusy(true); setDialogError('');
     try {
       const res = await apiClient.get(`/api/grc/plans/${plan.id}/export?format=${format}`, { responseType: 'blob' });
       const named = (String(res.headers?.['content-disposition'] || '').match(/filename="(.+?)"/) || [])[1];
@@ -151,14 +202,17 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
       a.href = href; a.download = named || `plan.${format}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(href);
+      setDialog(null);
     } catch (err: any) {
+      // The export responds as a blob, so a refusal arrives as a blob too and
+      // the message has to be read out of the body rather than off the error.
       if (err?.response?.data instanceof Blob) {
         const t = await err.response.data.text();
-        try { window.alert(JSON.parse(t).message); } catch { window.alert(t.slice(0, 160)); }
+        try { setDialogError(JSON.parse(t).message); } catch { setDialogError(t.slice(0, 160)); }
         return;
       }
-      window.alert(apiError(err));
-    }
+      setDialogError(apiError(err));
+    } finally { setDialogBusy(false); }
   };
 
   if (loading) return <div style={{ padding: 30, color: 'var(--ink-muted)' }}>Loading…</div>;
@@ -215,18 +269,7 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
                 </button>
               )}
               {p.status === 'SubmittedForApproval' && (
-                <button
-                  style={linkBtn('var(--success)')}
-                  onClick={() => {
-                    if (p.preparedBy?.id === me?.id) {
-                      window.alert('SoD: the person who prepared the plan cannot approve it. A second approver is required.');
-                      return;
-                    }
-                    const note = window.prompt('Approval note:');
-                    if (note === null) return;
-                    act(`/api/grc/plans/${p.id}/approve`, { approvalNote: note }, 'Approved');
-                  }}
-                >
+                <button style={linkBtn('var(--success)')} onClick={() => approvePlan(p)}>
                   approve
                 </button>
               )}
@@ -272,11 +315,7 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
                         {it.status === 'Planned' && (
                           <button
                             style={linkBtn('var(--ink-faint)')}
-                            onClick={() => {
-                              const reason = window.prompt('Why is this being deferred?');
-                              if (!reason) return;
-                              act(`/api/grc/plan-items/${it.id}/defer`, { reason }, 'Deferred');
-                            }}
+                            onClick={() => setDialog({ kind: 'defer', item: it })}
                           >
                             defer
                           </button>
@@ -361,6 +400,140 @@ const AuditUniverse: React.FC<{ onEngagementCreated?: () => void }> = ({ onEngag
           </tbody>
         </table>
       </div>
+
+      {/* ── Dialogs ─────────────────────────────────────────────────────────
+          Scoring an entity and planning one need several answers each. Asked one
+          at a time you cannot see what you have already answered, cannot go back,
+          and abandoning the last question discards the rest — so each is a single
+          form, validated before anything is sent. */}
+
+      {dialog?.kind === 'rescore' && (
+        <FormDialog
+          title={`Rescore ${dialog.entity.name}`}
+          intro="Six weighted factors, each 1–5. The composite score and the risk tier
+            are derived from these on the server, and the tier is what decides where
+            this sits in the plan."
+          submitLabel="Save scores"
+          busy={dialogBusy}
+          error={dialogError}
+          fields={Object.entries(factorLabels).map(([key, label]) => ({
+            name: key,
+            label,
+            type: 'number' as const,
+            required: true,
+            // The scores arrive nested under `factors`, not flat on the entity.
+            initial: String(dialog.entity.factors?.[key] ?? 3),
+          }))}
+          validate={(v) => {
+            const bad = Object.entries(factorLabels).find(([key]) => {
+              const n = Number(v[key]);
+              return !Number.isInteger(n) || n < 1 || n > 5;
+            });
+            return bad ? `${bad[1]} must be a whole number from 1 to 5.` : null;
+          }}
+          onSubmit={(v) => doRescore(dialog.entity, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'newPlan' && (
+        <FormDialog
+          title="New annual plan"
+          intro="The plan is the record of what internal audit committed to cover this
+            year. An engagement can only be created from an approved item on it."
+          submitLabel="Create plan"
+          busy={dialogBusy}
+          error={dialogError}
+          fields={[
+            { name: 'year', label: 'Fiscal year', type: 'number', required: true, initial: String(new Date().getFullYear()) },
+            { name: 'title', label: 'Plan title', type: 'text', required: true, initial: `Annual internal audit plan ${new Date().getFullYear()}` },
+            {
+              name: 'hours', label: 'Total auditor capacity for the year, in hours',
+              type: 'number', required: true, initial: '2000',
+              help: 'What the team can actually deliver. Each entity added to the plan draws its budget from this.',
+            },
+          ]}
+          onSubmit={doCreatePlan}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'addItem' && (
+        <FormDialog
+          title={`Add an entity to the ${dialog.plan.year} plan`}
+          intro="Highest risk first. The rationale is what an assessor reads when they
+            ask why this entity earned a slot and another did not."
+          submitLabel="Add to plan"
+          busy={dialogBusy}
+          error={dialogError}
+          fields={[
+            {
+              name: 'entity', label: 'Entity', type: 'select', required: true,
+              options: dialog.ranked.map(rankedLabel),
+            },
+            { name: 'quarter', label: 'Planned quarter', type: 'select', required: true, options: ['1', '2', '3', '4'], initial: '1' },
+            {
+              name: 'hours', label: 'Budget hours', type: 'number', required: true,
+              initial: String(dialog.ranked[0]?.suggestedHours ?? 80),
+              help: 'Pre-filled with the suggestion for the entity at the top of the list — each entity carries its own suggestion in the picker above.',
+            },
+            {
+              name: 'rationale', label: 'Why is this in the plan?', type: 'textarea',
+              initial: dialog.ranked[0] ? `${dialog.ranked[0].riskTier} risk — score ${dialog.ranked[0].riskScore}` : '',
+            },
+          ]}
+          onSubmit={(v) => doAddItem(dialog.plan, dialog.ranked, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'export' && (
+        <FormDialog
+          title={`Export the ${dialog.plan.year} plan`}
+          submitLabel="Export"
+          busy={dialogBusy}
+          error={dialogError}
+          fields={[{
+            name: 'format', label: 'Format', type: 'select',
+            options: ['xlsx', 'pdf', 'docx'], initial: 'xlsx',
+          }]}
+          onSubmit={(v) => doExportPlan(dialog.plan, v.format)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'approve' && (
+        <PromptDialog
+          title={`Approve the ${dialog.plan.year} plan?`}
+          label="Approval note"
+          multiline
+          confirmLabel="Approve plan"
+          busy={dialogBusy}
+          help="Optional. Once the plan is approved, each planned item on it can be turned into a live engagement."
+          onSubmit={(note) => doApprovePlan(dialog.plan, note)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'defer' && (
+        <ReasonDialog
+          title="Defer this engagement?"
+          confirmLabel="Defer"
+          label="Why is this being deferred?"
+          busy={dialogBusy}
+          message={(
+            <>
+              {dialog.item.auditableEntity?.name} stays on the plan rather than
+              leaving it, so the coverage that was promised and not delivered
+              stays visible. The reason is recorded against the plan item — it is
+              what answers the audit committee when they ask what happened to
+              Q{dialog.item.plannedQuarter}.
+            </>
+          )}
+          onConfirm={(reason) => doDefer(dialog.item, reason)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
     </div>
   );
 };

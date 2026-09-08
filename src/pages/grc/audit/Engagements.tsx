@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import { PromptDialog, ReasonDialog } from '../../../components/Dialog';
+import FormDialog from '../../../components/FormDialog';
 
 /**
  * Engagements — the list of audits and their findings.
@@ -31,6 +33,8 @@ const FINDING_STATUS_PILL: Record<string, React.CSSProperties> = {
 const RATING_COLOR: Record<string, string> = { High: 'var(--danger)', Medium: 'var(--warning)', Low: 'var(--success)' };
 
 const CONCLUSIONS = ['Adequate', 'NeedsImprovement', 'Inadequate'];
+const RESPONSE_TYPES = ['Agree', 'PartiallyAgree', 'Disagree'];
+const EXPORT_FORMATS = ['xlsx', 'pdf', 'docx'];
 
 type Props = {
   selectedId: string | null;
@@ -54,6 +58,27 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
 
   const [showFinding, setShowFinding] = useState(false);
   const [finding, setFinding] = useState({ criterion: '', condition: '', cause: '', recommendation: '', riskRating: 'Medium' });
+
+  /**
+   * Every dialog this screen opens, in one state.
+   *
+   * A boolean per dialog drifts — two end up true at once — and the audit or the
+   * finding a dialog is about has to travel with it anyway, since the row it was
+   * opened from is gone by the time the dialog submits.
+   */
+  type Dlg =
+    | null
+    | { kind: 'conclusion'; a: any }
+    | { kind: 'exportFormat'; a: any; what: 'rcm' | 'report' }
+    | { kind: 'cancelEngagement'; a: any }
+    | { kind: 'respond'; f: any }
+    | { kind: 'escalate'; f: any }
+    | { kind: 'assignCap'; f: any }
+    | { kind: 'submitClosure'; f: any }
+    | { kind: 'closeFinding'; f: any }
+    | { kind: 'reopenFinding'; f: any };
+  const [dlg, setDlg] = useState<Dlg>(null);
+  const [dlgBusy, setDlgBusy] = useState(false);
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
 
@@ -84,7 +109,7 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
     try {
       const res = await apiClient.get(`/api/grc/audits/${id}`);
       setDetail(res.data?.audit || null);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const startFromPlan = async (item: any) => {
@@ -92,7 +117,7 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
       const res = await apiClient.post(`/api/grc/plan-items/${item.id}/instantiate`, {});
       setNotice(res.data?.message || 'Engagement created');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const createAudit = async (e: React.FormEvent) => {
@@ -110,24 +135,16 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
 
   // IIA Std 15.1 — an engagement cannot be reported without an overall
   // judgement, so this has to be reachable before "to reporting".
-  const recordConclusion = async (a: any) => {
-    const conclusion = window.prompt(
-      `Overall conclusion for ${a.ref} — ${CONCLUSIONS.join(', ')}:`,
-      a.conclusion || 'Adequate',
-    );
-    if (!conclusion) return;
-    if (!CONCLUSIONS.includes(conclusion)) {
-      window.alert(`Conclusion must be one of: ${CONCLUSIONS.join(', ')}`);
-      return;
-    }
-    const conclusionNarrative = window.prompt('What is that conclusion based on? (required)', a.conclusionNarrative || '');
-    if (!conclusionNarrative) return;
+  const recordConclusion = async (a: any, conclusion: string, conclusionNarrative: string) => {
+    setDlgBusy(true);
     try {
       await apiClient.patch(`/api/grc/audits/${a.id}`, { conclusion, conclusionNarrative });
+      setDlg(null);
       setNotice(`Conclusion recorded on ${a.ref}: ${conclusion}`);
       await load();
       if (detail?.id === a.id) await openDetail(a.id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
   /**
@@ -151,40 +168,38 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
       // An error body arrives as a Blob too, so it has to be read back out.
       if (err?.response?.data instanceof Blob) {
         const text = await err.response.data.text();
-        try { window.alert(JSON.parse(text).message || text); }
-        catch { window.alert(text.slice(0, 200)); }
+        try { setError(JSON.parse(text).message || text); }
+        catch { setError(text.slice(0, 200)); }
         return;
       }
-      window.alert(apiError(err));
+      setError(apiError(err));
     }
   };
 
-  const exportAudit = async (a: any, kind: 'rcm' | 'report') => {
-    const format = window.prompt('Format — xlsx, pdf or docx:', 'xlsx');
-    if (!format) return;
-    if (!['xlsx', 'pdf', 'docx'].includes(format)) {
-      window.alert('Format must be xlsx, pdf or docx.');
-      return;
-    }
+  const exportAudit = async (a: any, kind: 'rcm' | 'report', format: string) => {
+    setDlg(null);
     await download(
       `/api/grc/audits/${a.id}/export/${kind}?format=${format}`,
       `${a.ref}_${kind}.${format}`,
     );
   };
 
-  const setAuditStatus = async (id: string, status: string) => {
-    const body: any = { status };
-    if (status === 'Cancelled') {
-      const cancellationReason = window.prompt('Why is this engagement being abandoned? (required)');
-      if (!cancellationReason) return;
-      body.cancellationReason = cancellationReason;
-    }
+  // Cancelling is the only transition that carries anything beyond the status,
+  // and its reason is collected before this is called.
+  const setAuditStatus = async (id: string, status: string, extra?: Record<string, any>) => {
+    const body: any = { status, ...extra };
     try {
       await apiClient.patch(`/api/grc/audits/${id}`, body);
       setNotice(`Engagement moved to ${status}`);
       await load();
       if (detail?.id === id) await openDetail(id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
+  };
+
+  const cancelEngagement = async (a: any, cancellationReason: string) => {
+    setDlgBusy(true);
+    try { await setAuditStatus(a.id, 'Cancelled', { cancellationReason }); }
+    finally { setDlgBusy(false); setDlg(null); }
   };
 
   const raiseFinding = async (e: React.FormEvent) => {
@@ -197,91 +212,105 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
       setFinding({ criterion: '', condition: '', cause: '', recommendation: '', riskRating: 'Medium' });
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
-  const respond = async (f: any) => {
+  // The SoD checks run on the click rather than on submit, so the dialog never
+  // opens for someone who is not allowed to fill it in.
+  const openRespond = (f: any) => {
     if (f.raisedBy?.id === me?.id) {
-      window.alert("SoD: the person who raised the finding cannot write management's response to it.");
+      setError("SoD: the person who raised the finding cannot write management's response to it.");
       return;
     }
-    const responseType = window.prompt('Management response — Agree, PartiallyAgree or Disagree:', 'Agree');
-    if (!responseType) return;
-    const responseNarrative = window.prompt('Management position (required):');
-    if (!responseNarrative) return;
-    let managementActionPlan = '';
-    if (responseType !== 'Disagree') {
-      managementActionPlan = window.prompt('What will management do about it? (required)', f.recommendation) || '';
-      if (!managementActionPlan) return;
-    }
+    setDlg({ kind: 'respond', f });
+  };
+
+  const respond = async (f: any, values: Record<string, string>) => {
+    // Disagreeing commits management to nothing, so no action plan is sent —
+    // not even one left over in the field before the position was changed.
+    const managementActionPlan = values.responseType === 'Disagree' ? '' : values.managementActionPlan;
+    setDlgBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/issues/${f.id}/respond`, { responseType, responseNarrative, managementActionPlan });
+      const res = await apiClient.post(`/api/grc/issues/${f.id}/respond`, {
+        responseType: values.responseType,
+        responseNarrative: values.responseNarrative,
+        managementActionPlan,
+      });
+      setDlg(null);
       setNotice(res.data?.message || 'Management response recorded');
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
-  const escalate = async (f: any) => {
-    const reason = window.prompt('Reason for escalation:');
-    if (!reason) return;
+  const escalate = async (f: any, reason: string) => {
+    setDlgBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/issues/${f.id}/escalate`, { reason });
+      setDlg(null);
       setNotice(res.data?.message || 'Escalated');
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
-  const assignCap = async (f: any) => {
-    const capDescription = window.prompt('Corrective action plan description:', f.recommendation);
-    if (!capDescription) return;
-    const capDueDate = window.prompt('CAP due date (YYYY-MM-DD):');
-    if (!capDueDate) return;
+  const assignCap = async (f: any, capDescription: string, capDueDate: string) => {
+    setDlgBusy(true);
     try {
       await apiClient.post(`/api/grc/issues/${f.id}/cap`, { capOwnerId: me?.id, capDueDate, capDescription });
+      setDlg(null);
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
-  const submitForClosure = async (f: any) => {
-    const evidenceNote = window.prompt('What was remediated, and where is the evidence? (required)');
-    if (!evidenceNote) return;
+  const submitForClosure = async (f: any, evidenceNote: string) => {
+    setDlgBusy(true);
     try {
       await apiClient.post(`/api/grc/issues/${f.id}/submit-closure`, { evidenceNote });
+      setDlg(null);
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
-  const closeFinding = async (f: any) => {
-    // Independence cuts both ways: whoever raised it and whoever remediated
-    // it are both barred from validating the fix.
-    if (f.raisedBy?.id === me?.id) { window.alert('SoD: the auditor who raised a finding cannot close it.'); return; }
+  // Independence cuts both ways: whoever raised it and whoever remediated
+  // it are both barred from validating the fix.
+  const openCloseFinding = (f: any) => {
+    if (f.raisedBy?.id === me?.id) { setError('SoD: the auditor who raised a finding cannot close it.'); return; }
     if (f.capOwner?.id === me?.id || f.respondedBy?.id === me?.id) {
-      window.alert('SoD: you cannot validate remediation you owned or accepted. A third person must close it.');
+      setError('SoD: you cannot validate remediation you owned or accepted. A third person must close it.');
       return;
     }
-    const note = window.prompt('Closure note (validation evidence — required):');
-    if (!note) return;
+    setDlg({ kind: 'closeFinding', f });
+  };
+
+  const closeFinding = async (f: any, note: string) => {
+    setDlgBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/issues/${f.id}/close`, { note });
+      setDlg(null);
       setNotice(res.data?.message || 'Finding closed');
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
-  const reopenFinding = async (f: any) => {
-    const reason = window.prompt('Reason for reopening:');
-    if (!reason) return;
+  const reopenFinding = async (f: any, reason: string) => {
+    setDlgBusy(true);
     try {
       await apiClient.post(`/api/grc/issues/${f.id}/reopen`, { reason });
+      setDlg(null);
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setDlg(null); }
+    finally { setDlgBusy(false); }
   };
 
   const visible = statusFilter ? audits.filter((a) => a.status === statusFilter) : audits;
@@ -390,17 +419,17 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
                     </button>
                     {a.status === 'Planned' && <button onClick={() => setAuditStatus(a.id, 'Fieldwork')} style={linkBtn('var(--warning)')}>start fieldwork</button>}
                     {a.status === 'Fieldwork' && (
-                      <button onClick={() => recordConclusion(a)} style={linkBtn('var(--info)')}>
+                      <button onClick={() => setDlg({ kind: 'conclusion', a })} style={linkBtn('var(--info)')}>
                         {a.conclusion ? 'revise conclusion' : 'record conclusion'}
                       </button>
                     )}
                     {a.status === 'Fieldwork' && <button onClick={() => setAuditStatus(a.id, 'Reporting')} style={linkBtn('var(--info)')}>to reporting</button>}
                     {(a.status === 'Planned' || a.status === 'Fieldwork') && (
-                      <button onClick={() => setAuditStatus(a.id, 'Cancelled')} style={linkBtn('var(--ink-faint)')}>cancel</button>
+                      <button onClick={() => setDlg({ kind: 'cancelEngagement', a })} style={linkBtn('var(--ink-faint)')}>cancel</button>
                     )}
                     {a.status === 'Reporting' && <button onClick={() => setAuditStatus(a.id, 'Closed')} style={linkBtn('var(--success)')}>close audit</button>}
-                    <button onClick={() => exportAudit(a, 'rcm')} style={linkBtn('var(--ink-muted)')}>RCM</button>
-                    <button onClick={() => exportAudit(a, 'report')} style={linkBtn('var(--ink-muted)')}>report</button>
+                    <button onClick={() => setDlg({ kind: 'exportFormat', a, what: 'rcm' })} style={linkBtn('var(--ink-muted)')}>RCM</button>
+                    <button onClick={() => setDlg({ kind: 'exportFormat', a, what: 'report' })} style={linkBtn('var(--ink-muted)')}>report</button>
                     <button onClick={() => openDetail(a.id)} style={linkBtn('var(--ink-muted)')}>open</button>
                   </div>
                 </div>
@@ -462,6 +491,15 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
               lead {detail.leadAuditor.name} · {detail.criteria}
               <span style={{ marginLeft: 8 }}><span style={AUDIT_STATUS_PILL[detail.status]}>{detail.status}</span></span>
             </div>
+            {/* Most refusals on this screen are raised from in here — an SoD block
+                on a response or a closure, a server rejection on a finding — and
+                the page's own banner sits behind this overlay. */}
+            {error && (
+              <div style={{ ...S.error, marginBottom: 14 }}>
+                {error}
+                <button onClick={() => setError('')} style={{ ...linkBtn('var(--danger)'), marginLeft: 'auto' }}>dismiss</button>
+              </div>
+            )}
             <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginBottom: 14, fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.6 }}>
               <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginBottom: 3, letterSpacing: '0.05em' }}>OBJECTIVE</div>{detail.objective}
               <div style={{ fontSize: 10, color: 'var(--ink-faint)', margin: '8px 0 3px', letterSpacing: '0.05em' }}>SCOPE</div>{detail.scope}
@@ -515,12 +553,12 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
                   <div style={{ color: 'var(--ink-faint)', fontSize: 10 }}>raised by {f.raisedBy.name}</div>
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {(f.status === 'Open' || f.status === 'Reopened') && <button onClick={() => respond(f)} style={linkBtn('var(--info)')}>record management response</button>}
-                  {f.status === 'Responded' && <button onClick={() => assignCap(f)} style={linkBtn('var(--info)')}>assign CAP</button>}
-                  {f.status === 'Disputed' && <button onClick={() => escalate(f)} style={linkBtn('var(--danger)')}>escalate</button>}
-                  {f.status === 'CAPAssigned' && <button onClick={() => submitForClosure(f)} style={linkBtn('var(--info)')}>submit for closure</button>}
-                  {f.status === 'PendingClosure' && <button onClick={() => closeFinding(f)} style={linkBtn('var(--success)')}>validate &amp; close</button>}
-                  {f.status === 'Closed' && <button onClick={() => reopenFinding(f)} style={linkBtn('var(--danger)')}>reopen</button>}
+                  {(f.status === 'Open' || f.status === 'Reopened') && <button onClick={() => openRespond(f)} style={linkBtn('var(--info)')}>record management response</button>}
+                  {f.status === 'Responded' && <button onClick={() => setDlg({ kind: 'assignCap', f })} style={linkBtn('var(--info)')}>assign CAP</button>}
+                  {f.status === 'Disputed' && <button onClick={() => setDlg({ kind: 'escalate', f })} style={linkBtn('var(--danger)')}>escalate</button>}
+                  {f.status === 'CAPAssigned' && <button onClick={() => setDlg({ kind: 'submitClosure', f })} style={linkBtn('var(--info)')}>submit for closure</button>}
+                  {f.status === 'PendingClosure' && <button onClick={() => openCloseFinding(f)} style={linkBtn('var(--success)')}>validate &amp; close</button>}
+                  {f.status === 'Closed' && <button onClick={() => setDlg({ kind: 'reopenFinding', f })} style={linkBtn('var(--danger)')}>reopen</button>}
                 </div>
               </div>
             ))}
@@ -551,6 +589,189 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Dialogs sit above the detail modal, so a finding action opened from
+          inside it is answered without losing the engagement behind. */}
+
+      {dlg?.kind === 'conclusion' && (
+        <FormDialog
+          title={`Overall conclusion — ${dlg.a.ref}`}
+          intro={'The judgement and its basis are recorded together. Both are read by people who were '
+            + 'not in the fieldwork, so the narrative is what makes the rating defensible.'}
+          submitLabel={dlg.a.conclusion ? 'Revise conclusion' : 'Record conclusion'}
+          busy={dlgBusy}
+          fields={[
+            {
+              name: 'conclusion', label: 'Conclusion', type: 'select',
+              options: CONCLUSIONS, initial: dlg.a.conclusion || 'Adequate',
+            },
+            {
+              name: 'conclusionNarrative', label: 'What is that conclusion based on?', type: 'textarea',
+              required: true, initial: dlg.a.conclusionNarrative || '',
+              placeholder: 'The evidence and the reasoning behind the rating.',
+            },
+          ]}
+          onSubmit={(v) => recordConclusion(dlg.a, v.conclusion, v.conclusionNarrative)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'exportFormat' && (
+        <FormDialog
+          title={`Export the ${dlg.what === 'rcm' ? 'RCM' : 'report'} for ${dlg.a.ref}`}
+          intro="The file is generated on the server. Pick the format whoever receives it can open."
+          submitLabel="Download"
+          busy={dlgBusy}
+          fields={[{ name: 'format', label: 'Format', type: 'select', options: EXPORT_FORMATS }]}
+          onSubmit={(v) => exportAudit(dlg.a, dlg.what, v.format)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'cancelEngagement' && (
+        <ReasonDialog
+          title={`Abandon ${dlg.a.ref}?`}
+          confirmLabel="Abandon engagement"
+          label="Why is this engagement being abandoned?"
+          placeholder="e.g. The entity was divested in March, so there is nothing left in scope to audit."
+          busy={dlgBusy}
+          message={(
+            <>
+              <div>
+                <strong style={{ color: 'var(--ink)' }}>{dlg.a.title}</strong> moves to Cancelled and
+                is no longer worked on.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                An engagement that was planned and then dropped is something the audit committee asks
+                about, so the reason is stored on the record and shown whenever it is opened.
+              </div>
+            </>
+          )}
+          onConfirm={(reason) => cancelEngagement(dlg.a, reason)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'respond' && (
+        <FormDialog
+          title={`Management response — ${dlg.f.ref}`}
+          intro={(
+            <>
+              <div>{dlg.f.condition}</div>
+              <div style={{ marginTop: 6, color: 'var(--ink-muted)' }}>
+                Recommendation: {dlg.f.recommendation}
+              </div>
+            </>
+          )}
+          submitLabel="Record response"
+          busy={dlgBusy}
+          fields={[
+            { name: 'responseType', label: 'Position', type: 'select', options: RESPONSE_TYPES },
+            {
+              name: 'responseNarrative', label: 'Management position', type: 'textarea', required: true,
+              help: "Management's own words on the finding — this is quoted in the report.",
+            },
+            {
+              name: 'managementActionPlan', label: 'What will management do about it?', type: 'textarea',
+              initial: dlg.f.recommendation || '',
+              help: 'Pre-filled with the recommendation. Not required, and not recorded, if the position is Disagree.',
+            },
+          ]}
+          validate={(v) => (v.responseType !== 'Disagree' && !v.managementActionPlan?.trim()
+            ? 'An action plan is required unless management disagrees with the finding.'
+            : null)}
+          onSubmit={(v) => respond(dlg.f, v)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'escalate' && (
+        <PromptDialog
+          title={`Escalate ${dlg.f.ref}`}
+          label="Reason for escalation"
+          multiline
+          confirmLabel="Escalate"
+          busy={dlgBusy}
+          placeholder="e.g. Management disputes the criterion and two meetings have not resolved it."
+          help={dlg.f.escalationLevel > 0
+            ? 'This finding is already with executive management. A further escalation puts it in front of the audit committee.'
+            : 'A disputed finding goes to executive management first. The reason is shown against the finding from then on.'}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(r) => escalate(dlg.f, r)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'assignCap' && (
+        <FormDialog
+          title={`Corrective action plan — ${dlg.f.ref}`}
+          intro={'The CAP is assigned to you as its owner, which also bars you from validating the fix '
+            + 'later — someone else has to close it.'}
+          submitLabel="Assign CAP"
+          busy={dlgBusy}
+          fields={[
+            {
+              name: 'capDescription', label: 'What will be done', type: 'textarea', required: true,
+              initial: dlg.f.recommendation || '',
+              help: 'Pre-filled with the recommendation. Change it to what is actually being committed to.',
+            },
+            {
+              name: 'capDueDate', label: 'Due date', type: 'date', required: true,
+              help: 'When the remediation is expected to be finished.',
+            },
+          ]}
+          onSubmit={(v) => assignCap(dlg.f, v.capDescription, v.capDueDate)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'submitClosure' && (
+        <PromptDialog
+          title={`Submit ${dlg.f.ref} for closure`}
+          label="What was remediated, and where is the evidence?"
+          multiline
+          confirmLabel="Submit for closure"
+          busy={dlgBusy}
+          placeholder="e.g. MFA enforced on all 34 admin accounts on 3 March. Screenshots and the change ticket are in the engagement folder."
+          help={'The finding moves to pending closure. Someone who did not raise it, own the CAP or '
+            + 'accept the response has to validate this before it closes.'}
+          validate={(v) => (v.trim() ? null : 'A note is required.')}
+          onSubmit={(n) => submitForClosure(dlg.f, n)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'closeFinding' && (
+        <PromptDialog
+          title={`Validate and close ${dlg.f.ref}`}
+          label="Closure note (validation evidence)"
+          multiline
+          confirmLabel="Validate and close"
+          busy={dlgBusy}
+          placeholder="e.g. Re-tested the control on 12 April across 20 accounts; all enforced."
+          help={'What you checked, not what you were told. This is the record that the fix was verified '
+            + 'rather than taken on trust.'}
+          validate={(v) => (v.trim() ? null : 'A closure note is required.')}
+          onSubmit={(n) => closeFinding(dlg.f, n)}
+          onCancel={() => setDlg(null)}
+        />
+      )}
+
+      {dlg?.kind === 'reopenFinding' && (
+        <PromptDialog
+          title={`Reopen ${dlg.f.ref}`}
+          label="Reason for reopening"
+          multiline
+          confirmLabel="Reopen finding"
+          busy={dlgBusy}
+          placeholder="e.g. The control failed again in the September walkthrough."
+          help={'The finding returns to Reopened and its reopen count goes up, which is what a repeat '
+            + 'failure looks like on the report.'}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(r) => reopenFinding(dlg.f, r)}
+          onCancel={() => setDlg(null)}
+        />
       )}
     </div>
   );
