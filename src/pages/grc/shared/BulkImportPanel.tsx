@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import { ConfirmDialog } from '../../../components/Dialog';
 import Icon from '../../../components/Icon';
 
 /**
@@ -69,6 +70,10 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Both of this panel's confirmations are consequential and neither could say
+  // so: committing writes rows to a live register, and discarding throws away a
+  // mapping somebody spent time on.
+  const [dialog, setDialog] = useState<null | { kind: 'commit'; count: number } | { kind: 'discard' }>(null);
   const [editing, setEditing] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -99,7 +104,7 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
       a.href = href; a.download = config.templateFileName;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(href);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const upload = async (file: File) => {
@@ -133,7 +138,7 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
       setNotice(res.data?.message || fallback);
       if (openId) await loadDetail(openId);
       await loadList();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const setRowStatus = async (candidateId: string, status: string) => {
@@ -141,7 +146,7 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
       const res = await apiClient.patch(`/api/grc/${config.candidateResource}/${candidateId}`, { status });
       setNotice(res.data?.message || 'Row updated');
       if (openId) await loadDetail(openId);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const saveCorrection = async (e: React.FormEvent) => {
@@ -156,16 +161,13 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
       setEditing(null);
       setNotice(res.data?.message || 'Row corrected and accepted');
       if (openId) await loadDetail(openId);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
   const commit = async () => {
     if (!detail) return;
-    const n = detail.totals?.accepted ?? 0;
-    if (!window.confirm(
-      `Add ${n} ${n === 1 ? config.noun : config.nounPlural} to the register?\n\n${config.commitCaveat}`,
-    )) return;
+    setDialog(null);
     setBusy(true);
     try {
       const res = await apiClient.post(`${base}/imports/${openId}/commit`, {});
@@ -173,7 +175,7 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
       await loadDetail(openId!);
       await loadList();
       onCommitted?.();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
@@ -268,15 +270,15 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
                 <button style={ghostBtn} onClick={() => act(`${base}/imports/${openId}/accept-clean`, 'Clean rows accepted')}>
                   Accept the {t.high ?? 0} clean row(s)
                 </button>
-                <button style={primaryBtn(busy || (t.accepted ?? 0) === 0)} disabled={busy || (t.accepted ?? 0) === 0} onClick={commit}>
+                <button
+                  style={primaryBtn(busy || (t.accepted ?? 0) === 0)}
+                  disabled={busy || (t.accepted ?? 0) === 0}
+                  onClick={() => setDialog({ kind: 'commit', count: t.accepted ?? 0 })}
+                >
                   Commit {t.accepted ?? 0} to the register
                 </button>
                 <button style={linkBtn('var(--ink-faint)')}
-                  onClick={() => {
-                    if (window.confirm('Discard this import? Nothing has been written to the register.')) {
-                      act(`${base}/imports/${openId}/discard`, 'Discarded');
-                    }
-                  }}>
+                  onClick={() => setDialog({ kind: 'discard' })}>
                   discard
                 </button>
               </div>
@@ -461,6 +463,48 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
             </form>
           </div>
         </div>
+      )}
+
+      {dialog?.kind === 'commit' && (
+        <ConfirmDialog
+          title={`Add ${dialog.count} ${dialog.count === 1 ? config.noun : config.nounPlural} to the register?`}
+          confirmLabel={`Commit ${dialog.count}`}
+          busy={busy}
+          message={(
+            <>
+              <div>
+                {dialog.count} accepted row{dialog.count === 1 ? '' : 's'} will be written to the
+                live register. Rows still carrying a problem are left behind in this import.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>{config.commitCaveat}</div>
+            </>
+          )}
+          onConfirm={commit}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'discard' && (
+        <ConfirmDialog
+          title="Discard this import?"
+          destructive
+          confirmLabel="Discard import"
+          busy={busy}
+          message={(
+            <>
+              <div>Nothing has been written to the register, so nothing there changes.</div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                The uploaded file and the column mapping go with it. Re-importing means
+                mapping the columns again.
+              </div>
+            </>
+          )}
+          onConfirm={() => {
+            setDialog(null);
+            act(`${base}/imports/${openId}/discard`, 'Discarded');
+          }}
+          onCancel={() => setDialog(null)}
+        />
       )}
     </div>
   );

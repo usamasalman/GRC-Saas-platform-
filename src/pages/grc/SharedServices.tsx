@@ -4,6 +4,8 @@ import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
+import PickManyDialog from '../../components/PickManyDialog';
+import { ConfirmDialog } from '../../components/Dialog';
 
 /**
  * Shared services inside a group.
@@ -58,6 +60,11 @@ const SharedServices: React.FC = () => {
    * what it was entitled to expect.
    */
   const [editing, setEditing] = useState<any | null>(null);
+  const [picker, setPicker] = useState<
+    null | { kind: 'consumers'; svc: any } | { kind: 'controls'; svc: any }
+  >(null);
+  const [accepting, setAccepting] = useState<any | null>(null);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [form, setForm] = useState<any>(blank);
 
   const me = (() => { try { return JSON.parse(localStorage.getItem('grc_user_json') || 'null'); } catch { return null; } })();
@@ -126,54 +133,37 @@ const SharedServices: React.FC = () => {
     finally { setBusy(false); }
   };
 
-  const setConsumers = async (s: any) => {
-    const current = new Set((s.consumers || []).map((c: any) => c.consumerTenantId));
-    const options = tenants.filter((t) => t.id !== s.providerTenantId);
-    if (options.length === 0) {
-      window.alert('There are no other entities in your scope to enrol on this service.');
-      return;
-    }
-    const choice = window.prompt(
-      `Which entities rely on ${s.ref}? Comma-separated numbers.\n\n`
-      + options.map((t, n) => `${n + 1}. ${current.has(t.id) ? '[enrolled] ' : ''}${t.name}`).join('\n'),
-      options.map((t, n) => (current.has(t.id) ? String(n + 1) : '')).filter(Boolean).join(','),
-    );
-    if (choice === null) return;
-    const ids = choice.split(',').map((x) => options[Number(x.trim()) - 1]?.id).filter(Boolean);
+  const saveConsumers = async (svc: any, consumerTenantIds: string[]) => {
+    setPickerBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/shared-services/${s.id}/consumers`, { consumerTenantIds: ids });
+      const res = await apiClient.post(`/api/grc/shared-services/${svc.id}/consumers`, { consumerTenantIds });
+      setPicker(null);
       setNotice(res.data?.message || 'Consumers updated');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setPicker(null); }
+    finally { setPickerBusy(false); }
   };
 
-  const setControls = async (s: any) => {
-    const current = new Set((s.controls || []).map((c: any) => c.implementationId));
-    const choice = window.prompt(
-      `Which controls does ${s.ref} operate on its consumers' behalf? Comma-separated numbers.\n\n`
-      + impls.slice(0, 25).map((im, n) =>
-        `${n + 1}. ${current.has(im.id) ? '[attached] ' : ''}${im.control?.code} — ${im.control?.title}`).join('\n'),
-      impls.map((im, n) => (current.has(im.id) ? String(n + 1) : '')).filter(Boolean).join(','),
-    );
-    if (choice === null) return;
-    const ids = choice.split(',').map((x) => impls[Number(x.trim()) - 1]?.id).filter(Boolean);
+  const saveServiceControls = async (svc: any, implementationIds: string[]) => {
+    setPickerBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/shared-services/${s.id}/controls`, { implementationIds: ids });
+      const res = await apiClient.post(`/api/grc/shared-services/${svc.id}/controls`, { implementationIds });
+      setPicker(null);
       setNotice(res.data?.message || 'Controls attached');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setPicker(null); }
+    finally { setPickerBusy(false); }
   };
 
-  const accept = async (s: any) => {
-    if (!window.confirm(
-      `Accept ${s.ref} — ${s.name} — on behalf of your entity?\n\n`
-      + `You are recording that your entity relies on this service and its stated SLA.`,
-    )) return;
+  const confirmAccept = async (svc: any) => {
+    setPickerBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/shared-services/${s.id}/accept`, {});
+      const res = await apiClient.post(`/api/grc/shared-services/${svc.id}/accept`, {});
+      setAccepting(null);
       setNotice(res.data?.message || 'Accepted');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setAccepting(null); }
+    finally { setPickerBusy(false); }
   };
 
   if (loading) return <div style={{ ...S.page, color: 'var(--ink-muted)' }}>Loading shared services…</div>;
@@ -317,8 +307,8 @@ const SharedServices: React.FC = () => {
               <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {isProvider && (
                   <>
-                    <button style={linkBtn('var(--info)')} onClick={() => setConsumers(s)}>who relies on this</button>
-                    <button style={linkBtn('var(--info)')} onClick={() => setControls(s)}>controls operated</button>
+                    <button style={linkBtn('var(--info)')} onClick={() => setPicker({ kind: 'consumers', svc: s })}>who relies on this</button>
+                    <button style={linkBtn('var(--info)')} onClick={() => setPicker({ kind: 'controls', svc: s })}>controls operated</button>
                     <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(s)}>edit</button>
                     {/* A retired service is refused by the server, as is one any entity
                         has enrolled on — that enrolment is the consuming entity's record
@@ -341,7 +331,7 @@ const SharedServices: React.FC = () => {
                   </>
                 )}
                 {myLink && !myLink.acceptedAt && (
-                  <button style={linkBtn('var(--success)')} onClick={() => accept(s)}>accept for my entity</button>
+                  <button style={linkBtn('var(--success)')} onClick={() => setAccepting(s)}>accept for my entity</button>
                 )}
                 {myLink?.acceptedAt && (
                   <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>
@@ -418,6 +408,79 @@ const SharedServices: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {picker?.kind === 'consumers' && (
+        <PickManyDialog
+          title={`Who relies on ${picker.svc.ref}?`}
+          intro={(
+            <>
+              The entities ticked here depend on <strong>{picker.svc.name}</strong> and inherit
+              its SLA. This replaces the current set — an entity you untick is no longer
+              recorded as relying on it.
+            </>
+          )}
+          items={tenants
+            .filter((t: any) => t.id !== picker.svc.providerTenantId)
+            .map((t: any) => ({ id: t.id, label: t.name, sublabel: t.type }))}
+          initiallySelected={(picker.svc.consumers || []).map((c: any) => c.consumerTenantId)}
+          confirmLabel="Save consumers"
+          emptyMessage="There are no other entities in your scope to enrol on this service."
+          busy={pickerBusy}
+          onSubmit={(ids) => saveConsumers(picker.svc, ids)}
+          onCancel={() => setPicker(null)}
+        />
+      )}
+
+      {picker?.kind === 'controls' && (
+        <PickManyDialog
+          title={`Controls ${picker.svc.ref} operates for its consumers`}
+          intro={(
+            <>
+              What this service does on behalf of the entities that rely on it. Those entities
+              lean on these controls without operating them, which is the whole point of a
+              shared service — and the reason a group auditor asks to see this list.
+            </>
+          )}
+          items={impls.map((im: any) => ({
+            id: im.id,
+            label: im.control?.code || im.id,
+            sublabel: im.control?.title,
+          }))}
+          initiallySelected={(picker.svc.controls || []).map((c: any) => c.implementationId)}
+          confirmLabel="Save controls"
+          emptyMessage="No control implementations exist yet, so there is nothing to attach."
+          busy={pickerBusy}
+          onSubmit={(ids) => saveServiceControls(picker.svc, ids)}
+          onCancel={() => setPicker(null)}
+        />
+      )}
+
+      {accepting && (
+        <ConfirmDialog
+          title={`Accept ${accepting.ref} for your entity?`}
+          confirmLabel="Accept service"
+          busy={pickerBusy}
+          message={(
+            <>
+              <div>
+                You are recording that your entity relies on{' '}
+                <strong>{accepting.name}</strong> and on the service level it states.
+              </div>
+              {accepting.slaSummary && (
+                <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 6, background: 'var(--surface-sunk)', border: '1px solid var(--line-soft)', color: 'var(--ink-body)' }}>
+                  {accepting.slaSummary}
+                </div>
+              )}
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                Recorded against your entity with your name and the date. It is what shows an
+                auditor which controls you rely on somebody else to operate.
+              </div>
+            </>
+          )}
+          onConfirm={() => confirmAccept(accepting)}
+          onCancel={() => setAccepting(null)}
+        />
       )}
     </div>
   );
