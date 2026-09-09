@@ -74,7 +74,11 @@ const navSrc = fs.readFileSync(navFile, 'utf8');
 const mapBlock = navSrc.match(/export const NAV_CAPABILITY[\s\S]*?= \{([\s\S]*?)\n\};/);
 assert.ok(mapBlock, 'NAV_CAPABILITY map not found');
 const gatedKeys = [...mapBlock[1].matchAll(/^\s*'?([a-z0-9-]+)'?:\s*\[/gm)].map((m) => m[1]);
-ok(gatedKeys.length > 20, `expected gated keys; found ${gatedKeys.length}`);
+// Deliberately few. The gate covers administration of tenants, users, roles and
+// flags — not the operational screens, whose data every signed-in user can
+// already read through an unguarded GET.
+ok(gatedKeys.length >= 5 && gatedKeys.length <= 12,
+  `expected a short gate list; found ${gatedKeys.length}`);
 
 const unknown = gatedKeys.filter((k) => !navKeys.has(k));
 checks += 1;

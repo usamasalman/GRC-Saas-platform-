@@ -60,16 +60,35 @@ export const CAP = {
 } as const;
 
 /**
- * nav key → the capabilities that make the entry worth showing.
+ * nav key -> the capabilities that make the entry worth showing.
  *
  * Any one of them is enough. Several screens are reachable by more than one
- * duty — the risk register is used by whoever assesses risk and by whoever runs
- * the audit that reads it — and requiring all of them would hide the screen
- * from both.
+ * duty, and requiring all of them would hide the screen from everybody.
+ *
+ * Deliberately short. The first version gated 34 entries, including the whole
+ * of Subscriptions & Billing, quotas, the tool marketplace, the security
+ * services and the service desk. That was wrong twice over.
+ *
+ * It contradicted the rule written above it: every one of those screens has an
+ * unguarded GET, so any signed-in user may already read the data. Hiding a
+ * readable screen is not enforcement, it is just concealment.
+ *
+ * And it produced an absurd result for the one role that matters most here.
+ * platform-super-admin holds 14 of the 29 capabilities, because billing belongs
+ * to platform-billing-admin and the service desk to platform-service-desk-manager
+ * by deliberate separation of duties -- so the platform owner signed in to their
+ * own control plane and found half of it missing.
+ *
+ * What is left is the set the original complaint named: administration of
+ * tenants, users, roles and flags. A read-only auditor no longer sees Manage
+ * Tenants or Roles & Permissions. Everything operational stays visible, and what
+ * a person cannot do on it is hidden by the buttons on the screen itself, which
+ * is where the server's answer is already reflected.
  */
 export const NAV_CAPABILITY: Record<string, readonly string[]> = {
-  // Platform administration. Nothing on these screens is readable in a useful
-  // sense without the corresponding duty.
+  // Creating tenants, taking over a session, granting access, changing what a
+  // role may do, turning features on for other people. There is nothing on
+  // these worth reading without the duty behind them.
   tenants: [CAP.MANAGE_TENANT],
   'asm-tenants': [CAP.MANAGE_TENANT, CAP.OPERATE_SECURITY_SERVICES],
   impersonation: [CAP.MANAGE_TENANT],
@@ -79,48 +98,6 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   'branch-users': [CAP.ADD_USER],
   'user-admin': [CAP.ADD_USER, CAP.TRANSFER_USER],
   'feature-flags': [CAP.GOVERN_FLAG],
-
-  // Billing. A tenant that cannot see its own invoices cannot reconcile them,
-  // so the read-heavy entries take the review and reconcile duties too.
-  subscriptions: [CAP.MANAGE_SUBSCRIPTION],
-  plans: [CAP.SELECT_PLAN, CAP.MANAGE_SUBSCRIPTION],
-  invoices: [CAP.REVIEW_INVOICE, CAP.RECONCILE_PAYMENT],
-  'wholesale-billing': [CAP.REVIEW_INVOICE, CAP.RECONCILE_PAYMENT],
-  payments: [CAP.RECONCILE_PAYMENT],
-  'payment-gateway': [CAP.RECONCILE_PAYMENT],
-  quotas: [CAP.MONITOR_QUOTAS],
-
-  // Modules and tooling.
-  marketplace: [CAP.PUBLISH_MODULE, CAP.ONBOARD_TOOL],
-  'tool-marketplace': [CAP.ONBOARD_TOOL],
-  'tool-review': [CAP.ONBOARD_TOOL, CAP.PUBLISH_MODULE],
-  'tool-installations': [CAP.ONBOARD_TOOL],
-  'standard-repository': [CAP.ENABLE_STANDARD],
-  'tenant-standards': [CAP.ENABLE_STANDARD],
-  'framework-authoring': [CAP.ENABLE_STANDARD],
-
-  // Security services are a separate product surface, not a view of this one.
-  'wisdom-eye': [CAP.OPERATE_SECURITY_SERVICES],
-  'eye-phish': [CAP.OPERATE_SECURITY_SERVICES],
-  security: [CAP.MONITOR_SECURITY],
-
-  // Governance of documents. The library itself is deliberately absent: reading
-  // policy is most of what a document management system is for.
-  retention: [CAP.RETENTION_HOLD],
-  'legal-hold': [CAP.RETENTION_HOLD],
-
-  // Service desk. Raising a ticket is a lower bar than working the queues.
-  'ticket-queues': [CAP.RESOLVE_TICKETS],
-  'service-catalog': [CAP.RESOLVE_TICKETS, CAP.CREATE_TICKET],
-  sla: [CAP.RESOLVE_TICKETS],
-
-  // Delivery. Verifying is held apart from managing on purpose, so a client-side
-  // reviewer who may only confirm work still reaches the screen.
-  'project-delivery': [CAP.MANAGE_PROJECT, CAP.EXECUTE_PROJECT_WORK, CAP.VERIFY_PROJECT_WORK],
-
-  // Reporting and exports.
-  exports: [CAP.REPORT],
-  brd: [CAP.REPORT, CAP.MANAGE_TENANT],
 };
 
 /**
