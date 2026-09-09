@@ -549,7 +549,13 @@ const AppShell = () => {
       if (GRC_DASHBOARD_PORTALS.has(account.portal)) {
         return <GrcSummaryDashboard key={`${account.id}-${currentPage}`} />;
       }
-      return <RealtimeDashboardPage key={`${account.id}-${currentPage}`} account={account} />;
+      return (
+        <RealtimeDashboardPage
+          key={`${account.id}-${currentPage}`}
+          account={account}
+          onNavigate={setCurrentPage}
+        />
+      );
     }
     return null;
   };

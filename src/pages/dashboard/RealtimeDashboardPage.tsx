@@ -3,6 +3,15 @@ import apiClient from '../../api/apiClient';
 
 interface RealtimeDashboardProps {
   account: any;
+  /**
+   * Switch the shell to another page.
+   *
+   * The shortcut cards used to call onNavigate?.('itsm') and
+   * similar — seven buttons that looked clickable, said they had done
+   * something, and did nothing. Every one of those screens exists and is in the
+   * sidebar, so the cards now go there.
+   */
+  onNavigate?: (page: string) => void;
 }
 
 interface DashboardMetrics {
@@ -18,7 +27,7 @@ interface DashboardMetrics {
   recentDocuments: any[];
 }
 
-const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account }) => {
+const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNavigate }) => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -132,13 +141,13 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account }) =>
           </p>
         </div>
         <div className="page-actions">
-          <button className="btn primary" onClick={() => alert('Add Organization modal opened')}>
+          <button className="btn primary" onClick={() => onNavigate?.('tenants')}>
             + Add Organization
           </button>
           <button className="btn" onClick={fetchLiveDashboardData} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : '↻ Refresh Data'}
           </button>
-          <button className="btn" onClick={() => alert('Trust Center opened')}>
+          <button className="btn" onClick={() => onNavigate?.('security')}>
             Open Trust Center
           </button>
         </div>
@@ -397,7 +406,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account }) =>
                 BRD phase delivery status
               </p>
             </div>
-            <button className="btn" style={{ padding: '4px 8px', fontSize: '9px' }} onClick={() => alert('Tracing BRD Requirements')}>
+            <button className="btn" style={{ padding: '4px 8px', fontSize: '9px' }} onClick={() => onNavigate?.('brd')}>
               Trace requirements
             </button>
           </div>
@@ -417,25 +426,25 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account }) =>
 
       {/* Section 4 Cards */}
       <div className="grid four" style={{ marginTop: '16px' }}>
-        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => alert('ITSM Support Desk opened')}>
+        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('itsm')}>
           <div className="kpi-icon blue" style={{ marginBottom: '10px' }}>?</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>ITSM Support</h3>
           <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 open tickets · create and track support</p>
         </div>
 
-        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => alert('Teams & Access Directory opened')}>
+        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('team-directory')}>
           <div className="kpi-icon violet" style={{ marginBottom: '10px' }}>♣</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Teams & Access</h3>
           <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>66 users across operational departments</p>
         </div>
 
-        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => alert('Wisdom Eye ASM opened')}>
+        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('wisdom-eye')}>
           <div className="kpi-icon red" style={{ marginBottom: '10px' }}>◉</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Wisdom Eye</h3>
           <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 authorized assets · exposure services</p>
         </div>
 
-        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => alert('Tool Marketplace opened')}>
+        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('tool-marketplace')}>
           <div className="kpi-icon green" style={{ marginBottom: '10px' }}>⬢</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Tool Marketplace</h3>
           <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 tested tools available</p>

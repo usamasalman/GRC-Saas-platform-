@@ -353,7 +353,7 @@ const RiskRegister: React.FC = () => {
       setNotice(res.data?.message || 'Risk review recorded');
       await load();
     } catch (err) {
-      window.alert(apiError(err));
+      setError(apiError(err));
     }
   };
 

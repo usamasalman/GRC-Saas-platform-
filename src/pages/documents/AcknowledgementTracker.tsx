@@ -45,7 +45,9 @@ export default function AcknowledgementTracker() {
         fetchPublishedPolicies();
       }
     } catch (e: any) {
-      alert(e.response?.data?.message || 'Acknowledgement failed');
+      // The screen already has a message line for the success case; a failure
+      // belongs in the same place rather than in a popup.
+      setActionMsg(e.response?.data?.message || 'Acknowledgement failed');
     }
   };
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import FormDialog from '../../../components/FormDialog';
+import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn } from '../../iam/iamStyles';
 
 /**
@@ -332,22 +334,25 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
    * blocker with no owing side is the row that starts the argument at the next
    * steering meeting rather than settling it.
    */
-  const blockTask = async (task: Task) => {
-    const title = window.prompt(`What is blocking ${task.ref}?`);
-    if (title === null) return;
-    if (title.trim().length < 3) { setError('Say what is blocking it.'); return; }
+  /**
+   * The open dialog. Blocking asks two things at once; sending work back and
+   * reopening a verification each ask for a reason the server insists on.
+   */
+  const [dialog, setDialog] = useState<
+    | null
+    | { kind: 'block'; task: Task }
+    | { kind: 'sendBack'; task: Task }
+    | { kind: 'reopen'; task: Task }
+  >(null);
 
-    const owingSide = window.prompt(
-      'Who has to clear it? Client, Provider or ThirdParty', 'Client',
-    );
-    if (owingSide === null) return;
-
+  const blockTask = async (task: Task, title: string, owingSide: string) => {
+    setDialog(null);
     setBusyTask(task.id);
     setError('');
     try {
       const res = await apiClient.post(`/api/projects/tasks/${task.id}/block`, {
-        title: title.trim(),
-        owingSide: owingSide.trim(),
+        title,
+        owingSide,
         // The register's categories are richer than a prompt can offer well;
         // the Delays tab is where a blocker gets classified properly.
         category: 'Other',
@@ -361,22 +366,6 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
     }
   };
 
-  /**
-   * Ask for the reason the server is going to insist on anyway.
-   *
-   * Returns null when the user cancels, so the caller can abandon quietly
-   * rather than sending an empty note and surfacing a 400.
-   */
-  const askReason = (prompt: string): string | null => {
-    const answer = window.prompt(prompt);
-    if (answer === null) return null;
-    const trimmed = answer.trim();
-    if (trimmed.length < 10) {
-      setError('That reason is too short — the record needs a sentence, not a word.');
-      return null;
-    }
-    return trimmed;
-  };
 
   const toggle = (phaseId: string) =>
     setCollapsed((prev) => {
@@ -621,7 +610,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                       marginTop: 4, marginRight: 0,
                                     }}
                                     disabled={busy}
-                                    onClick={() => blockTask(t)}
+                                    onClick={() => setDialog({ kind: 'block', task: t })}
                                   >
                                     Block
                                   </button>
@@ -635,12 +624,10 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                   onSubmit={() => taskAction(t, 'submit')}
                                   onAccept={() => taskAction(t, 'verify', { decision: 'Accept' })}
                                   onReject={() => {
-                                    const note = askReason('Why is this work being sent back?');
-                                    if (note) taskAction(t, 'verify', { decision: 'Reject', note });
+                                    setDialog({ kind: 'sendBack', task: t });
                                   }}
                                   onReopen={() => {
-                                    const note = askReason('Why is this verification being reopened?');
-                                    if (note) taskAction(t, 'return', { note });
+                                    setDialog({ kind: 'reopen', task: t });
                                   }}
                                   onWithdraw={() => taskAction(t, 'return')}
                                 />
@@ -656,6 +643,74 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
             </div>
           );
         })
+      )}
+
+      {dialog?.kind === 'block' && (
+        <FormDialog
+          title={`What is blocking ${dialog.task.ref}?`}
+          intro={(
+            <>
+              <div>{dialog.task.name}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                A blocker accrues lost days against whoever owes it from now until it is
+                cleared, so the side matters as much as the description — an unattributed
+                blocker is the row that starts the argument at the next steering meeting
+                rather than settling it.
+              </div>
+            </>
+          )}
+          submitLabel="Record blocker"
+          fields={[
+            {
+              name: 'title',
+              label: 'What is blocking it',
+              type: 'text',
+              required: true,
+              placeholder: 'Waiting on the firewall rule change request',
+            },
+            {
+              name: 'owingSide',
+              label: 'Who has to clear it',
+              type: 'select',
+              // Typed free-hand before and validated by the server, so "client"
+              // and "3rd party" both came back as a 400.
+              options: ['Client', 'Provider', 'ThirdParty'],
+            },
+          ]}
+          validate={(v) => (v.title.trim().length < 3 ? 'Say what is blocking it.' : null)}
+          onSubmit={(v) => blockTask(dialog.task, v.title, v.owingSide)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'sendBack' && (
+        <ReasonDialog
+          title={`Send ${dialog.task.ref} back?`}
+          confirmLabel="Send back"
+          label="Why is this work being sent back?"
+          message={<>It returns to whoever did it, with this note attached. Say what would make
+            it acceptable, not only what is wrong with it.</>}
+          onConfirm={(note) => {
+            setDialog(null);
+            taskAction(dialog.task, 'verify', { decision: 'Reject', note });
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'reopen' && (
+        <ReasonDialog
+          title={`Reopen the verification of ${dialog.task.ref}?`}
+          confirmLabel="Reopen"
+          label="Why is this being reopened?"
+          message={<>The task leaves the verified set and goes back into the queue. Its earlier
+            acceptance stays on the record.</>}
+          onConfirm={(note) => {
+            setDialog(null);
+            taskAction(dialog.task, 'return', { note });
+          }}
+          onCancel={() => setDialog(null)}
+        />
       )}
     </div>
   );

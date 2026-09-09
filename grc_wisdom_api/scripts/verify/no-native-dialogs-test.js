@@ -41,7 +41,12 @@ function stripCommentsAndStrings(src) {
     .replace(/`(?:\\.|[^`\\])*`/g, '``');
 }
 
-const CALL = /\bwindow\.(alert|confirm|prompt)\s*\(/g;
+/**
+ * Bare `alert(...)` counts too. AdminPasswordResets used the unqualified form
+ * and went unnoticed through several passes of this check, because a rule that
+ * only matches `window.alert` misses half of how people write it.
+ */
+const CALL = /(?:\bwindow\.)?\b(?:alert|confirm|prompt)\s*\(/g;
 
 const files = [];
 (function walk(dir) {

@@ -2,6 +2,7 @@ import Icon from '../components/Icon';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { ConfirmDialog } from '../components/Dialog';
 
 // ─── Model Definitions ──────────────────────────────────────────────────────
 // Each model lists editable fields with type info for dynamic form generation.
@@ -275,6 +276,9 @@ export default function DbConsole() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Raw table access, so both confirmations here are the last thing standing
+  // between a click and data that is gone.
+  const [confirming, setConfirming] = useState<null | { kind: 'deleteRow'; id: string } | { kind: 'resetDb' }>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Verification
@@ -350,7 +354,7 @@ export default function DbConsole() {
 
   // ── Delete ──────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
-    if (!window.confirm(`Permanently delete record ${id.substring(0, 8)}…?`)) return;
+    setConfirming(null);
     try {
       const res = await apiClient.delete(`/api/admin/db/table/${model.endpoint}/${id}`);
       if (res.data.status === 'success') {
@@ -458,7 +462,7 @@ export default function DbConsole() {
 
   // ── Reset DB ───────────────────────────────────────────────────────────
   const handleResetDb = async () => {
-  if (!window.confirm(' DESTRUCTIVE: Wipe all tables and re-seed from scratch?')) return;
+    setConfirming(null);
     addToast('Resetting & seeding database…', 'info');
     try {
       const res = await apiClient.post('/api/admin/db/reset');
@@ -575,7 +579,7 @@ export default function DbConsole() {
           }}>
             <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Verify WORM Chain
           </button>
-          <button className="db-btn" onClick={handleResetDb} style={{
+          <button className="db-btn" onClick={() => setConfirming({ kind: 'resetDb' })} style={{
             background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)',
             padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
           }}>
@@ -790,7 +794,7 @@ export default function DbConsole() {
                         </button>
                         <button
                           className="db-btn"
-                          onClick={() => handleDelete(r.id)}
+                          onClick={() => setConfirming({ kind: 'deleteRow', id: r.id })}
                           title="Delete record"
                           style={{
                             background: 'transparent', border: 'none', color: 'var(--danger)',
@@ -986,6 +990,51 @@ export default function DbConsole() {
             </div>
           </form>
         </div>
+      )}
+
+      {confirming?.kind === 'deleteRow' && (
+        <ConfirmDialog
+          title="Permanently delete this record?"
+          destructive
+          confirmLabel="Delete record"
+          message={(
+            <>
+              <div>
+                Record <strong>{confirming.id.substring(0, 8)}…</strong> in {model.name} is
+                removed directly from the table.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                This bypasses the checks the product's own screens make, so anything that
+                cascades from this row goes with it and nothing refuses on your behalf.
+              </div>
+            </>
+          )}
+          onConfirm={() => handleDelete(confirming.id)}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
+      {confirming?.kind === 'resetDb' && (
+        <ConfirmDialog
+          title="Wipe every table and re-seed?"
+          destructive
+          typeToConfirm="RESET"
+          confirmLabel="Wipe and re-seed"
+          message={(
+            <>
+              <div>
+                Every row in every table is deleted and replaced with seed data. Tenants,
+                users, risks, audits, evidence and the audit log all go.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                There is no undo and no backup taken. Running this against anything holding
+                real customer data destroys it — which has happened here before.
+              </div>
+            </>
+          )}
+          onConfirm={handleResetDb}
+          onCancel={() => setConfirming(null)}
+        />
       )}
     </div>
   );

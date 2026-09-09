@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient, { asOperator } from '../../api/apiClient';
+import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
 
 interface Session {
   id: string;
@@ -40,6 +41,22 @@ const ImpersonationSessions: React.FC = () => {
   const [me, setMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  /**
+   * The open dialog.
+   *
+   * Impersonation is the one feature where a customer's own staff authorise a
+   * vendor to act inside their tenant, so every one of these decisions is
+   * evidence. The prompts asked for a note with no indication of whose account
+   * or which session, and the approve one discarded a cancel as an empty
+   * string — pressing Escape approved the session with no note at all.
+   */
+  const [dialog, setDialog] = useState<
+    | null
+    | { kind: 'approve'; s: Session }
+    | { kind: 'deny'; s: Session }
+    | { kind: 'end'; s: Session; revoking: boolean }
+    | { kind: 'start'; s: Session }
+  >(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [showModal, setShowModal] = useState(false);
@@ -72,22 +89,22 @@ const ImpersonationSessions: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const act = async (path: string, body: any, confirmMsg?: string) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+  const act = async (path: string, body: any) => {
+    setDialog(null);
     setBusy(path);
     try {
       // Always act as the real operator — never inside an impersonated identity.
       await apiClient.post(path, body, asOperator());
       await load();
     } catch (err: any) {
-      window.alert(err?.response?.data?.message || 'Action failed');
+      setError(err?.response?.data?.message || 'Action failed');
     } finally {
       setBusy(null);
     }
   };
 
   const start = async (s: Session) => {
-    if (!window.confirm(`Start a READ-ONLY session as ${s.subjectUser.email}?\n\nAll writes will be blocked. The session expires in ${s.requestedDurationMins} minutes and is logged to ${s.tenant.name}'s audit trail.`)) return;
+    setDialog(null);
     setBusy(s.id);
     try {
       const res = await apiClient.post(`/api/impersonation/${s.id}/start`, {}, asOperator());
@@ -99,7 +116,7 @@ const ImpersonationSessions: React.FC = () => {
       }));
       window.location.reload();
     } catch (err: any) {
-      window.alert(err?.response?.data?.message || 'Could not start session');
+      setError(err?.response?.data?.message || 'Could not start session');
       setBusy(null);
     }
   };
@@ -227,23 +244,19 @@ const ImpersonationSessions: React.FC = () => {
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                       {s.status === 'PENDING' && iAmInTargetTenant && (
                         <>
-                          <button disabled={busy !== null} onClick={() => act(`/api/impersonation/${s.id}/approve`, { note: window.prompt('Approval note (audit evidence):') || '' })} style={smBtn('var(--success)')}>approve</button>
-                          <button disabled={busy !== null} onClick={() => {
-                            const n = window.prompt('Reason for denial (required):');
-                            if (n) act(`/api/impersonation/${s.id}/deny`, { note: n });
-                          }} style={smBtn('var(--danger)')}>deny</button>
+                          <button disabled={busy !== null} onClick={() => setDialog({ kind: 'approve', s })} style={smBtn('var(--success)')}>approve</button>
+                          <button disabled={busy !== null} onClick={() => setDialog({ kind: 'deny', s })} style={smBtn('var(--danger)')}>deny</button>
                         </>
                       )}
                       {s.status === 'PENDING' && !iAmInTargetTenant && (
                         <span style={{ color: 'var(--ink-body)', fontSize: 11 }}>awaiting customer</span>
                       )}
                       {s.status === 'APPROVED' && iAmRequester && (
-                        <button disabled={busy !== null} onClick={() => start(s)} style={{ ...smBtn('var(--info)'), border: '1px solid var(--info-line)' }}>▸ start</button>
+                        <button disabled={busy !== null} onClick={() => setDialog({ kind: 'start', s })} style={{ ...smBtn('var(--info)'), border: '1px solid var(--info-line)' }}>▸ start</button>
                       )}
                       {s.isLive && (iAmRequester || iAmInTargetTenant) && (
                         <button disabled={busy !== null}
-                          onClick={() => act(`/api/impersonation/${s.id}/end`, { reason: window.prompt('Reason for ending:') || '' },
-                            iAmInTargetTenant && !iAmRequester ? 'Revoke this active session immediately?' : undefined)}
+                          onClick={() => setDialog({ kind: 'end', s, revoking: iAmInTargetTenant && !iAmRequester })}
                           style={smBtn('var(--warning)')}>
                           {iAmInTargetTenant && !iAmRequester ? 'revoke' : 'end'}
                         </button>
@@ -304,6 +317,70 @@ const ImpersonationSessions: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {dialog?.kind === 'approve' && (
+        <PromptDialog
+          title={`Approve access to ${dialog.s.tenant.name}?`}
+          label="Approval note"
+          multiline
+          confirmLabel="Approve session"
+          help={<>You are letting the requester act as <strong>{dialog.s.subjectUser.email}</strong>{' '}
+            inside your tenant for {dialog.s.requestedDurationMins} minutes. The note is your
+            record of why you agreed.</>}
+          validate={(v) => (v.trim() ? null : 'A note is required — this is the evidence that the access was authorised.')}
+          onSubmit={(note) => act(`/api/impersonation/${dialog.s.id}/approve`, { note })}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'deny' && (
+        <PromptDialog
+          title="Deny this request"
+          label="Reason for denial"
+          multiline
+          confirmLabel="Deny request"
+          help={<>Recorded against the request to act as <strong>{dialog.s.subjectUser.email}</strong>.</>}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(note) => act(`/api/impersonation/${dialog.s.id}/deny`, { note })}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'end' && (
+        <PromptDialog
+          title={dialog.revoking ? 'Revoke this active session?' : 'End this session'}
+          label="Reason"
+          multiline
+          confirmLabel={dialog.revoking ? 'Revoke now' : 'End session'}
+          help={dialog.revoking
+            ? 'The session is cut off immediately. Recorded against it, and visible to whoever was using it.'
+            : 'Recorded against the session.'}
+          validate={(v) => (v.trim() ? null : 'A reason is required.')}
+          onSubmit={(reason) => act(`/api/impersonation/${dialog.s.id}/end`, { reason })}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'start' && (
+        <ConfirmDialog
+          title={`Start a read-only session as ${dialog.s.subjectUser.email}?`}
+          confirmLabel="Start session"
+          message={(
+            <>
+              <div>
+                Every write is blocked. The session expires in{' '}
+                {dialog.s.requestedDurationMins} minutes.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                Everything you do is logged to {dialog.s.tenant.name}'s own audit trail, under
+                your name rather than theirs.
+              </div>
+            </>
+          )}
+          onConfirm={() => start(dialog.s)}
+          onCancel={() => setDialog(null)}
+        />
       )}
     </div>
   );

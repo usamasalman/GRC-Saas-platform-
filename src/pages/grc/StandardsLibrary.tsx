@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
 
 interface Enablement { tenantId: string; tenantName: string; applicability: string; owner: any; enabledAt: string }
@@ -28,15 +29,21 @@ const StandardsLibrary: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const enable = async (s: Standard) => {
-    const applicability = window.prompt(`Applicability for ${s.code} (Full / Partial / Not applicable):`, 'Full');
-    if (!applicability) return;
+  // Applicability was typed into a prompt as one of three words and checked by
+  // the server afterwards, so "Partial " or "full" came back as a 400.
+  const [enabling, setEnabling] = useState<any | null>(null);
+
+  const enable = async (s: Standard, applicability: string) => {
+    setEnabling(null);
     setBusy(s.id);
     try {
-      const res = await apiClient.post('/api/grc/standards/enable', { standardId: s.id, applicability });
+      const res = await apiClient.post('/api/grc/standards/enable', {
+        standardId: s.id,
+        applicability,
+      });
       setNotice(res.data?.message || `${s.code} enabled`);
       await load();
-    } catch (err) { window.alert(apiError(err, 'Could not enable standard')); }
+    } catch (err) { setError(apiError(err, 'Could not enable standard')); }
     finally { setBusy(null); }
   };
 
@@ -99,13 +106,39 @@ const StandardsLibrary: React.FC = () => {
               )}
 
               {!s.isEnabledHere && (
-                <button onClick={() => enable(s)} disabled={busy === s.id} style={{ ...primaryBtn(busy === s.id), width: '100%' }}>
+                <button onClick={() => setEnabling(s)} disabled={busy === s.id} style={{ ...primaryBtn(busy === s.id), width: '100%' }}>
                   {busy === s.id ? 'Enabling…' : 'Enable for my entity'}
                 </button>
               )}
             </div>
           ))}
         </div>
+      )}
+
+      {enabling && (
+        <FormDialog
+          title={`Enable ${enabling.code}`}
+          intro={(
+            <>
+              <div>{enabling.title}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                Enabling brings the standard's clauses into this entity's scope, so they appear
+                in the coverage report and in what controls can be mapped against.
+              </div>
+            </>
+          )}
+          submitLabel="Enable standard"
+          fields={[{
+            name: 'applicability',
+            label: 'Applicability',
+            type: 'select',
+            options: ['Full', 'Partial', 'Not applicable'],
+            help: 'Partial means only some clauses apply here — the coverage report reads this '
+              + 'when it decides what counts as a gap.',
+          }]}
+          onSubmit={(v) => enable(enabling, v.applicability)}
+          onCancel={() => setEnabling(null)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
+import { ReasonDialog } from '../../components/Dialog';
 
 interface DocumentItem {
   id: string;
@@ -90,17 +91,20 @@ export default function ApprovalQueue() {
     }
   };
 
-  const handleRejectSubmit = async (doc: DocumentItem) => {
-    const rejectReason = prompt('Enter reason for rejecting/returning document:', 'Requires revisions');
-    if (rejectReason === null) return;
+  // The document being returned to its author. The reason goes back to them, so
+  // it needs to say what to change — the prompt's default was "Requires
+  // revisions", which is the least useful sentence available.
+  const [rejecting, setRejecting] = useState<DocumentItem | null>(null);
 
+  const handleRejectSubmit = async (doc: DocumentItem, reason: string) => {
+    setRejecting(null);
     try {
-      const res = await apiClient.post(`/api/documents/${doc.id}/reject`, { reason: rejectReason });
+      const res = await apiClient.post(`/api/documents/${doc.id}/reject`, { reason });
       if (res.data.status === 'success') {
         fetchPendingApprovals();
       }
     } catch (e: any) {
-      alert(e.response?.data?.message || 'Rejection failed');
+      setError(e.response?.data?.message || 'Rejection failed');
     }
   };
 
@@ -157,7 +161,7 @@ export default function ApprovalQueue() {
                           ✓ Sign &amp; Approve
                         </button>
                         <button
-                          onClick={() => handleRejectSubmit(doc)}
+                          onClick={() => setRejecting(doc)}
                           style={{ background: 'var(--danger)', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                         >
                           ✕ Reject
@@ -240,6 +244,23 @@ export default function ApprovalQueue() {
             )}
           </form>
         </div>
+      )}
+
+      {rejecting && (
+        <ReasonDialog
+          title={`Return "${rejecting.title}" to its author?`}
+          confirmLabel="Return document"
+          label="What needs to change?"
+          message={(
+            <>
+              The document leaves the approval queue and goes back to whoever submitted it,
+              with this note. They will act on what it says, so name the sections and the
+              problem rather than the verdict.
+            </>
+          )}
+          onConfirm={(reason) => handleRejectSubmit(rejecting, reason)}
+          onCancel={() => setRejecting(null)}
+        />
       )}
     </div>
   );
