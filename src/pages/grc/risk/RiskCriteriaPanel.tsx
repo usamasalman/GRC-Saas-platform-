@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import Icon from '../../../components/Icon';
+import { ConfirmDialog } from '../../../components/Dialog';
 
 /**
  * Risk criteria and appetite history — ISO 31000 clause 6.3.4, IIA Std 9.1.
@@ -33,6 +34,10 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // The draft being withdrawn. Only a draft can be: an approved version is the
+  // frame of reference every risk scored under it was judged against, and the
+  // server refuses to remove one.
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const [asAt, setAsAt] = useState('');
   const [asAtCategory, setAsAtCategory] = useState('Technology');
   const [asAtResult, setAsAtResult] = useState<any>(null);
@@ -62,7 +67,7 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
       if (asAtCategory) qs.set('category', asAtCategory);
       const res = await apiClient.get(`/api/grc/risk-criteria/as-at?${qs}`);
       setAsAtResult(res.data);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const startEdit = () => {
@@ -86,7 +91,7 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
       setNotice(res.data?.message || 'Criteria drafted');
       await load();
       onChanged?.();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
@@ -96,16 +101,16 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
       setNotice(res.data?.message || 'Approved');
       await load();
       onChanged?.();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const withdraw = async (id: string) => {
-    if (!window.confirm('Withdraw this draft? Approved versions are part of the record and cannot be removed.')) return;
+    setWithdrawing(null);
     try {
       const res = await apiClient.delete(`/api/grc/risk-criteria/${id}`);
       setNotice(res.data?.message || 'Withdrawn');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   if (loading) return <div style={{ ...S.card, padding: 24, color: 'var(--ink-muted)' }}>Loading criteria…</div>;
@@ -223,7 +228,7 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={linkBtn('var(--success)')} onClick={() => approve(draft.id)}>approve</button>
-              <button style={linkBtn('var(--ink-faint)')} onClick={() => withdraw(draft.id)}>withdraw</button>
+              <button style={linkBtn('var(--ink-faint)')} onClick={() => setWithdrawing(draft.id)}>withdraw</button>
             </div>
           </div>
         </div>
@@ -424,6 +429,26 @@ const RiskCriteriaPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) 
             </form>
           </div>
         </div>
+      )}
+
+      {withdrawing && (
+        <ConfirmDialog
+          title="Withdraw this draft?"
+          destructive
+          confirmLabel="Withdraw draft"
+          message={(
+            <>
+              <div>The draft criteria are removed and the active version stays in force.</div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                Only drafts can be withdrawn. An approved version is the frame of reference
+                every risk scored under it was judged against, so it stays on the record even
+                once it has been superseded.
+              </div>
+            </>
+          )}
+          onConfirm={() => withdraw(withdrawing)}
+          onCancel={() => setWithdrawing(null)}
+        />
       )}
     </div>
   );

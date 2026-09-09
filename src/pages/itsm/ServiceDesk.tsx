@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import { PromptDialog } from '../../components/Dialog';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 
 interface SlaState { state: string; minutesRemaining: number | null }
@@ -39,6 +40,9 @@ const ServiceDesk: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [deciding, setDeciding] = useState<
+    null | { runId: string; decision: 'approve' | 'reject' }
+  >(null);
 
   const [statusFilter, setStatusFilter] = useState('');
   const [slaFilter, setSlaFilter] = useState('');
@@ -77,7 +81,7 @@ const ServiceDesk: React.FC = () => {
       const res = await apiClient.get(`/api/itsm/tickets/${id}`);
       setDetail(res.data?.ticket || null);
       setNoteBody(''); setNoteInternal(false);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const submitTicket = async (e: React.FormEvent) => {
@@ -104,7 +108,7 @@ const ServiceDesk: React.FC = () => {
       setNoteBody('');
       await openDetail(detail.id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const setStatus = async (id: string, status: string) => {
@@ -112,18 +116,17 @@ const ServiceDesk: React.FC = () => {
       await apiClient.patch(`/api/itsm/tickets/${id}`, { status });
       if (detail?.id === id) await openDetail(id);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
-  const decide = async (runId: string, decision: 'approve' | 'reject') => {
-    const comment = window.prompt(`Comment for this ${decision} (recorded in the audit trail):`);
-    if (comment === null) return;
+  const decide = async (runId: string, decision: 'approve' | 'reject', comment: string) => {
+    setDeciding(null);
     try {
       const res = await apiClient.post(`/api/itsm/workflows/runs/${runId}/decide`, { decision, comment });
       setNotice(res.data?.message || 'Decision recorded');
       await load();
       if (detail) await openDetail(detail.id);
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const selectedItem = catalog.find((c) => c.id === form.catalogItemId);
@@ -174,8 +177,8 @@ const ServiceDesk: React.FC = () => {
                 {s.overdue && <span style={{ ...pill('var(--danger)', 'var(--danger-line)'), marginLeft: 8 }}>overdue</span>}
               </div>
               <div>
-                <button onClick={() => decide(s.runId, 'approve')} style={linkBtn('var(--success)')}>approve</button>
-                <button onClick={() => decide(s.runId, 'reject')} style={linkBtn('var(--danger)')}>reject</button>
+                <button onClick={() => setDeciding({ runId: s.runId, decision: 'approve' })} style={linkBtn('var(--success)')}>approve</button>
+                <button onClick={() => setDeciding({ runId: s.runId, decision: 'reject' })} style={linkBtn('var(--danger)')}>reject</button>
               </div>
             </div>
           ))}
@@ -391,6 +394,21 @@ const ServiceDesk: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {deciding && (
+        <PromptDialog
+          title={deciding.decision === 'approve' ? 'Approve this request' : 'Reject this request'}
+          label="Comment"
+          multiline
+          confirmLabel={deciding.decision === 'approve' ? 'Approve' : 'Reject'}
+          help={deciding.decision === 'reject'
+            ? 'Recorded in the audit trail and shown to the requester. A rejection with no '
+              + 'reason is the thing people raise a second ticket about.'
+            : 'Recorded in the audit trail against your name.'}
+          onSubmit={(comment) => decide(deciding.runId, deciding.decision, comment)}
+          onCancel={() => setDeciding(null)}
+        />
       )}
     </div>
   );

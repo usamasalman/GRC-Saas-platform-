@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import { ConfirmDialog } from '../../components/Dialog';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from './iamStyles';
 
 interface Capability { key: string; name: string; module: string; number: number | null }
@@ -87,10 +88,14 @@ const RoleMatrix: React.FC = () => {
     finally { setBusy(false); }
   };
 
-  const remove = async (r: Role) => {
-    if (!window.confirm(`Delete custom role "${r.name}"?`)) return;
-    try { await apiClient.delete(`/api/iam/roles/${r.id}`); await load(); }
-    catch (err) { window.alert(apiError(err, 'Delete failed')); }
+  const [removing, setRemoving] = useState<any | null>(null);
+
+  const remove = async (r: any) => {
+    setRemoving(null);
+    try {
+      await apiClient.delete(`/api/iam/roles/${r.id}`);
+      await load();
+    } catch (err) { setError(apiError(err, 'Delete failed')); }
   };
 
   const portals = [...new Set(roles.map((r) => r.portal))].sort();
@@ -184,7 +189,7 @@ const RoleMatrix: React.FC = () => {
                       ) : (
                         <>
                           <button onClick={() => openEdit(r)} style={linkBtn('var(--info)')}>edit</button>
-                          <button onClick={() => remove(r)} style={linkBtn('var(--danger)')}>del</button>
+                          <button onClick={() => setRemoving(r)} style={linkBtn('var(--danger)')}>del</button>
                         </>
                       )}
                     </td>
@@ -259,6 +264,28 @@ const RoleMatrix: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {removing && (
+        <ConfirmDialog
+          title={`Delete the role "${removing.name}"?`}
+          destructive
+          confirmLabel="Delete role"
+          message={(
+            <>
+              <div>
+                Anyone holding this role loses the capabilities it grants. The server refuses
+                if it is still assigned.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                Only custom roles can be removed — the system roles are what the platform's own
+                permission model is built on.
+              </div>
+            </>
+          )}
+          onConfirm={() => remove(removing)}
+          onCancel={() => setRemoving(null)}
+        />
       )}
     </div>
   );

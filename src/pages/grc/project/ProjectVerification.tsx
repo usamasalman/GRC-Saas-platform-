@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn, apiError } from '../../iam/iamStyles';
 
 /**
@@ -110,18 +111,12 @@ const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => 
    * the queue and adds a row to the record, and patching both lists by hand
    * would be reimplementing the query that just changed.
    */
-  const decide = async (task: QueueTask, decision: 'Accept' | 'Reject') => {
-    let note: string | undefined;
-    if (decision === 'Reject') {
-      const answer = window.prompt(`Why is ${task.ref} being sent back?`);
-      if (answer === null) return;
-      if (answer.trim().length < 10) {
-        setError('That reason is too short — the record needs a sentence, not a word.');
-        return;
-      }
-      note = answer.trim();
-    }
+  // Accepting needs nothing typed; rejecting needs a reason the person who did
+  // the work can act on. Only the second opens a dialog.
+  const [rejecting, setRejecting] = useState<QueueTask | null>(null);
 
+  const decide = async (task: QueueTask, decision: 'Accept' | 'Reject', note?: string) => {
+    setRejecting(null);
     setBusy(task.id);
     setError('');
     try {
@@ -324,6 +319,25 @@ const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => 
           </div>
         )}
       </div>
+
+      {rejecting && (
+        <ReasonDialog
+          title={`Send ${rejecting.ref} back?`}
+          confirmLabel="Send back"
+          label="Why is this being sent back?"
+          message={(
+            <>
+              <div>{rejecting.name}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                The task returns to whoever did the work, with this note attached. Say what
+                would make it acceptable, not only what is wrong with it.
+              </div>
+            </>
+          )}
+          onConfirm={(note) => decide(rejecting, 'Reject', note)}
+          onCancel={() => setRejecting(null)}
+        />
+      )}
     </div>
   );
 };

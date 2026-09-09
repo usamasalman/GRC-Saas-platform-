@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../api/apiClient';
+import { ConfirmDialog } from '../../components/Dialog';
 
 interface TenantRow {
   id: string;
@@ -101,13 +102,19 @@ const TenantManager: React.FC = () => {
     }
   };
 
+  const [removing, setRemoving] = useState<TenantRow | null>(null);
+  const [removeErr, setRemoveErr] = useState('');
+
   const remove = async (t: TenantRow) => {
-    if (!window.confirm(`Delete tenant "${t.name}"? This is only possible when it holds no users, sub-entities, documents or invoices.`)) return;
+    setRemoveErr('');
     try {
       await apiClient.delete(`/api/tenants/${t.id}`);
+      setRemoving(null);
       await load();
     } catch (err: any) {
-      window.alert(err?.response?.data?.message || 'Delete failed');
+      // Kept in the open dialog: the refusal names what the tenant still holds,
+      // which is the answer to "why can I not delete this".
+      setRemoveErr(err?.response?.data?.message || 'Delete failed');
     }
   };
 
@@ -222,7 +229,7 @@ const TenantManager: React.FC = () => {
                       style={{ ...btn('transparent', 'var(--info)'), padding: '4px 8px', fontSize: 11 }}>+ child</button>
                     <button onClick={() => openEdit(t)}
                       style={{ ...btn('transparent', 'var(--ink-muted)'), padding: '4px 8px', fontSize: 11 }}>edit</button>
-                    <button onClick={() => remove(t)}
+                    <button onClick={() => { setRemoveErr(''); setRemoving(t); }}
                       style={{ ...btn('transparent', 'var(--danger)'), padding: '4px 8px', fontSize: 11 }}>del</button>
                   </td>
                 </tr>
@@ -278,6 +285,39 @@ const TenantManager: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {removing && (
+        <ConfirmDialog
+          title={`Delete the tenant "${removing.name}"?`}
+          destructive
+          typeToConfirm={removing.name}
+          confirmLabel="Delete tenant"
+          message={(
+            <>
+              <div>
+                A tenant is the root of everything inside it. This is only possible while it
+                holds no users, sub-entities, documents or invoices — the server checks and
+                refuses with whatever is still there.
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--ink-muted)' }}>
+                Type the name to confirm. This is the one deletion in the product with a whole
+                customer behind it.
+              </div>
+              {removeErr && (
+                <div style={{
+                  marginTop: 12, padding: '10px 12px', borderRadius: 6,
+                  background: 'var(--danger-bg)', border: '1px solid var(--danger-line)',
+                  color: 'var(--danger)', fontSize: 12.5, lineHeight: 1.6,
+                }}>
+                  {removeErr}
+                </div>
+              )}
+            </>
+          )}
+          onConfirm={() => remove(removing)}
+          onCancel={() => { setRemoving(null); setRemoveErr(''); }}
+        />
       )}
     </div>
   );

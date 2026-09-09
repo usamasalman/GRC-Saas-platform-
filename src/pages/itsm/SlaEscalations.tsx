@@ -48,7 +48,7 @@ const SlaEscalations: React.FC = () => {
       const res = await apiClient.post('/api/itsm/sla/scan');
       setNotice(res.data?.message || 'Scan complete');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setScanning(false); }
   };
 

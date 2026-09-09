@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { PromptDialog } from '../components/Dialog';
 
 interface ResetRequest {
   id: string;
@@ -47,27 +48,36 @@ const AdminPasswordResets: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const approve = async (id: string) => {
-    const note = window.prompt('Optional note for the audit trail (e.g. "verified by phone"):') || '';
+  /**
+   * Which decision is being taken. Approving a reset hands somebody a working
+   * credential, so the note is collected in something that can say what it is
+   * for — the prompt asked for "Optional note for the audit trail" with no
+   * indication of whose account or what was about to happen to it.
+   */
+  const [deciding, setDeciding] = useState<null | { kind: 'approve' | 'deny'; req: any }>(null);
+
+  const approve = async (id: string, note: string) => {
+    setDeciding(null);
     setBusy(id);
+    setError('');
     try {
       const res = await apiClient.post(`/api/password-reset/admin/${id}/approve`, { note });
       setIssuedCode({ id, code: res.data.resetCode, expiresAt: res.data.expiresAt });
       await load();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Approve failed');
+      setError(err?.response?.data?.message || 'Approve failed');
     } finally { setBusy(null); }
   };
 
-  const deny = async (id: string) => {
-    const note = window.prompt('Reason for denial (recorded in audit log):') || '';
-    if (!note) return;
+  const deny = async (id: string, note: string) => {
+    setDeciding(null);
     setBusy(id);
+    setError('');
     try {
       await apiClient.post(`/api/password-reset/admin/${id}/deny`, { note });
       await load();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Deny failed');
+      setError(err?.response?.data?.message || 'Deny failed');
     } finally { setBusy(null); }
   };
 
@@ -173,7 +183,7 @@ const AdminPasswordResets: React.FC = () => {
                 {r.status === 'PENDING' && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
-                      onClick={() => approve(r.id)}
+                      onClick={() => setDeciding({ kind: 'approve', req: r })}
                       disabled={busy === r.id}
                       style={{
                         background: 'var(--success-bg)', color: 'var(--success)', border: 'none',
@@ -182,7 +192,7 @@ const AdminPasswordResets: React.FC = () => {
                       }}
                     >✓ Approve</button>
                     <button
-                      onClick={() => deny(r.id)}
+                      onClick={() => setDeciding({ kind: 'deny', req: r })}
                       disabled={busy === r.id}
                       style={{
                         background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger-line)',
@@ -196,6 +206,35 @@ const AdminPasswordResets: React.FC = () => {
             );
           })}
         </div>
+      )}
+
+      {deciding?.kind === 'approve' && (
+        <PromptDialog
+          title="Approve this password reset"
+          label="Note for the audit trail"
+          multiline
+          confirmLabel="Approve and issue code"
+          placeholder="Verified by phone against the number on file."
+          help={<>Approving issues a single-use code for <strong>{deciding.req.email}</strong>.
+            The note is how somebody later shows the identity was checked before it was handed
+            out — which is the only control standing between this screen and an account
+            takeover.</>}
+          onSubmit={(note) => approve(deciding.req.id, note)}
+          onCancel={() => setDeciding(null)}
+        />
+      )}
+
+      {deciding?.kind === 'deny' && (
+        <PromptDialog
+          title="Deny this password reset"
+          label="Reason for denial"
+          multiline
+          confirmLabel="Deny request"
+          help={<>Recorded against the request for <strong>{deciding.req.email}</strong>.</>}
+          validate={(v) => (v.trim() ? null : 'A reason is required — a denial with none looks like an oversight.')}
+          onSubmit={(note) => deny(deciding.req.id, note)}
+          onCancel={() => setDeciding(null)}
+        />
       )}
     </div>
   );

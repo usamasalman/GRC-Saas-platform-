@@ -3,6 +3,7 @@ import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
+import FormDialog from '../../components/FormDialog';
 
 /**
  * Third-party risk management.
@@ -73,6 +74,7 @@ const VendorRegister: React.FC = () => {
    * at onboarding — they are answered before anyone has read the contract.
    */
   const [editing, setEditing] = useState<any | null>(null);
+  const [assessing, setAssessing] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState('');
   const blank = {
@@ -190,15 +192,15 @@ const VendorRegister: React.FC = () => {
     finally { setBusy(false); }
   };
 
-  const issueAssessment = async (v: any) => {
-    const kind = window.prompt('Assessment type — Onboarding / Periodic / Triggered / Exit:', 'Periodic');
-    if (!kind) return;
-    const questionnaire = window.prompt('Questionnaire used:', 'SAMA CSF supplier annex');
+  const issueAssessment = async (v: any, kind: string, questionnaire: string) => {
+    setBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/vendors/${v.id}/assessments`, { kind, questionnaire });
+      setAssessing(null);
       setNotice(res.data?.message || 'Assessment issued');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setNotice(apiError(err)); setAssessing(null); }
+    finally { setBusy(false); }
   };
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -356,7 +358,7 @@ const VendorRegister: React.FC = () => {
                         ) : <span style={{ color: 'var(--ink-faint)' }}>—</span>}
                       </td>
                       <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                        <button style={linkBtn('var(--info)')} onClick={() => issueAssessment(v)}>assess</button>
+                        <button style={linkBtn('var(--info)')} onClick={() => setAssessing(v)}>assess</button>
                         <button style={linkBtn('var(--ink-muted)')} onClick={() => setDetail(v)}>open</button>
                         <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(v)}>edit</button>
                         {/* Exiting and Terminated are refused by the server: both mean a
@@ -819,6 +821,42 @@ const VendorRegister: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {assessing && (
+        <FormDialog
+          title={`Assess ${assessing.ref}`}
+          intro={(
+            <>
+              Issues a due diligence assessment against <strong>{assessing.name}</strong>. The
+              kind decides what it is read as later: an onboarding assessment answers whether to
+              use them at all, a periodic one whether to carry on.
+            </>
+          )}
+          submitLabel="Issue assessment"
+          busy={busy}
+          fields={[
+            {
+              name: 'kind',
+              label: 'Assessment type',
+              type: 'select',
+              // Typed free-hand before, then rejected by the server if the word
+              // did not match one of these four exactly.
+              options: ['Periodic', 'Onboarding', 'Triggered', 'Exit'],
+            },
+            {
+              name: 'questionnaire',
+              label: 'Questionnaire used',
+              type: 'text',
+              required: true,
+              initial: 'SAMA CSF supplier annex',
+              help: 'What the supplier is being asked against. Recorded so a later reviewer '
+                + 'knows what the answers were answers to.',
+            },
+          ]}
+          onSubmit={(v) => issueAssessment(assessing, v.kind, v.questionnaire)}
+          onCancel={() => setAssessing(null)}
+        />
       )}
     </div>
   );

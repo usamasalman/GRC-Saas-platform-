@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn, apiError } from '../../iam/iamStyles';
 
 /**
@@ -126,14 +127,12 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
     }
   };
 
-  const withdraw = async (ev: Evidence) => {
-    const reason = window.prompt(`Why is ${ev.ref} being withdrawn?`);
-    if (reason === null) return;
-    if (reason.trim().length < 10) {
-      setError('That is too short — evidence that disappears without an account of why '
-        + 'is the entry an investigation stops at.');
-      return;
-    }
+  // The reason was collected by a prompt and its length checked afterwards, so
+  // "too short" arrived as an error on a screen the text had already left.
+  const [withdrawing, setWithdrawing] = useState<Evidence | null>(null);
+
+  const withdraw = async (ev: Evidence, reason: string) => {
+    setWithdrawing(null);
     setBusy(ev.id);
     setError('');
     try {
@@ -293,7 +292,7 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
                           <button
                             style={{ ...ghostBtn, marginLeft: 6 }}
                             disabled={busy === e.id}
-                            onClick={() => withdraw(e)}
+                            onClick={() => setWithdrawing(e)}
                           >
                             Withdraw
                           </button>
@@ -306,6 +305,22 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
             </table>
           </div>
         </div>
+      )}
+
+      {withdrawing && (
+        <ReasonDialog
+          title={`Withdraw ${withdrawing.ref}?`}
+          confirmLabel="Withdraw evidence"
+          label="Why is this being withdrawn?"
+          message={(
+            <>
+              The file stays on the record marked withdrawn rather than disappearing. Anything
+              a verifier already relied on cannot be withdrawn at all.
+            </>
+          )}
+          onConfirm={(reason) => withdraw(withdrawing, reason)}
+          onCancel={() => setWithdrawing(null)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
 
 /**
@@ -136,18 +137,15 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
     }
   };
 
-  const resolve = async (imp: Impediment) => {
-    const answer = window.prompt(`How was ${imp.ref} cleared?`);
-    if (answer === null) return;
-    if (answer.trim().length < 10) {
-      setError('That is too short — the register needs a sentence, not a word.');
-      return;
-    }
+  const [resolving, setResolving] = useState<Impediment | null>(null);
+
+  const resolve = async (imp: Impediment, answer: string) => {
+    setResolving(null);
     setBusy(imp.id);
     setError('');
     try {
       await apiClient.post(`/api/projects/impediments/${imp.id}/resolve`, {
-        resolutionNote: answer.trim(),
+        resolutionNote: answer,
       });
       await load();
     } catch (err: any) {
@@ -354,7 +352,7 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
                             <span style={{ ...pill(sev.fg, sev.line), marginRight: 8 }}>
                               {i.severity}
                             </span>
-                            <button style={ghostBtn} disabled={busy === i.id} onClick={() => resolve(i)}>
+                            <button style={ghostBtn} disabled={busy === i.id} onClick={() => setResolving(i)}>
                               Clear
                             </button>
                           </>
@@ -371,6 +369,25 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
             </table>
           </div>
         </div>
+      )}
+
+      {resolving && (
+        <ReasonDialog
+          title={`Clear ${resolving.ref}`}
+          confirmLabel="Mark cleared"
+          label="How was it cleared?"
+          message={(
+            <>
+              <div>{resolving.title}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                The days this blocker cost are already attributed. What is recorded here is how
+                it ended, which is what a reader needs when the same thing happens again.
+              </div>
+            </>
+          )}
+          onConfirm={(answer) => resolve(resolving, answer)}
+          onCancel={() => setResolving(null)}
+        />
       )}
     </div>
   );
