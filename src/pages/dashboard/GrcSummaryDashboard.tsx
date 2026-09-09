@@ -227,7 +227,16 @@ const GrcSummaryDashboard: React.FC = () => {
           />
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+        {/* Two rows, each labelled, because these are two different questions
+            about the same 41 risks and the first version ran them together in
+            one undifferentiated line. That put "Accepted: 1" — a lifecycle
+            status — immediately beside "Accept: 8" — a treatment strategy —
+            where they read as one number disagreeing with itself. A colour
+            difference is not enough to carry "these count different things". */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', minWidth: 74 }}>
+            Where they are
+          </span>
           {Object.entries(risk.byStatus).map(([k, v]) => (
             <span key={k} style={pill('var(--ink-muted)', 'var(--line)')}>
               {/* Statuses are PascalCase in the register; split them so the
@@ -236,9 +245,24 @@ const GrcSummaryDashboard: React.FC = () => {
               {k.replace(/([a-z])([A-Z])/g, '$1 $2')}: {v}
             </span>
           ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', minWidth: 74 }}>
+            Planned response
+          </span>
+          {/* Zeros are dropped here but kept above. There are eight treatment
+              types across both directions and six empty chips are noise, whereas
+              "Under Treatment: 0" against 33 risks planned for mitigation is the
+              most informative thing on the row. */}
           {Object.entries(risk.byTreatment).filter(([, v]) => v > 0).map(([k, v]) => (
             <span key={k} style={pill('var(--info)', 'var(--info-line)')}>{k}: {v}</span>
           ))}
+          {Object.values(risk.byTreatment).every((v) => v === 0) && (
+            <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+              none chosen yet
+            </span>
+          )}
         </div>
 
         <div style={note}>
