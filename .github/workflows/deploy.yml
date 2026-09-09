@@ -242,7 +242,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          command_timeout: 10m
+          command_timeout: 25m
           script: |
             set -euo pipefail
             cd ~/grcwisdom
@@ -253,8 +253,51 @@ jobs:
             export GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
             export TAG=${{ github.sha }}
 
-            # Pull images with retry in case of network glitch
-            docker compose pull || (sleep 3 && docker compose pull) || (sleep 5 && docker compose pull)
+            # Pull with a real backoff, one service at a time.
+            #
+            # The previous form was `pull || (sleep 3 && pull) || (sleep 5 && pull)`,
+            # and it failed a deploy on a reset that three seconds could never
+            # have healed. The observed failure is ghcr.io over IPv6 resetting
+            # mid-layer:
+            #
+            #   read tcp [2a02:c207:...]:35804->[2606:50c0:8002::154]:443:
+            #   read: connection reset by peer
+            #
+            # 2606:50c0::/32 is GitHub, so the host is reaching the registry over
+            # IPv6 and losing the connection partway through a ~100MB layer.
+            # Docker's own per-layer retry cannot help once the pull as a whole
+            # aborts.
+            #
+            # Retrying IS worth doing here, because completed layers stay in the
+            # local cache: each attempt resumes from further along rather than
+            # starting over. That only works with enough time between attempts
+            # for the path to recover, hence the backoff.
+            #
+            # Per-service so that a failure on the API image does not discard a
+            # finished pull of web, caddy and postgres.
+            pull_with_backoff() {
+              local svc="$1" delay=5 attempt
+              for attempt in 1 2 3 4 5; do
+                if docker compose pull "$svc"; then
+                  return 0
+                fi
+                echo "pull of $svc failed (attempt $attempt/5); waiting ${delay}s"
+                sleep "$delay"
+                delay=$(( delay * 2 ))
+              done
+              echo "::error::Could not pull $svc after 5 attempts."
+              echo "If the log shows 'connection reset by peer' against a 2606:50c0::/32"
+              echo "address, the host reached ghcr.io over IPv6 and the connection died"
+              echo "mid-layer. Force IPv4 for GitHub's range only, which makes the daemon"
+              echo "fall back without touching the rest of the host's IPv6:"
+              echo "  sudo ip -6 route add blackhole 2606:50c0::/32"
+              echo "(/etc/gai.conf does not help here — dockerd is Go and does not read it.)"
+              return 1
+            }
+
+            for svc in db caddy api web; do
+              pull_with_backoff "$svc"
+            done
 
             # This used to run `systemctl stop/disable apache2 nginx` to clear
             # port 80. That is destructive on a shared host: this VPS runs a
