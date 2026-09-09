@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import { PromptDialog } from '../../../components/Dialog';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 
 /**
@@ -28,6 +29,21 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
   const [procedures, setProcedures] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * The open review dialog.
+   *
+   * All three collect one piece of writing that goes on the audit record, so
+   * they are PromptDialogs rather than a form — but they are not
+   * interchangeable: a sign-off conclusion may be accepted as offered, while a
+   * review note and its response are worthless empty, and the native prompts
+   * enforced that with `if (!note) return`, which silently did nothing.
+   */
+  const [review, setReview] = useState<
+    | null
+    | { kind: 'signOff'; wp: any }
+    | { kind: 'raiseNote'; wp: any }
+    | { kind: 'clearNote'; note: any }
+  >(null);
   const [notice, setNotice] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ title: '', section: 'Fieldwork', content: '', procedureId: '' });
@@ -65,7 +81,7 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
       setForm({ title: '', section: 'Fieldwork', content: '', procedureId: '' });
       setNotice('Workpaper created as a draft — submit it when the work is done');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   const act = async (url: string, body: any, fallback: string) => {
@@ -73,7 +89,7 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
       const res = await apiClient.post(url, body);
       setNotice(res.data?.message || fallback);
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
   };
 
   if (!auditId) {
@@ -205,7 +221,11 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
                           style={linkBtn('var(--info)')}
                           onClick={() => {
                             if (openNotes.length > 0) {
-                              window.alert(`Clear the ${openNotes.length} open review note(s) before resubmitting.`);
+                              setError(
+                                `${wp.ref}: clear the ${openNotes.length} open review note`
+                                + `${openNotes.length === 1 ? '' : 's'} before resubmitting. `
+                                + 'They are listed under the workpaper.',
+                              );
                               return;
                             }
                             act(`/api/grc/workpapers/${wp.id}/submit`, {}, 'Submitted');
@@ -218,21 +238,13 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
                         <>
                           <button
                             style={linkBtn('var(--success)')}
-                            onClick={() => {
-                              const conclusion = window.prompt('Review conclusion:', 'Workpaper reviewed and accepted.');
-                              if (conclusion === null) return;
-                              act(`/api/grc/workpapers/${wp.id}/review`, { conclusion }, 'Signed off');
-                            }}
+                            onClick={() => setReview({ kind: 'signOff', wp })}
                           >
                             sign off
                           </button>
                           <button
                             style={linkBtn('var(--warning)')}
-                            onClick={() => {
-                              const note = window.prompt('Review note — what does the preparer need to address?');
-                              if (!note) return;
-                              act(`/api/grc/workpapers/${wp.id}/notes`, { note }, 'Note raised');
-                            }}
+                            onClick={() => setReview({ kind: 'raiseNote', wp })}
                           >
                             raise note
                           </button>
@@ -270,11 +282,7 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
                             {n.status === 'Open' && !closed && (
                               <button
                                 style={linkBtn('var(--success)')}
-                                onClick={() => {
-                                  const response = window.prompt('How was this addressed?');
-                                  if (!response) return;
-                                  act(`/api/grc/review-notes/${n.id}/clear`, { response }, 'Note cleared');
-                                }}
+                                onClick={() => setReview({ kind: 'clearNote', note: n })}
                               >
                                 clear note
                               </button>
@@ -290,6 +298,58 @@ const Workpapers: React.FC<{ auditId: string | null }> = ({ auditId }) => {
           </div>
         );
       })}
+
+      {review?.kind === 'signOff' && (
+        <PromptDialog
+          title={`Sign off ${review.wp.ref}`}
+          label="Review conclusion"
+          multiline
+          initialValue="Workpaper reviewed and accepted."
+          confirmLabel="Sign off"
+          help="Goes on the audit record as the reviewer's own words. The default says the
+            ordinary thing; replace it if the review found something worth stating."
+          validate={(v) => (v.trim() ? null : 'A conclusion is required.')}
+          onSubmit={(conclusion) => {
+            setReview(null);
+            act(`/api/grc/workpapers/${review.wp.id}/review`, { conclusion }, 'Signed off');
+          }}
+          onCancel={() => setReview(null)}
+        />
+      )}
+
+      {review?.kind === 'raiseNote' && (
+        <PromptDialog
+          title={`Raise a review note on ${review.wp.ref}`}
+          label="What does the preparer need to address?"
+          multiline
+          confirmLabel="Raise note"
+          placeholder="The sample of 25 does not cover the period after the system change in June."
+          help="The workpaper cannot be resubmitted until every open note is cleared, so say
+            what would satisfy you rather than only what is wrong."
+          validate={(v) => (v.trim() ? null : 'A note with nothing in it tells the preparer nothing.')}
+          onSubmit={(note) => {
+            setReview(null);
+            act(`/api/grc/workpapers/${review.wp.id}/notes`, { note }, 'Note raised');
+          }}
+          onCancel={() => setReview(null)}
+        />
+      )}
+
+      {review?.kind === 'clearNote' && (
+        <PromptDialog
+          title="Clear this review note"
+          label="How was this addressed?"
+          multiline
+          confirmLabel="Clear note"
+          help={<>The note said: <em>{review.note.note}</em></>}
+          validate={(v) => (v.trim() ? null : 'A response is required — it is what shows the point was dealt with.')}
+          onSubmit={(response) => {
+            setReview(null);
+            act(`/api/grc/review-notes/${review.note.id}/clear`, { response }, 'Note cleared');
+          }}
+          onCancel={() => setReview(null)}
+        />
+      )}
     </div>
   );
 };

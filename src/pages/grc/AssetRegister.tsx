@@ -5,6 +5,8 @@ import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
 import AssetImport from './asset/AssetImport';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
+import PickManyDialog from '../../components/PickManyDialog';
+import { PromptDialog } from '../../components/Dialog';
 
 /**
  * The asset register — ISO/IEC 27001 A.5.9 inventory, valued the ISO 27005 way.
@@ -80,6 +82,11 @@ const AssetRegister: React.FC = () => {
    * criticality tier, which drives what the register says needs protecting.
    */
   const [editing, setEditing] = useState<any | null>(null);
+  // The asset whose control links are being changed, and the one being marked
+  // reviewed. Separate because they collect different things and one of them
+  // replaces a set.
+  const [linking, setLinking] = useState<any | null>(null);
+  const [reviewing, setReviewing] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState('');
   const [form, setForm] = useState<any>({
@@ -230,35 +237,30 @@ const AssetRegister: React.FC = () => {
       setRiskForm(null);
       setNotice(res.data?.message || 'Risk raised');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); }
     finally { setBusy(false); }
   };
 
-  const linkControls = async (asset: any) => {
-    const current = new Set((asset.controlLinks || []).map((l: any) => l.implementationId));
-    const choice = window.prompt(
-      `Which controls protect ${asset.ref}? Comma-separated numbers.\n\n`
-      + impls.slice(0, 25).map((im, n) =>
-        `${n + 1}. ${current.has(im.id) ? '[linked] ' : ''}${im.control?.code} — ${im.control?.title}`).join('\n'),
-      impls.map((im, n) => (current.has(im.id) ? String(n + 1) : '')).filter(Boolean).join(','),
-    );
-    if (choice === null) return;
-    const ids = choice.split(',').map((x) => impls[Number(x.trim()) - 1]?.id).filter(Boolean);
+  const saveControlLinks = async (asset: any, implementationIds: string[]) => {
+    setBusy(true);
     try {
-      const res = await apiClient.post(`/api/grc/assets/${asset.id}/controls`, { implementationIds: ids });
+      const res = await apiClient.post(`/api/grc/assets/${asset.id}/controls`, { implementationIds });
+      setLinking(null);
       setNotice(res.data?.message || 'Controls linked');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setLinking(null); }
+    finally { setBusy(false); }
   };
 
-  const review = async (asset: any) => {
-    const note = window.prompt(`Confirm ${asset.ref} has been reviewed. Note (optional):`);
-    if (note === null) return;
+  const saveReview = async (asset: any, note: string) => {
+    setBusy(true);
     try {
       const res = await apiClient.post(`/api/grc/assets/${asset.id}/review`, { note });
+      setReviewing(null);
       setNotice(res.data?.message || 'Reviewed');
       await load();
-    } catch (err) { window.alert(apiError(err)); }
+    } catch (err) { setError(apiError(err)); setReviewing(null); }
+    finally { setBusy(false); }
   };
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -431,8 +433,8 @@ const AssetRegister: React.FC = () => {
                           })}>
                           raise risk
                         </button>
-                        <button style={linkBtn('var(--info)')} onClick={() => linkControls(a)}>controls</button>
-                        <button style={linkBtn('var(--ink-muted)')} onClick={() => review(a)}>review</button>
+                        <button style={linkBtn('var(--info)')} onClick={() => setLinking(a)}>controls</button>
+                        <button style={linkBtn('var(--ink-muted)')} onClick={() => setReviewing(a)}>review</button>
                         <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(a)}>edit</button>
                         {/* Retired assets are refused by the server — the row is the
                             record that something was once in scope. */}
@@ -933,6 +935,43 @@ const AssetRegister: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {linking && (
+        <PickManyDialog
+          title={`Controls protecting ${linking.ref}`}
+          intro={(
+            <>
+              Everything ticked here is what the register says protects{' '}
+              <strong>{linking.name}</strong>. This <em>replaces</em> the current set, so a
+              control you untick is unlinked — the counts underneath say what will change.
+            </>
+          )}
+          items={impls.map((im: any) => ({
+            id: im.id,
+            label: im.control?.code || im.id,
+            sublabel: im.control?.title,
+          }))}
+          initiallySelected={(linking.controlLinks || []).map((l: any) => l.implementationId)}
+          confirmLabel="Save links"
+          emptyMessage="No control implementations exist yet, so there is nothing to link this asset to."
+          busy={busy}
+          onSubmit={(ids) => saveControlLinks(linking, ids)}
+          onCancel={() => setLinking(null)}
+        />
+      )}
+
+      {reviewing && (
+        <PromptDialog
+          title={`Confirm ${reviewing.ref} has been reviewed`}
+          label="Note"
+          multiline
+          confirmLabel="Record review"
+          help="Optional. Recorded against the asset and used to reset the review clock — the
+            next review falls due from today."
+          onSubmit={(note) => saveReview(reviewing, note)}
+          onCancel={() => setReviewing(null)}
+        />
       )}
     </div>
   );

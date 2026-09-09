@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, ghostBtn, linkBtn, pill, STATUS_PILL, apiError } from './iamStyles';
+import FormDialog from '../../components/FormDialog';
 
 export type Tier = 'saas' | 'org' | 'branch' | 'all';
 
@@ -50,29 +51,41 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const changeRole = async (u: UserRow) => {
-    const options = roles.filter((r) => !r.tenantId || r.name === u.roleName);
-    const pickList = options.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
-    const answer = window.prompt(`Assign a new role to ${u.email}\n\n${pickList}\n\nEnter a number:`);
-    if (!answer) return;
-    const chosen = options[Number(answer) - 1];
-    if (!chosen) { window.alert('Invalid selection'); return; }
+  /**
+   * The open dialog. Both actions are about one user, and both were prompts
+   * that could fail after the fact — the role list was numbered and a typed
+   * number outside it produced "Invalid selection" with nothing to correct.
+   */
+  const [dialog, setDialog] = useState<
+    null | { kind: 'role'; u: UserRow } | { kind: 'status'; u: UserRow; next: string }
+  >(null);
+  const [dialogBusy, setDialogBusy] = useState(false);
+
+  const roleOptionsFor = (u: UserRow) =>
+    roles.filter((r) => !r.tenantId || r.name === u.roleName);
+
+  const saveRole = async (u: UserRow, roleName: string) => {
+    const chosen = roleOptionsFor(u).find((r) => r.name === roleName);
+    if (!chosen) return;
+    setDialogBusy(true);
     try {
       await apiClient.post(`/api/iam/users/${u.id}/role`, { roleId: chosen.id });
+      setDialog(null);
       setNotice(`${u.email} is now ${chosen.name}`);
       await load();
-    } catch (err) { window.alert(apiError(err, 'Role change failed')); }
+    } catch (err) { setError(apiError(err, 'Role change failed')); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
-  const toggleStatus = async (u: UserRow) => {
-    const next = u.status === 'Active' ? 'Suspended' : 'Active';
-    const reason = window.prompt(`Reason for setting ${u.email} to ${next}:`);
-    if (reason === null) return;
+  const saveStatus = async (u: UserRow, next: string, reason: string) => {
+    setDialogBusy(true);
     try {
       await apiClient.post(`/api/iam/users/${u.id}/status`, { status: next, reason });
+      setDialog(null);
       setNotice(`${u.email} → ${next}`);
       await load();
-    } catch (err) { window.alert(apiError(err, 'Status change failed')); }
+    } catch (err) { setError(apiError(err, 'Status change failed')); setDialog(null); }
+    finally { setDialogBusy(false); }
   };
 
   const visible = users.filter((u) => {
@@ -159,8 +172,8 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
                   </td>
                   <td style={S.td}><span style={STATUS_PILL[u.status] || STATUS_PILL.Inactive}>{u.status}</span></td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                    <button onClick={() => changeRole(u)} style={linkBtn('var(--info)')}>role</button>
-                    <button onClick={() => toggleStatus(u)} style={linkBtn(u.status === 'Active' ? 'var(--warning)' : 'var(--success)')}>
+                    <button onClick={() => setDialog({ kind: 'role', u })} style={linkBtn('var(--info)')}>role</button>
+                    <button onClick={() => setDialog({ kind: 'status', u, next: u.status === 'Active' ? 'Suspended' : 'Active' })} style={linkBtn(u.status === 'Active' ? 'var(--warning)' : 'var(--success)')}>
                       {u.status === 'Active' ? 'suspend' : 'activate'}
                     </button>
                   </td>
@@ -174,6 +187,45 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
             </tbody>
           </table>
         </div>
+      )}
+
+      {dialog?.kind === 'role' && (
+        <FormDialog
+          title={`Assign a role to ${dialog.u.email}`}
+          intro={<>Currently <strong>{dialog.u.roleName}</strong>. The role decides what this person can do; the menu and the API both follow it.</>}
+          submitLabel="Assign role"
+          busy={dialogBusy}
+          fields={[{
+            name: 'role',
+            label: 'Role',
+            type: 'select',
+            options: roleOptionsFor(dialog.u).map((r) => r.name),
+            initial: dialog.u.roleName,
+          }]}
+          onSubmit={(v) => saveRole(dialog.u, v.role)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.kind === 'status' && (
+        <FormDialog
+          title={`Set ${dialog.u.email} to ${dialog.next}`}
+          destructive={dialog.next === 'Suspended'}
+          submitLabel={dialog.next === 'Suspended' ? 'Suspend user' : 'Reactivate user'}
+          busy={dialogBusy}
+          intro={dialog.next === 'Suspended'
+            ? 'A suspended user cannot sign in. Their records, approvals and audit history stay exactly as they are.'
+            : 'The user can sign in again with the role they already hold.'}
+          fields={[{
+            name: 'reason',
+            label: 'Reason',
+            type: 'textarea',
+            required: true,
+            help: 'Recorded against the account. This is what someone reads later when they ask why the access changed.',
+          }]}
+          onSubmit={(v) => saveStatus(dialog.u, dialog.next, v.reason)}
+          onCancel={() => setDialog(null)}
+        />
       )}
     </div>
   );

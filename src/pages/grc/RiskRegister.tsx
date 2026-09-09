@@ -1954,6 +1954,45 @@ const RiskRegister: React.FC = () => {
         </div>
       )}
 
+      {accepting && (
+        <FormDialog
+          title={`Accept ${accepting.ref} for a fixed period`}
+          intro={(
+            <>
+              <div>{accepting.title}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                Acceptance is a decision to carry a risk rather than treat it. It needs a date
+                it runs out and a justification, and the server refuses it outright if the
+                residual score is beyond the category's tolerance — that is a risk somebody has
+                to treat down, not one they may sign for.
+              </div>
+            </>
+          )}
+          submitLabel="Record acceptance"
+          busy={busy}
+          error={acceptErr}
+          fields={[
+            {
+              name: 'until',
+              label: 'Accepted until',
+              type: 'date',
+              required: true,
+              help: 'When the acceptance lapses and the risk returns to the treatment queue.',
+            },
+            {
+              name: 'reason',
+              label: 'Justification and compensating factors',
+              type: 'textarea',
+              required: true,
+              help: 'Why carrying this is reasonable, and what reduces the exposure in the '
+                + 'meantime. This is the part an auditor reads.',
+            },
+          ]}
+          onSubmit={submitAccept}
+          onCancel={() => { setAccepting(null); setAcceptErr(''); }}
+        />
+      )}
+
       {removing && (
         <ConfirmDialog
           title={`Delete ${removing.ref}?`}
