@@ -165,6 +165,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         code: 'WRONG_ENTRANCE',
         message: door.message,
         entrance: door.belongs,
+        path: door.path,
       });
       return;
     }

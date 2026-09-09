@@ -31,6 +31,8 @@ const Login: React.FC = () => {
       : '',
   );
   const [submitting, setSubmitting] = useState(false);
+  /** Where this account should be signing in, when it is not here. */
+  const [wrongEntrance, setWrongEntrance] = useState<string | null>(null);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -57,6 +59,7 @@ const Login: React.FC = () => {
     e.preventDefault();
     if (submitting) return;
     setError('');
+    setWrongEntrance(null);
     setSubmitting(true);
     try {
       const res = await apiClient.post('/api/auth/login', {
@@ -83,10 +86,11 @@ const Login: React.FC = () => {
         // password is wrong — anything else is a user-enumeration oracle.
         setError('Email or password is incorrect.');
       } else if (status === 403 && err?.response?.data?.code === 'WRONG_ENTRANCE') {
-        // Says which entrance, deliberately not where it is. An operator has
-        // been given their own address; anyone else reading this has already
-        // supplied a working operator password and is not learning a URL from
-        // this line.
+        // Rendered as a link rather than prose. Only someone whose password has
+        // already verified reaches this branch, so they are being shown their
+        // own front door — withholding it, as the first version did, locked the
+        // platform owner out of their own product.
+        setWrongEntrance(err.response.data.path || null);
         setError(serverMsg || 'This account does not sign in here.');
       } else if (status === 429) {
         setError(serverMsg || 'Too many attempts. Try again in a few minutes.');
@@ -255,7 +259,17 @@ const Login: React.FC = () => {
                   Enter the 6-digit code from your authenticator app.
                 </p>
                 <form onSubmit={handleMfaSubmit}>
-                  <div className={`login-error ${error ? 'show' : ''}`} role="alert">{error}</div>
+                  <div className={`login-error ${error ? 'show' : ''}`} role="alert">
+                    {error}
+                    {wrongEntrance && (
+                      <>
+                        {' '}
+                        <Link to={wrongEntrance} style={{ color: 'inherit', fontWeight: 700 }}>
+                          Go there now
+                        </Link>
+                      </>
+                    )}
+                  </div>
                   <input
                     autoFocus
                     inputMode="numeric"

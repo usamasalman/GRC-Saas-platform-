@@ -15,6 +15,9 @@ export const PLATFORM_TENANT_TYPES = ['SAAS', 'SAAS_UNIT'] as const;
 
 export type Entrance = 'platform' | 'tenant';
 
+/** Where the operator entrance lives. Kept here so the refusal can name it. */
+export const PLATFORM_LOGIN_PATH = '/control-plane';
+
 /**
  * An unrecognised or missing tenant type resolves to the customer entrance.
  *
@@ -38,7 +41,7 @@ export function entranceFor(tenantType: string | null | undefined): Entrance {
 export function checkEntrance(
   tenantType: string | null | undefined,
   requested: unknown,
-): { ok: true } | { ok: false; belongs: Entrance; message: string } {
+): { ok: true } | { ok: false; belongs: Entrance; path: string; message: string } {
   if (requested !== 'platform' && requested !== 'tenant') return { ok: true };
 
   const belongs = entranceFor(tenantType);
@@ -47,11 +50,21 @@ export function checkEntrance(
   return {
     ok: false,
     belongs,
-    // Names which entrance, deliberately not where it is. An operator has been
-    // given their own address; anyone else reading this has already supplied a
-    // working operator password and is not learning a URL from it.
+    path: belongs === 'platform' ? PLATFORM_LOGIN_PATH : '/login',
+    // Names the address.
+    //
+    // The first version withheld it, on the reasoning that the operator
+    // entrance should not be discoverable. That was wrong, and it locked the
+    // platform owner out of their own product: they were told "not here" and
+    // not where. Hidden from other users was never meant to include hidden from
+    // the operator.
+    //
+    // Safe because of where this check sits. It runs only after bcrypt.compare
+    // has passed, so anyone reading this message has already proved they hold
+    // the credentials for the account it belongs to. They are not learning a URL
+    // they had no right to.
     message: belongs === 'platform'
-      ? 'This account signs in through the platform operator entrance, not here.'
+      ? `This account signs in at ${PLATFORM_LOGIN_PATH}, the platform operator entrance.`
       : 'This is the platform operator entrance. Sign in at the main login page.',
   };
 }

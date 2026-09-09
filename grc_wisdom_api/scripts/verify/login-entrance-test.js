@@ -54,14 +54,25 @@ ok(checkEntrance('HOLDING', 'tenant').ok, 'a customer at the customer entrance p
 const operatorAtCustomerDoor = checkEntrance('SAAS', 'tenant');
 ok(!operatorAtCustomerDoor.ok, 'an operator is refused at the customer entrance');
 is(operatorAtCustomerDoor.belongs, 'platform', 'and told which entrance is theirs');
+// This assertion used to be the negation: that the message must NOT name the
+// address, on the reasoning that the operator entrance should be undiscoverable.
+// That reasoning locked the platform owner out of their own product -- told
+// "not here", never told where.
+//
+// Naming it is safe because of where the check sits. It runs only after
+// bcrypt.compare has passed, so whoever reads the message has already proved
+// the account is theirs. Hiding the entrance from other users was never meant
+// to include hiding it from the operator.
 ok(
-  !/control-plane|\/platform/.test(operatorAtCustomerDoor.message),
-  'without naming the address — the whole point is that it is not discoverable from here',
+  /control-plane/.test(operatorAtCustomerDoor.message),
+  'names the operator entrance, so an operator at the wrong door is not stranded',
 );
+is(operatorAtCustomerDoor.path, '/control-plane', 'and returns it as a path the page can link to');
 
 const customerAtOperatorDoor = checkEntrance('BRANCH', 'platform');
 ok(!customerAtOperatorDoor.ok, 'a customer is refused at the operator entrance');
 is(customerAtOperatorDoor.belongs, 'tenant', 'and pointed at the main login page');
+is(customerAtOperatorDoor.path, '/login', 'with the path to it');
 
 // Older clients and the reset flow post no entrance at all. Enforcing a page
 // separation is not worth breaking their sign-in over.
