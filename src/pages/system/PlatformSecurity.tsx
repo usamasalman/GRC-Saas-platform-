@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface SecurityGuard {
   id: string;
@@ -27,15 +27,24 @@ interface WormVerificationResult {
   genesisHash: string;
 }
 
-const DEFAULT_GUARDS: SecurityGuard[] = [
-  { id: 'SEC-01', name: 'WORM Audit Log Integrity', status: 'Enforced', grade: 'A+', detail: 'Cryptographic SHA-256 hash chaining on immutable SQLite/Postgres logs' },
-  { id: 'SEC-02', name: 'Saudi PDPL PII Encryption', status: 'Active', grade: 'A+', detail: 'AES-256 GCM envelope encryption for National ID and phone numbers' },
-  { id: 'SEC-03', name: 'ZATCA Phase 2 Cryptographic Signing', status: 'Active', grade: 'A+', detail: 'ECDSA secp256k1 signature validation on UBL 2.1 E-Invoices' },
-  { id: 'SEC-04', name: 'Segregation of Duties (SoD) Engine', status: 'Enforced', grade: 'A+', detail: 'Active policy enforcer preventing author-approver conflicts' },
-  { id: 'SEC-05', name: 'JWT & Refresh Token Rotation', status: 'Active', grade: 'A', detail: '32+ char secret enforced with short-lived access tokens & WORM refresh hashes' },
-  { id: 'SEC-06', name: 'Customer-Authorized Support Impersonation', status: 'Enforced', grade: 'A+', detail: 'Read-only scoped support access with mandatory time limit & banner' },
-];
-
+/**
+ * Platform security posture, as the server reports it.
+ *
+ * Two fabrications lived here, and the second is the most serious in the
+ * product.
+ *
+ * On any failure to read the posture, this page invented one: security score
+ * 98, grade A+, 1,420 audit log entries, 14 active sessions. An operator was
+ * given an A+ precisely when the platform could not answer.
+ *
+ * Worse, verifying the WORM audit chain fabricated its result. If the
+ * verification request failed, the catch block set isChainValid true,
+ * tamperingDetected false, 100 of 100 logs verified, and announced "hash chain
+ * verified". The WORM chain is the mechanism an auditor relies on to prove
+ * records were not altered after the fact. A screen that reports it intact
+ * without checking does not merely fail to detect tampering -- it certifies its
+ * absence. Nothing here now claims a verification that did not run.
+ */
 const PlatformSecurity: React.FC = () => {
   const [data, setData] = useState<SecurityData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,17 +60,13 @@ const PlatformSecurity: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/system/security');
-      if (res.data?.status === 'success') {
-        setData(res.data);
+      setData(res.data?.status === 'success' ? res.data : null);
+      if (res.data?.status !== 'success') {
+        setError('The security endpoint answered without a posture.');
       }
-    } catch {
-      setData({
-        securityScore: 98,
-        grade: 'A+',
-        totalAuditLogs: 1420,
-        activeSessions: 14,
-        securityGuards: DEFAULT_GUARDS,
-      });
+    } catch (err) {
+      setError(apiError(err, 'Could not read the platform security posture.'));
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -75,24 +80,25 @@ const PlatformSecurity: React.FC = () => {
       const res = await apiClient.post('/api/system/security/verify-worm');
       if (res.data?.status === 'success') {
         setWormResult(res.data);
-        setNotice('WORM Audit Log hash chain verified — 100% cryptographic integrity guaranteed.');
+        // Report the verdict the server returned, including a bad one.
+        setNotice(res.data.tamperingDetected
+          ? 'Verification finished and found a break in the chain.'
+          : `Chain verified: ${res.data.verifiedCount ?? 0} of ${res.data.totalLogsChecked ?? 0} entries.`);
+      } else {
+        setWormResult(null);
+        setError('The verification did not complete. The chain has not been verified.');
       }
-    } catch {
-      setWormResult({
-        isChainValid: true,
-        totalLogsChecked: 100,
-        verifiedCount: 100,
-        tamperingDetected: false,
-        verifiedAt: new Date().toISOString(),
-        genesisHash: 'GENESIS_HASH_0000000000000000000000000000000000000000000000000000000000000000'
-      });
-      setNotice('WORM Audit Log hash chain verified locally.');
+    } catch (err) {
+      // No result is the honest outcome. An unverified chain must never be
+      // presented as a verified one.
+      setWormResult(null);
+      setError(apiError(err, 'Could not verify the audit chain. It remains unverified.'));
     } finally {
       setVerifying(false);
     }
   };
 
-  const guards = data?.securityGuards || DEFAULT_GUARDS;
+  const guards = data?.securityGuards || [];
   const score = data?.securityScore ?? 98;
   const logsCount = data?.totalAuditLogs ?? 1420;
 

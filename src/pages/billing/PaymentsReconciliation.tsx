@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, ghostBtn, pill, apiError } from '../iam/iamStyles';
 
 interface Payment {
   id: string;
@@ -13,29 +13,33 @@ interface Payment {
   paidAt: string;
 }
 
-const DEFAULT_PAYMENTS: Payment[] = [
-  { id: 'PAY-0091', invoiceId: 'INV-2026-0091', tenantName: 'Al-Rajhi Holding Group', amount: 215625.00, currency: 'SAR', method: 'Saudi Corporate Bank Transfer', status: 'Reconciled', paidAt: '2026-07-02T10:00:00Z' },
-  { id: 'PAY-0104', invoiceId: 'INV-2026-0104', tenantName: 'Riyadh Central Branch', amount: 63250.00, currency: 'SAR', method: 'Mada / Visa Tokenized Card', status: 'Reconciled', paidAt: '2026-07-16T14:20:00Z' }
-];
-
+/**
+ * Payments, as the server has them.
+ *
+ * Two payments were hardcoded here as the initial state, one of them SAR
+ * 215,625 from "Al-Rajhi Holding Group", and the loader kept them both when the
+ * API returned an empty list and when it failed. Any tenant with no payments was
+ * shown another organisation's receipts as though they were its own.
+ *
+ * The old loader also set "Payment records up to date." in a `finally`, so it
+ * reported success on the failure path too.
+ */
 const PaymentsReconciliation: React.FC = () => {
-  const [payments, setPayments] = useState<Payment[]>(DEFAULT_PAYMENTS);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const res = await apiClient.get('/api/billing/payments');
-      if (res.data?.payments && res.data.payments.length > 0) {
-        setPayments(res.data.payments);
-      }
-    } catch {
-      setPayments(DEFAULT_PAYMENTS);
+      // An empty list is the answer for a tenant with no payments.
+      setPayments(res.data?.payments || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load payments.'));
+      setPayments([]);
     } finally {
-      setNotice('Payment records up to date.');
       setLoading(false);
     }
   }, []);
@@ -66,11 +70,6 @@ const PaymentsReconciliation: React.FC = () => {
       ]} />
 
       {error && <div style={S.error}>{error}</div>}
-      {notice && (
-        <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 10, borderRadius: 6, color: 'var(--success)', marginBottom: 14, fontSize: 12 }}>
-          {notice}
-        </div>
-      )}
 
       {loading ? (
         <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading payment history...</div>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface Tool {
   id: string;
@@ -15,16 +15,17 @@ interface Tool {
   risk: string;
 }
 
-const DEFAULT_TOOLS: Tool[] = [
-  { id: 'TOOL-001', name: 'OWASP DefectDojo', category: 'Vulnerability Management', license: 'BSD-3-Clause', maturity: 'Approved', review: 'Security Review Passed', deployment: 'Managed GRC Wisdom Integration', description: 'Vulnerability management dashboard and DevSecOps orchestration platform.', annualPrice: 12000, risk: 'Low' },
-  { id: 'TOOL-002', name: 'OWASP Dependency-Check', category: 'SCA / Supply Chain', license: 'Apache-2.0', maturity: 'Approved', review: 'Security Review Passed', deployment: 'Customer-Managed Connector', description: 'Software Composition Analysis (SCA) tool for detecting publicly disclosed vulnerabilities in dependencies.', annualPrice: 6000, risk: 'Low' },
-  { id: 'TOOL-003', name: 'Trivy Scanner', category: 'Container Security', license: 'Apache-2.0', maturity: 'Approved', review: 'Security Review Passed', deployment: 'Managed GRC Wisdom Integration', description: 'Comprehensive security scanner for container images, file systems, and Git repositories.', annualPrice: 8500, risk: 'Low' },
-  { id: 'TOOL-004', name: 'OpenVAS / Greenbone Security', category: 'Vulnerability Management', license: 'GPL-2.0', maturity: 'Under Review', review: 'Architecture & Privacy Gate', deployment: 'Dedicated OCI Environment', description: 'Full-featured vulnerability scanner and management system.', annualPrice: 15000, risk: 'Medium' },
-  { id: 'TOOL-005', name: 'Falco Cloud Native Security', category: 'Container Security', license: 'Apache-2.0', maturity: 'Approved', review: 'Security Review Passed', deployment: 'Managed GRC Wisdom Integration', description: 'Real-time threat detection engine for cloud-native environments and Kubernetes runtime.', annualPrice: 9500, risk: 'Low' }
-];
-
+/**
+ * The tool marketplace, as the server has it.
+ *
+ * A catalogue was hardcoded and, on any API failure, filtered and browsed as
+ * though live. Submitting a tool for review, and buying one, both swallowed the
+ * refusal: the purchase path reported "entitlement granted, support ticket
+ * created" to a customer whose request the server had rejected. Nothing was
+ * granted and no ticket existed.
+ */
 const OpenSourceToolMarketplace: React.FC = () => {
-  const [tools, setTools] = useState<Tool[]>(DEFAULT_TOOLS);
+  const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -54,14 +55,10 @@ const OpenSourceToolMarketplace: React.FC = () => {
       const res = await apiClient.get('/api/marketplace/tools', {
         params: { search, category: categoryFilter }
       });
-      if (res.data?.tools && res.data.tools.length > 0) {
-        setTools(res.data.tools);
-      }
-    } catch {
-      let filtered = [...DEFAULT_TOOLS];
-      if (categoryFilter) filtered = filtered.filter(t => t.category === categoryFilter);
-      if (search) filtered = filtered.filter(t => t.name.toLowerCase().includes(search.toLowerCase()));
-      setTools(filtered);
+      setTools(res.data?.tools || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load the tool catalogue.'));
+      setTools([]);
     } finally {
       setLoading(false);
     }
@@ -73,55 +70,50 @@ const OpenSourceToolMarketplace: React.FC = () => {
 
   const handleSubmitTool = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!toolName.trim()) return;
+    if (!toolName.trim() || submitting) return;
     setSubmitting(true);
-    const newTool: Tool = {
-      id: `TOOL-${Date.now().toString().slice(-4)}`,
-      name: toolName.trim(),
-      category: toolCategory,
-      license: toolLicense,
-      maturity: 'Under Review',
-      review: 'Initial Intake',
-      deployment: toolDeployment,
-      description: toolDesc.trim(),
-      annualPrice: 0,
-      risk: 'Medium'
-    };
+    setError('');
     try {
       await apiClient.post('/api/marketplace/tools', {
         name: toolName.trim(),
         category: toolCategory,
         license: toolLicense,
         deployment: toolDeployment,
-        description: toolDesc.trim()
+        description: toolDesc.trim(),
       });
-    } catch {
-      // Client fallback update
-    } finally {
-      setTools(prev => [newTool, ...prev]);
-      setNotice(`Tool "${toolName}" submitted for security and license review.`);
+      setNotice(`"${toolName.trim()}" submitted for security and licence review.`);
       setToolName('');
       setToolDesc('');
       setSubmitModalOpen(false);
+      await loadTools();
+    } catch (err) {
+      setError(apiError(err, 'Could not submit the tool for review.'));
+    } finally {
       setSubmitting(false);
     }
   };
 
   const handleBuyTool = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTool) return;
+    if (!selectedTool || buying) return;
+    const tool = selectedTool;
     setBuying(true);
+    setError('');
     try {
-      await apiClient.post(`/api/marketplace/tools/${selectedTool.id}/buy`, {
+      const res = await apiClient.post(`/api/marketplace/tools/${tool.id}/buy`, {
         installationMode,
-        justification
+        justification,
       });
-    } catch {
-      // Client fallback update
-    } finally {
-      setNotice(`Entitlement granted for ${selectedTool.name}. Support ticket created.`);
       setBuyModalOpen(false);
       setSelectedTool(null);
+      // An entitlement is a commercial fact. Report only what the server said
+      // it did -- the previous version announced the grant and a support ticket
+      // whether or not the request was accepted.
+      setNotice(res.data?.message || `Request submitted for ${tool.name}.`);
+      await loadTools();
+    } catch (err) {
+      setError(apiError(err, `Could not complete the request for ${tool.name}.`));
+    } finally {
       setBuying(false);
     }
   };

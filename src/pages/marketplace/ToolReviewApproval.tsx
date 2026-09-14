@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface Tool {
   id: string;
@@ -15,13 +15,18 @@ interface Tool {
   risk: string;
 }
 
-const DEFAULT_REVIEW_TOOLS: Tool[] = [
-  { id: 'TOOL-004', name: 'OpenVAS / Greenbone Security', category: 'Vulnerability Management', license: 'GPL-2.0', maturity: 'Under Review', review: 'Architecture & Privacy Gate', deployment: 'Dedicated OCI Environment', description: 'Full-featured vulnerability scanner and management system.', annualPrice: 15000, risk: 'Medium' },
-  { id: 'TOOL-006', name: 'Semgrep Static Analysis', category: 'SAST Scanner', license: 'LGPL-2.1', maturity: 'Under Review', review: 'License Compliance Gate', deployment: 'Managed GRC Wisdom Integration', description: 'Lightweight static analysis engine for finding bugs and enforcing code standards.', annualPrice: 4500, risk: 'Low' }
-];
-
+/**
+ * The tool review queue, as the server has it.
+ *
+ * Two tools were hardcoded here and shown whenever the API returned an empty
+ * queue or failed, so a reviewer could work a queue that did not exist.
+ *
+ * Approving swallowed the refusal and marked the tool approved locally. An
+ * approval that only happened in one browser is worse than no approval at all:
+ * the reviewer believes the gate was passed and nobody downstream sees it.
+ */
 const ToolReviewApproval: React.FC = () => {
-  const [tools, setTools] = useState<Tool[]>(DEFAULT_REVIEW_TOOLS);
+  const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -38,11 +43,10 @@ const ToolReviewApproval: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/marketplace/tools');
-      if (res.data?.tools && res.data.tools.length > 0) {
-        setTools(res.data.tools);
-      }
-    } catch {
-      setTools(DEFAULT_REVIEW_TOOLS);
+      setTools(res.data?.tools || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load the review queue.'));
+      setTools([]);
     } finally {
       setLoading(false);
     }
@@ -54,20 +58,22 @@ const ToolReviewApproval: React.FC = () => {
 
   const handleApproveTool = async (maturityStatus: 'Approved' | 'Rejected') => {
     if (!selectedTool) return;
+    const tool = selectedTool;
     setUpdating(true);
+    setError('');
     try {
-      await apiClient.patch(`/api/marketplace/tools/${selectedTool.id}`, {
+      await apiClient.patch(`/api/marketplace/tools/${tool.id}`, {
         maturity: maturityStatus,
         review: reviewStage,
         annualPrice: price,
-        risk: riskRating
+        risk: riskRating,
       });
-    } catch {
-      // Fallback local update
-    } finally {
-      setTools(prev => prev.map(t => t.id === selectedTool.id ? { ...t, maturity: maturityStatus, review: reviewStage, annualPrice: price, risk: riskRating } : t));
-      setNotice(`Tool "${selectedTool.name}" status updated to ${maturityStatus}.`);
       setSelectedTool(null);
+      setNotice(`"${tool.name}" recorded as ${maturityStatus}.`);
+      await loadTools();
+    } catch (err) {
+      setError(apiError(err, 'Could not record the review decision.'));
+    } finally {
       setUpdating(false);
     }
   };

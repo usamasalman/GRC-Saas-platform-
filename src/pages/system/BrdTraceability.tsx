@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface TraceItem {
   id: string;
@@ -19,21 +19,15 @@ interface BrdData {
   matrix: TraceItem[];
 }
 
-const DEFAULT_MATRIX: TraceItem[] = [
-  { id: 'REQ-01', trdRef: 'TRD §1.1', section: 'Trust Foundation', title: 'Multi-Tenant Isolation', requirement: 'Strict tenant scope isolation ensuring customer data never leaks across boundaries.', implementation: 'scopeResolver.ts + resolveTenantScope() middleware', status: 'Verified' },
-  { id: 'REQ-02', trdRef: 'TRD §2.1', section: 'Audit Logging', title: 'Cryptographic WORM Audit Chains', requirement: 'Immutable Write-Once-Read-Many audit logs chained with SHA-256 hashes.', implementation: 'auditMiddleware.ts + writeAudit() transaction hook', status: 'Verified' },
-  { id: 'REQ-03', trdRef: 'TRD §3.1', section: 'IAM & RBAC', title: 'Capability-Based Authorization', requirement: '42 canonical business capabilities mapped to system and tenant custom roles.', implementation: 'RoleMatrix.tsx + Capability model in Prisma', status: 'Verified' },
-  { id: 'REQ-04', trdRef: 'TRD §6.4', section: 'Governance Engine', title: 'Segregation of Duties (SoD)', requirement: 'Enforces dual-control guards preventing authors from approving their own documents/invoices.', implementation: 'sodEngine.ts + SodRule enforcer', status: 'Verified' },
-  { id: 'REQ-05', trdRef: 'TRD §7.2', section: 'GRC Core', title: 'Standards, Controls & Evidence', requirement: 'Library controls linked to ISO 27001, NCA ECC and PDPL requirements with evidence review.', implementation: 'StandardsLibrary.tsx + ControlLibrary.tsx', status: 'Verified' },
-  { id: 'REQ-06', trdRef: 'TRD §7.3', section: 'ITSM Engine', title: 'Workflow-Engine Backed ITSM', requirement: 'Service desk, ticket queues, SLA auto-escalation based on impact & urgency matrix.', implementation: 'ServiceDesk.tsx + TicketQueues.tsx + SlaEscalations.tsx', status: 'Verified' },
-  { id: 'REQ-07', trdRef: 'TRD §8.1', section: 'Saudi Compliance', title: 'ZATCA Phase 2 E-Invoicing', requirement: 'UBL 2.1 e-invoicing XML generation, cryptographic ECDSA signatures, and QR code rendering.', implementation: 'billingController.ts + PaymentGatewayTax.tsx', status: 'Verified' },
-  { id: 'REQ-08', trdRef: 'TRD §8.2', section: 'Saudi Compliance', title: 'PDPL Encrypted PII Fields', requirement: 'Envelope encryption for sensitive personal identification numbers and contact fields.', implementation: 'cryptoUtils.ts + User model encrypted fields', status: 'Verified' },
-  { id: 'REQ-09', trdRef: 'TRD §9.1', section: 'Platform Operations', title: 'Customer-Authorized Support Impersonation', requirement: 'Support operators assume customer views only with tenant admin approval & sticky banner.', implementation: 'ImpersonationSessions.tsx + ImpersonationBanner component', status: 'Verified' },
-  { id: 'REQ-10', trdRef: 'TRD §10.2', section: 'Platform Services', title: 'Usage & Quota Management', requirement: 'Tenant-level resource quota tracking, automated usage threshold monitoring, and import jobs.', implementation: 'ResourceUsageQuotas.tsx + RulesJobsExecution.tsx + ImportsMigration.tsx', status: 'Verified' },
-  { id: 'REQ-11', trdRef: 'TRD §11.1', section: 'Security Services', title: 'Wisdom Eye & Eye Phish', requirement: 'External attack surface management (ASM) & 360° human risk phishing simulation.', implementation: 'wisdomEyePage() + eyePhishPage()', status: 'Verified' },
-  { id: 'REQ-12', trdRef: 'TRD §12.3', section: 'Infrastructure', title: 'OCI Riyadh Sovereign Cloud', requirement: 'Data residency guaranteed in Kingdom of Saudi Arabia OCI Riyadh Region (me-riyadh-1).', implementation: 'systemController.ts + OciRiyadhArchitecture.tsx', status: 'Verified' },
-];
-
+/**
+ * Requirement traceability, as the server reports it.
+ *
+ * On any failure this page substituted a hardcoded matrix and declared
+ * compliancePercentage 100 with every requirement verified. A traceability
+ * matrix exists to show what is and is not covered; one that reports full
+ * coverage when it cannot read anything is worse than a blank screen, because
+ * a blank screen is not evidence of anything.
+ */
 const BrdTraceability: React.FC = () => {
   const [data, setData] = useState<BrdData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,16 +41,13 @@ const BrdTraceability: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/system/brd');
-      if (res.data?.status === 'success') {
-        setData(res.data);
+      setData(res.data?.status === 'success' ? res.data : null);
+      if (res.data?.status !== 'success') {
+        setError('The traceability endpoint answered without a matrix.');
       }
-    } catch {
-      setData({
-        totalRequirements: DEFAULT_MATRIX.length,
-        verifiedCount: DEFAULT_MATRIX.length,
-        compliancePercentage: 100,
-        matrix: DEFAULT_MATRIX,
-      });
+    } catch (err) {
+      setError(apiError(err, 'Could not load the traceability matrix.'));
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -64,7 +55,7 @@ const BrdTraceability: React.FC = () => {
 
   useEffect(() => { loadBrd(); }, [loadBrd]);
 
-  const matrix = data?.matrix || DEFAULT_MATRIX;
+  const matrix = data?.matrix || [];
   const sections = ['All', ...new Set(matrix.map(m => m.section))];
 
   const filtered = matrix.filter(m => {

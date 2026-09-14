@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface Installation {
   id: string;
@@ -16,14 +16,20 @@ interface Installation {
   installedAt: string;
 }
 
-const DEFAULT_INSTALLATIONS: Installation[] = [
-  { id: 'INST-01', toolId: 'TOOL-001', toolName: 'OWASP DefectDojo', tenantId: 'TEN-01', tenantName: 'Al-Rajhi Holding Group', category: 'Vulnerability Management', deployment: 'Managed GRC Wisdom Integration', status: 'Healthy', versionHealth: 'v2.24.1 (Latest)', support: 'Active Support Tier 1', installedAt: '2026-01-20T00:00:00Z' },
-  { id: 'INST-02', toolId: 'TOOL-003', toolName: 'Trivy Scanner', tenantId: 'TEN-02', tenantName: 'Riyadh Central Branch', category: 'Container Security', deployment: 'Managed GRC Wisdom Integration', status: 'Healthy', versionHealth: 'v0.48.0 (Latest)', support: 'Active Support Tier 1', installedAt: '2026-02-15T00:00:00Z' },
-  { id: 'INST-03', toolId: 'TOOL-002', toolName: 'OWASP Dependency-Check', tenantId: 'TEN-03', tenantName: 'Jeddah Regional Hub', category: 'SCA / Supply Chain', deployment: 'Customer-Managed Connector', status: 'Degraded', versionHealth: 'v9.0.2 (Update Available)', support: 'Standard Tier 2', installedAt: '2026-03-01T00:00:00Z' }
-];
-
+/**
+ * Tool installations, as the server has them.
+ *
+ * Three installations were hardcoded here, belonging to named organisations,
+ * and shown whenever the API returned nothing or failed.
+ *
+ * The health check was the worst of it: whatever the server said, or whether it
+ * answered at all, the handler invented a latency with Math.random() and
+ * reported "health check passed, connector operational", then marked the
+ * installation Healthy. A degraded connector could be tested and pronounced
+ * fine, with a number that came from nowhere.
+ */
 const TenantToolInstallations: React.FC = () => {
-  const [installations, setInstallations] = useState<Installation[]>(DEFAULT_INSTALLATIONS);
+  const [installations, setInstallations] = useState<Installation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -34,11 +40,10 @@ const TenantToolInstallations: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/marketplace/installations');
-      if (res.data?.installations && res.data.installations.length > 0) {
-        setInstallations(res.data.installations);
-      }
-    } catch {
-      setInstallations(DEFAULT_INSTALLATIONS);
+      setInstallations(res.data?.installations || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load installations.'));
+      setInstallations([]);
     } finally {
       setLoading(false);
     }
@@ -50,14 +55,16 @@ const TenantToolInstallations: React.FC = () => {
 
   const handleTestHealth = async (inst: Installation) => {
     setTestingId(inst.id);
+    setError('');
     try {
-      await apiClient.post(`/api/marketplace/installations/${inst.id}/health`);
-    } catch {
-      // Fallback local update
+      const res = await apiClient.post(`/api/marketplace/installations/${inst.id}/health`);
+      // Report what the check returned. The status shown comes from reloading
+      // the row, not from assuming the check passed.
+      setNotice(res.data?.message || `Health check run for ${inst.toolName}.`);
+      await loadInstallations();
+    } catch (err) {
+      setError(apiError(err, `Could not run the health check for ${inst.toolName}.`));
     } finally {
-      const latencyMs = Math.floor(Math.random() * 40) + 12;
-      setNotice(`Health check for ${inst.toolName} passed (${latencyMs}ms latency). Connector operational.`);
-      setInstallations(prev => prev.map(i => i.id === inst.id ? { ...i, status: 'Healthy' } : i));
       setTestingId(null);
     }
   };

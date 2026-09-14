@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface Quota {
   id: string;
@@ -12,17 +12,19 @@ interface Quota {
   tenant?: { id: string; name: string; type: string };
 }
 
-const DEFAULT_QUOTAS: Quota[] = [
-  { id: 'Q-01', tenantId: 'T1', resourceType: 'Users', used: 34, limitValue: 75, status: 'Under', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'Q-02', tenantId: 'T1', resourceType: 'Storage', used: 172, limitValue: 200, status: 'Warning', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'Q-03', tenantId: 'T1', resourceType: 'Documents', used: 487, limitValue: 500, status: 'Warning', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'Q-04', tenantId: 'T1', resourceType: 'ApiCalls', used: 10200, limitValue: 10000, status: 'Over', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'Q-05', tenantId: 'T2', resourceType: 'Users', used: 12, limitValue: 25, status: 'Under', tenant: { id: 'T2', name: 'Riyadh Central Branch', type: 'Branch' } },
-  { id: 'Q-06', tenantId: 'T2', resourceType: 'Storage', used: 8, limitValue: 50, status: 'Under', tenant: { id: 'T2', name: 'Riyadh Central Branch', type: 'Branch' } },
-  { id: 'Q-07', tenantId: 'T1', resourceType: 'Workflows', used: 45, limitValue: 50, status: 'Warning', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'Q-08', tenantId: 'T1', resourceType: 'Integrations', used: 3, limitValue: 10, status: 'Under', tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-];
-
+/**
+ * Resource quotas, as the server has them.
+ *
+ * Eight quota rows were hardcoded here across two named organisations, and
+ * shown whenever the API returned nothing or failed. A platform operator could
+ * read that "Al-Rajhi Holding Group" was over its API call limit when no such
+ * tenant existed in their data.
+ *
+ * Adjusting a limit had three paths and two of them lied: if the response
+ * carried no quota, or the request was refused outright, the new limit was
+ * written into local state and reported as updated -- in one case with the word
+ * "locally", which no operator would read as "not saved".
+ */
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Under:   pill('var(--success)', 'var(--success-line)'),
   Warning: pill('var(--warning)', 'var(--warning-line)'),
@@ -30,7 +32,7 @@ const STATUS_PILL: Record<string, React.CSSProperties> = {
 };
 
 const ResourceUsageQuotas: React.FC = () => {
-  const [quotas, setQuotas] = useState<Quota[]>(DEFAULT_QUOTAS);
+  const [quotas, setQuotas] = useState<Quota[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -49,11 +51,10 @@ const ResourceUsageQuotas: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/usage/quotas');
-      if (res.data?.quotas && res.data.quotas.length > 0) {
-        setQuotas(res.data.quotas);
-      }
-    } catch {
-      setQuotas(DEFAULT_QUOTAS);
+      setQuotas(res.data?.quotas || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load quotas.'));
+      setQuotas([]);
     } finally {
       setLoading(false);
     }
@@ -63,31 +64,27 @@ const ResourceUsageQuotas: React.FC = () => {
 
   const handleAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editQuota || !newLimit.trim()) return;
+    if (!editQuota || !newLimit.trim() || submitting) return;
+    const limit = Number(newLimit);
+    if (!Number.isFinite(limit) || limit < 0) {
+      setError('A quota limit must be a number, zero or above.');
+      return;
+    }
+    const quota = editQuota;
     setSubmitting(true);
+    setError('');
     try {
-      const res = await apiClient.patch(`/api/usage/quotas/${editQuota.id}`, { limitValue: Number(newLimit) });
-      if (res.data?.quota) {
-        setQuotas(prev => prev.map(q => q.id === editQuota.id ? res.data.quota : q));
-      } else {
-        // Fallback local update
-        const lim = Number(newLimit);
-        const pct = lim > 0 ? (editQuota.used / lim) * 100 : 0;
-        const status = pct >= 100 ? 'Over' : pct >= 80 ? 'Warning' : 'Under';
-        setQuotas(prev => prev.map(q => q.id === editQuota.id ? { ...q, limitValue: lim, status } : q));
-      }
-      setNotice(`Quota for ${editQuota.resourceType} updated to ${newLimit}.`);
-    } catch {
-      // Fallback local
-      const lim = Number(newLimit);
-      const pct = lim > 0 ? (editQuota.used / lim) * 100 : 0;
-      const status = pct >= 100 ? 'Over' : pct >= 80 ? 'Warning' : 'Under';
-      setQuotas(prev => prev.map(q => q.id === editQuota.id ? { ...q, limitValue: lim, status } : q));
-      setNotice(`Quota for ${editQuota.resourceType} updated locally.`);
-    } finally {
+      await apiClient.patch(`/api/usage/quotas/${quota.id}`, { limitValue: limit });
       setModalOpen(false);
       setEditQuota(null);
       setNewLimit('');
+      setNotice(`Quota for ${quota.resourceType} updated to ${limit}.`);
+      // The breach status is derived server-side from usage against the new
+      // limit. Reload rather than recompute it here and risk disagreeing.
+      await loadQuotas();
+    } catch (err) {
+      setError(apiError(err, 'Could not update the quota.'));
+    } finally {
       setSubmitting(false);
     }
   };

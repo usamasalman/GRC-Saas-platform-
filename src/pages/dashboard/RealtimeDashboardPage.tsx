@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import { apiError } from '../iam/iamStyles';
 
 interface RealtimeDashboardProps {
   account: any;
@@ -17,10 +18,12 @@ interface RealtimeDashboardProps {
 interface DashboardMetrics {
   totalTenants: number;
   activeSubscriptions: number;
-  arrAmount: string;
-  tenantChurnPct: string;
-  uptimePercent: number;
-  securityScore: number;
+  // Null where the platform does not compute the figure. Showing a number
+  // it cannot derive is how this page carried a literal ARR for months.
+  arrAmount: string | null;
+  tenantChurnPct: string | null;
+  uptimePercent: number | null;
+  securityScore: number | null;
   tenants: any[];
   attentionItems: any[];
   readinessPhases: any[];
@@ -30,6 +33,7 @@ interface DashboardMetrics {
 const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNavigate }) => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchLiveDashboardData = useCallback(async () => {
     setRefreshing(true);
@@ -48,71 +52,35 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
       const brd = brdRes.status === 'fulfilled' ? brdRes.value.data : {};
       const docsData = docRes.status === 'fulfilled' ? docRes.value.data : {};
 
-      const liveTenants = tenantsData.tenants || tenantsData.data || [
-        { name: 'Al Noor Holding Group', plan: 'Enterprise Intelligence · 8 entities · 21 branches', status: 'Active' },
-        { name: 'OmniOps', plan: 'Assurance · 1 entity · 4 branches', status: 'Active' },
-        { name: 'Hayat National Hospitals', plan: 'Professional · 1 entity · 2 branches', status: 'Active' },
-        { name: 'Saudi Real Estate Infrastructure Co.', plan: 'Professional · 1 entity · 1 branch', status: 'Trial' },
-      ];
-
-      const liveDocs = docsData.documents || docsData.data || [
-        { id: 'DOC-1', code: 'POL-SEC-001', title: 'Enterprise Information Security Policy', status: 'PUBLISHED', version: '1.0' },
-        { id: 'DOC-2', code: 'PRO-ACC-014', title: 'User Access Management Procedure', status: 'IN_REVIEW', version: '2.1' },
-        { id: 'DOC-3', code: 'POL-DP-007', title: 'Personal Data Protection Policy', status: 'PUBLISHED', version: '2.0' },
-      ];
+      // Whatever the endpoints returned, and nothing else. Every figure below
+      // used to have an invented fallback: four named customer organisations, an
+      // ARR of "SAR 6.42M", churn of "1.2%", a security score of 98 and four
+      // attention items that no query produced. A platform operator could not
+      // tell a real estate from a demo, and the invented one always looked
+      // healthy.
+      const liveTenants = tenantsData.tenants || tenantsData.data || [];
+      const liveDocs = docsData.documents || docsData.data || [];
 
       setMetrics({
-        totalTenants: liveTenants.length || 84,
-        activeSubscriptions: liveTenants.filter((t: any) => t.status !== 'Trial').length || 81,
-        arrAmount: 'SAR 6.42M',
-        tenantChurnPct: '1.2%',
-        uptimePercent: health.uptimePercent || 99.98,
-        securityScore: sec.securityScore || 98,
+        totalTenants: liveTenants.length,
+        activeSubscriptions: liveTenants.filter((t: any) => t.status !== 'Trial').length,
+        // Commercial figures are not computed anywhere in this platform. Showing
+        // a number here would be inventing one.
+        arrAmount: null,
+        tenantChurnPct: null,
+        uptimePercent: health.uptimePercent ?? null,
+        securityScore: sec.securityScore ?? null,
         tenants: liveTenants.slice(0, 4),
-        attentionItems: [
-          { title: 'Two SSO certificates expire', cat: 'Identity · 12 days', badge: 'High', type: 'red' },
-          { title: 'Three tenants near quota', cat: 'Usage · This week', badge: 'Medium', type: 'amber' },
-          { title: 'One connector token failed', cat: 'Integration · 28 min', badge: 'High', type: 'red' },
-          { title: 'Quarterly restore test due', cat: 'Resilience · 07 Aug', badge: 'Medium', type: 'amber' },
-        ],
-        readinessPhases: [
-          { name: 'Commercial Baseline', pct: brd.compliancePercentage || 92 },
-          { name: 'Trust Foundation', pct: 76 },
-          { name: 'Saudi Usability', pct: 48 },
-          { name: 'Multi-Entity Governance', pct: 31 },
-          { name: 'Ecosystem Scale', pct: 18 },
-        ],
+        // Derived from real signals or not shown at all.
+        attentionItems: [],
+        readinessPhases: brd.compliancePercentage != null
+          ? [{ name: 'Commercial Baseline', pct: brd.compliancePercentage }]
+          : [],
         recentDocuments: liveDocs.slice(0, 3),
       });
-    } catch {
-      setMetrics({
-        totalTenants: 84,
-        activeSubscriptions: 81,
-        arrAmount: 'SAR 6.42M',
-        tenantChurnPct: '1.2%',
-        uptimePercent: 99.98,
-        securityScore: 98,
-        tenants: [
-          { name: 'Al Noor Holding Group', plan: 'Enterprise Intelligence · 8 entities · 21 branches', status: 'Active' },
-          { name: 'OmniOps', plan: 'Assurance · 1 entity · 4 branches', status: 'Active' },
-          { name: 'Hayat National Hospitals', plan: 'Professional · 1 entity · 2 branches', status: 'Active' },
-          { name: 'Saudi Real Estate Infrastructure Co.', plan: 'Professional · 1 entity · 1 branch', status: 'Trial' },
-        ],
-        attentionItems: [
-          { title: 'Two SSO certificates expire', cat: 'Identity · 12 days', badge: 'High', type: 'red' },
-          { title: 'Three tenants near quota', cat: 'Usage · This week', badge: 'Medium', type: 'amber' },
-          { title: 'One connector token failed', cat: 'Integration · 28 min', badge: 'High', type: 'red' },
-          { title: 'Quarterly restore test due', cat: 'Resilience · 07 Aug', badge: 'Medium', type: 'amber' },
-        ],
-        readinessPhases: [
-          { name: 'Commercial Baseline', pct: 92 },
-          { name: 'Trust Foundation', pct: 76 },
-          { name: 'Saudi Usability', pct: 48 },
-          { name: 'Multi-Entity Governance', pct: 31 },
-          { name: 'Ecosystem Scale', pct: 18 },
-        ],
-        recentDocuments: [],
-      });
+    } catch (err) {
+      setError(apiError(err, 'Could not load the platform overview.'));
+      setMetrics(null);
     } finally {
       setRefreshing(false);
     }
@@ -168,7 +136,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
         </div>
         <div className="banner-metric">
           <strong style={{ fontSize: '34px', display: 'block', color: 'var(--on-dark-success)', fontWeight: 900, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {metrics?.uptimePercent || 99.98}%
+            {metrics?.uptimePercent != null ? `${metrics.uptimePercent}%` : '—'}
           </strong>
           <span style={{ fontSize: '10px', color: 'var(--on-dark-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             30-day platform availability
@@ -211,7 +179,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon violet">¤</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.arrAmount || 'SAR 6.42M'}</div>
+          <div className="kpi-value">{metrics?.arrAmount ?? '—'}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             ANNUAL RECURRING REVENUE
           </div>
@@ -225,7 +193,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon amber">↘</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.tenantChurnPct || '1.2%'}</div>
+          <div className="kpi-value">{metrics?.tenantChurnPct ?? '—'}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             TENANT CHURN
           </div>
@@ -425,6 +393,12 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
       </div>
 
       {/* Section 4 Cards */}
+      {error && (
+        <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: 10, borderRadius: 6, marginBottom: 14, fontSize: 12.5 }}>
+          {error}
+        </div>
+      )}
+
       <div className="grid four" style={{ marginTop: '16px' }}>
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('itsm')}>
           <div className="kpi-icon blue" style={{ marginBottom: '10px' }}>?</div>

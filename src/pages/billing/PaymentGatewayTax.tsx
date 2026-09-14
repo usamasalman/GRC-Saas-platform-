@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, apiError } from '../iam/iamStyles';
 
 interface GatewayConfig {
   provider: string;
@@ -14,20 +14,22 @@ interface GatewayConfig {
   status: string;
 }
 
-const DEFAULT_CONFIG: GatewayConfig = {
-  provider: 'Saudi Payment Gateway (Tokenized)',
-  environment: 'Production (OCI Riyadh)',
-  vatRatePercent: 15,
-  currency: 'SAR',
-  threeDSecureRequired: true,
-  autoRetryDays: 3,
-  invoiceSequencePrefix: 'INV-2026-',
-  zatcaPhase2Enabled: true,
-  status: 'Healthy'
-};
-
+/**
+ * Payment gateway and tax configuration.
+ *
+ * This screen used to show a hardcoded configuration -- provider "Saudi Payment
+ * Gateway (Tokenized)", environment "Production (OCI Riyadh)", ZATCA phase 2
+ * enabled, status "Healthy" -- whenever the API could not be read. An operator
+ * had no way to tell a live configuration from an invented one, and the invented
+ * one always said everything was fine.
+ *
+ * Saving was the same shape: the refusal was swallowed and the form's values
+ * written into local state with "configuration saved". Tax rate and 3-D Secure
+ * are settlement controls; reporting them saved when they were rejected is the
+ * worst available outcome.
+ */
 const PaymentGatewayTax: React.FC = () => {
-  const [config, setConfig] = useState<GatewayConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<GatewayConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -50,8 +52,9 @@ const PaymentGatewayTax: React.FC = () => {
         setThreeDSecure(cfg.threeDSecureRequired);
         setRetryDays(cfg.autoRetryDays);
       }
-    } catch {
-      setConfig(DEFAULT_CONFIG);
+    } catch (err) {
+      setError(apiError(err, 'Could not load the gateway configuration.'));
+      setConfig(null);
     } finally {
       setLoading(false);
     }
@@ -64,22 +67,19 @@ const PaymentGatewayTax: React.FC = () => {
   const handleUpdateConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setUpdating(true);
+    setError('');
     try {
       await apiClient.patch('/api/billing/gateway-config', {
         vatRatePercent: vatRate,
         threeDSecureRequired: threeDSecure,
-        autoRetryDays: retryDays
+        autoRetryDays: retryDays,
       });
-    } catch {
-      // Fallback local update
-    } finally {
-      setConfig(prev => ({
-        ...prev,
-        vatRatePercent: vatRate,
-        threeDSecureRequired: threeDSecure,
-        autoRetryDays: retryDays
-      }));
       setNotice('Payment gateway configuration saved.');
+      // Re-read rather than assume the write landed as sent.
+      await loadConfig();
+    } catch (err) {
+      setError(apiError(err, 'Could not save the configuration.'));
+    } finally {
       setUpdating(false);
     }
   };
@@ -96,11 +96,17 @@ const PaymentGatewayTax: React.FC = () => {
         <button onClick={loadConfig} style={ghostBtn}>↻ Refresh Configuration</button>
       </div>
 
+      {/* Read from the configuration the server returned. The previous version
+          hardcoded "Healthy (Active)" and "ECDSA Cleared", so the screen
+          asserted the gateway was up and invoices were cryptographically
+          cleared regardless of what was true. */}
       <StatStrip items={[
-        ['Gateway Status', <span style={{ color: 'var(--success)' }}>Healthy (Active)</span>],
-        ['Hosting Region', 'OCI Riyadh (KSA)'],
-        ['Saudi VAT Rate', `${vatRate}%`],
-        ['ZATCA Phase 2', 'ECDSA Cleared'],
+        ['Gateway status', config
+          ? <span style={{ color: config.status === 'Healthy' ? 'var(--success)' : 'var(--warning)' }}>{config.status}</span>
+          : '—'],
+        ['Environment', config?.environment || '—'],
+        ['VAT rate', config ? `${config.vatRatePercent}%` : '—'],
+        ['Currency', config?.currency || '—'],
       ]} />
 
       {error && <div style={S.error}>{error}</div>}
@@ -160,11 +166,22 @@ const PaymentGatewayTax: React.FC = () => {
             <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 6, border: '1px solid var(--line)', marginBottom: 12, fontSize: 12, color: 'var(--ink-body)' }}>
               <div>• Environment: <strong style={{ color: 'var(--success)' }}>{config.environment}</strong></div>
               <div>• Sequence Prefix: <strong style={{ color: 'var(--info)' }}>{config.invoiceSequencePrefix}</strong></div>
-              <div>• Cryptographic Algorithm: <strong style={{ color: 'var(--info)' }}>ECDSA secp256k1</strong></div>
-              <div>• Data Residency: <strong style={{ color: 'var(--success)' }}>Oracle Cloud Infrastructure — Riyadh</strong></div>
+              <div>• ZATCA phase 2: <strong style={{ color: config.zatcaPhase2Enabled ? 'var(--success)' : 'var(--ink-muted)' }}>
+                {config.zatcaPhase2Enabled ? 'Enabled' : 'Not enabled'}
+              </strong></div>
             </div>
-            <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.5 }}>
-              All generated invoices automatically embed ZATCA Phase 2 XML payload structure, TLV Base64 QR code data, and cryptographic signature hashes.
+            {/* Said plainly, because the previous copy claimed the opposite.
+                billingController.createInvoice builds the hash as
+                `SHA256-${Date.now().toString(36)}` and the QR as base64 of a
+                pipe-delimited string — the code's own comment calls it a mock.
+                There is no XML payload, no TLV encoding, no ECDSA signature and
+                no clearing request. Presenting that as compliance proof is the
+                sort of claim a tax authority tests. */}
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--warning)', lineHeight: 1.55 }}>
+              Invoices currently carry a placeholder reference, not a cleared ZATCA Phase 2
+              document. No XML payload is generated, no TLV QR is encoded, nothing is signed and
+              nothing is submitted for clearing. Do not rely on these invoices for tax filing
+              until a real integration is in place.
             </p>
           </div>
         </div>

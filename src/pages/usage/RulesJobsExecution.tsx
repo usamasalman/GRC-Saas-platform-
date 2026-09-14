@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface AutomationExecution {
   id: string;
@@ -29,15 +29,15 @@ interface Rule {
   executions?: AutomationExecution[];
 }
 
-const now = Date.now();
-const DEFAULT_RULES: Rule[] = [
-  { id: 'R-01', tenantId: 'T1', name: 'Daily Compliance Sync', description: 'Pull NCA ECC updates and sync control mappings to tenant standards library.', triggerType: 'Scheduled', triggerConfig: '0 2 * * *', actionConfig: '{}', status: 'Active', lastRunAt: new Date(now - 86400000).toISOString(), nextRunAt: new Date(now + 86400000).toISOString(), runCount: 142, failCount: 2, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group' }, executions: [] },
-  { id: 'R-02', tenantId: 'T1', name: 'SLA Breach Escalation', description: 'Monitor open tickets approaching SLA breach and escalate to manager.', triggerType: 'Event', triggerConfig: 'ticket.sla_warning', actionConfig: '{}', status: 'Active', lastRunAt: new Date(now - 3600000).toISOString(), nextRunAt: null, runCount: 87, failCount: 0, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group' }, executions: [] },
-  { id: 'R-03', tenantId: 'T1', name: 'Weekly Risk Report', description: 'Generate consolidated risk report PDF and email to risk committee.', triggerType: 'Scheduled', triggerConfig: '0 8 * * 1', actionConfig: '{}', status: 'Active', lastRunAt: new Date(now - 604800000).toISOString(), nextRunAt: new Date(now + 604800000).toISOString(), runCount: 26, failCount: 1, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group' }, executions: [] },
-  { id: 'R-04', tenantId: 'T1', name: 'User Deprovisioning', description: 'Auto-disable users 90 days after last login and revoke API keys.', triggerType: 'Scheduled', triggerConfig: '0 0 * * *', actionConfig: '{}', status: 'Paused', lastRunAt: new Date(now - 172800000).toISOString(), nextRunAt: null, runCount: 8, failCount: 0, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group' }, executions: [] },
-  { id: 'R-05', tenantId: 'T1', name: 'Evidence Collection Reminder', description: 'Send reminder notifications for controls with evidence due within 7 days.', triggerType: 'Scheduled', triggerConfig: '0 9 * * *', actionConfig: '{}', status: 'Active', lastRunAt: new Date(now - 86400000).toISOString(), nextRunAt: new Date(now + 86400000).toISOString(), runCount: 54, failCount: 3, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group' }, executions: [] },
-];
-
+/**
+ * Automation rules, as the server has them.
+ *
+ * Rules were hardcoded here, complete with run counts and failure counts, and
+ * shown on any failure to read. Toggling reported "toggled locally", running
+ * one reported "execution triggered (offline mode)", and creating one appended
+ * a rule that existed only in the browser. An operator could pause a rule that
+ * kept running, or believe an automation had fired when nothing executed.
+ */
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Active:   pill('var(--success)', 'var(--success-line)'),
   Paused:   pill('var(--warning)', 'var(--warning-line)'),
@@ -58,7 +58,7 @@ const fmtDate = (d: string | null) => {
 };
 
 const RulesJobsExecution: React.FC = () => {
-  const [rules, setRules] = useState<Rule[]>(DEFAULT_RULES);
+  const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -79,11 +79,10 @@ const RulesJobsExecution: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/usage/rules');
-      if (res.data?.rules && res.data.rules.length > 0) {
-        setRules(res.data.rules);
-      }
-    } catch {
-      setRules(DEFAULT_RULES);
+      setRules(res.data?.rules || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load automation rules.'));
+      setRules([]);
     } finally {
       setLoading(false);
     }
@@ -93,19 +92,13 @@ const RulesJobsExecution: React.FC = () => {
 
   const handleToggle = async (rule: Rule) => {
     setTogglingId(rule.id);
+    setError('');
     try {
-      const res = await apiClient.patch(`/api/usage/rules/${rule.id}/toggle`);
-      if (res.data?.rule) {
-        setRules(prev => prev.map(r => r.id === rule.id ? { ...r, ...res.data.rule, executions: r.executions } : r));
-      } else {
-        const next = rule.status === 'Active' ? 'Paused' : 'Active';
-        setRules(prev => prev.map(r => r.id === rule.id ? { ...r, status: next } : r));
-      }
+      await apiClient.patch(`/api/usage/rules/${rule.id}/toggle`);
       setNotice(`"${rule.name}" ${rule.status === 'Active' ? 'paused' : 'resumed'}.`);
-    } catch {
-      const next = rule.status === 'Active' ? 'Paused' : 'Active';
-      setRules(prev => prev.map(r => r.id === rule.id ? { ...r, status: next } : r));
-      setNotice(`"${rule.name}" toggled locally.`);
+      await loadRules();
+    } catch (err) {
+      setError(apiError(err, `Could not change the state of "${rule.name}".`));
     } finally {
       setTogglingId(null);
     }
@@ -113,21 +106,16 @@ const RulesJobsExecution: React.FC = () => {
 
   const handleRunNow = async (rule: Rule) => {
     setRunningId(rule.id);
+    setError('');
     try {
       const res = await apiClient.post(`/api/usage/rules/${rule.id}/run`);
-      if (res.data?.execution) {
-        const exec = res.data.execution;
-        setRules(prev => prev.map(r => r.id === rule.id ? {
-          ...r,
-          lastRunAt: new Date().toISOString(),
-          runCount: r.runCount + 1,
-          failCount: exec.status === 'Failed' ? r.failCount + 1 : r.failCount,
-          executions: [exec, ...(r.executions || [])].slice(0, 10)
-        } : r));
-        setNotice(`"${rule.name}" executed — ${exec.status}.`);
-      }
-    } catch {
-      setNotice(`"${rule.name}" execution triggered (offline mode).`);
+      // Report the execution's own verdict, including a failure.
+      setNotice(res.data?.execution?.status
+        ? `"${rule.name}" ran — ${res.data.execution.status}.`
+        : `"${rule.name}" ran.`);
+      await loadRules();
+    } catch (err) {
+      setError(apiError(err, `Could not run "${rule.name}".`));
     } finally {
       setRunningId(null);
     }
@@ -135,43 +123,23 @@ const RulesJobsExecution: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) return;
+    if (!formName.trim() || submitting) return;
     setSubmitting(true);
+    setError('');
     try {
-      const res = await apiClient.post('/api/usage/rules', {
+      await apiClient.post('/api/usage/rules', {
         name: formName.trim(),
         description: formDesc.trim(),
         triggerType: formTrigger,
         triggerConfig: formConfig.trim() || null,
       });
-      if (res.data?.rule) {
-        setRules(prev => [{ ...res.data.rule, executions: [] }, ...prev]);
-      } else {
-        const local: Rule = {
-          id: `R-${Date.now().toString().slice(-5)}`,
-          tenantId: '', name: formName.trim(), description: formDesc.trim(),
-          triggerType: formTrigger, triggerConfig: formConfig.trim() || null,
-          actionConfig: '{}', status: 'Active', lastRunAt: null,
-          nextRunAt: formTrigger === 'Scheduled' ? new Date(Date.now() + 3600000).toISOString() : null,
-          runCount: 0, failCount: 0, executions: []
-        };
-        setRules(prev => [local, ...prev]);
-      }
       setNotice(`Rule "${formName.trim()}" created.`);
-    } catch {
-      const local: Rule = {
-        id: `R-${Date.now().toString().slice(-5)}`,
-        tenantId: '', name: formName.trim(), description: formDesc.trim(),
-        triggerType: formTrigger, triggerConfig: formConfig.trim() || null,
-        actionConfig: '{}', status: 'Active', lastRunAt: null,
-        nextRunAt: formTrigger === 'Scheduled' ? new Date(Date.now() + 3600000).toISOString() : null,
-        runCount: 0, failCount: 0, executions: []
-      };
-      setRules(prev => [local, ...prev]);
-      setNotice(`Rule "${formName.trim()}" created locally.`);
-    } finally {
       setModalOpen(false);
       setFormName(''); setFormDesc(''); setFormTrigger('Scheduled'); setFormConfig('');
+      await loadRules();
+    } catch (err) {
+      setError(apiError(err, 'Could not create the rule.'));
+    } finally {
       setSubmitting(false);
     }
   };

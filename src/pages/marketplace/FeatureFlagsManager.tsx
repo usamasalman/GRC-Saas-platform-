@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface FeatureFlag {
   id: string;
@@ -14,15 +14,19 @@ interface FeatureFlag {
   tenantOverrides: string[];
 }
 
-const DEFAULT_FLAGS: FeatureFlag[] = [
-  { id: 'FLAG-01', key: 'ENABLE_ZATCA_PHASE2_SIGNING', description: 'Enforces UBL 2.1 e-invoice cryptographic signing with ECDSA secp256k1.', status: 'Enabled', owner: 'Platform Security', scope: 'Global Platform', expiryDate: '2026-12-31', rolloutPercentage: 100, tenantOverrides: [] },
-  { id: 'FLAG-02', key: 'ENABLE_AI_POLICY_ASSISTANT_BETA', description: 'Enables LLM RAG interface for regulatory standards querying.', status: 'Beta', owner: 'Product Dev', scope: 'Enterprise Tenants', expiryDate: '2026-10-15', rolloutPercentage: 50, tenantOverrides: ['TEN-01'] },
-  { id: 'FLAG-03', key: 'ENABLE_WISDOM_EYE_SCANNER', description: 'Activates external attack surface management & domain reconnaissance.', status: 'Enabled', owner: 'SecOps', scope: 'Holding & Multibranch', expiryDate: '2027-01-01', rolloutPercentage: 100, tenantOverrides: [] },
-  { id: 'FLAG-04', key: 'ENABLE_AUTO_RECONCILIATION_V2', description: 'Automated bank wire transfer reconciliation against pending invoices.', status: 'Disabled', owner: 'Finance Ops', scope: 'SaaS Platform', expiryDate: '2026-09-30', rolloutPercentage: 0, tenantOverrides: [] }
-];
-
+/**
+ * Feature flags, as the server has them.
+ *
+ * Four flags were hardcoded here, including one claiming ECDSA e-invoice
+ * signing was enabled platform-wide. They were shown whenever the API returned
+ * an empty list or failed, so an operator could read flags that did not exist
+ * and believe features were on that were never built.
+ *
+ * Toggling and creating both swallowed the refusal and updated local state, so
+ * a flag read as Enabled for the operator while remaining off for every tenant.
+ */
 const FeatureFlagsManager: React.FC = () => {
-  const [flags, setFlags] = useState<FeatureFlag[]>(DEFAULT_FLAGS);
+  const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -41,11 +45,10 @@ const FeatureFlagsManager: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/marketplace/feature-flags');
-      if (res.data?.flags && res.data.flags.length > 0) {
-        setFlags(res.data.flags);
-      }
-    } catch {
-      setFlags(DEFAULT_FLAGS);
+      setFlags(res.data?.flags || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load feature flags.'));
+      setFlags([]);
     } finally {
       setLoading(false);
     }
@@ -57,48 +60,40 @@ const FeatureFlagsManager: React.FC = () => {
 
   const handleToggle = async (flag: FeatureFlag) => {
     setTogglingId(flag.id);
-    const nextStatus = flag.status === 'Enabled' ? 'Disabled' : 'Enabled';
+    setError('');
     try {
       await apiClient.patch(`/api/marketplace/feature-flags/${flag.id}/toggle`);
-    } catch {
-      // Fallback local update
+      // A flag governs what other people can do. Read back the state the server
+      // actually holds rather than assuming the toggle landed.
+      await loadFlags();
+      setNotice(`Feature flag "${flag.key}" updated.`);
+    } catch (err) {
+      setError(apiError(err, 'Could not toggle the flag.'));
     } finally {
-      setFlags(prev => prev.map(f => f.id === flag.id ? { ...f, status: nextStatus } : f));
-      setNotice(`Feature flag "${flag.key}" toggled to ${nextStatus}.`);
       setTogglingId(null);
     }
   };
 
   const handleCreateFlag = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!flagKey.trim()) return;
+    if (!flagKey.trim() || submitting) return;
     setSubmitting(true);
-    const newFlag: FeatureFlag = {
-      id: `FLAG-${Date.now().toString().slice(-4)}`,
-      key: flagKey.trim().toUpperCase(),
-      description: flagDesc.trim(),
-      status: 'Disabled',
-      owner: flagOwner,
-      scope: flagScope,
-      expiryDate: '2026-12-31',
-      rolloutPercentage: 0,
-      tenantOverrides: []
-    };
+    setError('');
     try {
       await apiClient.post('/api/marketplace/feature-flags', {
         key: flagKey.trim().toUpperCase(),
         description: flagDesc.trim(),
         scope: flagScope,
-        owner: flagOwner
+        owner: flagOwner,
       });
-    } catch {
-      // Fallback local update
-    } finally {
-      setFlags(prev => [newFlag, ...prev]);
-      setNotice(`Feature flag "${newFlag.key}" registered.`);
+      setNotice(`Feature flag "${flagKey.trim().toUpperCase()}" registered.`);
       setFlagKey('');
       setFlagDesc('');
       setModalOpen(false);
+      await loadFlags();
+    } catch (err) {
+      setError(apiError(err, 'Could not register the flag.'));
+    } finally {
       setSubmitting(false);
     }
   };

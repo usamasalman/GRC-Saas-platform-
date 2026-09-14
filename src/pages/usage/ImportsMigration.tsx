@@ -1,7 +1,7 @@
 import Icon from '../../components/Icon';
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, primaryBtn, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface ImportJob {
   id: string;
@@ -19,15 +19,16 @@ interface ImportJob {
   tenant?: { id: string; name: string; type: string };
 }
 
-const n = Date.now();
-const DEFAULT_IMPORTS: ImportJob[] = [
-  { id: 'IMP-01', tenantId: 'T1', importType: 'CsvUpload', source: 'users_export_2026.csv', targetDesc: 'User Directory', totalRecords: 245, processedRecords: 245, failedRecords: 0, status: 'Completed', errorLog: null, startedAt: new Date(n - 7200000).toISOString(), completedAt: new Date(n - 6800000).toISOString(), tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'IMP-02', tenantId: 'T1', importType: 'ApiSync', source: 'SAP GRC API /risks', targetDesc: 'Risk Register', totalRecords: 128, processedRecords: 128, failedRecords: 3, status: 'Partial', errorLog: '3 records skipped: duplicate ref IDs (RSK-045, RSK-112, RSK-089)', startedAt: new Date(n - 86400000).toISOString(), completedAt: new Date(n - 85000000).toISOString(), tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'IMP-03', tenantId: 'T1', importType: 'TenantMigration', source: 'Legacy GRC v2.1 Export', targetDesc: 'Al-Rajhi → New Tenant', totalRecords: 1420, processedRecords: 890, failedRecords: 0, status: 'Processing', errorLog: null, startedAt: new Date(n - 3600000).toISOString(), completedAt: null, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'IMP-04', tenantId: 'T1', importType: 'CsvUpload', source: 'controls_iso27001_baseline.csv', targetDesc: 'Control Library', totalRecords: 114, processedRecords: 0, failedRecords: 0, status: 'Queued', errorLog: null, startedAt: new Date(n - 600000).toISOString(), completedAt: null, tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-  { id: 'IMP-05', tenantId: 'T1', importType: 'ApiSync', source: 'Qualys VMDR API', targetDesc: 'ASM Asset Inventory', totalRecords: 342, processedRecords: 342, failedRecords: 18, status: 'Failed', errorLog: 'API authentication failed after 342 records — token expired mid-sync. 18 records had schema validation errors.', startedAt: new Date(n - 172800000).toISOString(), completedAt: new Date(n - 172000000).toISOString(), tenant: { id: 'T1', name: 'Al-Rajhi Holding Group', type: 'Holding Parent' } },
-];
-
+/**
+ * Import and migration jobs, as the server has them.
+ *
+ * Five jobs were hardcoded here, all belonging to "Al-Rajhi Holding Group", and
+ * shown on any failure. Retrying a failed import reported "retry triggered
+ * locally" and flipped the row to Processing without the server; creating one
+ * appended a queued job that existed only in the browser. Both read as success,
+ * so an operator could believe a migration was running when nothing had been
+ * queued.
+ */
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Queued:     pill('var(--ink-muted)', 'var(--line)'),
   Processing: pill('var(--info)', 'var(--info-line)'),
@@ -49,7 +50,7 @@ const fmtDate = (d: string | null) => {
 };
 
 const ImportsMigration: React.FC = () => {
-  const [imports, setImports] = useState<ImportJob[]>(DEFAULT_IMPORTS);
+  const [imports, setImports] = useState<ImportJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -71,11 +72,10 @@ const ImportsMigration: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/usage/imports');
-      if (res.data?.imports && res.data.imports.length > 0) {
-        setImports(res.data.imports);
-      }
-    } catch {
-      setImports(DEFAULT_IMPORTS);
+      setImports(res.data?.imports || []);
+    } catch (err) {
+      setError(apiError(err, 'Could not load import jobs.'));
+      setImports([]);
     } finally {
       setLoading(false);
     }
@@ -85,17 +85,13 @@ const ImportsMigration: React.FC = () => {
 
   const handleRetry = async (job: ImportJob) => {
     setRetryingId(job.id);
+    setError('');
     try {
-      const res = await apiClient.post(`/api/usage/imports/${job.id}/retry`);
-      if (res.data?.import) {
-        setImports(prev => prev.map(j => j.id === job.id ? { ...j, ...res.data.import } : j));
-      } else {
-        setImports(prev => prev.map(j => j.id === job.id ? { ...j, status: 'Processing', errorLog: null, failedRecords: 0 } : j));
-      }
-      setNotice(`Import "${job.source}" retry initiated.`);
-    } catch {
-      setImports(prev => prev.map(j => j.id === job.id ? { ...j, status: 'Processing', errorLog: null } : j));
-      setNotice(`Retry triggered locally for "${job.source}".`);
+      await apiClient.post(`/api/usage/imports/${job.id}/retry`);
+      setNotice(`Retry queued for "${job.source}".`);
+      await loadImports();
+    } catch (err) {
+      setError(apiError(err, `Could not retry "${job.source}".`));
     } finally {
       setRetryingId(null);
     }
@@ -103,41 +99,23 @@ const ImportsMigration: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSource.trim()) return;
+    if (!formSource.trim() || submitting) return;
     setSubmitting(true);
+    setError('');
     try {
-      const res = await apiClient.post('/api/usage/imports', {
+      await apiClient.post('/api/usage/imports', {
         importType: formType,
         source: formSource.trim(),
         targetDesc: formTarget.trim(),
         totalRecords: Number(formRecords) || 0,
       });
-      if (res.data?.import) {
-        setImports(prev => [res.data.import, ...prev]);
-      } else {
-        const local: ImportJob = {
-          id: `IMP-${Date.now().toString().slice(-5)}`,
-          tenantId: '', importType: formType, source: formSource.trim(),
-          targetDesc: formTarget.trim(), totalRecords: Number(formRecords) || 0,
-          processedRecords: 0, failedRecords: 0, status: 'Queued',
-          errorLog: null, startedAt: new Date().toISOString(), completedAt: null
-        };
-        setImports(prev => [local, ...prev]);
-      }
       setNotice(`Import job for "${formSource.trim()}" created.`);
-    } catch {
-      const local: ImportJob = {
-        id: `IMP-${Date.now().toString().slice(-5)}`,
-        tenantId: '', importType: formType, source: formSource.trim(),
-        targetDesc: formTarget.trim(), totalRecords: Number(formRecords) || 0,
-        processedRecords: 0, failedRecords: 0, status: 'Queued',
-        errorLog: null, startedAt: new Date().toISOString(), completedAt: null
-      };
-      setImports(prev => [local, ...prev]);
-      setNotice(`Import job created locally.`);
-    } finally {
       setModalOpen(false);
       setFormType('CsvUpload'); setFormSource(''); setFormTarget(''); setFormRecords('');
+      await loadImports();
+    } catch (err) {
+      setError(apiError(err, 'Could not create the import job.'));
+    } finally {
       setSubmitting(false);
     }
   };

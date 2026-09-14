@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
-import { S, StatStrip, ghostBtn, pill } from '../iam/iamStyles';
+import { S, StatStrip, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface ServiceStatus {
   name: string;
@@ -30,26 +30,22 @@ interface HealthData {
   jobs: BackgroundJob[];
 }
 
-const DEFAULT_SERVICES: ServiceStatus[] = [
-  { name: 'Authentication Service (/api/auth)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-  { name: 'Document Management Engine (/api/documents)', status: 'Healthy', latencyMs: 4, uptimePercent: 99.98 },
-  { name: 'SoD & Capability Engine (/api/iam)', status: 'Healthy', latencyMs: 1, uptimePercent: 100.0 },
-  { name: 'ITSM & Workflow Engine (/api/itsm)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.97 },
-  { name: 'GRC Core & Risk Register (/api/grc)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.99 },
-  { name: 'Modules & Entitlements (/api/marketplace)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-  { name: 'Subscriptions & Billing (/api/billing)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.95 },
-  { name: 'Usage & Automation (/api/usage)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-  { name: 'WORM Audit Log Writer (/api/audit-logs)', status: 'Healthy', latencyMs: 1, uptimePercent: 100.0 },
-];
-
-const DEFAULT_JOBS: BackgroundJob[] = [
-  { id: 'JOB-SYS-01', name: 'WORM Cryptographic Chain Audit', type: 'Cron (Hourly)', schedule: '0 * * * *', lastRun: new Date(Date.now() - 1800000).toISOString(), nextRun: new Date(Date.now() + 1800000).toISOString(), status: 'Idle', durationMs: 420 },
-  { id: 'JOB-SYS-02', name: 'SLA Breach Monitoring & Auto-Escalation', type: 'Cron (Every 5 mins)', schedule: '*/5 * * * *', lastRun: new Date(Date.now() - 120000).toISOString(), nextRun: new Date(Date.now() + 180000).toISOString(), status: 'Idle', durationMs: 180 },
-  { id: 'JOB-SYS-03', name: 'Daily Regulatory Standards Sync (NCA / ISO)', type: 'Cron (Daily 02:00)', schedule: '0 2 * * *', lastRun: new Date(Date.now() - 43200000).toISOString(), nextRun: new Date(Date.now() + 43200000).toISOString(), status: 'Idle', durationMs: 1250 },
-  { id: 'JOB-SYS-04', name: 'Evidence Expiry & Retention Reminder Worker', type: 'Cron (Daily 06:00)', schedule: '0 6 * * *', lastRun: new Date(Date.now() - 28800000).toISOString(), nextRun: new Date(Date.now() + 57600000).toISOString(), status: 'Idle', durationMs: 890 },
-  { id: 'JOB-SYS-05', name: 'ZATCA E-Invoice XML Signer & Hash Verification', type: 'Queue Worker', schedule: 'Event Driven', lastRun: new Date(Date.now() - 600000).toISOString(), nextRun: 'On Event', status: 'Idle', durationMs: 110 },
-];
-
+/**
+ * System health, as the server reports it.
+ *
+ * This page used to invert its own purpose. When the API could not be reached
+ * -- the one condition it exists to surface -- the catch block substituted a
+ * fabricated payload: systemStatus "Operational", nine services all Healthy
+ * with uptimes between 99.95% and 100%, and five background jobs idle and
+ * recently run. An operator checking whether the platform was up was told it
+ * was, *because* it was not.
+ *
+ * Several of those jobs were never built either, including a "ZATCA E-Invoice
+ * XML Signer" for an integration that does not exist.
+ *
+ * Running a job had the same shape: a refusal was reported as "executed in
+ * simulation mode", which reads as success.
+ */
 const fmtDate = (d: string) => {
   if (!d || d === 'On Event') return d;
   try {
@@ -70,20 +66,14 @@ const SystemHealthStatus: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.get('/api/system/health');
-      if (res.data?.status === 'success') {
-        setData(res.data);
+      setData(res.data?.status === 'success' ? res.data : null);
+      if (res.data?.status !== 'success') {
+        setError('The health endpoint answered, but not with a healthy status.');
       }
-    } catch {
-      // Fallback local mock data if server offline
-      setData({
-        systemStatus: 'Operational',
-        uptimeSeconds: 86400,
-        dbLatencyMs: 2,
-        activeUsersCount: 48,
-        memory: { rssMb: 128, heapTotalMb: 94, heapUsedMb: 62 },
-        services: DEFAULT_SERVICES,
-        jobs: DEFAULT_JOBS,
-      });
+    } catch (err) {
+      // Unreachable is the finding, not a reason to invent one.
+      setError(apiError(err, 'Could not reach the platform health endpoint.'));
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -96,17 +86,17 @@ const SystemHealthStatus: React.FC = () => {
     try {
       const res = await apiClient.post('/api/system/jobs/run', { jobId: job.id });
       setNotice(res.data?.message || `Job "${job.name}" triggered successfully.`);
-    } catch {
-      setNotice(`Job "${job.name}" executed in simulation mode.`);
+    } catch (err) {
+      setError(apiError(err, `Could not run "${job.name}".`));
     } finally {
       setTriggeringJobId(null);
     }
   };
 
-  const services = data?.services || DEFAULT_SERVICES;
-  const jobs = data?.jobs || DEFAULT_JOBS;
-  const dbLatency = data?.dbLatencyMs ?? 2;
-  const heapUsed = data?.memory?.heapUsedMb ?? 62;
+  const services = data?.services || [];
+  const jobs = data?.jobs || [];
+  const dbLatency = data?.dbLatencyMs;
+  const heapUsed = data?.memory?.heapUsedMb;
 
   return (
     <div style={S.page}>
@@ -126,11 +116,19 @@ const SystemHealthStatus: React.FC = () => {
       )}
       {error && <div style={S.error}>{error}</div>}
 
+      {/* Every figure comes from the response, and shows an em dash when there
+          is none. The previous version printed a literal "Operational (99.99%)"
+          in the health slot, so the page asserted the platform was up even while
+          failing to reach it. */}
       <StatStrip items={[
-        ['System Health', <span style={{ color: 'var(--success)' }}>Operational (99.99%)</span>],
-        ['Active API Services', services.length],
-        ['Database Latency', <span style={{ color: dbLatency < 5 ? 'var(--success)' : 'var(--warning)' }}>{dbLatency} ms</span>],
-        ['Memory Heap', `${heapUsed} MB`],
+        ['System health', data
+          ? <span style={{ color: data.systemStatus === 'Operational' ? 'var(--success)' : 'var(--warning)' }}>{data.systemStatus}</span>
+          : <span style={{ color: 'var(--danger)' }}>Unreachable</span>],
+        ['API services reporting', services.length],
+        ['Database latency', dbLatency == null
+          ? '—'
+          : <span style={{ color: dbLatency < 5 ? 'var(--success)' : 'var(--warning)' }}>{dbLatency} ms</span>],
+        ['Memory heap', heapUsed == null ? '—' : `${heapUsed} MB`],
       ]} />
 
       {/* Services Table */}
