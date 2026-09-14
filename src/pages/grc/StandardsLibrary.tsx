@@ -66,7 +66,7 @@ const StandardsLibrary: React.FC = () => {
         ['Frameworks', standards.length],
         ['Enabled here', <span style={{ color: enabledCount > 0 ? 'var(--success)' : 'var(--warning)' }}>{enabledCount}</span>],
         ['Clauses in library', standards.reduce((a, s) => a + s.clauseCount, 0)],
-        ['Entity enablements', standards.reduce((a, s) => a + s.enabledFor.length, 0)],
+        [scope === 'PLATFORM' ? 'Enablements platform-wide' : 'Enablements in scope', standards.reduce((a, s) => a + (s.enabledFor?.length || 0), 0)],
       ]} />
 
       {error && <div style={S.error}>{error}</div>}

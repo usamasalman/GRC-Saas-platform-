@@ -19,6 +19,13 @@ const FREQUENCIES = ['Continuous', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'S
 export const listStandards = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
+    // Every enablement row in scope comes back on this response, so for a
+    // platform caller this read discloses which frameworks every customer is
+    // assessed against. That is exactly the read auditCrossTenantRead exists to
+    // record, and it was the only cross-tenant read in this controller that did
+    // not record it -- a customer asking "who looked at our posture?" would
+    // have been told nobody.
+    await auditCrossTenantRead(scope, req.user!.id, 'grc.standards.list');
 
     const standards = await prisma.standard.findMany({
       // Platform standards (tenantId null) plus any this organisation authored.
