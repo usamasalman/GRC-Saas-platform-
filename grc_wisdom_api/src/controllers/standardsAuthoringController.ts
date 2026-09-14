@@ -228,10 +228,37 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
     if (denied) { res.status(denied.status).json(denied.body); return; }
 
     if (std._count.enablements > 0) {
+      // Name them. The refusal used to give a bare count and the instruction
+      // "disable it everywhere", which is a dead end when the entities are not
+      // all visible to the person reading it: they cannot see what to clear,
+      // and they cannot clear what they cannot see.
+      //
+      // The count itself is deliberately unscoped — an enablement outside your
+      // scope still depends on this standard, so deleting would still break it.
+      // What changes is that the message distinguishes the entities the caller
+      // can act on from the ones only a platform operator can.
+      const scope = await resolveTenantScope(req.user!);
+      const enablements = await prisma.tenantStandardEnablement.findMany({
+        where: { standardId: id },
+        select: { tenantId: true, tenant: { select: { name: true } } },
+        take: 50,
+      });
+      const visible = enablements.filter((e) => scope.tenantIds.includes(e.tenantId));
+      const hidden = enablements.length - visible.length;
+
+      const named = visible.map((e) => e.tenant?.name || e.tenantId).join(', ');
+      const parts = [
+        visible.length > 0 ? `enabled for ${named}` : null,
+        hidden > 0
+          ? `enabled for ${hidden} entit${hidden === 1 ? 'y' : 'ies'} outside your scope, which only a platform operator can disable`
+          : null,
+      ].filter(Boolean);
+
       res.status(409).json({
         status: 'error',
         code: 'STANDARD_IN_USE',
-        message: `${std.code} is enabled for ${std._count.enablements} tenant(s). Disable it everywhere before deleting, or the assessment history loses its frame of reference.`,
+        message: `${std.code} is ${parts.join('; and ')}. Disable it there first, or the assessment `
+          + 'history loses its frame of reference.',
       });
       return;
     }

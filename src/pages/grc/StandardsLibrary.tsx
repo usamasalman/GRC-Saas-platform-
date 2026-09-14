@@ -134,8 +134,14 @@ const StandardsLibrary: React.FC = () => {
             label: 'Applicability',
             type: 'select',
             options: ['Full', 'Partial', 'Not applicable'],
-            help: 'Partial means only some clauses apply here — the coverage report reads this '
-              + 'when it decides what counts as a gap.',
+            // This said the coverage report reads applicability when deciding
+            // what counts as a gap. Nothing reads it: the value is stored on the
+            // enablement row and echoed back on this screen, and the coverage
+            // report spans every standard in scope regardless. Describing a
+            // control that does not exist is worse than offering none, because
+            // it is acted on.
+            help: 'Recorded against this entity for reference. It does not yet change what the '
+              + 'coverage report counts as a gap.',
           }]}
           onSubmit={(v) => enable(enabling, v.applicability)}
           onCancel={() => setEnabling(null)}

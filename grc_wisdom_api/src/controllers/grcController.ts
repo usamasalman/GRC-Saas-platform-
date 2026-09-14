@@ -14,6 +14,21 @@ const EFFECTIVENESS = ['NotAssessed', 'Effective', 'PartiallyEffective', 'Ineffe
 const JUDGEMENTS = ['NotAssessed', 'Yes', 'Partial', 'No'];
 const FREQUENCIES = ['Continuous', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual'];
 
+/**
+ * How much of a standard applies to an entity.
+ *
+ * The dialog offers exactly these three and the server accepted any string at
+ * all, so a typo, an older client or a direct call stored a value nothing could
+ * ever interpret. The column has a default of 'Full' and no constraint, so the
+ * database would not have caught it either.
+ *
+ * Pinned against the dialog's own option list by
+ * scripts/verify/standards-enablement-test.js, because a list that drifts from
+ * the screen that feeds it is how three status-string bugs got written here
+ * before.
+ */
+const APPLICABILITY = ['Full', 'Partial', 'Not applicable'];
+
 // ─── Standards ─────────────────────────────────────────────────────────────
 
 export const listStandards = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -73,6 +88,15 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
   try {
     const { standardId, applicability, ownerId, tenantId } = req.body || {};
     if (!standardId) { res.status(400).json({ status: 'error', message: 'standardId is required' }); return; }
+
+    if (applicability != null && !APPLICABILITY.includes(String(applicability))) {
+      res.status(400).json({
+        status: 'error',
+        code: 'BAD_APPLICABILITY',
+        message: `Applicability must be one of: ${APPLICABILITY.join(', ')}.`,
+      });
+      return;
+    }
 
     const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
