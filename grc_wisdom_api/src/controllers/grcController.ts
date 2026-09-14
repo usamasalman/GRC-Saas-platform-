@@ -74,7 +74,24 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const standard = await prisma.standard.findUnique({ where: { id: standardId } });
+    // A standard you cannot see is a standard you cannot enable.
+    //
+    // This was findUnique on the id alone, so naming another organisation's
+    // private framework planted a real enablement row against it -- for the
+    // caller's own tenant, or for any tenant in their scope. Nothing surfaced
+    // it afterwards either: listStandards filters private frameworks out, so
+    // the row existed, blocked the owner from deleting their standard, and was
+    // invisible from both ends.
+    //
+    // The filter is the one listStandards already applies. A standard that is
+    // not visible answers 404 rather than 403, because telling the caller it
+    // exists but belongs to someone else is itself the leak.
+    const standard = await prisma.standard.findFirst({
+      where: {
+        id: String(standardId),
+        OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }],
+      },
+    });
     if (!standard) { res.status(404).json({ status: 'error', message: 'Standard not found' }); return; }
 
     const existing = await prisma.tenantStandardEnablement.findFirst({ where: { tenantId: target, standardId } });
@@ -139,8 +156,16 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const standard = await prisma.standard.findUnique({
-      where: { id: String(standardId) },
+    // Same visibility filter as enabling: you may only act on a framework you
+    // can see. Disabling is the less dangerous half -- it removes a row rather
+    // than creating one -- but an unfiltered lookup here would confirm the
+    // existence of another organisation's private standard by answering
+    // "not enabled" instead of "not found".
+    const standard = await prisma.standard.findFirst({
+      where: {
+        id: String(standardId),
+        OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }],
+      },
       select: { id: true, code: true },
     });
     if (!standard) {

@@ -556,17 +556,22 @@ const FrameworkAuthoring: React.FC = () => {
                         {s.isEnabledHere && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--success)' }}>enabled</span>}
                       </td>
                       <td style={{ ...S.td, textAlign: 'right' }}>
-                        {!s.isEnabledHere && <button onClick={() => enableStandard(s)} style={linkBtn('var(--brand)')}>enable</button>}
-                        {s.isOwnedHere && <button onClick={() => addClauses(s)} style={linkBtn('var(--info)')}>add clauses</button>}
-                        {s.isOwnedHere && <button onClick={() => renameStandard(s)} style={linkBtn('var(--info)')}>rename</button>}
+                        {/* isOwnedHere and isEnabledHere are facts about the
+                            record, not about the reader. Every control here was
+                            gated on those alone, so a role with no authoring
+                            duty was offered enable, rename, disable and delete
+                            and found out by pressing one. */}
+                        {can(MAY.AUTHOR_STANDARD) && !s.isEnabledHere && <button onClick={() => enableStandard(s)} style={linkBtn('var(--brand)')}>enable</button>}
+                        {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => addClauses(s)} style={linkBtn('var(--info)')}>add clauses</button>}
+                        {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => renameStandard(s)} style={linkBtn('var(--info)')}>rename</button>}
                         {/* Only when it IS enabled — offering "disable" on
                             something that is not enabled is a button that can
                             only ever return an error. */}
-                        {s.isOwnedHere && s.isEnabledHere && (
+                        {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && s.isEnabledHere && (
                           <button onClick={() => disableStandard(s)} style={linkBtn('var(--warning)')}>disable</button>
                         )}
-                        {s.isOwnedHere && <button onClick={() => removeStandard(s)} style={linkBtn('var(--danger)')}>delete</button>}
-                        {!s.isOwnedHere && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>read-only</span>}
+                        {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => removeStandard(s)} style={linkBtn('var(--danger)')}>delete</button>}
+                        {(!s.isOwnedHere || !can(MAY.AUTHOR_STANDARD)) && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>read-only</span>}
                       </td>
                     </tr>
                     {openStd === s.id && (
@@ -736,15 +741,20 @@ const FrameworkAuthoring: React.FC = () => {
                       </span>
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
-                      {!can(MAY.AUTHOR_CONTROL)
-                        ? null
-                        : c.isLibrary
-                        ? <button onClick={() => cloneControl(c)} style={linkBtn('var(--brand)')}>copy to my set</button>
-                        : <>
-                            <button onClick={() => setDialog({ kind: 'editControl', ctrl: c })} style={linkBtn('var(--ink-body)')}>edit</button>
-                            <button onClick={() => remapControl(c)} style={linkBtn('var(--info)')}>remap</button>
-                            <button onClick={() => removeControl(c)} style={linkBtn('var(--danger)')}>delete</button>
-                          </>}
+                      {/* A wrapper rather than a third arm on the ternary. The
+                          guard reads at a glance, and it is the shape the
+                          verifier can check exactly instead of by proximity. */}
+                      <Can do={MAY.AUTHOR_CONTROL}>
+                        {c.isLibrary
+                          ? <button onClick={() => cloneControl(c)} style={linkBtn('var(--brand)')}>copy to my set</button>
+                          : (
+                            <>
+                              <button onClick={() => setDialog({ kind: 'editControl', ctrl: c })} style={linkBtn('var(--ink-body)')}>edit</button>
+                              <button onClick={() => remapControl(c)} style={linkBtn('var(--info)')}>remap</button>
+                              <button onClick={() => removeControl(c)} style={linkBtn('var(--danger)')}>delete</button>
+                            </>
+                          )}
+                      </Can>
                     </td>
                   </tr>
                 ))}

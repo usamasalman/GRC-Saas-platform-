@@ -203,6 +203,91 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
   }
 }
 
+// ── Named write controls are individually guarded ─────────────────────────
+// The check above only asks whether a file MENTIONS a MAY constant, and that
+// turned out to be far too weak: FrameworkAuthoring passed it while its enable,
+// rename, disable and delete controls were gated on isOwnedHere and
+// isEnabledHere -- facts about the record, not about the reader -- because the
+// file used MAY.AUTHOR_STANDARD somewhere else entirely.
+//
+// So each write handler that must never render unguarded is named here, and the
+// check is positional: the onClick that invokes it has to sit inside a <Can>
+// region, or have a can(MAY...) within the preceding 240 characters, which is
+// the whole JSX condition it belongs to.
+//
+// This is a proximity heuristic and it is honest about that. It cannot prove a
+// control is guarded; it does catch a guard being dropped, which is the
+// regression that happened.
+{
+  const SRC = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'grc');
+  const MUST_BE_GUARDED = {
+    'FrameworkAuthoring.tsx': [
+      'enableStandard', 'disableStandard', 'removeStandard', 'renameStandard', 'addClauses',
+      'cloneControl', 'remapControl', 'removeControl',
+    ],
+    'StandardsLibrary.tsx': ['setEnabling'],
+    'RiskRegister.tsx': ['openEdit', 'openCreate', 'accept'],
+    'AssetRegister.tsx': ['openEdit', 'openCreate', 'setLinking', 'setReviewing'],
+    'VendorRegister.tsx': ['openEdit', 'openCreate', 'setAssessing'],
+    'audit/IssueRegister.tsx': ['openEdit', 'openRespond', 'openAssignCap', 'openClose'],
+  };
+
+  /** Depth of <Can> nesting at every character offset. */
+  function canDepths(code) {
+    const depth = new Array(code.length).fill(0);
+    let d = 0;
+    for (let i = 0; i < code.length; i += 1) {
+      if (code.startsWith('<Can', i) && !code.startsWith('<Can>', i + 4)) {
+        if (!/[A-Za-z]/.test(code[i + 4] || '')) d += 1;
+      } else if (code.startsWith('</Can>', i)) {
+        d = Math.max(0, d - 1);
+      }
+      depth[i] = d;
+    }
+    return depth;
+  }
+
+  const unguarded = [];
+  for (const [file, handlers] of Object.entries(MUST_BE_GUARDED)) {
+    const code = fs.readFileSync(path.join(SRC, ...file.split('/')), 'utf8');
+    const depth = canDepths(code);
+    for (const h of handlers) {
+      // Plain scanning rather than a built RegExp: a pattern assembled from a
+      // template literal is one escape away from matching nothing and passing.
+      // Both call shapes in this codebase: an arrow that passes the record, and
+      // a bare reference where the control needs no argument.
+      const needles = ["onClick={() => " + h + "(", "onClick={" + h + "}"];
+      let seen = 0;
+      for (const needle of needles) {
+        for (let at = code.indexOf(needle); at >= 0; at = code.indexOf(needle, at + 1)) {
+          seen += 1;
+          const inCan = depth[at] > 0;
+          const nearby = code.slice(Math.max(0, at - 240), at).includes("can(MAY.");
+          if (!inCan && !nearby) {
+            const line = code.slice(0, at).split("\n").length;
+            unguarded.push(`${file}:${line} — ${h}`);
+          }
+        }
+      }
+      checks += 1;
+      assert.ok(
+        seen > 0,
+        `${file} no longer has an onClick calling ${h}. If the control was renamed or removed, `
+        + 'update MUST_BE_GUARDED; do not silently drop the coverage.',
+      );
+    }
+  }
+
+  checks += 1;
+  assert.deepStrictEqual(
+    unguarded, [],
+    'These write controls render without a capability guard nearby:\n'
+    + `${unguarded.map((u) => `  ${u}`).join('\n')}\n`
+    + 'Wrap them in <Can do={MAY.X}> or add can(MAY.X) && to their condition. A condition on the '
+    + 'record (isOwnedHere, isEnabledHere, status) says what the record allows, not what the reader may do.',
+  );
+}
+
 console.log(
   `guarded-actions: ${checks} assertions passed `
   + `(${Object.keys(ANCHOR).length} registers pinned to their route guards)`,
