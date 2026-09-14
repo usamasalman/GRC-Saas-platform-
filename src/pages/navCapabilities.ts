@@ -23,8 +23,16 @@
  * like security.
  *
  * So only entries whose whole purpose is an administrative act appear here. A
- * screen someone can usefully read stays visible; what they cannot do on it is
- * already hidden by the buttons themselves.
+ * screen someone can usefully read stays visible.
+ *
+ * An earlier version of this comment finished that sentence with "what they
+ * cannot do on it is already hidden by the buttons themselves". That was not
+ * true and is worth recording as false, because the narrowing below was partly
+ * justified by it: no button in this frontend reads capabilities. Every action
+ * renders for every role and fails at the API. Until a guard exists around
+ * destructive and administrative controls, leaving a screen visible means
+ * leaving its buttons visible too -- which is how a Platform Security Admin was
+ * shown a Delete on controls that their role can never use.
  */
 
 export const CAP = {
