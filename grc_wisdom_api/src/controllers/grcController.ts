@@ -2,7 +2,9 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import {
+  resolveTenantScope, auditCrossTenantRead, canWriteToTenant, StaleTenantError,
+} from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
 import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
@@ -87,7 +89,7 @@ export const listStandards = async (req: AuthenticatedRequest, res: Response): P
 export const enableStandard = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { standardId, applicability, ownerId, tenantId } = req.body || {};
-    if (!standardId) { res.status(400).json({ status: 'error', message: 'standardId is required' }); return; }
+    if (!standardId) { res.status(400).json({ status: 'error', code: 'MISSING_STANDARD_ID', message: 'standardId is required' }); return; }
 
     if (applicability != null && !APPLICABILITY.includes(String(applicability))) {
       res.status(400).json({
@@ -99,9 +101,15 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
     }
 
     const scope = await resolveTenantScope(req.user!);
-    const target = tenantId || req.user!.tenantId;
-    if (!scope.tenantIds.includes(target)) {
-      res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
+    const target = String(tenantId || req.user!.tenantId);
+    if (!canWriteToTenant(scope, target)) {
+      // disableStandard's matching refusal has always carried OUT_OF_SCOPE.
+      // A caller branching on `code` handled one of the pair and not the other.
+      res.status(403).json({
+        status: 'error',
+        code: 'OUT_OF_SCOPE',
+        message: 'Target tenant is outside your authorized scope',
+      });
       return;
     }
 
@@ -123,11 +131,17 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
         OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }],
       },
     });
-    if (!standard) { res.status(404).json({ status: 'error', message: 'Standard not found' }); return; }
+    if (!standard) { res.status(404).json({ status: 'error', code: 'STANDARD_NOT_FOUND', message: 'Standard not found' }); return; }
 
-    const existing = await prisma.tenantStandardEnablement.findFirst({ where: { tenantId: target, standardId } });
+    const existing = await prisma.tenantStandardEnablement.findFirst({
+      where: { tenantId: target, standardId: String(standardId) },
+    });
     if (existing) {
-      res.status(409).json({ status: 'error', message: `${standard.code} is already enabled for this entity` });
+      res.status(409).json({
+        status: 'error',
+        code: 'ALREADY_ENABLED',
+        message: `${standard.code} is already enabled for this entity`,
+      });
       return;
     }
 
@@ -145,6 +159,28 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
 
     res.status(201).json({ status: 'success', message: `${standard.code} enabled`, enablement });
   } catch (error: any) {
+    // The duplicate check above is a read followed by a write, and
+    // @@unique([tenantId, standardId]) is what actually holds the line. Two
+    // enables of the same pairing arriving together -- a double-click, or one
+    // screen fanning out while another operator works -- lose the race and came
+    // back as "Failed to enable standard". The pairing exists either way, which
+    // is the answer the caller wanted.
+    if (error?.code === 'P2002') {
+      res.status(409).json({
+        status: 'error',
+        code: 'ALREADY_ENABLED',
+        message: 'That standard is already enabled for this entity',
+      });
+      return;
+    }
+    // A token naming a tenant that has since been deleted is not a server
+    // fault, and "sign in again" is actionable where a 500 is not. requireAuth
+    // catches this first; this covers the race where the tenant goes between
+    // that check and this one.
+    if (error instanceof StaleTenantError) {
+      res.status(401).json({ status: 'error', code: 'STALE_TENANT', message: error.message });
+      return;
+    }
     console.error('[Enable Standard Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to enable standard' });
   }
@@ -170,7 +206,11 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
   try {
     const { standardId, tenantId } = req.body || {};
     if (!standardId) {
-      res.status(400).json({ status: 'error', message: 'standardId is required' });
+      res.status(400).json({
+        status: 'error',
+        code: 'MISSING_STANDARD_ID',
+        message: 'standardId is required',
+      });
       return;
     }
 
@@ -200,7 +240,14 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
       select: { id: true, code: true },
     });
     if (!standard) {
-      res.status(404).json({ status: 'error', message: 'Standard not found' });
+      // After the visibility filter this also covers "exists, but not yours",
+      // which is why the code is the same on both paths: the distinction is
+      // exactly what must not be disclosed.
+      res.status(404).json({
+        status: 'error',
+        code: 'STANDARD_NOT_FOUND',
+        message: 'Standard not found',
+      });
       return;
     }
 
@@ -231,6 +278,10 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
 
     res.json({ status: 'success', message: `${standard.code} disabled for this entity` });
   } catch (error: any) {
+    if (error instanceof StaleTenantError) {
+      res.status(401).json({ status: 'error', code: 'STALE_TENANT', message: error.message });
+      return;
+    }
     console.error('[Disable Standard Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to disable standard' });
   }

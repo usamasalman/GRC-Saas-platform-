@@ -135,6 +135,57 @@ for (const handler of ['enableStandard', 'disableStandard']) {
   );
 }
 
+// ── Refusals carry a code the caller can branch on ───────────────────────
+// enable and disable are a symmetric pair used by the same screen, and they
+// disagreed: disable's out-of-scope refusal carried code OUT_OF_SCOPE and
+// enable's carried none, so a client that handled one silently fell through on
+// the other.
+for (const handler of ['enableStandard', 'disableStandard']) {
+  const at = grc.indexOf(`export const ${handler} =`);
+  const end = grc.indexOf('\nexport const ', at + 1);
+  const body = grc.slice(at, end > 0 ? end : grc.length);
+
+  const refusals = [...body.matchAll(/res\.status\((4\d\d)\)\.json\(\{([\s\S]{0,220}?)\}\)/g)];
+  checks += 1;
+  assert.ok(refusals.length >= 2, `${handler} has almost no refusal paths — did the body move?`);
+
+  const codeless = refusals
+    .filter((m) => !/code:/.test(m[2]))
+    .map((m) => `${handler} ${m[1]}: ${m[2].replace(/\s+/g, ' ').trim().slice(0, 70)}`);
+  checks += 1;
+  assert.deepStrictEqual(
+    codeless, [],
+    'These refusals carry no machine-readable code, so a caller cannot tell them apart from each '
+    + `other or from a real failure:\n${codeless.map((c) => `  ${c}`).join('\n')}`,
+  );
+}
+
+// ── A lost race is not a server fault ────────────────────────────────────
+// The duplicate check is a read followed by a write; @@unique([tenantId,
+// standardId]) is what actually holds the line. Without this, a double-click or
+// a fan-out running beside another operator answered "Failed to enable
+// standard" for a pairing that does exist.
+{
+  const at = grc.indexOf('export const enableStandard =');
+  const end = grc.indexOf('\nexport const ', at + 1);
+  const body = grc.slice(at, end);
+  const cat = body.indexOf('} catch');
+  ok(cat > 0, 'enableStandard has no catch block');
+  const onFailure = body.slice(cat);
+  checks += 1;
+  assert.ok(
+    /P2002/.test(onFailure),
+    'enableStandard must map the unique-constraint violation to 409, not 500. Losing a race to '
+    + 'another writer produced the row the caller wanted; saying "failed" is wrong and unactionable.',
+  );
+  checks += 1;
+  assert.ok(
+    /StaleTenantError/.test(onFailure),
+    'enableStandard must answer 401 when the caller\'s tenant is gone. resolveTenantScope throws '
+    + 'StaleTenantError precisely so the user is told to sign in again rather than shown a 500.',
+  );
+}
+
 console.log(
   `standards-enablement: ${checks} assertions passed `
   + `(applicability: ${server.join(' | ')})`,
