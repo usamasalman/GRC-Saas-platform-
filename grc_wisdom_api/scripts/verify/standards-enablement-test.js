@@ -28,6 +28,7 @@ const WEB = path.join(__dirname, '..', '..', '..', 'src');
 const grc = fs.readFileSync(path.join(API, 'controllers', 'grcController.ts'), 'utf8');
 const authoring = fs.readFileSync(path.join(API, 'controllers', 'standardsAuthoringController.ts'), 'utf8');
 const library = fs.readFileSync(path.join(WEB, 'pages', 'grc', 'StandardsLibrary.tsx'), 'utf8');
+const routes = fs.readFileSync(path.join(API, 'routes', 'grcRoutes.ts'), 'utf8');
 
 let checks = 0;
 const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
@@ -234,6 +235,97 @@ for (const handler of ['enableStandard', 'disableStandard']) {
       + 'Make it true, or do not say it.',
     );
   }
+}
+
+// ── The estate routes must be declared before /standards/:id ─────────────
+// Express matches in declaration order. Declared after the parameterised path,
+// 'enablement-matrix' and 'bulk-enable' are read as standard ids and reach
+// updateStandard and deleteStandard instead — which for bulk-disable means a
+// DELETE handler running against a standard named "bulk-disable". The control
+// routes carry a comment about this exact trap; it is cheap to make it a test.
+{
+  const literal = [
+    "router.get('/standards/enablement-matrix',",
+    "router.post('/standards/bulk-enable',",
+    "router.post('/standards/bulk-disable',",
+  ];
+  const param = [
+    "router.patch('/standards/:id',",
+    "router.delete('/standards/:id',",
+  ];
+
+  const shadowed = [];
+  for (const lit of literal) {
+    const at = routes.indexOf(lit);
+    checks += 1;
+    assert.ok(at >= 0, `${lit} not found in grcRoutes.ts`);
+    for (const par of param) {
+      const pat = routes.indexOf(par);
+      if (pat >= 0 && pat < at) shadowed.push(`${lit} is declared after ${par}`);
+    }
+  }
+  checks += 1;
+  assert.deepStrictEqual(
+    shadowed, [],
+    `These literal routes are shadowed by a parameterised one declared above them:\n${
+      shadowed.map((x) => `  ${x}`).join('\n')}\n`
+    + 'Move them above it, or Express will read the literal segment as an id.',
+  );
+}
+
+// ── The bulk writes are guarded like the single ones ─────────────────────
+{
+  const ungated = ["router.post('/standards/bulk-enable',", "router.post('/standards/bulk-disable',"]
+    .filter((r) => {
+      const at = routes.indexOf(r);
+      if (at < 0) return true;
+      const line = routes.slice(at, routes.indexOf('\n', at));
+      return !/requireCapability\(CAP\.ENABLE_STANDARD\)/.test(line);
+    });
+  checks += 1;
+  assert.deepStrictEqual(
+    ungated, [],
+    'A bulk write must carry the same capability as the single write it multiplies:\n'
+    + `${ungated.map((u) => `  ${u}`).join('\n')}`,
+  );
+}
+
+// ── The admission decision is not in the controller ──────────────────────
+// It is planEnablement, which is pure and exercised case by case in
+// enablement-plan-test.js. A controller that decides for itself cannot be
+// tested without Postgres, and this repository's CI has none.
+{
+  const ctrl = fs.readFileSync(
+    path.join(API, 'controllers', 'standardEnablementController.ts'), 'utf8',
+  );
+  checks += 1;
+  assert.ok(
+    /planEnablement\(/.test(ctrl),
+    'standardEnablementController must delegate the decision to planEnablement',
+  );
+
+  const svc = fs.readFileSync(path.join(API, 'services', 'standardEnablement.ts'), 'utf8');
+  checks += 1;
+  assert.ok(
+    !/from '\.\.\/db'/.test(svc) && !/prisma\./.test(svc),
+    'standardEnablement must stay pure — importing prisma makes it untestable without a database',
+  );
+
+  // Per-tenant transactions, because the audit chain is per tenant. One
+  // transaction over the whole batch would let one entity's failure roll back
+  // another entity's committed and audited change.
+  checks += 1;
+  assert.ok(
+    /writeAudit\(tx, \{[\s\S]{0,120}tenantId,/.test(ctrl),
+    'the bulk audit rows must be keyed to the target tenant, inside the transaction. Stamping the '
+    + "operator's tenant makes the trail unreadable from the side that needs it.",
+  );
+  const batched = /\$transaction\(async \(tx\) => \{[\s\S]{0,400}for \(const \[tenantId/.test(ctrl);
+  checks += 1;
+  assert.ok(
+    !batched,
+    'the loop over tenants must be OUTSIDE the transaction, not inside one covering the whole batch',
+  );
 }
 
 console.log(

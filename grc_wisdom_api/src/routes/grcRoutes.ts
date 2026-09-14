@@ -94,6 +94,9 @@ import {
 } from '../controllers/riskImportController';
 
 import { getGrcSummary } from '../controllers/grcSummaryController';
+import {
+  getEnablementMatrix, bulkEnableStandards, bulkDisableStandards,
+} from '../controllers/standardEnablementController';
 
 const router = Router();
 
@@ -110,6 +113,18 @@ router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableS
 // The counterpart deleteStandard has always pointed at and which never existed,
 // leaving a standard created by mistake impossible to remove.
 router.post('/standards/disable', requireCapability(CAP.ENABLE_STANDARD), disableStandard);
+
+// Enabling a framework across an estate, from the control plane. The single
+// endpoints above have always read an optional tenantId; what was missing was a
+// way to name a set and be told what happened to every member of it.
+//
+// These three MUST stay above '/standards/:id' below. Express matches in
+// declaration order, so declared after it, 'enablement-matrix' and 'bulk-enable'
+// are read as standard ids and hit updateStandard and deleteStandard instead —
+// the same trap the control routes carry a comment about.
+router.get('/standards/enablement-matrix', getEnablementMatrix);
+router.post('/standards/bulk-enable', requireCapability(CAP.ENABLE_STANDARD), bulkEnableStandards);
+router.post('/standards/bulk-disable', requireCapability(CAP.ENABLE_STANDARD), bulkDisableStandards);
 
 // ── Authoring your own framework ──────────────────────────────────────────
 // The capability is literally "import or enable a standard", so importing one
