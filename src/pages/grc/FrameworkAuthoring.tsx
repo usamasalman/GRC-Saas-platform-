@@ -5,6 +5,7 @@ import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
 import ClauseMapDialog from './ClauseMapDialog';
 import ClauseEditDialog from './ClauseEditDialog';
 import ControlEditDialog from './ControlEditDialog';
+import Can, { MAY, can } from '../../components/Can';
 
 /**
  * Framework authoring — where a compliance manager or consultant builds the
@@ -489,9 +490,11 @@ const FrameworkAuthoring: React.FC = () => {
       ) : tab === 'standards' ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <button style={primaryBtn()} onClick={() => { setShowStdForm(!showStdForm); setFormErr(''); }}>
-              {showStdForm ? 'Cancel' : '+ New standard'}
-            </button>
+            <Can do={MAY.AUTHOR_STANDARD}>
+              <button style={primaryBtn()} onClick={() => { setShowStdForm(!showStdForm); setFormErr(''); }}>
+                {showStdForm ? 'Cancel' : '+ New standard'}
+              </button>
+            </Can>
           </div>
 
           {showStdForm && (
@@ -574,7 +577,7 @@ const FrameworkAuthoring: React.FC = () => {
                               <strong style={{ color: 'var(--ink)', fontFamily: 'ui-monospace, monospace' }}>{c.ref}</strong>
                               <span style={{ color: 'var(--ink-body)' }}> — {c.title}</span>
                               <span style={{ float: 'right', fontSize: 11, color: c.mappedControlCount ? 'var(--success)' : 'var(--warning)' }}>
-                                {s.isOwnedHere && (
+                                {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && (
                                   <>
                                     <button
                                       onClick={() => setDialog({ kind: 'editClause', clause: c })}
@@ -613,9 +616,11 @@ const FrameworkAuthoring: React.FC = () => {
       ) : tab === 'controls' ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <button style={primaryBtn()} onClick={() => { setShowCtrlForm(!showCtrlForm); setFormErr(''); }}>
-              {showCtrlForm ? 'Cancel' : '+ New control'}
-            </button>
+            <Can do={MAY.AUTHOR_CONTROL}>
+              <button style={primaryBtn()} onClick={() => { setShowCtrlForm(!showCtrlForm); setFormErr(''); }}>
+                {showCtrlForm ? 'Cancel' : '+ New control'}
+              </button>
+            </Can>
           </div>
 
           {showCtrlForm && (
@@ -665,9 +670,11 @@ const FrameworkAuthoring: React.FC = () => {
               <strong style={{ color: 'var(--ink)', fontSize: 13.5 }}>
                 {picked.size} control{picked.size === 1 ? '' : 's'} selected
               </strong>
-              <button style={primaryBtn()} onClick={() => setDialog({ kind: 'bulkMapClauses' })}>
-                Map to clauses
-              </button>
+              <Can do={MAY.AUTHOR_CONTROL}>
+                <button style={primaryBtn()} onClick={() => setDialog({ kind: 'bulkMapClauses' })}>
+                  Map to clauses
+                </button>
+              </Can>
               <button style={ghostBtn} onClick={() => setPicked(new Set())}>Clear selection</button>
               <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
                 Clauses are added to whatever each control already satisfies.
@@ -729,7 +736,9 @@ const FrameworkAuthoring: React.FC = () => {
                       </span>
                     </td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
-                      {c.isLibrary
+                      {!can(MAY.AUTHOR_CONTROL)
+                        ? null
+                        : c.isLibrary
                         ? <button onClick={() => cloneControl(c)} style={linkBtn('var(--brand)')}>copy to my set</button>
                         : <>
                             <button onClick={() => setDialog({ kind: 'editControl', ctrl: c })} style={linkBtn('var(--ink-body)')}>edit</button>

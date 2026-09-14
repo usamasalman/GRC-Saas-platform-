@@ -123,3 +123,48 @@ export function navVisible(key: string, capabilities: string[] | null | undefine
   if (!required) return true;
   return required.some((c) => capabilities.includes(c));
 }
+
+/**
+ * What the server requires before a write succeeds on each register.
+ *
+ * Mirrors the guards in grc_wisdom_api/src/routes/grcRoutes.ts so that a
+ * control can be hidden from someone the API would refuse. Holding any one of
+ * the listed capabilities is enough, which is what requireAnyCapability means
+ * on the routes themselves.
+ *
+ * These sets are wider than they look, on purpose, and the width is the
+ * server's decision rather than a convenience here. Maintaining the asset
+ * inventory admits MANAGE_IMPLEMENTATION and ASSESS_RISK because the inventory
+ * is the first step of both; gating it on MAINTAIN_ASSET alone left only Asset
+ * Owner able to add an asset. Copying a narrower rule into the browser would
+ * hide a button that works.
+ *
+ * Kept in step with the routes by scripts/verify/guarded-actions-test.js, which
+ * reads both files and fails when they disagree. Drift here is worse than no
+ * guard at all: a widened route with a stale entry hides a control the person
+ * is entitled to, and nothing in the product would say why.
+ */
+export const MAY = {
+  /** POST, PATCH, DELETE /api/grc/risks and everything beneath a risk. */
+  MANAGE_RISK: [CAP.ASSESS_RISK],
+  /** POST, PATCH, DELETE /api/grc/assets. */
+  MAINTAIN_ASSET: [CAP.MAINTAIN_ASSET, CAP.MANAGE_IMPLEMENTATION, CAP.ASSESS_RISK],
+  /** POST, PATCH, DELETE /api/grc/vendors and vendor assessments. */
+  MANAGE_VENDOR: [CAP.ASSESS_VENDOR, CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.MANAGE_TENANT],
+  /** POST, PATCH, DELETE /api/grc/issues. */
+  MANAGE_ISSUE: [CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION, CAP.MONITOR_SECURITY],
+  /** Answering a finding — the side being audited, not the auditor. */
+  RESPOND_TO_ISSUE: [CAP.MANAGE_IMPLEMENTATION, CAP.ASSESS_RISK, CAP.MANAGE_TENANT],
+  /** Assigning a corrective action plan against a finding. */
+  ASSIGN_CAP: [CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION],
+  /** Closing, reopening and escalating an issue — audit's decision alone. */
+  CLOSE_ISSUE: [CAP.EXECUTE_AUDIT],
+  /** POST, PATCH, DELETE /api/grc/standards and /api/grc/clauses. */
+  AUTHOR_STANDARD: [CAP.ENABLE_STANDARD],
+  /** POST, PATCH, DELETE /api/grc/controls and clause mapping. */
+  AUTHOR_CONTROL: [CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION],
+  /** POST, PATCH /api/grc/implementations and evidence. */
+  MANAGE_IMPLEMENTATION: [CAP.MANAGE_IMPLEMENTATION],
+  /** POST, PATCH, DELETE /api/grc/shared-services. */
+  MANAGE_SHARED_SERVICE: [CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION],
+} as const;

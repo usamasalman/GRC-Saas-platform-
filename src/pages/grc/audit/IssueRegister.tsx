@@ -4,6 +4,7 @@ import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iam
 import DeleteRecordButton from '../../../components/DeleteRecordButton';
 import { PromptDialog } from '../../../components/Dialog';
 import FormDialog from '../../../components/FormDialog';
+import Can, { MAY, can } from '../../../components/Can';
 
 /**
  * One register for every issue, whatever raised it.
@@ -273,9 +274,11 @@ const IssueRegister: React.FC = () => {
           Overdue only
         </label>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button style={primaryBtn()} onClick={() => (showNew ? (setShowNew(false), setEditing(null)) : openCreate())}>
-            {showNew ? 'Cancel' : '+ Raise issue'}
-          </button>
+          <Can do={MAY.MANAGE_ISSUE}>
+            <button style={primaryBtn()} onClick={() => (showNew ? (setShowNew(false), setEditing(null)) : openCreate())}>
+              {showNew ? 'Cancel' : '+ Raise issue'}
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -419,17 +422,17 @@ const IssueRegister: React.FC = () => {
               </div>
 
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                {['Open', 'Reopened'].includes(i.status) && (
+                {can(MAY.RESPOND_TO_ISSUE) && ['Open', 'Reopened'].includes(i.status) && (
                   <button style={linkBtn('var(--info)')} onClick={() => openRespond(i)}>management response</button>
                 )}
                 {/* Both are offered only while the finding is awaiting a response.
                     Once management has answered, editing the wording underneath
                     their response would record them as agreeing to something they
                     never read — the server refuses for the same reason. */}
-                {['Open', 'Reopened'].includes(i.status) && (
+                {can(MAY.MANAGE_ISSUE) && ['Open', 'Reopened'].includes(i.status) && (
                   <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(i)}>edit</button>
                 )}
-                {['Open', 'Reopened'].includes(i.status) && (
+                {can(MAY.MANAGE_ISSUE) && ['Open', 'Reopened'].includes(i.status) && (
                   <DeleteRecordButton
                     endpoint={`/api/grc/issues/${i.id}`}
                     what="finding"
@@ -444,7 +447,7 @@ const IssueRegister: React.FC = () => {
                     }}
                   />
                 )}
-                {i.status === 'Responded' && (
+                {can(MAY.ASSIGN_CAP) && i.status === 'Responded' && (
                   <button style={linkBtn('var(--warning)')} onClick={() => openAssignCap(i)}>assign CAP</button>
                 )}
                 {i.status === 'CAPAssigned' && (
@@ -452,17 +455,17 @@ const IssueRegister: React.FC = () => {
                     submit for closure
                   </button>
                 )}
-                {i.status === 'PendingClosure' && (
+                {can(MAY.CLOSE_ISSUE) && i.status === 'PendingClosure' && (
                   <button style={linkBtn('var(--success)')} onClick={() => openClose(i)}>
                     validate and close
                   </button>
                 )}
-                {i.status === 'Closed' && (
+                {can(MAY.CLOSE_ISSUE) && i.status === 'Closed' && (
                   <button style={linkBtn('var(--danger)')} onClick={() => setDlg({ kind: 'reopen', i })}>
                     reopen
                   </button>
                 )}
-                {i.status !== 'Closed' && (i.status === 'Disputed' || i.aging?.isOverdue) && i.escalationLevel < 2 && (
+                {can(MAY.CLOSE_ISSUE) && i.status !== 'Closed' && (i.status === 'Disputed' || i.aging?.isOverdue) && i.escalationLevel < 2 && (
                   <button style={linkBtn('var(--danger)')} onClick={() => setDlg({ kind: 'escalate', i })}>
                     escalate
                   </button>

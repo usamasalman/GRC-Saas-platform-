@@ -7,6 +7,7 @@ import AssetImport from './asset/AssetImport';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
 import PickManyDialog from '../../components/PickManyDialog';
 import { PromptDialog } from '../../components/Dialog';
+import Can, { MAY, can } from '../../components/Can';
 
 /**
  * The asset register — ISO/IEC 27001 A.5.9 inventory, valued the ISO 27005 way.
@@ -292,9 +293,11 @@ const AssetRegister: React.FC = () => {
           <button onClick={load} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Icon name="plus" size={15} /> Register asset
-          </button>
+          <Can do={MAY.MAINTAIN_ASSET}>
+            <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="plus" size={15} /> Register asset
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -424,21 +427,25 @@ const AssetRegister: React.FC = () => {
                         )}
                       </td>
                       <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                        <button style={linkBtn('var(--danger)')}
-                          onClick={() => setRiskForm({
-                            assetId: a.id, assetRef: a.ref, assetName: a.name,
-                            criticality: a.criticality, tier: a.criticalityTier,
-                            threat: '', vulnerability: '', threatLevel: 3, vulnerabilityLevel: 3,
-                            exposureFactor: '', title: '',
-                          })}>
-                          raise risk
-                        </button>
-                        <button style={linkBtn('var(--info)')} onClick={() => setLinking(a)}>controls</button>
-                        <button style={linkBtn('var(--ink-muted)')} onClick={() => setReviewing(a)}>review</button>
-                        <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(a)}>edit</button>
+                        <Can do={MAY.MANAGE_RISK}>
+                          <button style={linkBtn('var(--danger)')}
+                            onClick={() => setRiskForm({
+                              assetId: a.id, assetRef: a.ref, assetName: a.name,
+                              criticality: a.criticality, tier: a.criticalityTier,
+                              threat: '', vulnerability: '', threatLevel: 3, vulnerabilityLevel: 3,
+                              exposureFactor: '', title: '',
+                            })}>
+                            raise risk
+                          </button>
+                        </Can>
+                        <Can do={MAY.MAINTAIN_ASSET}>
+                          <button style={linkBtn('var(--info)')} onClick={() => setLinking(a)}>controls</button>
+                          <button style={linkBtn('var(--ink-muted)')} onClick={() => setReviewing(a)}>review</button>
+                          <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(a)}>edit</button>
+                        </Can>
                         {/* Retired assets are refused by the server — the row is the
                             record that something was once in scope. */}
-                        {a.status !== 'Retired' && (
+                        {can(MAY.MAINTAIN_ASSET) && a.status !== 'Retired' && (
                           <DeleteRecordButton
                             endpoint={`/api/grc/assets/${a.id}`}
                             what="asset"

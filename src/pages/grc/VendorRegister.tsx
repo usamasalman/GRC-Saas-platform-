@@ -4,6 +4,7 @@ import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../
 import Icon from '../../components/Icon';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
 import FormDialog from '../../components/FormDialog';
+import Can, { MAY, can } from '../../components/Can';
 
 /**
  * Third-party risk management.
@@ -230,9 +231,11 @@ const VendorRegister: React.FC = () => {
           <button onClick={load} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Icon name="plus" size={15} /> Onboard supplier
-          </button>
+          <Can do={MAY.MANAGE_VENDOR}>
+            <button onClick={openCreate} style={{ ...primaryBtn(), display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="plus" size={15} /> Onboard supplier
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -358,13 +361,17 @@ const VendorRegister: React.FC = () => {
                         ) : <span style={{ color: 'var(--ink-faint)' }}>—</span>}
                       </td>
                       <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                        <button style={linkBtn('var(--info)')} onClick={() => setAssessing(v)}>assess</button>
+                        <Can do={MAY.MANAGE_VENDOR}>
+                          <button style={linkBtn('var(--info)')} onClick={() => setAssessing(v)}>assess</button>
+                        </Can>
                         <button style={linkBtn('var(--ink-muted)')} onClick={() => setDetail(v)}>open</button>
-                        <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(v)}>edit</button>
+                        <Can do={MAY.MANAGE_VENDOR}>
+                          <button style={linkBtn('var(--ink-body)')} onClick={() => openEdit(v)}>edit</button>
+                        </Can>
                         {/* Exiting and Terminated are refused by the server: both mean a
                             decision was taken about the relationship, and the decision is
                             the record. */}
-                        {v.status !== 'Exiting' && v.status !== 'Terminated' && (
+                        {can(MAY.MANAGE_VENDOR) && v.status !== 'Exiting' && v.status !== 'Terminated' && (
                           <DeleteRecordButton
                             endpoint={`/api/grc/vendors/${v.id}`}
                             what="vendor"

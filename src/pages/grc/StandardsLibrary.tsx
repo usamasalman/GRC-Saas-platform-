@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
+import { MAY, can } from '../../components/Can';
 
 interface Enablement { tenantId: string; tenantName: string; applicability: string; owner: any; enabledAt: string }
 interface Standard {
@@ -105,7 +106,7 @@ const StandardsLibrary: React.FC = () => {
                 </div>
               )}
 
-              {!s.isEnabledHere && (
+              {can(MAY.AUTHOR_STANDARD) && !s.isEnabledHere && (
                 <button onClick={() => setEnabling(s)} disabled={busy === s.id} style={{ ...primaryBtn(busy === s.id), width: '100%' }}>
                   {busy === s.id ? 'Enabling…' : 'Enable for my entity'}
                 </button>

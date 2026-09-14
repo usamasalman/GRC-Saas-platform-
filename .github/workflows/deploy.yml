@@ -92,6 +92,24 @@ jobs:
         working-directory: grc_wisdom_api
         run: node scripts/verify/delivery-report-test.js
 
+      # Everything that can be decided by reading the source. None of these
+      # needs a database or a running server, so they run before either exists
+      # and cost seconds. Each one exists because the defect it describes
+      # reached a deploy once already.
+      - name: API — source invariants
+        working-directory: grc_wisdom_api
+        run: |
+          node scripts/verify/uploads-not-public-test.js
+          node scripts/verify/no-native-dialogs-test.js
+          node scripts/verify/routes-reachable-test.js
+          node scripts/verify/record-deletion-test.js
+          node scripts/verify/nav-capabilities-test.js
+          node scripts/verify/capabilities-mean-something-test.js
+          node scripts/verify/guarded-actions-test.js
+          node scripts/verify/no-invented-data-test.js
+          node scripts/verify/login-entrance-test.js
+          node scripts/verify/grc-summary-test.js
+
       - name: API — provision reference data against a real database
         working-directory: grc_wisdom_api
         env:

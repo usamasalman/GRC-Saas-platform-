@@ -8,6 +8,7 @@ import Icon from '../../components/Icon';
 import RiskImport from './risk/RiskImport';
 import { ConfirmDialog } from '../../components/Dialog';
 import FormDialog from '../../components/FormDialog';
+import Can, { MAY, can } from '../../components/Can';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -493,19 +494,21 @@ const RiskRegister: React.FC = () => {
           <button onClick={load} style={ghostBtn} title="Reload fresh data from server">
             <Icon name="refresh" size={15} /> Refresh
           </button>
-          <button
-            onClick={openCreate}
-            style={{
-              ...primaryBtn(),
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <span>+</span>
-            <span>New Risk</span>
-          </button>
+          <Can do={MAY.MANAGE_RISK}>
+            <button
+              onClick={openCreate}
+              style={{
+                ...primaryBtn(),
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <span>+</span>
+              <span>New Risk</span>
+            </button>
+          </Can>
         </div>
       </div>
 
@@ -1206,27 +1209,29 @@ const RiskRegister: React.FC = () => {
                               Treatments
                             </button>
 
-                            <button
-                              onClick={() => openEdit(r)}
-                              style={{
-                                background: 'var(--surface-sunk)',
-                                border: '1px solid var(--line)',
-                                color: 'var(--ink-body)',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                padding: '4px 8px',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                              }}
-                              title="Correct the title, category, scoring or treatment type"
-                            >
-                              Edit
-                            </button>
+                            <Can do={MAY.MANAGE_RISK}>
+                              <button
+                                onClick={() => openEdit(r)}
+                                style={{
+                                  background: 'var(--surface-sunk)',
+                                  border: '1px solid var(--line)',
+                                  color: 'var(--ink-body)',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: '4px 8px',
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                }}
+                                title="Correct the title, category, scoring or treatment type"
+                              >
+                                Edit
+                              </button>
+                            </Can>
 
                             {/* Offered only where it can succeed. The server refuses to
                                 delete an accepted or closed risk, and a button whose only
                                 outcome is a refusal is worse than no button. */}
-                            {r.status !== 'Accepted' && r.status !== 'Closed' && (
+                            {can(MAY.MANAGE_RISK) && r.status !== 'Accepted' && r.status !== 'Closed' && (
                               <button
                                 onClick={() => { setRemoveErr(''); setRemoving(r); }}
                                 style={{
@@ -1245,7 +1250,7 @@ const RiskRegister: React.FC = () => {
                               </button>
                             )}
 
-                            {r.status !== 'Accepted' && r.status !== 'Closed' && (
+                            {can(MAY.MANAGE_RISK) && r.status !== 'Accepted' && r.status !== 'Closed' && (
                               <button
                                 onClick={() => accept(r)}
                                 style={{
@@ -1391,7 +1396,7 @@ const RiskRegister: React.FC = () => {
                       </td>
 
                       <td style={{ ...S.td, textAlign: 'right' }}>
-                        {t.status === 'Open' ? (
+                        {t.status === 'Open' && can(MAY.MANAGE_RISK) ? (
                           <button
                             onClick={() => completeTreatment(t.id)}
                             style={{
@@ -1724,9 +1729,11 @@ const RiskRegister: React.FC = () => {
                     <span style={{ fontSize: 13, color: 'var(--ink-muted)' }}>
                       Assigned treatment action items for <strong>{detail.ref}</strong>:
                     </span>
-                    <button onClick={() => setShowAddTreatmentModal(detail.id)} style={primaryBtn()}>
-                      + Add Action Item
-                    </button>
+                    <Can do={MAY.MANAGE_RISK}>
+                      <button onClick={() => setShowAddTreatmentModal(detail.id)} style={primaryBtn()}>
+                        + Add Action Item
+                      </button>
+                    </Can>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1753,7 +1760,7 @@ const RiskRegister: React.FC = () => {
                         </div>
 
                         <div>
-                          {t.status === 'Open' ? (
+                          {t.status === 'Open' && can(MAY.MANAGE_RISK) ? (
                             <button onClick={() => completeTreatment(t.id)} style={primaryBtn()}>
                               Mark completed <Icon name="check" size={13} style={{ display: 'inline-block', verticalAlign: '-2px' }} />
                             </button>
@@ -1792,9 +1799,11 @@ const RiskRegister: React.FC = () => {
                       <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
                         Acceptance records an explicit risk exception subject to board appetite ceilings. The risk owner cannot approve their own acceptance.
                       </p>
-                      <button onClick={() => accept(detail)} style={primaryBtn()}>
-                        Proceed with Acceptance Approval
-                      </button>
+                      <Can do={MAY.MANAGE_RISK}>
+                        <button onClick={() => accept(detail)} style={primaryBtn()}>
+                          Proceed with Acceptance Approval
+                        </button>
+                      </Can>
                     </div>
                   )}
                 </div>
@@ -1802,32 +1811,42 @@ const RiskRegister: React.FC = () => {
 
               {drawerTab === 'review' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ ...S.card, padding: 18 }}>
-                    <h4 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--ink)' }}>Record Formal ISO 31000 Review</h4>
-                    <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
-                      Conducting a review updates the review timestamp and advances the next scheduled review date.
-                    </p>
+                  <Can
+                    do={MAY.MANAGE_RISK}
+                    otherwise={(
+                      <div style={{ ...S.card, padding: 18, fontSize: 12.5, color: 'var(--ink-muted)' }}>
+                        Recording a formal review is part of assessing and treating a risk, which your
+                        role does not carry. The review history above is complete and current.
+                      </div>
+                    )}
+                  >
+                    <div style={{ ...S.card, padding: 18 }}>
+                      <h4 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--ink)' }}>Record Formal ISO 31000 Review</h4>
+                      <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
+                        Conducting a review updates the review timestamp and advances the next scheduled review date.
+                      </p>
 
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handlePerformReview(detail.id);
-                      }}
-                    >
-                      <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Review Notes / Observations</label>
-                      <textarea
-                        rows={3}
-                        value={reviewForm.notes}
-                        onChange={(e) => setReviewForm({ ...reviewForm, notes: e.target.value })}
-                        style={{ ...S.input, marginBottom: 12 }}
-                        placeholder="Document control effectiveness observations, changes in threat landscape..."
-                      />
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handlePerformReview(detail.id);
+                        }}
+                      >
+                        <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Review Notes / Observations</label>
+                        <textarea
+                          rows={3}
+                          value={reviewForm.notes}
+                          onChange={(e) => setReviewForm({ ...reviewForm, notes: e.target.value })}
+                          style={{ ...S.input, marginBottom: 12 }}
+                          placeholder="Document control effectiveness observations, changes in threat landscape..."
+                        />
 
-                      <button type="submit" style={primaryBtn()}>
-                        Confirm &amp; Record Formal Review
-                      </button>
-                    </form>
-                  </div>
+                        <button type="submit" style={primaryBtn()}>
+                          Confirm &amp; Record Formal Review
+                        </button>
+                      </form>
+                    </div>
+                  </Can>
                 </div>
               )}
             </div>
