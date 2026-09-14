@@ -268,20 +268,21 @@
       "portal": "Saas",
       "scopeDescription": "All tenants under break-glass",
       "capabilities": [
+        "add-a-user-with-role-based-access",
+        "configure-an-integration",
+        "create-an-approval-or-automation-workflow",
         "create-an-itsm-ticket",
         "create-or-manage-a-tenant",
-        "add-a-user-with-role-based-access",
-        "maintain-roles-and-permissions",
-        "publish-or-enable-a-module",
-        "govern-a-feature-flag",
-        "create-an-approval-or-automation-workflow",
-        "configure-an-integration",
-        "monitor-security-and-handle-incidents",
-        "import-or-enable-a-standard",
-        "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "govern-a-feature-flag",
+        "import-or-enable-a-standard",
+        "maintain-roles-and-permissions",
+        "manage-a-delivery-project",
+        "monitor-security-and-handle-incidents",
+        "publish-or-enable-a-module",
+        "transfer-a-user-between-branches-or-entities",
+        "verify-project-delivery"
       ]
     },
     {

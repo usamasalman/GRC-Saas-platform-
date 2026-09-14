@@ -233,8 +233,11 @@ router.post('/assets/imports/:id/discard', MAY_MAINTAIN_ASSETS, discardAssetImpo
 // -- Third-party risk management (SAMA CSF 3.3.15, ISO 27036) --------------
 // Vendor risk is enterprise risk, so it is gated on the same capabilities and
 // its findings land in the same issue register as everything else.
+// ASSESS_VENDOR was defined, granted to roles, and guarded nothing: the vendor
+// routes asked for three other capabilities instead, so a role holding
+// "assess-and-remediate-a-vendor" and nothing else could not touch a vendor.
 const MAY_MANAGE_VENDORS = requireAnyCapability(
-  CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.MANAGE_TENANT,
+  CAP.ASSESS_VENDOR, CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.MANAGE_TENANT,
 );
 router.get('/vendors', listVendors);
 router.get('/vendor-analytics', vendorAnalytics);
