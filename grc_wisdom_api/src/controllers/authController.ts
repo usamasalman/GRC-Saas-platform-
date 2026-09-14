@@ -61,7 +61,50 @@ const PORTAL_BY_TENANT_TYPE: Record<string, string> = {
   DOCUMENT: 'document',
 };
 
-function resolvePortal(user: { tenant?: { type?: string | null } | null }): string {
+/**
+ * The role's own answer, where it names a navigation set AppShell renders.
+ *
+ * 35 of the 42 roles declare one of these. The remaining seven declare a
+ * description of their scope inside a tenant -- "Tenant Assurance", "Client
+ * Workspace" -- which is not a menu, so they fall through to the tenant.
+ */
+const PORTAL_BY_ROLE_PORTAL: Record<string, string> = {
+  saas: 'saas',
+  holding: 'holding',
+  multibranch: 'multibranch',
+  branch: 'branch',
+  document: 'document',
+  auditor: 'auditor',
+  partner: 'partner',
+  franchise: 'franchise',
+};
+
+/**
+ * The role first, then the tenant.
+ *
+ * Deriving this from tenant.type alone is tracker issues 11 to 17, all one
+ * fault: a Branch Compliance Officer whose user record lives in the SaaS
+ * tenant was handed the platform control plane, and so was shown
+ * Subscriptions, Plans & Commercial Catalogue, Invoice Management, Payments,
+ * Payment Gateway & Tax and Resource Usage & Quotas. The tester asked the same
+ * question seven times: why is a compliance officer looking at finance.
+ *
+ * The role already carried the answer. branch-compliance-officer declares
+ * Branch, so Branch is what they get, whichever tenant their user record
+ * happens to sit in. Which tenant that is says where their data lives; it does
+ * not say what their job is.
+ *
+ * Navigation only. Authorisation is enforced route by route on capability and
+ * scope, so a wrong answer here is a confusing menu, not an escalation -- and
+ * the menu is filtered by capability on top of this (navCapabilities).
+ */
+function resolvePortal(user: {
+  tenant?: { type?: string | null } | null;
+  roleRef?: { portal?: string | null } | null;
+}): string {
+  const declared = PORTAL_BY_ROLE_PORTAL[String(user.roleRef?.portal || '').trim().toLowerCase()];
+  if (declared) return declared;
+
   const type = String(user.tenant?.type || '').toUpperCase();
   // An unrecognised tenant type gets the ordinary organisation workspace, not
   // the control plane. The safe default is the least-privileged menu.
@@ -120,7 +163,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const cleanEmail = String(email).trim().toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email: cleanEmail },
-      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true, portal: true } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -216,7 +259,7 @@ export const mfaChallenge = async (req: Request, res: Response): Promise<void> =
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true, portal: true } } },
     });
     if (!user || !user.mfaEnabled || !user.mfaSecret) {
       res.status(401).json({ status: 'error', message: 'MFA is not enabled for this account' });
@@ -250,7 +293,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     const tokenHash = hashRefreshToken(String(refreshToken));
     const user = await prisma.user.findFirst({
       where: { refreshTokenHash: tokenHash },
-      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true, portal: true } } },
     });
 
     if (!user || !user.refreshTokenExpiresAt || user.refreshTokenExpiresAt < new Date()) {
@@ -393,7 +436,7 @@ export const registerAdmin = async (req: Request, res: Response): Promise<void> 
         profile: 'Platform Owner',
         status: 'Active',
       },
-      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true, portal: true } } },
     });
 
     console.log(`[Bootstrap]: first administrator created (${cleanEmail}). Endpoint now closed.`);
@@ -414,7 +457,7 @@ export const me = async (req: AuthenticatedRequest, res: Response): Promise<void
     const userId = req.user?.id;
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { tenant: true, roleRef: { select: { capabilityGrants: true } } },
+      include: { tenant: true, roleRef: { select: { capabilityGrants: true, portal: true } } },
     });
 
     if (!user) {
