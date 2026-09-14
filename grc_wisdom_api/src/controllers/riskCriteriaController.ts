@@ -179,7 +179,7 @@ export const setCriteria = async (req: AuthenticatedRequest, res: Response): Pro
 export const approveCriteria = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const criteria = await prisma.riskCriteria.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
     });
@@ -263,7 +263,7 @@ export const approveCriteria = async (req: AuthenticatedRequest, res: Response):
 export const withdrawCriteria = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const criteria = await prisma.riskCriteria.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
     });

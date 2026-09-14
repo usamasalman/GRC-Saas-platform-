@@ -26,7 +26,7 @@ function pickFactors(src: any, fallback?: any): RiskFactors {
 
 export const listUniverse = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'audit.universe.list');
 
     const { type, tier, search } = req.query as Record<string, string | undefined>;
@@ -181,7 +181,7 @@ export const createEntity = async (req: AuthenticatedRequest, res: Response): Pr
 export const scoreEntity = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const entity = await prisma.auditableEntity.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!entity) { res.status(404).json({ status: 'error', message: 'Auditable entity not found' }); return; }
 
@@ -228,7 +228,7 @@ export const scoreEntity = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const listPlans = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const plans = await prisma.auditPlan.findMany({
       where: { tenantId: { in: scope.tenantIds } },
       include: {
@@ -319,7 +319,7 @@ export const addPlanItem = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const plan = await prisma.auditPlan.findFirst({ where: { id: planId, tenantId: { in: scope.tenantIds } } });
     if (!plan) { res.status(404).json({ status: 'error', message: 'Audit plan not found' }); return; }
     if (!['Draft', 'SubmittedForApproval'].includes(plan.status)) {
@@ -373,7 +373,7 @@ export const addPlanItem = async (req: AuthenticatedRequest, res: Response): Pro
 export const submitPlan = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const plan = await prisma.auditPlan.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { items: { include: { auditableEntity: { select: { riskTier: true } } } } },
@@ -436,7 +436,7 @@ export const approvePlan = async (req: AuthenticatedRequest, res: Response): Pro
   try {
     const id = req.params.id as string;
     const { note } = req.body || {};
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const plan = await prisma.auditPlan.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!plan) { res.status(404).json({ status: 'error', message: 'Audit plan not found' }); return; }
     if (plan.status !== 'SubmittedForApproval') {
@@ -486,7 +486,7 @@ export const instantiateEngagement = async (req: AuthenticatedRequest, res: Resp
     const itemId = req.params.itemId as string;
     const { objective, scope: auditScope, criteria } = req.body || {};
 
-    const tenantScope = await resolveTenantScope(req.user!.tenantId);
+    const tenantScope = await resolveTenantScope(req.user!);
     const item = await prisma.auditPlanItem.findFirst({
       where: { id: itemId, plan: { tenantId: { in: tenantScope.tenantIds } } },
       include: {
@@ -558,7 +558,7 @@ export const deferPlanItem = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const item = await prisma.auditPlanItem.findFirst({
       where: { id: itemId, plan: { tenantId: { in: scope.tenantIds } } },
       include: { plan: true, auditableEntity: { select: { name: true } } },

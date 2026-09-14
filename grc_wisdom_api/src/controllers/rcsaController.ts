@@ -37,7 +37,7 @@ function completion(assessments: { status: string }[]) {
 
 export const listCampaigns = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.rcsa.list');
 
     const campaigns = await prisma.rcsaCampaign.findMany({
@@ -82,7 +82,7 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response): P
 export const getCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -122,7 +122,7 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -163,7 +163,7 @@ export const addScope = async (req: AuthenticatedRequest, res: Response): Promis
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!campaign) { res.status(404).json({ status: 'error', message: 'Campaign not found' }); return; }
     if (campaign.status !== 'Draft') {
@@ -221,7 +221,7 @@ export const addScope = async (req: AuthenticatedRequest, res: Response): Promis
 export const launchCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { _count: { select: { assessments: true } } },
@@ -285,7 +285,7 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const assessment = await prisma.rcsaAssessment.findFirst({
       where: { id: assessmentId, tenantId: { in: scope.tenantIds } },
       include: {
@@ -416,7 +416,7 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
 export const closeCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { assessments: { select: { status: true } } },
@@ -468,7 +468,7 @@ export const closeCampaign = async (req: AuthenticatedRequest, res: Response): P
 export const updateCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
     });
@@ -538,7 +538,7 @@ export const updateCampaign = async (req: AuthenticatedRequest, res: Response): 
 export const deleteCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const campaign = await prisma.rcsaCampaign.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { _count: { select: { assessments: true } } },

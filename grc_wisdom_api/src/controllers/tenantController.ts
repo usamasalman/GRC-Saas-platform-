@@ -22,7 +22,7 @@ const VALID_TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'F
 
 export const listTenants = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'tenants.list');
 
     const tenants = await prisma.tenant.findMany({
@@ -70,7 +70,7 @@ export const listTenants = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const getEntityTree = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'tenants.tree');
 
     const flat = await prisma.tenant.findMany({
@@ -108,7 +108,7 @@ export const getEntityTree = async (req: AuthenticatedRequest, res: Response): P
 export const getTenant = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (!scope.tenantIds.includes(id)) {
       res.status(403).json({ status: 'error', message: 'Tenant is outside your authorized scope' });
       return;
@@ -157,7 +157,7 @@ export const createTenant = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const isPlatform = scope.kind === 'PLATFORM';
 
     let parentPath: string | null = null;
@@ -243,7 +243,7 @@ export const createTenant = async (req: AuthenticatedRequest, res: Response): Pr
 export const updateTenant = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (!canWriteToTenant(scope, id)) {
       res.status(403).json({ status: 'error', message: 'Tenant is outside your authorized scope' });
       return;
@@ -342,7 +342,7 @@ export const distributePolicy = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const master = await prisma.document.findFirst({
       where: { id: documentId, tenantId: { in: scope.tenantIds } },
     });
@@ -442,7 +442,7 @@ export const onboardTenant = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const isPlatform = scope.kind === 'PLATFORM';
 
     let parentPath: string | null = null;

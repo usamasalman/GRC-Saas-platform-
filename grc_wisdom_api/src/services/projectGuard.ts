@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
-import { resolveTenantScope, TenantScope } from './scopeResolver';
+import { resolveTenantScope, ScopeActor, TenantScope } from './scopeResolver';
 import { canReadProject, canWriteProject, sideOf } from './projectAccess';
 
 /**
@@ -40,10 +40,10 @@ export interface ProjectGuard {
 }
 
 export async function guardProject(
-  callerTenantId: string,
+  caller: ScopeActor,
   projectId: string,
 ): Promise<ProjectGuard> {
-  const scope = await resolveTenantScope(callerTenantId);
+  const scope = await resolveTenantScope(caller);
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: {

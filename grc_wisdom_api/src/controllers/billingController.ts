@@ -44,7 +44,7 @@ async function ensureDefaultPlans() {
 
 export const listSubscriptions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'billing.subscriptions.list');
     await ensureDefaultPlans();
 
@@ -488,7 +488,7 @@ export const deleteSubscription = async (req: AuthenticatedRequest, res: Respons
 
 export const listInvoices = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'billing.invoices.list');
 
     const where: any = {};
@@ -601,7 +601,7 @@ export const payInvoice = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const listPayments = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'billing.payments.list');
 
     const paidInvoices = await prisma.invoice.findMany({

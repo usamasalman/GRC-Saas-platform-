@@ -70,7 +70,7 @@ export const uploadImport = async (req: AuthenticatedRequest, res: Response): Pr
     // detail to create one at commit time.
     if (kind === 'Clause') {
       if (targetStandardId) {
-        const scope = await resolveTenantScope(tenantId);
+        const scope = await resolveTenantScope(req.user!);
         const std = await prisma.standard.findUnique({ where: { id: targetStandardId } });
         if (!std) { res.status(404).json({ status: 'error', message: 'Target standard not found' }); return; }
         if (std.isSystem) {
@@ -182,7 +182,7 @@ export const uploadImport = async (req: AuthenticatedRequest, res: Response): Pr
 
 export const listImports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imports = await prisma.frameworkImport.findMany({
       where: { tenantId: { in: scope.tenantIds } },
       include: {
@@ -204,7 +204,7 @@ export const listImports = async (req: AuthenticatedRequest, res: Response): Pro
 export const getImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -244,7 +244,7 @@ export const reviewCandidate = async (req: AuthenticatedRequest, res: Response):
     const candidateId = req.params.candidateId as string;
     const { decision, ref, title, body, extra } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const cand = await prisma.importCandidate.findFirst({
       where: { id: candidateId, import: { tenantId: { in: scope.tenantIds } } },
       include: { import: { select: { id: true, status: true } } },
@@ -302,7 +302,7 @@ export const reviewCandidate = async (req: AuthenticatedRequest, res: Response):
 export const acceptClean = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!imp) { res.status(404).json({ status: 'error', message: 'Import not found' }); return; }
     if (imp.status !== 'Extracted') {
@@ -332,7 +332,7 @@ export const acceptClean = async (req: AuthenticatedRequest, res: Response): Pro
 export const commitImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { candidates: { where: { status: 'Accepted' } } },
@@ -433,7 +433,7 @@ export const commitImport = async (req: AuthenticatedRequest, res: Response): Pr
 export const discardImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!imp) { res.status(404).json({ status: 'error', message: 'Import not found' }); return; }
     if (imp.status === 'Committed') {

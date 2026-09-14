@@ -70,7 +70,7 @@ const decorate = (imp: any, now: Date) => ({
 export const raiseImpediment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { project, canWrite, side } = await guardProject(
-      str(req.user!.tenantId), str(req.params.id),
+      req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
@@ -227,7 +227,7 @@ export const blockTask = async (req: AuthenticatedRequest, res: Response): Promi
     });
     if (!task) { notFound(res); return; }
 
-    const { project, canWrite, side } = await guardProject(str(req.user!.tenantId), task.projectId);
+    const { project, canWrite, side } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
@@ -346,7 +346,7 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
     });
     if (!imp) { notFound(res); return; }
 
-    const { project, canWrite, side } = await guardProject(str(req.user!.tenantId), imp.projectId);
+    const { project, canWrite, side } = await guardProject(req.user!, imp.projectId);
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
@@ -467,7 +467,7 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
     });
     if (!task) { notFound(res); return; }
 
-    const { project, canWrite } = await guardProject(str(req.user!.tenantId), task.projectId);
+    const { project, canWrite } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
     if (!canWrite) { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
@@ -603,7 +603,7 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
  */
 export const getImpediments = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { project } = await guardProject(str(req.user!.tenantId), str(req.params.id));
+    const { project } = await guardProject(req.user!, str(req.params.id));
     if (!project) { notFound(res); return; }
 
     const where: any = { projectId: project.id };

@@ -107,6 +107,7 @@ jobs:
           node scripts/verify/capabilities-mean-something-test.js
           node scripts/verify/guarded-actions-test.js
           node scripts/verify/portal-follows-role-test.js
+          node scripts/verify/platform-scope-test.js
           node scripts/verify/no-invented-data-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js

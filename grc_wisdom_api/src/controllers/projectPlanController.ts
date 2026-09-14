@@ -58,7 +58,7 @@ async function nextTaskRef(projectId: string): Promise<string> {
  * cannot drift on who may touch an engagement.
  */
 const authorise = (req: AuthenticatedRequest, projectId: string) =>
-  guardProject(str(req.user!.tenantId), projectId);
+  guardProject(req.user!, projectId);
 
 // ─── The plan ───────────────────────────────────────────────────────────────
 

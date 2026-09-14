@@ -16,7 +16,7 @@ const TICKET_TYPES = ['Incident', 'ServiceRequest', 'AccessRequest', 'Change', '
 
 export const listTickets = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'itsm.tickets.list');
 
     const { status, priority, type, assignedTeam, mine, search, slaState } =
@@ -77,7 +77,7 @@ export const listTickets = async (req: AuthenticatedRequest, res: Response): Pro
 export const getTicket = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const ticket = await prisma.ticket.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
@@ -227,7 +227,7 @@ export const createTicket = async (req: AuthenticatedRequest, res: Response): Pr
 export const updateTicket = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const ticket = await prisma.ticket.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!ticket) { res.status(404).json({ status: 'error', message: 'Ticket not found' }); return; }
 
@@ -341,7 +341,7 @@ export const addComment = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const ticket = await prisma.ticket.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!ticket) { res.status(404).json({ status: 'error', message: 'Ticket not found' }); return; }
 
@@ -390,7 +390,7 @@ export const addComment = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const listQueues = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const tickets = await prisma.ticket.findMany({
       where: { tenantId: { in: scope.tenantIds }, status: { notIn: CLOSED } },
       include: { assignee: { select: { id: true, name: true } } },
@@ -429,7 +429,7 @@ export const listQueues = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const listCatalog = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const items = await prisma.serviceCatalogItem.findMany({
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }], isActive: true },
       include: {
@@ -470,7 +470,7 @@ export const listCatalog = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const getSlaOverview = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const policies = await prisma.slaPolicy.findMany({
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
@@ -536,7 +536,7 @@ export const triggerEscalationScan = async (_req: AuthenticatedRequest, res: Res
 
 export const listArticles = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const { search, category, status } = req.query as Record<string, string | undefined>;
 
     const where: any = { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] };

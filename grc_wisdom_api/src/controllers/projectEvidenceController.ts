@@ -69,7 +69,7 @@ async function loadTask(req: AuthenticatedRequest, taskId: string) {
   });
   if (!task) return null;
 
-  const guard = await guardProject(str(req.user!.tenantId), task.projectId);
+  const guard = await guardProject(req.user!, task.projectId);
   if (!guard.project) return null;
 
   return { task, ...guard, project: guard.project };
@@ -226,7 +226,7 @@ export const downloadEvidence = async (req: AuthenticatedRequest, res: Response)
     });
     if (!evidence) { notFound(res); return; }
 
-    const { project } = await guardProject(str(req.user!.tenantId), evidence.projectId);
+    const { project } = await guardProject(req.user!, evidence.projectId);
     if (!project) { notFound(res); return; }
 
     const full = resolveEvidencePath(evidence.storageKey);
@@ -285,7 +285,7 @@ export const withdrawEvidence = async (req: AuthenticatedRequest, res: Response)
     if (!evidence) { notFound(res); return; }
 
     const { project, canWrite, side } = await guardProject(
-      str(req.user!.tenantId), evidence.projectId,
+      req.user!, evidence.projectId,
     );
     if (!project) { notFound(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
@@ -473,7 +473,7 @@ export const unlinkClause = async (req: AuthenticatedRequest, res: Response): Pr
     if (!link) { notFound(res); return; }
 
     const { project, canWrite, side } = await guardProject(
-      str(req.user!.tenantId), link.task.projectId,
+      req.user!, link.task.projectId,
     );
     if (!project) { notFound(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
@@ -516,7 +516,7 @@ export const getEvidenceRegister = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {
   try {
-    const { project } = await guardProject(str(req.user!.tenantId), str(req.params.id));
+    const { project } = await guardProject(req.user!, str(req.params.id));
     if (!project) { notFound(res); return; }
 
     const where: any = { projectId: project.id };
@@ -589,7 +589,7 @@ export const verifyEvidenceIntegrity = async (
 ): Promise<void> => {
   try {
     const { project, canWrite } = await guardProject(
-      str(req.user!.tenantId), str(req.params.id),
+      req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
     if (!canWrite) { readOnly(res); return; }

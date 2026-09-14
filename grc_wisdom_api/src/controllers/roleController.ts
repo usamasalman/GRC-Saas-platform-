@@ -39,7 +39,7 @@ export const listCapabilities = async (_req: AuthenticatedRequest, res: Response
 
 export const listRoles = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const roles = await prisma.role.findMany({
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
       include: {
@@ -88,7 +88,7 @@ export const getRole = async (req: AuthenticatedRequest, res: Response): Promise
     });
     if (!role) { res.status(404).json({ status: 'error', message: 'Role not found' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (role.tenantId && !scope.tenantIds.includes(role.tenantId)) {
       res.status(403).json({ status: 'error', message: 'Role is outside your authorized scope' });
       return;
@@ -122,7 +122,7 @@ export const createRole = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     // A role may only be created inside a tenant the caller can reach.
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const targetTenantId = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(targetTenantId)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -209,7 +209,7 @@ export const updateRole = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (role.tenantId && !scope.tenantIds.includes(role.tenantId)) {
       res.status(403).json({ status: 'error', message: 'Role is outside your authorized scope' });
       return;
@@ -299,7 +299,7 @@ export const deleteRole = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (role.tenantId && !scope.tenantIds.includes(role.tenantId)) {
       res.status(403).json({ status: 'error', message: 'Role is outside your authorized scope' });
       return;
@@ -330,7 +330,7 @@ export const previewEffectivePermissions = async (req: AuthenticatedRequest, res
   try {
     const userId = (req.query.userId as string) || req.user!.id;
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true, tenantId: true, role: true },

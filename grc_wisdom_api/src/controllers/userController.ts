@@ -26,7 +26,7 @@ const TIER_TYPES: Record<string, string[]> = {
 
 export const listUsers = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'users.list');
 
     const { tier, search, status, roleId, department } = req.query as Record<string, string | undefined>;
@@ -104,7 +104,7 @@ export const listUsers = async (req: AuthenticatedRequest, res: Response): Promi
 
 export const listTeams = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'teams.list');
 
     const users = await prisma.user.findMany({
@@ -163,7 +163,7 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const targetTenantId = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(targetTenantId)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -254,7 +254,7 @@ export const assignRole = async (req: AuthenticatedRequest, res: Response): Prom
     const { roleId } = req.body || {};
     if (!roleId) { res.status(400).json({ status: 'error', message: 'roleId is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const user = await prisma.user.findUnique({ where: { id }, include: { roleRef: true } });
     if (!user) { res.status(404).json({ status: 'error', message: 'User not found' }); return; }
     if (!scope.tenantIds.includes(user.tenantId)) {
@@ -322,7 +322,7 @@ export const transferUser = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const user = await prisma.user.findUnique({ where: { id }, include: { tenant: { select: { name: true } } } });
     if (!user) { res.status(404).json({ status: 'error', message: 'User not found' }); return; }
 
@@ -405,7 +405,7 @@ export const setUserStatus = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) { res.status(404).json({ status: 'error', message: 'User not found' }); return; }
     if (!scope.tenantIds.includes(user.tenantId)) {

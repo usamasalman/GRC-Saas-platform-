@@ -34,7 +34,7 @@ async function nextRef(tenantId: string): Promise<string> {
 
 export const listRisks = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.risks.list');
 
     const { status, category, search, mine } = req.query as Record<string, string | undefined>;
@@ -312,7 +312,7 @@ export const createRisk = async (req: AuthenticatedRequest, res: Response): Prom
 export const updateRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
 
@@ -403,7 +403,7 @@ export const setRiskControls = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
 
@@ -456,7 +456,7 @@ export const addTreatment = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
 
@@ -485,7 +485,7 @@ export const addTreatment = async (req: AuthenticatedRequest, res: Response): Pr
 export const completeTreatment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const t = await prisma.riskTreatmentAction.findFirst({
       where: { id, risk: { tenantId: { in: scope.tenantIds } } },
       include: { risk: { select: { id: true, tenantId: true } } },
@@ -522,7 +522,7 @@ export const completeTreatment = async (req: AuthenticatedRequest, res: Response
 export const updateTreatment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const t = await prisma.riskTreatmentAction.findFirst({
       where: { id, risk: { tenantId: { in: scope.tenantIds } } },
       include: { risk: { select: { id: true, ref: true, tenantId: true } } },
@@ -595,7 +595,7 @@ export const updateTreatment = async (req: AuthenticatedRequest, res: Response):
 export const deleteTreatment = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const t = await prisma.riskTreatmentAction.findFirst({
       where: { id, risk: { tenantId: { in: scope.tenantIds } } },
       include: { risk: { select: { id: true, ref: true, tenantId: true } } },
@@ -647,7 +647,7 @@ export const acceptRisk = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }
 
@@ -737,7 +737,7 @@ export const setRiskEntities = async (req: AuthenticatedRequest, res: Response):
     const { auditableEntityIds, entityIds } = req.body || {};
     const ids: string[] = Array.isArray(auditableEntityIds) ? auditableEntityIds : (Array.isArray(entityIds) ? entityIds : []);
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) {
       res.status(404).json({ status: 'error', message: 'Risk not found' });
@@ -793,7 +793,7 @@ export const linkRelatedRisk = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const causeRisk = await prisma.risk.findFirst({ where: { id: causeId, tenantId: { in: scope.tenantIds } } });
     const effectRisk = await prisma.risk.findFirst({ where: { id: targetId, tenantId: { in: scope.tenantIds } } });
 
@@ -836,7 +836,7 @@ export const reviewRisk = async (req: AuthenticatedRequest, res: Response): Prom
     const id = req.params.id as string;
     const { likelihood, impact, reviewCadenceMonths, notes } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) {
       res.status(404).json({ status: 'error', message: 'Risk not found' });
@@ -907,7 +907,7 @@ export const reviewRisk = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const riskAnalytics = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.risks.analytics');
 
     const risks = await prisma.risk.findMany({
@@ -1101,7 +1101,7 @@ export const riskAnalytics = async (req: AuthenticatedRequest, res: Response): P
 export const deleteRisk = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const risk = await prisma.risk.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -1186,7 +1186,7 @@ export const unlinkRelatedRisk = async (req: AuthenticatedRequest, res: Response
   try {
     const id = req.params.id as string;
     const targetId = req.params.targetId as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const risk = await prisma.risk.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!risk) { res.status(404).json({ status: 'error', message: 'Risk not found' }); return; }

@@ -1158,7 +1158,7 @@ export const exportDeliveryReport = async (
     if (!format) { badFormat(res); return; }
 
     const { project: guarded } = await guardProject(
-      str(req.user!.tenantId), str(req.params.id),
+      req.user!, str(req.params.id),
     );
     if (!guarded) { notFound(res); return; }
 
@@ -1310,7 +1310,7 @@ export const getReportRegister = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {
   try {
-    const { project } = await guardProject(str(req.user!.tenantId), str(req.params.id));
+    const { project } = await guardProject(req.user!, str(req.params.id));
     if (!project) { notFound(res); return; }
 
     const where: any = { projectId: project.id };

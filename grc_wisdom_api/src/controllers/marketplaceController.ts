@@ -553,7 +553,7 @@ export const purchaseTool = async (req: AuthenticatedRequest, res: Response): Pr
 
 export const listInstallations = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'marketplace.installations.list');
 
     let list = installationsStore;

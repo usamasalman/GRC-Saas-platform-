@@ -13,7 +13,7 @@ const SUBJ_APPETITE = 'RiskAppetite';
  */
 export const listAppetites = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.appetite.list');
 
     const appetites = await prisma.riskAppetite.findMany({
@@ -81,7 +81,7 @@ export const setAppetite = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -154,7 +154,7 @@ export const setAppetite = async (req: AuthenticatedRequest, res: Response): Pro
 export const approveAppetite = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const appetite = await prisma.riskAppetite.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!appetite) { res.status(404).json({ status: 'error', message: 'Risk appetite not found' }); return; }
     if (appetite.status === 'Approved') {
@@ -228,7 +228,7 @@ export const approveAppetite = async (req: AuthenticatedRequest, res: Response):
 /** Every open risk measured against the appetite in force for its category. */
 export const appetitePosture = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.appetite.posture');
 
     const [appetites, risks] = await Promise.all([

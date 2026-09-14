@@ -192,7 +192,7 @@ export const uploadRiskImport = async (req: AuthenticatedRequest, res: Response)
 
 export const listRiskImports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imports = await prisma.frameworkImport.findMany({
       where: { tenantId: { in: scope.tenantIds }, kind: 'Risk' },
       include: {
@@ -211,7 +211,7 @@ export const listRiskImports = async (req: AuthenticatedRequest, res: Response):
 export const getRiskImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds }, kind: 'Risk' },
       include: {
@@ -264,7 +264,7 @@ export const reviewRiskCandidate = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const cand = await prisma.importCandidate.findFirst({
       where: { id: candidateId, import: { tenantId: { in: scope.tenantIds }, kind: 'Risk' } },
       include: { import: { select: { id: true, tenantId: true, status: true } } },
@@ -372,7 +372,7 @@ export const reviewRiskCandidate = async (req: AuthenticatedRequest, res: Respon
 export const acceptCleanRiskRows = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds }, kind: 'Risk' },
     });
@@ -399,7 +399,7 @@ export const acceptCleanRiskRows = async (req: AuthenticatedRequest, res: Respon
 export const commitRiskImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds }, kind: 'Risk' },
       include: { candidates: { where: { status: 'Accepted' } } },
@@ -566,7 +566,7 @@ export const commitRiskImport = async (req: AuthenticatedRequest, res: Response)
 export const discardRiskImport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
       where: { id, tenantId: { in: scope.tenantIds }, kind: 'Risk' },
     });

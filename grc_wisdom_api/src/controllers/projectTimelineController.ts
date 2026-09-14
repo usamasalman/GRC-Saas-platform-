@@ -53,7 +53,7 @@ async function edgesFor(projectId: string) {
  */
 export const getTimeline = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { project } = await guardProject(str(req.user!.tenantId), str(req.params.id));
+    const { project } = await guardProject(req.user!, str(req.params.id));
     if (!project) { notFound(res); return; }
 
     const [phases, edges] = await Promise.all([
@@ -157,7 +157,7 @@ export const getTimeline = async (req: AuthenticatedRequest, res: Response): Pro
 export const linkTasks = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { project, canWrite, side } = await guardProject(
-      str(req.user!.tenantId), str(req.params.id),
+      req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
@@ -259,7 +259,7 @@ export const unlinkTasks = async (req: AuthenticatedRequest, res: Response): Pro
     if (!link) { notFound(res); return; }
 
     const { project, canWrite, side } = await guardProject(
-      str(req.user!.tenantId), link.projectId,
+      req.user!, link.projectId,
     );
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
@@ -303,7 +303,7 @@ export const getImpact = async (req: AuthenticatedRequest, res: Response): Promi
     });
     if (!task) { notFound(res); return; }
 
-    const { project } = await guardProject(str(req.user!.tenantId), task.projectId);
+    const { project } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
 
     const edges = await edgesFor(project.id);

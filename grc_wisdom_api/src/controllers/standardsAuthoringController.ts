@@ -54,7 +54,7 @@ export const createStandard = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     // Only the operator publishes platform-wide; everyone else authors their own.
     const wantsPlatform = publishScope === 'platform';
     if (wantsPlatform && scope.kind !== 'PLATFORM') {
@@ -454,7 +454,7 @@ export const bulkMapControlsToClauses = async (
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const controls = await prisma.control.findMany({
       where: {
@@ -574,7 +574,7 @@ export const mapControlToClauses = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const control = await prisma.control.findFirst({
       // Library controls (tenantId null) are visible to everyone, so they have
       // to be fetched before we can judge whether this caller may remap one.
@@ -655,7 +655,7 @@ async function refuseIfNotYours(
       },
     };
   }
-  const scope = await resolveTenantScope(req.user!.tenantId);
+  const scope = await resolveTenantScope(req.user!);
   if (std.tenantId === null && scope.kind !== 'PLATFORM') {
     return {
       status: 403,

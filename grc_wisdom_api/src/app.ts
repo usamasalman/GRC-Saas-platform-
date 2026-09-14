@@ -208,7 +208,7 @@ app.use('/api/projects', projectRoutes);
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {
   try {
-    const scope = await resolveTenantScope(req.user.tenantId);
+    const scope = await resolveTenantScope(req.user);
     await auditCrossTenantRead(scope, req.user.id, 'audit-logs.list');
     const logs = await prisma.auditLog.findMany({
       where: { tenantId: { in: scope.tenantIds } },
@@ -228,7 +228,7 @@ app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {
 // Legacy alias — the full ITSM surface is /api/itsm/tickets.
 app.get('/api/tickets', requireAuth, async (req: any, res: Response) => {
   try {
-    const scope = await resolveTenantScope(req.user.tenantId);
+    const scope = await resolveTenantScope(req.user);
     await auditCrossTenantRead(scope, req.user.id, 'tickets.list');
     const tickets = await prisma.ticket.findMany({
       where: { tenantId: { in: scope.tenantIds } },
@@ -248,7 +248,7 @@ app.get('/api/tickets', requireAuth, async (req: any, res: Response) => {
 // Phase 1 ASM Endpoint
 app.get('/api/asm/assets', requireAuth, async (req: any, res: Response) => {
   try {
-    const scope = await resolveTenantScope(req.user.tenantId);
+    const scope = await resolveTenantScope(req.user);
     await auditCrossTenantRead(scope, req.user.id, 'asm.assets.list');
     const assets = await prisma.asmAsset.findMany({
       where: { tenantId: { in: scope.tenantIds } },
@@ -264,7 +264,7 @@ app.get('/api/asm/assets', requireAuth, async (req: any, res: Response) => {
 // Phase 1 Eye Phish Endpoint
 app.get('/api/phish/campaigns', requireAuth, async (req: any, res: Response) => {
   try {
-    const scope = await resolveTenantScope(req.user.tenantId);
+    const scope = await resolveTenantScope(req.user);
     await auditCrossTenantRead(scope, req.user.id, 'phish.campaigns.list');
     const campaigns = await prisma.phishCampaign.findMany({
       where: { tenantId: { in: scope.tenantIds } },

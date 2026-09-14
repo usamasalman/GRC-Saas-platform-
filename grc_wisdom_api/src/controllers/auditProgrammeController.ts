@@ -21,7 +21,7 @@ async function nextAuditRef(tenantId: string): Promise<string> {
 
 export const listAudits = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.audits.list');
 
     const { status } = req.query as Record<string, string | undefined>;
@@ -76,7 +76,7 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
 export const getAudit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -125,7 +125,7 @@ export const createAudit = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -167,7 +167,7 @@ export const createAudit = async (req: AuthenticatedRequest, res: Response): Pro
 export const updateAudit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { issues: { select: { status: true } } },
@@ -367,7 +367,7 @@ export const raiseFinding = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { _count: { select: { issues: true } } },

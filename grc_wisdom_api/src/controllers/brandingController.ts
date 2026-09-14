@@ -111,7 +111,7 @@ export async function logoBytesFor(tenantId: string): Promise<Buffer | null> {
 
 export const getBranding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const tenantId = str(req.params.tenantId || req.user!.tenantId);
 
     if (!scope.tenantIds.includes(tenantId)) {
@@ -143,7 +143,7 @@ export const getBranding = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const updateBranding = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const tenantId = str(req.params.tenantId || req.user!.tenantId);
 
     // Tenant scope, never project access — see the note at the top of this file.
@@ -244,7 +244,7 @@ export const updateBranding = async (req: AuthenticatedRequest, res: Response): 
  */
 export const uploadLogo = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const tenantId = str(req.params.tenantId || req.user!.tenantId);
 
     if (!canWriteToTenant(scope, tenantId)) {
@@ -321,7 +321,7 @@ export const uploadLogo = async (req: AuthenticatedRequest, res: Response): Prom
 /** Serve a logo to an authenticated caller who can see the organisation. */
 export const getLogo = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const tenantId = str(req.params.tenantId || req.user!.tenantId);
 
     if (!scope.tenantIds.includes(tenantId)) {

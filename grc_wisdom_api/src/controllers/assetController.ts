@@ -92,7 +92,7 @@ const INCLUDE = {
 
 export const listAssets = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.assets.list');
 
     const { type, ownership, tier, status, search, unprotected } =
@@ -252,7 +252,7 @@ export const createAsset = async (req: AuthenticatedRequest, res: Response): Pro
 export const updateAsset = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
 
@@ -357,7 +357,7 @@ export const raiseRiskFromAsset = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { auditableEntity: { select: { id: true } } },
@@ -470,7 +470,7 @@ export const setAssetControls = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
 
@@ -505,7 +505,7 @@ export const linkExistingRisk = async (req: AuthenticatedRequest, res: Response)
     const { riskId, threat, vulnerability, threatLevel, vulnerabilityLevel, exposureFactor } = req.body || {};
     if (!riskId) { res.status(400).json({ status: 'error', message: 'riskId is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
     const risk = await prisma.risk.findFirst({ where: { id: riskId, tenantId: asset.tenantId } });
@@ -549,7 +549,7 @@ export const reviewAsset = async (req: AuthenticatedRequest, res: Response): Pro
   try {
     const id = req.params.id as string;
     const { note } = req.body || {};
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!asset) { res.status(404).json({ status: 'error', message: 'Asset not found' }); return; }
 
@@ -579,7 +579,7 @@ export const reviewAsset = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const assetAnalytics = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const rows = await prisma.asset.findMany({
       where: { tenantId: { in: scope.tenantIds } }, include: INCLUDE,
     });
@@ -667,7 +667,7 @@ export const assetAnalytics = async (req: AuthenticatedRequest, res: Response): 
 export const deleteAsset = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const asset = await prisma.asset.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -723,7 +723,7 @@ export const unlinkAssetRisk = async (req: AuthenticatedRequest, res: Response):
   try {
     const assetId = req.params.id as string;
     const riskId = req.params.riskId as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const asset = await prisma.asset.findFirst({
       where: { id: assetId, tenantId: { in: scope.tenantIds } },

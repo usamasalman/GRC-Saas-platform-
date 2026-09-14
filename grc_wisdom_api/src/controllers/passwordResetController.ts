@@ -147,7 +147,7 @@ export const listRequests = async (req: AuthenticatedRequest, res: Response): Pr
   try {
     // Unscoped, this listed every pending reset on the platform — each with the
     // requester's email, name and role — to a security admin in any tenant.
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const requests = await prisma.passwordResetRequest.findMany({
       where: { user: { tenantId: { in: scope.tenantIds } } },
@@ -190,7 +190,7 @@ export const approveRequest = async (req: AuthenticatedRequest, res: Response): 
     // this check a security admin in any tenant could approve a reset for a user
     // in any other tenant and receive the one-time code — cross-tenant account
     // takeover. adminTenantId was already being read here and then never used.
-    const scope = await resolveTenantScope(adminTenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (!scope.tenantIds.includes(request.user.tenantId)) {
       res.status(403).json({
         status: 'error',
@@ -265,7 +265,7 @@ export const denyRequest = async (req: AuthenticatedRequest, res: Response): Pro
     // Same scope check as approve. Denying someone else's tenant's requests
     // does not leak a code, but it does block account recovery for users this
     // admin has no authority over.
-    const scope = await resolveTenantScope(adminTenantId);
+    const scope = await resolveTenantScope(req.user!);
     if (!scope.tenantIds.includes(request.user.tenantId)) {
       res.status(403).json({
         status: 'error',

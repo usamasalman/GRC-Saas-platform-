@@ -35,7 +35,7 @@ async function canApprove(userId: string): Promise<boolean> {
 
 export const listSessions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const sessions = await prisma.impersonationSession.findMany({
       where: { tenantId: { in: scope.tenantIds } },
       include: {

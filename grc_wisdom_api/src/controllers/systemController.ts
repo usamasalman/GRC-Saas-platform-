@@ -14,7 +14,7 @@ function str(val: unknown): string {
 
 export const getSystemHealth = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'system.health.get');
 
     const dbStart = Date.now();
@@ -89,7 +89,7 @@ export const triggerSystemJob = async (req: AuthenticatedRequest, res: Response)
 
 export const getSecurityPosture = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'system.security.get');
 
     const totalAuditLogs = await prisma.auditLog.count();
@@ -119,7 +119,7 @@ export const getSecurityPosture = async (req: AuthenticatedRequest, res: Respons
 
 export const verifyWormIntegrity = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'system.security.verifyWorm');
 
     const logs = await prisma.auditLog.findMany({

@@ -12,7 +12,7 @@ const FREQUENCIES = ['Monthly', 'Quarterly'];
 
 export const listKris = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.kri.list');
 
     const kris = await prisma.kri.findMany({
@@ -82,7 +82,7 @@ export const createKri = async (req: AuthenticatedRequest, res: Response): Promi
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -141,7 +141,7 @@ export const recordReading = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const kri = await prisma.kri.findFirst({
       where: { id: kriId, tenantId: { in: scope.tenantIds } },
       include: { risk: { select: { id: true, ref: true, title: true } } },
@@ -224,7 +224,7 @@ export const recordReading = async (req: AuthenticatedRequest, res: Response): P
 export const updateKri = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const kri = await prisma.kri.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!kri) { res.status(404).json({ status: 'error', message: 'KRI not found' }); return; }
 
@@ -307,7 +307,7 @@ export const updateKri = async (req: AuthenticatedRequest, res: Response): Promi
 export const deleteKri = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const kri = await prisma.kri.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { _count: { select: { readings: true } } },

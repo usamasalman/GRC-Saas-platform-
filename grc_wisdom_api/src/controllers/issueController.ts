@@ -62,7 +62,7 @@ const AWAITING_RESPONSE = ['Open', 'Reopened'];
  */
 export const listIssues = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.issues.list');
 
     const { source, status, riskRating, overdue } = req.query as Record<string, string | undefined>;
@@ -153,7 +153,7 @@ export const createIssue = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -203,7 +203,7 @@ export const respondToIssue = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
 
@@ -285,7 +285,7 @@ export const assignCap = async (req: AuthenticatedRequest, res: Response): Promi
     const id = req.params.id as string;
     const { capOwnerId, capDueDate, capDescription } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
 
@@ -365,7 +365,7 @@ export const submitForClosure = async (req: AuthenticatedRequest, res: Response)
     const id = req.params.id as string;
     const { evidenceNote } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
 
@@ -426,7 +426,7 @@ export const closeIssue = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
     if (issue.status !== 'PendingClosure') {
@@ -495,7 +495,7 @@ export const reopenIssue = async (req: AuthenticatedRequest, res: Response): Pro
     const { reason } = req.body || {};
     if (!reason) { res.status(400).json({ status: 'error', message: 'reason is required to reopen an issue' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
     if (issue.status !== 'Closed') {
@@ -551,7 +551,7 @@ export const escalateIssue = async (req: AuthenticatedRequest, res: Response): P
     const { reason } = req.body || {};
     if (!reason) { res.status(400).json({ status: 'error', message: 'reason is required to escalate an issue' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Issue not found' }); return; }
     if (issue.status === 'Closed') {
@@ -619,7 +619,7 @@ export const escalateIssue = async (req: AuthenticatedRequest, res: Response): P
 export const updateIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!issue) { res.status(404).json({ status: 'error', message: 'Finding not found' }); return; }
 
@@ -717,7 +717,7 @@ export const updateIssue = async (req: AuthenticatedRequest, res: Response): Pro
 export const deleteIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const issue = await prisma.issue.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {

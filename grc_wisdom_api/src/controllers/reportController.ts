@@ -149,7 +149,7 @@ export const exportRcm = async (req: AuthenticatedRequest, res: Response): Promi
     const format = formatOf(req);
     if (!format) { badFormat(res); return; }
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -243,7 +243,7 @@ export const exportAuditReport = async (req: AuthenticatedRequest, res: Response
     const format = formatOf(req);
     if (!format) { badFormat(res); return; }
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const audit = await prisma.audit.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -345,7 +345,7 @@ export const exportIssueRegister = async (req: AuthenticatedRequest, res: Respon
   try {
     const format = formatOf(req);
     if (!format) { badFormat(res); return; }
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'report.issues.export');
 
     const issues = await prisma.issue.findMany({
@@ -403,7 +403,7 @@ export const exportFrameworkCoverage = async (req: AuthenticatedRequest, res: Re
   try {
     const format = formatOf(req);
     if (!format) { badFormat(res); return; }
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const standards = await prisma.standard.findMany({
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
       include: {
@@ -458,7 +458,7 @@ export const exportAnnualPlan = async (req: AuthenticatedRequest, res: Response)
     const format = formatOf(req);
     if (!format) { badFormat(res); return; }
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const plan = await prisma.auditPlan.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {

@@ -80,7 +80,7 @@ function decorate(p: any, scope: any) {
 
 export const listProjects = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'project.list');
 
     const { status, search } = req.query as Record<string, string | undefined>;
@@ -129,7 +129,7 @@ export const listProjects = async (req: AuthenticatedRequest, res: Response): Pr
 
 export const getProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const id = str(req.params.id);
 
     const project = await prisma.project.findUnique({
@@ -167,7 +167,7 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const createProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const {
       name, description, objectives, projectType, priority, frameworks,
       startDate, targetEndDate, ownerId, managerId, sponsorId, verificationPolicy,
@@ -295,7 +295,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
 
 export const updateProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const id = str(req.params.id);
 
     const existing = await prisma.project.findUnique({
@@ -440,7 +440,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
  */
 export const rebaselineProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const id = str(req.params.id);
 
     const existing = await prisma.project.findUnique({
@@ -526,7 +526,7 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
 
 export const closeProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const id = str(req.params.id);
     const { outcome, closureNote } = req.body || {};
 

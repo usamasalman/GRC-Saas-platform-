@@ -59,7 +59,7 @@ async function loadTask(req: AuthenticatedRequest, taskId: string) {
   });
   if (!task) return null;
 
-  const guard = await guardProject(str(req.user!.tenantId), task.projectId);
+  const guard = await guardProject(req.user!, task.projectId);
   if (!guard.project) return null;
 
   return {
@@ -486,7 +486,7 @@ export const getVerificationQueue = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {
   try {
-    const { project } = await guardProject(str(req.user!.tenantId), str(req.params.id));
+    const { project } = await guardProject(req.user!, str(req.params.id));
     if (!project) { notFound(res); return; }
 
     const userId = str(req.user!.id);

@@ -26,7 +26,7 @@ export const createControl = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const wantsLibrary = publishScope === 'platform';
     if (wantsLibrary && scope.kind !== 'PLATFORM') {
       res.status(403).json({
@@ -97,7 +97,7 @@ export const cloneControl = async (req: AuthenticatedRequest, res: Response): Pr
     const id = req.params.id as string;
     const { code } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const source = await prisma.control.findFirst({
       where: { id, OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
       include: { clauseLinks: { select: { clauseId: true } } },
@@ -235,7 +235,7 @@ export const deleteControl = async (req: AuthenticatedRequest, res: Response): P
 /** Clause picker for the authoring screens — every clause the tenant can map to. */
 export const listClauses = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const { standardId, standardCode } = req.query as Record<string, string | undefined>;
 
     const where: any = { standard: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] } };
@@ -299,7 +299,7 @@ async function refuseIfNotYours(
   req: AuthenticatedRequest,
   ctrl: { tenantId: string | null; code: string },
 ): Promise<{ status: number; body: any } | null> {
-  const scope = await resolveTenantScope(req.user!.tenantId);
+  const scope = await resolveTenantScope(req.user!);
   if (ctrl.tenantId === null && scope.kind !== 'PLATFORM') {
     return {
       status: 403,

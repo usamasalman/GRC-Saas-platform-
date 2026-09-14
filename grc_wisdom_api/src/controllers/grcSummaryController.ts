@@ -64,7 +64,7 @@ const appetiteKey = (tenantId: string, category: string) => `${tenantId}::${cate
 
 export const getGrcSummary = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(String(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     const where = { tenantId: { in: scope.tenantIds } };
     const now = new Date();
 

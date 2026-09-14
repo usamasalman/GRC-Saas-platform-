@@ -24,7 +24,7 @@ async function nextLossRef(tenantId: string): Promise<string> {
 
 export const listLossEvents = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.losses.list');
 
     const { category, status } = req.query as Record<string, string | undefined>;
@@ -134,7 +134,7 @@ export const createLossEvent = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -206,7 +206,7 @@ export const updateLossEvent = async (req: AuthenticatedRequest, res: Response):
     const id = req.params.id as string;
     const { recoveredAmount, status, riskId } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const event = await prisma.lossEvent.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!event) { res.status(404).json({ status: 'error', message: 'Loss event not found' }); return; }
     if (event.status === 'Closed') {
@@ -278,7 +278,7 @@ export const updateLossEvent = async (req: AuthenticatedRequest, res: Response):
 export const deleteLossEvent = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const event = await prisma.lossEvent.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
     });

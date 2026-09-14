@@ -11,7 +11,7 @@ import { SodViolation } from '../services/sodEngine';
 
 export const listDefinitions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const defs = await prisma.workflowDefinition.findMany({
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
       include: {
@@ -43,7 +43,7 @@ export const listDefinitions = async (req: AuthenticatedRequest, res: Response):
 
 export const listRuns = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const { status, subjectType } = req.query as Record<string, string | undefined>;
 
     const where: any = { tenantId: { in: scope.tenantIds } };
@@ -85,7 +85,7 @@ export const listRuns = async (req: AuthenticatedRequest, res: Response): Promis
 export const getRun = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const run = await prisma.workflowRun.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {
@@ -118,7 +118,7 @@ export const decideRun = async (req: AuthenticatedRequest, res: Response): Promi
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const run = await prisma.workflowRun.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!run) { res.status(404).json({ status: 'error', message: 'Workflow run not found' }); return; }
 
@@ -172,7 +172,7 @@ export const cancel = async (req: AuthenticatedRequest, res: Response): Promise<
     const { reason } = req.body || {};
     if (!reason) { res.status(400).json({ status: 'error', message: 'reason is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const run = await prisma.workflowRun.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!run) { res.status(404).json({ status: 'error', message: 'Workflow run not found' }); return; }
 
@@ -193,7 +193,7 @@ export const cancel = async (req: AuthenticatedRequest, res: Response): Promise<
 
 export const myInbox = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const steps = await pendingStepsFor(req.user!.id, scope.tenantIds);
     res.json({
       status: 'success',

@@ -81,7 +81,7 @@ async function ensureDefaultImports(tenantId: string) {
 
 export const listQuotas = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.quotas.list');
 
     // Seed per-tenant defaults for every visible tenant
@@ -150,7 +150,7 @@ export const updateQuota = async (req: AuthenticatedRequest, res: Response): Pro
 
 export const listRules = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.rules.list');
 
     for (const tid of scope.tenantIds) {
@@ -311,7 +311,7 @@ export const runRuleNow = async (req: AuthenticatedRequest, res: Response): Prom
 
 export const listImports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(str(req.user!.tenantId));
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.imports.list');
 
     for (const tid of scope.tenantIds) {

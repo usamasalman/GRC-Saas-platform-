@@ -18,7 +18,7 @@ const FREQUENCIES = ['Continuous', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'S
 
 export const listStandards = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const standards = await prisma.standard.findMany({
       // Platform standards (tenantId null) plus any this organisation authored.
@@ -67,7 +67,7 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
     const { standardId, applicability, ownerId, tenantId } = req.body || {};
     if (!standardId) { res.status(400).json({ status: 'error', message: 'standardId is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -126,7 +126,7 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = String(tenantId || req.user!.tenantId);
 
     // Same guard as enabling: you may only change entities inside your scope.
@@ -184,7 +184,7 @@ export const disableStandard = async (req: AuthenticatedRequest, res: Response):
 
 export const listControls = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const { domain, standard, search } = req.query as Record<string, string | undefined>;
 
     const where: any = { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] };
@@ -234,7 +234,7 @@ export const listControls = async (req: AuthenticatedRequest, res: Response): Pr
 
 export const listImplementations = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.implementations.list');
 
     const { status, effectiveness, mine, overdue } = req.query as Record<string, string | undefined>;
@@ -301,7 +301,7 @@ export const listImplementations = async (req: AuthenticatedRequest, res: Respon
 export const getImplementation = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     const impl = await prisma.controlImplementation.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
@@ -340,7 +340,7 @@ export const createImplementation = async (req: AuthenticatedRequest, res: Respo
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const target = tenantId || req.user!.tenantId;
     if (!scope.tenantIds.includes(target)) {
       res.status(403).json({ status: 'error', message: 'Target tenant is outside your authorized scope' });
@@ -388,7 +388,7 @@ export const createImplementation = async (req: AuthenticatedRequest, res: Respo
 export const updateImplementation = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const impl = await prisma.controlImplementation.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!impl) { res.status(404).json({ status: 'error', message: 'Implementation not found' }); return; }
 
@@ -460,7 +460,7 @@ export const validateImplementation = async (req: AuthenticatedRequest, res: Res
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const impl = await prisma.controlImplementation.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { _count: { select: { evidence: true } } },
@@ -548,7 +548,7 @@ export const addEvidence = async (req: AuthenticatedRequest, res: Response): Pro
     const { title, description, classification, fileName, fileUrl } = req.body || {};
     if (!title) { res.status(400).json({ status: 'error', message: 'title is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const impl = await prisma.controlImplementation.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!impl) { res.status(404).json({ status: 'error', message: 'Implementation not found' }); return; }
 
@@ -589,7 +589,7 @@ export const reviewEvidence = async (req: AuthenticatedRequest, res: Response): 
     const id = req.params.id as string;
     const { relevance, sufficiency, authenticity, currency, reviewNote } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const evidence = await prisma.evidence.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!evidence) { res.status(404).json({ status: 'error', message: 'Evidence not found' }); return; }
 

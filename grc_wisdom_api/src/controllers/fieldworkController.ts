@@ -17,7 +17,7 @@ const SECTIONS = ['Planning', 'Fieldwork', 'Reporting'];
 
 /** Loads an audit inside the caller's scope, or null. */
 async function scopedAudit(req: AuthenticatedRequest, auditId: string) {
-  const scope = await resolveTenantScope(req.user!.tenantId);
+  const scope = await resolveTenantScope(req.user!);
   return prisma.audit.findFirst({ where: { id: auditId, tenantId: { in: scope.tenantIds } } });
 }
 
@@ -151,7 +151,7 @@ export const addProcedure = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const row = await prisma.engagementRisk.findFirst({
       where: { id: rowId, audit: { tenantId: { in: scope.tenantIds } } },
       include: { audit: { select: { id: true, ref: true, tenantId: true, status: true } } },
@@ -240,7 +240,7 @@ export const recordResult = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const proc = await prisma.testProcedure.findFirst({
       where: { id: procedureId, engagementRisk: { audit: { tenantId: { in: scope.tenantIds } } } },
       include: {
@@ -350,7 +350,7 @@ export const linkResultToFinding = async (req: AuthenticatedRequest, res: Respon
     const { findingId } = req.body || {};
     if (!findingId) { res.status(400).json({ status: 'error', message: 'findingId is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const proc = await prisma.testProcedure.findFirst({
       where: { id: procedureId, engagementRisk: { audit: { tenantId: { in: scope.tenantIds } } } },
       include: { result: true, engagementRisk: { include: { audit: { select: { id: true, tenantId: true } } } } },
@@ -498,7 +498,7 @@ export const createWorkpaper = async (req: AuthenticatedRequest, res: Response):
 export const submitWorkpaper = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.wpId as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const wp = await prisma.workpaper.findFirst({
       where: { id, audit: { tenantId: { in: scope.tenantIds } } },
       include: { audit: { select: { tenantId: true, ref: true } } },
@@ -531,7 +531,7 @@ export const addReviewNote = async (req: AuthenticatedRequest, res: Response): P
     const { note } = req.body || {};
     if (!note) { res.status(400).json({ status: 'error', message: 'note is required' }); return; }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const wp = await prisma.workpaper.findFirst({
       where: { id, audit: { tenantId: { in: scope.tenantIds } } },
       include: { audit: { select: { tenantId: true, ref: true } } },
@@ -576,7 +576,7 @@ export const clearReviewNote = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const note = await prisma.workpaperReviewNote.findFirst({
       where: { id: noteId, workpaper: { audit: { tenantId: { in: scope.tenantIds } } } },
       include: { workpaper: { include: { audit: { select: { tenantId: true, ref: true } } } } },
@@ -617,7 +617,7 @@ export const reviewWorkpaper = async (req: AuthenticatedRequest, res: Response):
     const id = req.params.wpId as string;
     const { conclusion } = req.body || {};
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const wp = await prisma.workpaper.findFirst({
       where: { id, audit: { tenantId: { in: scope.tenantIds } } },
       include: {

@@ -77,7 +77,7 @@ function enrich(v: any, now = new Date()) {
 
 export const listVendors = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.vendors.list');
 
     const { tier, status, category, search, overdue } = req.query as Record<string, string | undefined>;
@@ -241,7 +241,7 @@ export const createVendor = async (req: AuthenticatedRequest, res: Response): Pr
 export const updateVendor = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const vendor = await prisma.vendor.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!vendor) { res.status(404).json({ status: 'error', message: 'Vendor not found' }); return; }
 
@@ -336,7 +336,7 @@ export const requestAssessment = async (req: AuthenticatedRequest, res: Response
   try {
     const id = req.params.id as string;
     const { kind, questionnaire, dueDate } = req.body || {};
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const vendor = await prisma.vendor.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: { assessments: { where: { status: { in: ['Requested', 'InProgress', 'Submitted'] } } } },
@@ -393,7 +393,7 @@ export const submitAssessment = async (req: AuthenticatedRequest, res: Response)
   try {
     const assessmentId = req.params.assessmentId as string;
     const { score, narrative } = req.body || {};
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const a = await prisma.vendorAssessment.findFirst({
       where: { id: assessmentId, tenantId: { in: scope.tenantIds } },
       include: { vendor: { select: { ref: true, name: true } } },
@@ -443,7 +443,7 @@ export const reviewAssessment = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const a = await prisma.vendorAssessment.findFirst({
       where: { id: assessmentId, tenantId: { in: scope.tenantIds } },
       include: { vendor: true },
@@ -531,7 +531,7 @@ export const reviewAssessment = async (req: AuthenticatedRequest, res: Response)
 
 export const vendorAnalytics = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const rows = await prisma.vendor.findMany({
       where: { tenantId: { in: scope.tenantIds } }, include: INCLUDE,
     });
@@ -611,7 +611,7 @@ export const vendorAnalytics = async (req: AuthenticatedRequest, res: Response):
 export const deleteVendor = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const vendor = await prisma.vendor.findFirst({
       where: { id, tenantId: { in: scope.tenantIds } },
       include: {

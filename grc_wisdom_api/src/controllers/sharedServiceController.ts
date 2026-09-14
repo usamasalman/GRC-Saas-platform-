@@ -89,7 +89,7 @@ function enrich(s: any, now = new Date()) {
 
 export const listSharedServices = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
 
     // A service is visible to whoever provides it and to whoever consumes it —
     // a subsidiary must be able to see what it is relying on.
@@ -199,7 +199,7 @@ export const setConsumers = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const service = await prisma.sharedService.findFirst({
       where: { id, providerTenantId: { in: scope.tenantIds } },
     });
@@ -293,7 +293,7 @@ export const setServiceControls = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const service = await prisma.sharedService.findFirst({
       where: { id, providerTenantId: { in: scope.tenantIds } },
       include: { consumers: true },
@@ -350,7 +350,7 @@ export const setServiceControls = async (req: AuthenticatedRequest, res: Respons
 export const updateSharedService = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const svc = await prisma.sharedService.findFirst({
       where: { id, providerTenantId: { in: scope.tenantIds } },
     });
@@ -422,7 +422,7 @@ export const updateSharedService = async (req: AuthenticatedRequest, res: Respon
 export const deleteSharedService = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const scope = await resolveTenantScope(req.user!.tenantId);
+    const scope = await resolveTenantScope(req.user!);
     const svc = await prisma.sharedService.findFirst({
       where: { id, providerTenantId: { in: scope.tenantIds } },
       include: { _count: { select: { consumers: true, controls: true } } },
