@@ -122,13 +122,30 @@ app.use('/api', apiLimiter);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static uploads directory with cross-origin headers for PDF & document embedding
-app.use('/uploads', (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('X-Frame-Options', 'ALLOWALL');
-  next();
-}, express.static(path.join(__dirname, '../uploads')));
+// uploads/ is NOT served statically.
+//
+// It used to be, mounted here with `Access-Control-Allow-Origin: *` and
+// `X-Frame-Options: ALLOWALL`, ahead of every authentication check. That
+// published every tenant's document library to the open internet: policies,
+// pen test reports, board minutes, HR records. Filenames are
+// `${Date.now()}_${originalName}`, so a plausible document name plus a guessed
+// millisecond was the whole attack, and the rate limiter is scoped to `/api`,
+// so guessing it was unthrottled.
+//
+// documentController.downloadDocument already does this correctly: it resolves
+// the document row, checks the caller's tenant scope, and streams the file from
+// disk. It reads UPLOADS_DIR directly and never needed the HTTP mount, so
+// removing this changes nothing about upload or download.
+//
+// Nothing else depended on it either. The frontend fetches
+// /api/documents/:id/download; delivery evidence deliberately lives in a
+// separate private store (services/evidenceStore); and branding logos are
+// deliberately kept out of uploads/ for this exact reason
+// (controllers/brandingController.uploadLogo). Both of those comments describe
+// this mount as the hazard they were written to avoid.
+//
+// If a file ever needs to be embeddable by URL, give it a handler that checks
+// access and issues a short-lived signed link. Do not remount this directory.
 
 // Health Check Endpoint
 app.get('/health', (req: Request, res: Response) => {
