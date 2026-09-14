@@ -56,7 +56,7 @@ const StandardsLibrary: React.FC = () => {
         <div>
           <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Standards &amp; frameworks</h2>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
-            Enable a framework to bring its clauses into scope. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
+            Enable a framework to record that an entity is assessed against it. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <button onClick={load} style={ghostBtn}>↻ Refresh</button>
@@ -122,9 +122,21 @@ const StandardsLibrary: React.FC = () => {
           intro={(
             <>
               <div>{enabling.title}</div>
+              {/* This said enabling brings the clauses into scope, so they
+                  appear in the coverage report and in what controls can be
+                  mapped against. None of the three is true today: listClauses
+                  filters on who OWNS the standard, exportFrameworkCoverage
+                  spans every standard in scope, and clause mapping checks
+                  ownership as well. Enablement is recorded and displayed and
+                  read by nothing else.
+
+                  Saying so is not a retreat. A compliance product that
+                  describes a control it does not implement is the same defect
+                  as one that invents data, and it is acted on the same way. */}
               <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
-                Enabling brings the standard's clauses into this entity's scope, so they appear
-                in the coverage report and in what controls can be mapped against.
+                Enabling records that this entity is assessed against the framework. It appears
+                in the entity's standards library and in its framework inventory. It does not
+                yet change which clauses or controls the entity can see.
               </div>
             </>
           )}

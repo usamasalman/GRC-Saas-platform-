@@ -186,6 +186,56 @@ for (const handler of ['enableStandard', 'disableStandard']) {
   );
 }
 
+// ── The screens must not claim enablement does more than it does ─────────
+// Enablement is recorded, displayed, and read by nothing else. The claims that
+// were on this screen — that enabling brings clauses into scope, that they then
+// appear in the coverage report, that they become mappable — are all three
+// false: listClauses filters on who OWNS the standard, exportFrameworkCoverage
+// spans every standard in scope, and clause mapping checks ownership too.
+//
+// If enablement is ever made load-bearing, delete the offending phrase from
+// this list in the same change that makes it true. Until then a claim here is
+// the same defect as an invented row, and is acted on the same way.
+{
+  const clauseFiltersOnEnablement = /tenantStandardEnablement|enablements:/.test(
+    fs.readFileSync(path.join(API, 'controllers', 'controlAuthoringController.ts'), 'utf8'),
+  );
+  const coverageFiltersOnEnablement = /tenantStandardEnablement/.test(
+    fs.readFileSync(path.join(API, 'controllers', 'reportController.ts'), 'utf8'),
+  );
+
+  const FALSE_CLAIMS = [
+    "brings the standard's clauses into this entity's scope",
+    'bring its clauses into scope',
+    'coverage report reads this',
+    'appear in the coverage report',
+  ];
+
+  // Comments are prose, not claims. The comment recording what the copy used
+  // to say quotes the phrases verbatim, and quoting a defect is how it stays
+  // understood. Only what renders counts.
+  const rendered = library
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const found = FALSE_CLAIMS.filter((c) => rendered.includes(c));
+  checks += 1;
+  if (clauseFiltersOnEnablement && coverageFiltersOnEnablement) {
+    // The behaviour arrived. The claims are now allowed — and this branch is
+    // the reminder to prune the list above.
+    assert.ok(true);
+  } else {
+    assert.deepStrictEqual(
+      found, [],
+      'StandardsLibrary claims enablement changes what an entity can see. It does not: '
+      + `listClauses filters on standard ownership${clauseFiltersOnEnablement ? '' : ' (still)'} and `
+      + `exportFrameworkCoverage spans every standard in scope${coverageFiltersOnEnablement ? '' : ' (still)'}.\n`
+      + `${found.map((f) => `  "${f}"`).join('\n')}\n`
+      + 'Make it true, or do not say it.',
+    );
+  }
+}
+
 console.log(
   `standards-enablement: ${checks} assertions passed `
   + `(applicability: ${server.join(' | ')})`,
