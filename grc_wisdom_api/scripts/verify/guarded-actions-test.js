@@ -178,6 +178,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
     'VendorRegister.tsx': ['MAY.MANAGE_VENDOR'],
     'FrameworkAuthoring.tsx': ['MAY.AUTHOR_STANDARD', 'MAY.AUTHOR_CONTROL'],
     'StandardsLibrary.tsx': ['MAY.AUTHOR_STANDARD'],
+    'TenantStandardEnablement.tsx': ['MAY.AUTHOR_STANDARD'],
     'audit/IssueRegister.tsx': [
       'MAY.MANAGE_ISSUE', 'MAY.RESPOND_TO_ISSUE', 'MAY.ASSIGN_CAP', 'MAY.CLOSE_ISSUE',
     ],
@@ -226,6 +227,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
       'cloneControl', 'remapControl', 'removeControl',
     ],
     'StandardsLibrary.tsx': ['setEnabling'],
+    'TenantStandardEnablement.tsx': ['runBatch', 'setConfirming'],
     'RiskRegister.tsx': ['openEdit', 'openCreate', 'accept'],
     'AssetRegister.tsx': ['openEdit', 'openCreate', 'setLinking', 'setReviewing'],
     'VendorRegister.tsx': ['openEdit', 'openCreate', 'setAssessing'],

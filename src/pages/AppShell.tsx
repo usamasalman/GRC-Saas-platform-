@@ -31,6 +31,7 @@ import KnowledgeBase from './itsm/KnowledgeBase';
 
 // Real GRC Core Components
 import StandardsLibrary from './grc/StandardsLibrary';
+import TenantStandardEnablement from './grc/TenantStandardEnablement';
 import FrameworkAuthoring from './grc/FrameworkAuthoring';
 import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
@@ -431,7 +432,14 @@ const AppShell = () => {
     if (currentPage === 'framework-authoring' || currentPage === 'standard-repository') {
       return <FrameworkAuthoring key={`${account.id}-${currentPage}`} />;
     }
-    if (currentPage === 'standards' || currentPage === 'tenant-standards') {
+    // These two were aliased onto the same component, so "Tenant Standard
+    // Enablement" in the control plane rendered the ordinary per-entity
+    // library — which enables for whoever is signed in and nobody else. The
+    // screen whose entire name is about other tenants could not name one.
+    if (currentPage === 'tenant-standards') {
+      return <TenantStandardEnablement key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'standards') {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'project-delivery') {
