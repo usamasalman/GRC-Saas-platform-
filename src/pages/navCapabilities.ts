@@ -87,11 +87,12 @@ export const CAP = {
  * by deliberate separation of duties -- so the platform owner signed in to their
  * own control plane and found half of it missing.
  *
- * What is left is the set the original complaint named: administration of
- * tenants, users, roles and flags. A read-only auditor no longer sees Manage
- * Tenants or Roles & Permissions. Everything operational stays visible, and what
- * a person cannot do on it is hidden by the buttons on the screen itself, which
- * is where the server's answer is already reflected.
+ * What is left is administration: of tenants, users, roles and flags, and of
+ * the commercial relationship. A read-only auditor no longer sees Manage
+ * Tenants or Roles & Permissions, and a compliance officer no longer sees
+ * Invoices. Everything operational stays visible, and what a person cannot do
+ * on it is hidden by the buttons on the screen itself -- see Can.tsx, which is
+ * the guard that claim needed and did not have.
  */
 export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   // Creating tenants, taking over a session, granting access, changing what a
@@ -106,6 +107,35 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   'branch-users': [CAP.ADD_USER],
   'user-admin': [CAP.ADD_USER, CAP.TRANSFER_USER],
   'feature-flags': [CAP.GOVERN_FLAG],
+
+  // Commercial administration. Tracker issues 11 to 17 are seven reports of
+  // one sentence -- "he has nothing to do with this" -- against exactly these
+  // entries, and issue 6 is the same complaint from the other direction: an
+  // invoice raised from a Group Admin account instead of finance.
+  //
+  // A first attempt at this was reverted because it hid billing from
+  // platform-super-admin, which looked absurd. It was not absurd: the owner's
+  // own role matrix puts billing on platform-billing-admin and keeps it off
+  // the super admin, and that separation is what issue 6 asks for. If the
+  // platform owner should see billing, the fix is to grant the capability in
+  // Roles & Permissions, where the decision is visible and audited -- not to
+  // have the menu ignore what the matrix says.
+  //
+  // Unlike the operational registers, these screens exist to perform
+  // commercial acts, and every act on them is capability-checked server-side.
+  // Gating them is not concealment of a readable screen; it is the menu
+  // agreeing with the API about whose job this is.
+  //
+  // Each portal keeps them through its own finance role: platform-billing-admin,
+  // group-finance-manager, finance-manager, branch-finance-user, partner-owner.
+  subscriptions: [CAP.MANAGE_SUBSCRIPTION],
+  // A subscription manager has to read the catalogue they are subscribing to.
+  plans: [CAP.SELECT_PLAN, CAP.MANAGE_SUBSCRIPTION],
+  invoices: [CAP.REVIEW_INVOICE, CAP.RECONCILE_PAYMENT],
+  'wholesale-billing': [CAP.REVIEW_INVOICE, CAP.MANAGE_SUBSCRIPTION],
+  payments: [CAP.RECONCILE_PAYMENT, CAP.REVIEW_INVOICE],
+  'payment-gateway': [CAP.RECONCILE_PAYMENT],
+  quotas: [CAP.MONITOR_QUOTAS],
 };
 
 /**

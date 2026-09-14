@@ -74,10 +74,12 @@ const navSrc = fs.readFileSync(navFile, 'utf8');
 const mapBlock = navSrc.match(/export const NAV_CAPABILITY[\s\S]*?= \{([\s\S]*?)\n\};/);
 assert.ok(mapBlock, 'NAV_CAPABILITY map not found');
 const gatedKeys = [...mapBlock[1].matchAll(/^\s*'?([a-z0-9-]+)'?:\s*\[/gm)].map((m) => m[1]);
-// Deliberately few. The gate covers administration of tenants, users, roles and
-// flags — not the operational screens, whose data every signed-in user can
-// already read through an unguarded GET.
-ok(gatedKeys.length >= 5 && gatedKeys.length <= 12,
+// Deliberately few. The gate covers administration — of tenants, users, roles
+// and flags, and of the commercial relationship — not the operational
+// registers, whose data every signed-in user in scope can already read through
+// an unguarded GET. The first attempt gated 34 entries and hid half the product
+// from the people who run it; the ceiling is here so that cannot creep back.
+ok(gatedKeys.length >= 5 && gatedKeys.length <= 20,
   `expected a short gate list; found ${gatedKeys.length}`);
 
 const unknown = gatedKeys.filter((k) => !navKeys.has(k));
@@ -87,6 +89,86 @@ assert.deepStrictEqual(
   `These keys are gated in NAV_CAPABILITY but appear in no portal's menu:\n${
     unknown.map((u) => `  ${u}`).join('\n')}\nA rule on a key nothing renders governs nothing.`,
 );
+
+// ── A gated entry must survive for someone in the portal that renders it ───
+// Gating a menu entry on a capability no role in that portal holds deletes the
+// entry for everybody, which looks like the feature was removed. That is not
+// hypothetical: the franchise menu offers a full billing group and no franchise
+// role holds a single billing capability.
+{
+  const rbac = JSON.parse(fs.readFileSync(path.join(API_SRC, 'utils', 'rbacData.json'), 'utf8'));
+  const allRoles = Array.isArray(rbac) ? rbac : rbac.roles;
+
+  // The capabilities each gated key accepts, read from NAV_CAPABILITY itself so
+  // this cannot drift from what the app does.
+  const required = {};
+  for (const m of mapBlock[1].matchAll(/^\s*'?([a-z0-9-]+)'?:\s*\[([^\]]*)\]/gm)) {
+    required[m[1]] = [...m[2].matchAll(/CAP\.(\w+)/g)].map((c) => webCaps[c[1]]);
+  }
+
+  // Which menus render which keys, and which roles sit in each menu.
+  const menus = {};
+  for (const m of navBlock[1].matchAll(/^  ([a-z]+):\s*\[([\s\S]*?)\n  \]/gm)) {
+    menus[m[1]] = [...m[2].matchAll(/\['([a-z0-9-]+)',\s*'/g)].map((k) => k[1]);
+  }
+  const rolesOfMenu = {};
+  for (const r of allRoles) {
+    const menu = String(r.portal || '').trim().toLowerCase();
+    if (menus[menu]) (rolesOfMenu[menu] = rolesOfMenu[menu] || []).push(r);
+  }
+
+  /**
+   * Entries no role in that portal can reach, left in place on purpose.
+   *
+   * Each is a hole in the role matrix, not in the gate: the menu offers work
+   * that no role in the portal is authorised to do. Closing one means adding
+   * the finance role the portal is missing, or removing the group from the
+   * menu. Listed so the number cannot grow unnoticed.
+   */
+  const NO_ROLE_HOLDS = {
+    'franchise/subscriptions': 'no franchise finance role exists in the matrix',
+    'franchise/plans': 'no franchise finance role exists in the matrix',
+    'franchise/invoices': 'no franchise finance role exists in the matrix',
+    'franchise/payments': 'no franchise finance role exists in the matrix',
+    'franchise/payment-gateway': 'no franchise finance role exists in the matrix',
+    'partner/payments': 'no partner role reconciles payments — partner-owner manages subscriptions only',
+    // Pre-existing, found by this check rather than introduced by it: the
+    // franchise menu offers Roles & Permissions and neither franchisor-admin,
+    // franchisee-admin nor franchise-support-manager holds
+    // maintain-roles-and-permissions.
+    'franchise/role-matrix': 'no franchise role maintains roles — franchisor-admin holds tenant, user and flag duties only',
+  };
+
+  const stranded = [];
+  for (const [menu, keys] of Object.entries(menus)) {
+    for (const key of keys) {
+      const caps = required[key];
+      if (!caps || caps.length === 0) continue;
+      const holders = (rolesOfMenu[menu] || []).filter(
+        (r) => caps.some((c) => (r.capabilities || []).includes(c)),
+      );
+      if (holders.length === 0) stranded.push(`${menu}/${key}`);
+    }
+  }
+
+  const unexpected = stranded.filter((s2) => !(s2 in NO_ROLE_HOLDS));
+  checks += 1;
+  assert.deepStrictEqual(
+    unexpected, [],
+    'These menu entries are gated on a capability no role in that portal holds, so they '
+    + `vanish for everyone:\n${unexpected.map((u) => `  ${u}`).join('\n')}\n`
+    + 'Grant the capability to a role in that portal, remove the entry from the menu, or '
+    + 'add it to NO_ROLE_HOLDS with the reason.',
+  );
+
+  const closed = Object.keys(NO_ROLE_HOLDS).filter((k) => !stranded.includes(k));
+  checks += 1;
+  assert.deepStrictEqual(
+    closed, [],
+    `A role now reaches these — remove them from NO_ROLE_HOLDS:\n${
+      closed.map((c) => `  ${c}`).join('\n')}`,
+  );
+}
 
 // ── The dashboard must never be gated ───────────────────────────────────────
 // Every portal opens on it, and a filtered-out landing page is a blank shell.
