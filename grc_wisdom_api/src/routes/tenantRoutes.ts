@@ -14,6 +14,7 @@ import {
   deleteTenant,
   distributePolicy,
 } from '../controllers/tenantController';
+import { suspendTenant, reactivateTenant } from '../controllers/tenantSuspensionController';
 
 const router = Router();
 
@@ -49,6 +50,14 @@ router.post('/', requireCapability(CAP.MANAGE_TENANT), createTenant);
 // One transaction: entity, subscription and first administrator together, so
 // there is never an organization nobody can enter.
 router.post('/onboard', requireCapability(CAP.MANAGE_TENANT), onboardTenant);
+
+// Stopping a customer without destroying them. Until now the only way to end a
+// relationship was deleteTenant, which refuses while the tenant holds users,
+// documents or invoices — so for any real customer there was no way at all.
+//
+// Declared above '/:id' below so the literal segments are not read as ids.
+router.post('/:id/suspend', requireCapability(CAP.MANAGE_TENANT), suspendTenant);
+router.post('/:id/reactivate', requireCapability(CAP.MANAGE_TENANT), reactivateTenant);
 router.patch('/:id', requireCapability(CAP.MANAGE_TENANT), updateTenant);
 router.delete('/:id', requireCapability(CAP.MANAGE_TENANT), deleteTenant);
 router.post('/distribute', requireCapability(CAP.VERSION_DOCUMENT), distributePolicy);

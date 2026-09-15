@@ -17,6 +17,26 @@ model Tenant {
   children      Tenant[]       @relation("TenantHierarchy")
   path          String         @default("/") // e.g., /GROUP_1/ORG_2/BRANCH_3/
 
+  /// When this organisation was suspended. Null means it is operating.
+  ///
+  /// Suspension is not deletion and not a soft delete: the data stays exactly
+  /// where it is, every report still counts it, and reactivating is one write.
+  /// What it stops is people getting in -- checked once per request in
+  /// requireAuth, and again at sign-in.
+  suspendedAt      DateTime?
+
+  /// The organisation whose suspension caused this one; itself when suspended
+  /// directly.
+  ///
+  /// Suspending a group has to reach its branches, or a "suspended" customer
+  /// keeps trading through its subsidiaries. But a branch suspended in its own
+  /// right must not be reactivated by lifting the parent's suspension, so each
+  /// row records which decision put it here, and only that decision lifts it.
+  suspendedRootId  String?
+
+  /// Why, in the operator's words. Shown to anyone refused at the door.
+  suspendedReason  String?
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 

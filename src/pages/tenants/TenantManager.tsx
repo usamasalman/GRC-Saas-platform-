@@ -15,6 +15,9 @@ interface TenantRow {
   maxUsers: number | null;
   counts: { users: number; children: number; documents: number; tickets: number; invoices: number };
   createdAt: string;
+  suspendedAt?: string | null;
+  suspendedRootId?: string | null;
+  suspendedReason?: string | null;
 }
 
 interface PlanRow { id: string; name: string; priceMonthly: number; maxUsers: number }
@@ -62,6 +65,9 @@ const TenantManager: React.FC = () => {
   const [provisioned, setProvisioned] = useState<Provisioned | null>(null);
   /** An existing tenant that has nobody in it, being given its first administrator. */
   const [adopting, setAdopting] = useState<TenantRow | null>(null);
+  const [suspending, setSuspending] = useState<TenantRow | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [actionErr, setActionErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -197,6 +203,34 @@ const TenantManager: React.FC = () => {
       await load();
     } catch (err: any) {
       setNotice(err?.response?.data?.message || 'Could not create the administrator');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /**
+   * Stop an organisation, or start it again.
+   *
+   * The refusals matter more than the success here: the server will not let an
+   * operator suspend their own organisation, anything containing it, or the
+   * platform tenant, because the suspension lands on the next request — which
+   * is the one that would undo it. Its message is surfaced verbatim rather than
+   * replaced with a generic failure.
+   */
+  const setSuspended = async (tenant: TenantRow, suspend: boolean, reason?: string) => {
+    setSubmitting(true);
+    setActionErr('');
+    try {
+      const res = await apiClient.post(
+        `/api/tenants/${tenant.id}/${suspend ? 'suspend' : 'reactivate'}`,
+        suspend ? { reason: reason || '' } : {},
+      );
+      setSuspending(null);
+      setSuspendReason('');
+      setNotice(res.data?.message || '');
+      await load();
+    } catch (err: any) {
+      setActionErr(err?.response?.data?.message || 'The change could not be made.');
     } finally {
       setSubmitting(false);
     }
@@ -345,9 +379,28 @@ const TenantManager: React.FC = () => {
               {visible.map((t) => (
                 <tr key={t.id} style={{ borderBottom: '1px solid var(--line)' }}>
                   <td style={{ padding: '10px 12px' }}>
-                    <span style={{ paddingLeft: t.depth * 16, color: 'var(--ink-body)' }}>
+                    <span style={{ paddingLeft: t.depth * 16, color: t.suspendedAt ? 'var(--ink-muted)' : 'var(--ink-body)' }}>
                       {t.depth > 0 && <span style={{ color: 'var(--ink-body)' }}>└ </span>}{t.name}
                     </span>
+                    {/* A suspended organisation looks identical to an operating
+                        one in every list unless the list says otherwise, and an
+                        operator acting on the wrong assumption is how a customer
+                        stays off the platform for a week longer than intended. */}
+                    {t.suspendedAt && (
+                      <div style={{ paddingLeft: t.depth * 16, marginTop: 3 }}>
+                        <span style={{
+                          fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                          border: '1px solid var(--warning-line)', color: 'var(--warning)',
+                        }}>
+                          suspended{t.suspendedRootId && t.suspendedRootId !== t.id ? ' · by parent' : ''}
+                        </span>
+                        {t.suspendedReason && (
+                          <span style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginLeft: 6 }}>
+                            {t.suspendedReason}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: '10px 12px' }}>
                     <span style={{
@@ -392,6 +445,23 @@ const TenantManager: React.FC = () => {
                       style={{ ...btn('transparent', 'var(--info)'), padding: '4px 8px', fontSize: 11 }}>+ child</button>
                     <button onClick={() => openEdit(t)}
                       style={{ ...btn('transparent', 'var(--ink-muted)'), padding: '4px 8px', fontSize: 11 }}>edit</button>
+                    {/* Offered only where it can succeed. A tenant suspended
+                        because its parent was cannot be lifted on its own — the
+                        server refuses, and a button whose only outcome is a
+                        refusal is worse than no button. */}
+                    {t.suspendedAt
+                      ? (t.suspendedRootId === t.id || !t.suspendedRootId) && (
+                        <button onClick={() => { setActionErr(''); setSuspended(t, false); }}
+                          disabled={submitting}
+                          title="Let this organisation back in"
+                          style={{ ...btn('transparent', 'var(--success)'), padding: '4px 8px', fontSize: 11 }}>reactivate</button>
+                      )
+                      : (
+                        <button onClick={() => { setActionErr(''); setSuspendReason(''); setSuspending(t); }}
+                          disabled={submitting}
+                          title="Stop this organisation signing in, without deleting anything"
+                          style={{ ...btn('transparent', 'var(--warning)'), padding: '4px 8px', fontSize: 11 }}>suspend</button>
+                      )}
                     <button onClick={() => { setRemoveErr(''); setRemoving(t); }}
                       style={{ ...btn('transparent', 'var(--danger)'), padding: '4px 8px', fontSize: 11 }}>del</button>
                   </td>
@@ -500,6 +570,66 @@ const TenantManager: React.FC = () => {
                 <button type="button" onClick={() => setShowModal(false)} style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', padding: 11 }}>Cancel</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* A reason, because the person refused at the door is shown it. Not
+          required by the server — an operator acting in a hurry should not be
+          blocked — but asked for every time. */}
+      {suspending && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
+          <div style={{ ...card, width: '100%', maxWidth: 480, borderRadius: 12, padding: 26 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, color: 'var(--ink)' }}>
+              Suspend {suspending.name}?
+            </h3>
+            <p style={{ margin: '0 0 6px', fontSize: 12.5, color: 'var(--ink-body)', lineHeight: 1.7 }}>
+              Nobody in this organisation will be able to sign in, and open sessions stop working on
+              their next request. Nothing is deleted: the data stays exactly where it is, reports
+              still count it, and reactivating is one click.
+            </p>
+            {suspending.counts.children > 0 && (
+              <p style={{ margin: '0 0 6px', fontSize: 12.5, color: 'var(--warning)', lineHeight: 1.7 }}>
+                This reaches the {suspending.counts.children} entit{suspending.counts.children === 1 ? 'y' : 'ies'} beneath
+                it as well — a group whose branches keep trading is not suspended.
+              </p>
+            )}
+            <p style={{ margin: '0 0 18px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+              The reason is shown to anyone who tries to sign in.
+            </p>
+            {actionErr && (
+              <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', padding: 10, borderRadius: 6, color: 'var(--danger)', marginBottom: 14, fontSize: 12, lineHeight: 1.6 }}>{actionErr}</div>
+            )}
+            <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Reason</label>
+            <input
+              value={suspendReason}
+              autoFocus
+              placeholder="e.g. Unpaid invoices since August"
+              onChange={(e) => setSuspendReason(e.target.value)}
+              style={{ ...inputStyle, marginBottom: 20 }}
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setSuspended(suspending, true, suspendReason)}
+                style={{ ...btn(submitting ? 'var(--ink-body)' : 'var(--warning)'), flex: 1, padding: 11 }}
+              >
+                {submitting ? 'Suspending…' : 'Suspend organisation'}
+              </button>
+              <button type="button" onClick={() => { setSuspending(null); setActionErr(''); }} style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', padding: 11 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* A refusal from a row control has no dialog to live in — the server's
+          message is the whole answer and it must not vanish. */}
+      {actionErr && !suspending && (
+        <div style={{ position: 'fixed', left: 20, right: 20, bottom: 20, zIndex: 950, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '12px 16px', borderRadius: 8, fontSize: 12.5, maxWidth: 640, lineHeight: 1.6 }}>
+            {actionErr}
+            <button onClick={() => setActionErr('')} style={{ ...btn('transparent', 'var(--ink-muted)'), marginLeft: 12, padding: '2px 8px', fontSize: 11 }}>dismiss</button>
           </div>
         </div>
       )}

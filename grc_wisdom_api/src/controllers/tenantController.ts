@@ -57,6 +57,11 @@ export const listTenants = async (req: AuthenticatedRequest, res: Response): Pro
         planPrice: t.subscriptions[0]?.plan?.priceMonthly ?? null,
         maxUsers: t.subscriptions[0]?.plan?.maxUsers ?? null,
         counts: t._count,
+        // Without these a suspended organisation is indistinguishable from an
+        // operating one in the only list that manages them.
+        suspendedAt: t.suspendedAt,
+        suspendedRootId: t.suspendedRootId,
+        suspendedReason: t.suspendedReason,
         createdAt: t.createdAt,
       })),
     });

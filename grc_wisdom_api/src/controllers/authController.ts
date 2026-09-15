@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { prisma } from '../db';
 import { capabilitiesOfRole } from '../services/capabilityEngine';
+import { suspensionMessage } from '../services/tenantSuspension';
 import { checkEntrance } from '../services/loginEntrance';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { generateMfaSecret, generateQrCodeUrl, verifyMfaToken } from '../utils/mfaUtils';
@@ -185,6 +186,25 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         status: 'error',
         code: 'TEMP_CREDENTIAL_EXPIRED',
         message: 'This temporary password has expired. Ask an administrator to reissue your invitation.',
+      });
+      return;
+    }
+
+    // The organisation itself is suspended.
+    //
+    // Placed with the other post-password checks, and for the same reason:
+    // refusing before the password verifies would turn the sign-in page into an
+    // oracle for which organisations are suspended. Someone holding the correct
+    // password learns nothing new, and gets told what actually happened rather
+    // than being left to guess at their own credentials.
+    //
+    // requireAuth stops every subsequent request too, so a session opened a
+    // moment before the suspension does not outlive it.
+    if (user.tenant?.suspendedAt) {
+      res.status(403).json({
+        status: 'error',
+        code: 'TENANT_SUSPENDED',
+        message: suspensionMessage(user.tenant.suspendedReason),
       });
       return;
     }

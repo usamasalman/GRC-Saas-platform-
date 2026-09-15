@@ -64,16 +64,38 @@ export const requireAuth = async (
     // wrong answer into a 401 that tells the user what to do about it.
     {
       const { prisma } = await import('../db');
-      const tenantExists = await prisma.tenant.findUnique({
+      const tenant = await prisma.tenant.findUnique({
         where: { id: String(decoded.tenantId) },
-        select: { id: true },
+        select: { id: true, suspendedAt: true, suspendedReason: true },
       });
-      if (!tenantExists) {
+      if (!tenant) {
         res.status(401).json({
           status: 'error',
           code: 'STALE_TENANT',
           message: 'Your session refers to an organisation that no longer exists. '
             + 'Sign in again.',
+        });
+        return;
+      }
+
+      // ── Suspension, enforced here and only here ─────────────────────────
+      //
+      // One place, for the same reason the stale-tenant check is one place: a
+      // suspension enforced route by route is a suspension that the next route
+      // added will not have. Every authenticated request already pays for this
+      // lookup; the two extra columns are free.
+      //
+      // 403 and not 401: the credential is perfectly good, and telling the
+      // browser to clear it and sign in again would send the user round a loop
+      // that ends at the same refusal with less information. The reason is
+      // included because "contact your administrator" is useless to someone who
+      // does not know what happened.
+      if (tenant.suspendedAt) {
+        const { suspensionMessage } = await import('../services/tenantSuspension');
+        res.status(403).json({
+          status: 'error',
+          code: 'TENANT_SUSPENDED',
+          message: suspensionMessage(tenant.suspendedReason),
         });
         return;
       }
