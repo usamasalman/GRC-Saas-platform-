@@ -97,6 +97,7 @@ import { getGrcSummary } from '../controllers/grcSummaryController';
 import {
   getEnablementMatrix, bulkEnableStandards, bulkDisableStandards,
 } from '../controllers/standardEnablementController';
+import { getEstatePosture } from '../controllers/estatePostureController';
 
 const router = Router();
 
@@ -107,6 +108,11 @@ router.use(rejectIfMustChangePassword);
 // The GRC status summary. Every figure counted from rows — see the controller
 // for why that is worth saying out loud.
 router.get('/summary', getGrcSummary);
+
+// The same question the summary answers, but one organisation at a time. The
+// blended total cannot say which customer needs attention, and what stood in
+// its place was a mock screen with invented percentages.
+router.get('/posture', getEstatePosture);
 
 router.get('/standards', listStandards);
 router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableStandard);

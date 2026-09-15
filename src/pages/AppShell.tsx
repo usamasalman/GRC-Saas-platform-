@@ -32,6 +32,7 @@ import KnowledgeBase from './itsm/KnowledgeBase';
 // Real GRC Core Components
 import StandardsLibrary from './grc/StandardsLibrary';
 import TenantStandardEnablement from './grc/TenantStandardEnablement';
+import EstatePosture from './tenants/EstatePosture';
 import FrameworkAuthoring from './grc/FrameworkAuthoring';
 import ControlLibrary from './grc/ControlLibrary';
 import Implementations from './grc/Implementations';
@@ -146,7 +147,7 @@ const GRC_DASHBOARD_PORTALS = new Set([
 
 const NAV: Record<string, any[]> = {
   saas: [
-    ['Platform Control', [['dashboard', '▦', 'SaaS Dashboard'], ['library', '≡', 'Document Library'], ['tenants', '▥', 'Manage Tenants'], ['impersonation', '♙', 'Impersonation Sessions']]],
+    ['Platform Control', [['dashboard', '▦', 'SaaS Dashboard'], ['library', '≡', 'Document Library'], ['tenants', '▥', 'Manage Tenants'], ['posture', '◈', 'Estate Posture'], ['impersonation', '♙', 'Impersonation Sessions']]],
     ['Users, Teams & Access', [['saas-users', '♟', 'SaaS Admin Users'], ['org-users', '♙', 'Organization Users'], ['branch-users', '⌘', 'Branch Users'], ['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'User Lifecycle & Transfers'], ['role-matrix', '⊞', 'Roles & Permissions']]],
     ['Service Management', [['itsm', '?', 'ITSM Service Desk'], ['ticket-queues', '▥', 'Ticket Queues'], ['service-catalog', '▦', 'Service Catalog'], ['sla', '◷', 'SLA & Escalations'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish'], ['asm-tenants', '◫', 'Security Service Tenants']]],
@@ -164,7 +165,7 @@ const NAV: Record<string, any[]> = {
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   multibranch: [
-    ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
+    ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['posture', '◈', 'Branch Posture'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
     ['Assurance', [['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
@@ -224,7 +225,7 @@ const NAV_ICON: Record<string, IconName> = {
   'wisdom-eye': 'exposure', 'eye-phish': 'phishing', 'asm-tenants': 'building',
   marketplace: 'marketplace', 'tool-marketplace': 'tools', 'tool-review': 'check',
   'tool-installations': 'install', 'standard-repository': 'repository',
-  'tenant-standards': 'enablement', 'feature-flags': 'flag',
+  'tenant-standards': 'enablement', 'feature-flags': 'flag', posture: 'scorecard',
   hierarchy: 'branch', subsidiaries: 'scorecard', 'shared-services': 'switch',
   'branch-lifecycle': 'lifecycle', 'workspace-transfer': 'switch', 'wholesale-billing': 'invoices',
   branches: 'branch', locations: 'building', scorecards: 'scorecard',
@@ -384,7 +385,14 @@ const AppShell = () => {
     if (currentPage === 'report-branding') {
       return <ReportBranding key={account.id} />;
     }
-    if (currentPage === 'tenants' || currentPage === 'hierarchy' || currentPage === 'branches' || currentPage === 'locations') {
+    // "Subsidiary Scorecards" and "Location Scorecards" had no component at
+    // all: they fell through to the mock engine, which drew a panel of invented
+    // compliance percentages against organisations that do not exist. The names
+    // promised exactly this screen; now they reach it.
+    if (currentPage === 'posture' || currentPage === 'subsidiaries' || currentPage === 'locations') {
+      return <EstatePosture key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'tenants' || currentPage === 'hierarchy' || currentPage === 'branches') {
       return <TenantManager key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'impersonation') {
