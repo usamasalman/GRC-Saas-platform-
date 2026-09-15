@@ -30,9 +30,12 @@ const path = require('path');
 const assert = require('assert');
 
 const ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'grcRoutes.ts');
+const PROJECT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'projectRoutes.ts');
 const NAV = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'navCapabilities.ts');
 
-const routes = fs.readFileSync(ROUTES, 'utf8');
+// Two route files now. MAY describes rules wherever they are enforced, and a
+// key pinned against a file it does not live in would silently verify nothing.
+const routes = [ROUTES, PROJECT_ROUTES].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const nav = fs.readFileSync(NAV, 'utf8');
 
 /**
@@ -55,6 +58,7 @@ const ANCHOR = {
   AUTHOR_CONTROL: "router.post('/controls',",
   MANAGE_IMPLEMENTATION: "router.post('/implementations',",
   MANAGE_SHARED_SERVICE: "router.post('/shared-services',",
+  MANAGE_PROJECT: "router.post('/:id/members',",
 };
 
 let checks = 0;
@@ -179,6 +183,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
     'FrameworkAuthoring.tsx': ['MAY.AUTHOR_STANDARD', 'MAY.AUTHOR_CONTROL'],
     'StandardsLibrary.tsx': ['MAY.AUTHOR_STANDARD'],
     'TenantStandardEnablement.tsx': ['MAY.AUTHOR_STANDARD'],
+    'project/ProjectTeam.tsx': ['MAY.MANAGE_PROJECT'],
     'audit/IssueRegister.tsx': [
       'MAY.MANAGE_ISSUE', 'MAY.RESPOND_TO_ISSUE', 'MAY.ASSIGN_CAP', 'MAY.CLOSE_ISSUE',
     ],
@@ -228,6 +233,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
     ],
     'StandardsLibrary.tsx': ['setEnabling'],
     'TenantStandardEnablement.tsx': ['runBatch', 'setConfirming'],
+    'project/ProjectTeam.tsx': ['openEdit', 'openRemove', 'openAdd'],
     'RiskRegister.tsx': ['openEdit', 'openCreate', 'accept'],
     'AssetRegister.tsx': ['openEdit', 'openCreate', 'setLinking', 'setReviewing'],
     'VendorRegister.tsx': ['openEdit', 'openCreate', 'setAssessing'],

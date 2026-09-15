@@ -8,6 +8,7 @@ import ProjectEvidence from './project/ProjectEvidence';
 import ProjectReports from './project/ProjectReports';
 import ProjectTimeline from './project/ProjectTimeline';
 import NewProject from './project/NewProject';
+import ProjectTeam from './project/ProjectTeam';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -20,7 +21,7 @@ import NewProject from './project/NewProject';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+type TabKey = 'portfolio' | 'plan' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -59,6 +60,14 @@ const DeliveryProjects: React.FC = () => {
           title={selected ? undefined : 'Open a project from the portfolio first'}
         >
           Plan
+        </button>
+        <button
+          style={{ ...tabStyle(tab === 'team'), opacity: selected ? 1 : 0.45 }}
+          onClick={() => selected && setTab('team')}
+          disabled={!selected}
+          title={selected ? undefined : 'Open a project from the portfolio first'}
+        >
+          Team
         </button>
         <button
           style={{ ...tabStyle(tab === 'verification'), opacity: selected ? 1 : 0.45 }}
@@ -121,6 +130,7 @@ const DeliveryProjects: React.FC = () => {
         />
       )}
       {tab === 'plan' && selected && <ProjectPlan key={selected.id} projectId={selected.id} />}
+      {tab === 'team' && selected && <ProjectTeam key={selected.id} projectId={selected.id} />}
       {tab === 'verification' && selected && (
         <ProjectVerification key={selected.id} projectId={selected.id} />
       )}

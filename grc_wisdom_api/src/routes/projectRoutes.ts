@@ -52,6 +52,9 @@ import {
   getVerificationQueue,
   getTaskVerifications,
 } from '../controllers/projectVerificationController';
+import {
+  listMembers, addMember, updateMember, removeMember, getCommitments,
+} from '../controllers/projectMemberController';
 
 const router = Router();
 
@@ -69,6 +72,16 @@ router.get('/', listProjects);
 // path declared after a parameter is shadowed by it. This one would have been
 // read as a project whose id is the string "task-statuses".
 router.get('/task-statuses', taskStatuses);
+
+// ── Who is on the engagement ──────────────────────────────────────────────
+// ProjectMember modelled all of this from the start — side, RACI, allocation,
+// deactivate-rather-than-delete — and was written in one place and read
+// nowhere. Declared above '/:id' so the literal segment is not read as an id.
+router.get('/commitments', getCommitments);
+router.get('/:id/members', listMembers);
+router.post('/:id/members', requireCapability(CAP.MANAGE_PROJECT), addMember);
+router.patch('/:id/members/:memberId', requireCapability(CAP.MANAGE_PROJECT), updateMember);
+router.delete('/:id/members/:memberId', requireCapability(CAP.MANAGE_PROJECT), removeMember);
 
 router.get('/:id', getProject);
 

@@ -195,6 +195,8 @@ export const MAY = {
   AUTHOR_CONTROL: [CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION],
   /** POST, PATCH /api/grc/implementations and evidence. */
   MANAGE_IMPLEMENTATION: [CAP.MANAGE_IMPLEMENTATION],
+  /** Staffing a delivery engagement: POST/PATCH/DELETE /api/projects/:id/members. */
+  MANAGE_PROJECT: [CAP.MANAGE_PROJECT],
   /** POST, PATCH, DELETE /api/grc/shared-services. */
   MANAGE_SHARED_SERVICE: [CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION],
 } as const;
