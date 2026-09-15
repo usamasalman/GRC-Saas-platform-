@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import FormDialog from '../../../components/FormDialog';
-import { ReasonDialog } from '../../../components/Dialog';
+import { ReasonDialog, ConfirmDialog } from '../../../components/Dialog';
+import Can, { MAY, can } from '../../../components/Can';
+import { calendarDate } from '../../../utils/calendarDate';
 import { S, pill, ghostBtn } from '../../iam/iamStyles';
 
 /**
@@ -11,6 +13,15 @@ import { S, pill, ghostBtn } from '../../iam/iamStyles';
  * server, so the phase and project figures repaint from that response rather
  * than from a second request or a guess made here — the browser never computes
  * a percentage of its own.
+ *
+ * The plan is also BUILT here. Until this screen could create a phase and a
+ * task, it could not: createPhase, updatePhase, deletePhase, createTask and
+ * deleteTask were all routed and capability-guarded, and no screen in the
+ * product called any of them. A project therefore opened on an empty plan whose
+ * own empty state told the reader to "break the engagement into phases ... then
+ * add the tasks each one needs" — an instruction the product gave them no way
+ * to follow, and the owner's complaint in one sentence: "it create projects but
+ * can how a organization start and plan and furthur update".
  */
 
 interface Timing {
@@ -118,8 +129,8 @@ const nextFor = (t: Task): string[] => {
   return moves;
 };
 
-const fmtDate = (iso: string | null): string =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) : '—';
+/** A phase window and a task due date are calendar dates, not instants. */
+const fmtDate = (iso: string | null): string => calendarDate(iso);
 
 const apiError = (err: any): string =>
   err?.response?.data?.message || 'Something went wrong. Please try again.';
@@ -259,6 +270,128 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  // The people a phase or task can be given to, and the vocabulary the server
+  // will accept. Both are fetched rather than hardcoded: createTask answers 400
+  // for a priority or side outside its own lists, and a fourth copy in the
+  // browser is how a screen comes to offer a value the API refuses.
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+  const [vocab, setVocab] = useState<{ priorities: string[]; sides: string[] }>({
+    priorities: [], sides: [],
+  });
+
+  useEffect(() => {
+    apiClient.get('/api/auth/tenant-users')
+      .then((res) => setPeople(res.data?.users || []))
+      .catch(() => setPeople([]));
+    apiClient.get('/api/projects/task-statuses')
+      .then((res) => setVocab({
+        priorities: res.data?.priorities || [],
+        sides: res.data?.sides || [],
+      }))
+      .catch(() => setVocab({ priorities: [], sides: [] }));
+  }, []);
+
+  const [phaseForm, setPhaseForm] = useState<Phase | 'new' | null>(null);
+  const [taskForPhase, setTaskForPhase] = useState<Phase | null>(null);
+  const [deletingPhase, setDeletingPhase] = useState<Phase | null>(null);
+  const [deletingTask, setDeletingTask] = useState<{ phase: Phase; task: Task } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const openNewPhase = () => { setError(''); setPhaseForm('new'); };
+  const openEditPhase = (ph: Phase) => { setError(''); setPhaseForm(ph); };
+  const openNewTask = (ph: Phase) => { setError(''); setTaskForPhase(ph); };
+  const openDeletePhase = (ph: Phase) => { setError(''); setDeletingPhase(ph); };
+  const openDeleteTask = (ph: Phase, task: Task) => { setError(''); setDeletingTask({ phase: ph, task }); };
+
+  /** A whole reload after a structural change: the rollup moves everywhere. */
+  const savePhase = async (values: Record<string, string>) => {
+    setSaving(true);
+    setError('');
+    try {
+      const body = {
+        name: values.name,
+        description: values.description || undefined,
+        objectives: values.objectives || undefined,
+        startDate: values.startDate,
+        targetEndDate: values.targetEndDate,
+        ownerId: (people.find((p) => p.name === values.owner) || {}).id,
+      };
+      if (phaseForm && phaseForm !== 'new') {
+        await apiClient.patch(`/api/projects/phases/${phaseForm.id}`, body);
+      } else {
+        await apiClient.post(`/api/projects/${projectId}/phases`, body);
+      }
+      setPhaseForm(null);
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveTask = async (values: Record<string, string>) => {
+    if (!taskForPhase) return;
+    setSaving(true);
+    setError('');
+    try {
+      await apiClient.post(`/api/projects/phases/${taskForPhase.id}/tasks`, {
+        name: values.name,
+        description: values.description || undefined,
+        assigneeId: (people.find((p) => p.name === values.assignee) || {}).id,
+        priority: values.priority || undefined,
+        side: values.side || undefined,
+        department: values.department || undefined,
+        startDate: values.startDate || undefined,
+        dueDate: values.dueDate || undefined,
+        // Blank means "the server's default", not zero: a task weighted zero
+        // contributes nothing to the rollup, which is a different intention.
+        weight: values.weight === '' ? undefined : Number(values.weight),
+      });
+      setTaskForPhase(null);
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removePhase = async (ph: Phase) => {
+    setSaving(true);
+    setError('');
+    try {
+      await apiClient.delete(`/api/projects/phases/${ph.id}`);
+      setDeletingPhase(null);
+      await load();
+    } catch (err: any) {
+      // The server refuses a phase that still holds tasks and names what is in
+      // it. That message is the useful part, so it stays on screen.
+      setError(apiError(err));
+      setDeletingPhase(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeTask = async (task: Task) => {
+    setSaving(true);
+    setError('');
+    try {
+      await apiClient.delete(`/api/projects/tasks/${task.id}`);
+      setDeletingTask(null);
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+      setDeletingTask(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const mayPlan = can(MAY.MANAGE_PROJECT);
+  const canOffer = mayPlan && people.length > 0;
+
   /**
    * Repaint the tree from a mutation response.
    *
@@ -392,10 +525,12 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       {totals && phases.length > 0 && (
         <div style={{ display: 'flex', gap: 18, marginBottom: 16, flexWrap: 'wrap', fontSize: 12.5 }}>
           <span style={{ color: 'var(--ink-muted)' }}>
-            <strong style={{ color: 'var(--ink)' }}>{totals.phases}</strong> phases
+            <strong style={{ color: 'var(--ink)' }}>{totals.phases}</strong>
+            {totals.phases === 1 ? ' phase' : ' phases'}
           </span>
           <span style={{ color: 'var(--ink-muted)' }}>
-            <strong style={{ color: 'var(--ink)' }}>{totals.done}</strong> of {totals.tasks} tasks done
+            <strong style={{ color: 'var(--ink)' }}>{totals.done}</strong> of {totals.tasks}
+            {totals.tasks === 1 ? ' task done' : ' tasks done'}
           </span>
           {totals.blocked > 0 && (
             <span style={{ color: 'var(--danger)' }}><strong>{totals.blocked}</strong> blocked</span>
@@ -414,7 +549,19 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           {totals.rejected > 0 && (
             <span style={{ color: 'var(--danger)' }}><strong>{totals.rejected}</strong> sent back</span>
           )}
-          <button style={{ ...ghostBtn, marginLeft: 'auto' }} onClick={load}>Refresh</button>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <Can do={MAY.MANAGE_PROJECT}>
+              <button
+                onClick={openNewPhase}
+                disabled={!canOffer}
+                title={people.length === 0 ? 'The people list could not be loaded' : undefined}
+                style={ghostBtn}
+              >
+                + Phase
+              </button>
+            </Can>
+            <button style={ghostBtn} onClick={load}>Refresh</button>
+          </span>
         </div>
       )}
 
@@ -427,6 +574,27 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
             Break the engagement into phases — scoping, gap assessment, remediation, internal audit —
             then add the tasks each one needs. Progress rolls up on its own from there.
           </div>
+          {/* This text told the reader to do something the product had no way
+              of doing: no screen could create a phase or a task, though the
+              endpoints existed and were guarded. An instruction with no control
+              beneath it is worse than no instruction. */}
+          <Can
+            do={MAY.MANAGE_PROJECT}
+            otherwise={(
+              <div style={{ marginTop: 14, fontSize: 12, color: 'var(--ink-faint)' }}>
+                Planning the engagement is the project manager's to do.
+              </div>
+            )}
+          >
+            <button
+              onClick={openNewPhase}
+              disabled={!canOffer}
+              title={people.length === 0 ? 'The people list could not be loaded' : undefined}
+              style={{ ...ghostBtn, marginTop: 16 }}
+            >
+              + Add the first phase
+            </button>
+          </Can>
         </div>
       ) : (
         phases.map((ph) => {
@@ -480,6 +648,44 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
 
                 <Bar reported={ph.reportedProgress} verified={ph.verifiedProgress} />
                 <span style={pill(st.fg, st.line)}>{st.label}</span>
+
+                {/* Stops the click from collapsing the phase underneath the
+                    control the user actually pressed. */}
+                <Can do={MAY.MANAGE_PROJECT}>
+                  <span
+                    style={{ display: 'flex', gap: 2, whiteSpace: 'nowrap' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    role="presentation"
+                  >
+                    <button
+                      onClick={() => openNewTask(ph)}
+                      disabled={saving || !canOffer}
+                      style={{ ...ghostBtn, padding: '3px 8px', fontSize: 11 }}
+                      title="Add a task to this phase"
+                    >
+                      + task
+                    </button>
+                    <button
+                      onClick={() => openEditPhase(ph)}
+                      disabled={saving || !canOffer}
+                      style={{ ...ghostBtn, padding: '3px 8px', fontSize: 11 }}
+                    >
+                      edit
+                    </button>
+                    {/* Offered only where it can succeed: the server refuses a
+                        phase that still holds tasks, and names them. */}
+                    {ph.tasks.length === 0 && (
+                      <button
+                        onClick={() => openDeletePhase(ph)}
+                        disabled={saving}
+                        style={{ ...ghostBtn, padding: '3px 8px', fontSize: 11, color: 'var(--danger)' }}
+                      >
+                        delete
+                      </button>
+                    )}
+                  </span>
+                </Can>
               </div>
 
               {!isCollapsed && (
@@ -487,6 +693,15 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                   {ph.tasks.length === 0 ? (
                     <div style={{ padding: '20px 18px', fontSize: 13, color: 'var(--ink-muted)' }}>
                       No tasks in this phase yet.
+                      <Can do={MAY.MANAGE_PROJECT}>
+                        <button
+                          onClick={() => openNewTask(ph)}
+                          disabled={saving || !canOffer}
+                          style={{ ...ghostBtn, marginLeft: 10, padding: '3px 10px', fontSize: 11.5 }}
+                        >
+                          + Add a task
+                        </button>
+                      </Can>
                     </div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
@@ -631,6 +846,26 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                   }}
                                   onWithdraw={() => taskAction(t, 'return')}
                                 />
+                                {/* Only on work nobody has started. A task that
+                                    has been done, submitted or verified is a
+                                    record of what happened, and deleting it
+                                    would quietly raise the phase percentage by
+                                    removing the denominator rather than
+                                    finishing the work. */}
+                                <Can do={MAY.MANAGE_PROJECT}>
+                                  {t.status === 'NotStarted' && t.completionPercent === 0 && (
+                                    <button
+                                      style={{
+                                        ...actionBtn('var(--danger)', busy),
+                                        marginTop: 4, marginRight: 0,
+                                      }}
+                                      disabled={busy || saving}
+                                      onClick={() => openDeleteTask(ph, t)}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </Can>
                               </td>
                             </tr>
                           );
@@ -710,6 +945,151 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
             taskAction(dialog.task, 'return', { note });
           }}
           onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {phaseForm && (
+        <FormDialog
+          title={phaseForm === 'new' ? 'Add a phase' : `Edit ${phaseForm.name}`}
+          intro={(
+            <>
+              A stage of the engagement, with an owner and a window. Tasks live inside phases, and
+              progress rolls up from them — nothing here is a percentage anybody types.
+            </>
+          )}
+          submitLabel={saving ? 'Saving…' : (phaseForm === 'new' ? 'Add phase' : 'Save phase')}
+          busy={saving}
+          error={error}
+          // Every field the server refuses without is marked required here, so
+          // an incomplete phase is caught in the dialog rather than by a 400.
+          fields={[
+            {
+              name: 'name',
+              label: 'Phase name',
+              type: 'text',
+              required: true,
+              initial: phaseForm === 'new' ? undefined : phaseForm.name,
+            },
+            {
+              name: 'owner',
+              label: 'Owner',
+              type: 'select',
+              required: true,
+              options: people.map((p) => p.name),
+              // Undefined leaves the select on its first option. Passing an
+              // empty string would show a blank selection that is not one of
+              // the options, and submit an owner the server cannot resolve.
+              initial: phaseForm === 'new' ? undefined : (phaseForm.owner?.name || undefined),
+              help: 'The server requires an owner from the organisation that owns the engagement.',
+            },
+            {
+              name: 'startDate',
+              label: 'Start',
+              type: 'date',
+              required: true,
+              initial: phaseForm === 'new' ? undefined : (phaseForm.startDate || '').slice(0, 10),
+            },
+            {
+              name: 'targetEndDate',
+              label: 'Target end',
+              type: 'date',
+              required: true,
+              initial: phaseForm === 'new' ? undefined : (phaseForm.targetEndDate || '').slice(0, 10),
+              help: 'On or after the start.',
+            },
+            {
+              name: 'description',
+              label: 'Description',
+              type: 'textarea',
+              initial: phaseForm === 'new' ? undefined : (phaseForm.description || undefined),
+            },
+          ]}
+          validate={(v) => (
+            v.startDate && v.targetEndDate && v.targetEndDate < v.startDate
+              ? 'The target end is before the start.'
+              : null
+          )}
+          onSubmit={(v) => savePhase(v)}
+          onCancel={() => setPhaseForm(null)}
+        />
+      )}
+
+      {taskForPhase && (
+        <FormDialog
+          title={`Add a task to ${taskForPhase.name}`}
+          intro="Only the name is required. Everything else can be filled in later from the row."
+          submitLabel={saving ? 'Adding…' : 'Add task'}
+          busy={saving}
+          error={error}
+          fields={[
+            { name: 'name', label: 'Task name', type: 'text', required: true },
+            {
+              name: 'assignee',
+              label: 'Assigned to',
+              type: 'select',
+              // Blank first, and blank by default: a task nobody has been given
+              // is a normal state, and defaulting to whoever happens to head the
+              // list would assign work to them without anyone choosing it.
+              options: ['', ...people.map((p) => p.name)],
+            },
+            // Offered from the server's own lists rather than a copy here: it
+            // answers 400 for anything outside them.
+            {
+              name: 'priority',
+              label: 'Priority',
+              type: 'select',
+              options: vocab.priorities,
+              initial: vocab.priorities.includes('Medium') ? 'Medium' : undefined,
+            },
+            {
+              name: 'side',
+              label: 'Side',
+              type: 'select',
+              options: vocab.sides,
+              help: 'Which organisation owes this piece of work.',
+            },
+            { name: 'dueDate', label: 'Due', type: 'date' },
+            {
+              name: 'weight',
+              label: 'Weight',
+              type: 'number',
+              help: 'How much this task counts toward the phase. Leave blank for the default — a '
+                + 'weight of zero means it contributes nothing, which is a different intention.',
+            },
+          ]}
+          onSubmit={(v) => saveTask(v)}
+          onCancel={() => setTaskForPhase(null)}
+        />
+      )}
+
+      {deletingPhase && (
+        <ConfirmDialog
+          title={`Delete the phase "${deletingPhase.name}"?`}
+          confirmLabel="Delete phase"
+          destructive
+          busy={saving}
+          message="This phase holds no tasks. Deleting it removes the stage from the plan and the
+            project percentages repaint from what is left."
+          onConfirm={() => removePhase(deletingPhase)}
+          onCancel={() => setDeletingPhase(null)}
+        />
+      )}
+
+      {deletingTask && (
+        <ConfirmDialog
+          title={`Delete the task "${deletingTask.task.name}"?`}
+          confirmLabel="Delete task"
+          destructive
+          busy={saving}
+          message={(
+            <>
+              The task and its planned weight leave the phase, and the rollup repaints from what
+              remains. Work that was done and verified should be left in the plan rather than
+              deleted — the record of it is the point.
+            </>
+          )}
+          onConfirm={() => removeTask(deletingTask.task)}
+          onCancel={() => setDeletingTask(null)}
         />
       )}
     </div>

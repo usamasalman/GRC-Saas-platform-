@@ -738,5 +738,11 @@ export const taskStatuses = (_req: AuthenticatedRequest, res: Response): void =>
     status: 'success',
     statuses: TASK_STATUSES,
     verificationPolicies: VERIFICATION_POLICIES,
+    // Served rather than duplicated in the client. createTask rejects anything
+    // outside these two lists, and a fourth hardcoded copy is how a screen
+    // comes to offer a value the server answers 400 for -- which has already
+    // happened three times in this codebase with status strings.
+    priorities: PRIORITIES,
+    sides: SIDES,
   });
 };

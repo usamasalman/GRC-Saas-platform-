@@ -229,8 +229,8 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
           // The denominator travels with it: "180% across 2 of 5" is readable,
           // a bare 180% is not.
           ['Allocation stated', stated.length === 0
-            ? <span style={{ color: 'var(--ink-muted)' }}>none</span>
-            : <>{totalStated}% across {stated.length} of {active.length}</>],
+            ? <span key="none" style={{ color: 'var(--ink-muted)' }}>none</span>
+            : <span key="stated">{totalStated}% across {stated.length} of {active.length}</span>],
           ['Previously on it', past.length],
         ]} />
       )}

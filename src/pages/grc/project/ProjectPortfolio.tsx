@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, primaryBtn, ghostBtn, pill, StatStrip } from '../../iam/iamStyles';
+import { calendarDate } from '../../../utils/calendarDate';
 
 /**
  * The delivery portfolio — every engagement this organisation can see, with the
@@ -58,8 +59,9 @@ const PRIORITY_FG: Record<string, string> = {
   Low: 'var(--ink-faint)',
 };
 
+/** A project timeline is a calendar date, not an instant. */
 const fmtDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  calendarDate(iso, { day: '2-digit', month: 'short', year: 'numeric' });
 
 const apiError = (err: any): string =>
   err?.response?.data?.message || 'Something went wrong. Please try again.';
@@ -219,7 +221,7 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
                         <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{p.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                           {p.ref} · {p.projectType}
-                          {p.frameworks.length > 0 && ` · ${p.frameworks.join(', ')}`}
+                          {(p.frameworks?.length || 0) > 0 && ` · ${p.frameworks.join(', ')}`}
                         </div>
                         {/* Only meaningful on consultant-led work; hidden otherwise. */}
                         {p.side === 'Provider' && p.tenant && (
@@ -240,14 +242,20 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
                         <div style={{ fontSize: 12, color: 'var(--ink-body)' }}>
                           {fmtDate(p.startDate)} → {fmtDate(p.targetEndDate)}
                         </div>
-                        <div style={{
-                          fontSize: 11, marginTop: 2,
-                          color: p.schedule.overdue ? 'var(--danger)' : 'var(--ink-faint)',
-                        }}>
-                          {p.schedule.overdue
-                            ? `${p.schedule.daysOverdue} days overdue`
-                            : `${p.schedule.remainingDays} of ${p.schedule.totalDays} days remaining`}
-                        </div>
+                        {/* Read defensively: strictNullChecks is off in this
+                            project, so a row missing this object compiles
+                            cleanly and takes the whole portfolio down at
+                            runtime rather than losing one cell. */}
+                        {p.schedule && (
+                          <div style={{
+                            fontSize: 11, marginTop: 2,
+                            color: p.schedule.overdue ? 'var(--danger)' : 'var(--ink-faint)',
+                          }}>
+                            {p.schedule.overdue
+                              ? `${p.schedule.daysOverdue} days overdue`
+                              : `${p.schedule.remainingDays} of ${p.schedule.totalDays} days remaining`}
+                          </div>
+                        )}
                       </td>
 
                       <td style={S.td}>

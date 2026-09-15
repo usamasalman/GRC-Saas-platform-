@@ -98,6 +98,36 @@ if (total < BUDGET) {
   );
 }
 
+/**
+ * And the replacement is not cast away.
+ *
+ * FormDialog's `Field` union is the only thing checking that a field spells its
+ * props the way the component reads them. ProjectPlan's first version wrote
+ * `fields={[...] as any}` with `value:` where the prop is `initial:`, and with
+ * `type` left off entirely. It compiled, it linted, and every "edit this phase"
+ * dialog opened blank — so saving one would have written an empty name and no
+ * owner over a real phase. Removing the cast surfaced all of it immediately.
+ *
+ * A prop bag handed to a component as `any` is the same failure as a native
+ * prompt: the mistake is only discovered by the person using it.
+ */
+const casts = [];
+for (const file of files) {
+  const src = fs.readFileSync(file, 'utf8');
+  for (const m of src.matchAll(/(\w+)=\{\[[\s\S]{0,4000}?\]\s+as any\}/g)) {
+    casts.push(`${path.relative(WEB, file)} — ${m[1]}={[...] as any}`);
+  }
+}
+
+if (casts.length > 0) {
+  assert.fail(
+    `A prop array is being handed to a component as any:\n${casts.map((c) => `  ${c}`).join('\n')}\n\n`
+    + 'The component\'s prop types are what catch a misspelled field. Fix the fields so the cast '
+    + 'is unnecessary rather than casting so the fields compile.',
+  );
+}
+
 console.log(
-  `no-native-dialogs: ${files.length} files scanned, ${total} calls (budget ${BUDGET})`,
+  `no-native-dialogs: ${files.length} files scanned, ${total} calls (budget ${BUDGET}), `
+  + `${casts.length} prop-array casts`,
 );
