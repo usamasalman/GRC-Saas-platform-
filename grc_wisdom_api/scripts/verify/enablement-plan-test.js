@@ -24,15 +24,16 @@ const eq = (a, b, what) => { checks += 1; assert.deepStrictEqual(a, b, what); };
 
 // ── A world to plan against ───────────────────────────────────────────────
 const T = {
-  alpha: { id: 't-alpha', name: 'Alpha Holding' },
-  beta: { id: 't-beta', name: 'Beta Branch' },
-  gamma: { id: 't-gamma', name: 'Gamma Unit' },
+  // Beta sits under Alpha; Gamma is an unrelated organisation.
+  alpha: { id: 't-alpha', name: 'Alpha Holding', path: '/ALPHA/' },
+  beta: { id: 't-beta', name: 'Beta Branch', path: '/ALPHA/BETA/' },
+  gamma: { id: 't-gamma', name: 'Gamma Unit', path: '/GAMMA/' },
 };
 const S = {
   iso: { id: 's-iso', code: 'ISO27001', tenantId: null },
   pdpl: { id: 's-pdpl', code: 'PDPL', tenantId: null },
   // Authored by Alpha, for Alpha. Visible only inside Alpha's scope.
-  house: { id: 's-house', code: 'ALPHA-SEC', tenantId: 't-alpha' },
+  house: { id: 's-house', code: 'ALPHA-SEC', tenantId: 't-alpha', ownerPath: '/ALPHA/' },
 };
 
 const base = {
@@ -230,14 +231,101 @@ for (const [t, s] of [[[], [S.iso.id]], [[T.alpha.id], []], [[], []]]) {
 {
   const r = plan({
     requestedTenantIds: [T.alpha.id, T.beta.id, T.gamma.id],
-    requestedStandardIds: [S.iso.id, S.pdpl.id, S.house.id],
+    requestedStandardIds: [S.iso.id, S.pdpl.id],
   });
-  ok(r.ok, 'the full cross product inside scope must be allowed');
+  ok(r.ok, 'the full cross product of published frameworks inside scope must be allowed');
   const scoped = new Set(base.scopeTenantIds);
   const escaped = [...r.apply, ...r.skip].filter((p) => !scoped.has(p.tenantId));
   eq(escaped, [], 'no planned pairing may name a tenant outside the callerScope');
   checks += 1;
-  assert.strictEqual(r.apply.length, 9, 'three entities by three standards');
+  assert.strictEqual(r.apply.length, 6, 'three entities by two published standards');
+}
+
+// ── A private framework stays inside the organisation that wrote it ──────
+// The controller's visibility filter -- platform-published, or authored inside
+// your scope -- is right for reading and vacuous for a platform operator, whose
+// scope is every tenant. It therefore loads every customer's private framework.
+// Break-glass is for reaching a customer's own data, not for moving one
+// customer's intellectual property onto another.
+{
+  // Alpha authored it; Alpha may have it.
+  const own = plan({ requestedTenantIds: [T.alpha.id], requestedStandardIds: [S.house.id] });
+  ok(own.ok, "a private framework must be enablable for its own author");
+
+  // Beta is beneath Alpha, so it is inside the authoring organisation.
+  const below = plan({ requestedTenantIds: [T.beta.id], requestedStandardIds: [S.house.id] });
+  ok(below.ok, 'a branch beneath the author is inside the organisation that wrote it');
+
+  // Gamma is a different customer entirely. This is the case a platform
+  // operator can reach and must not.
+  const across = plan({ requestedTenantIds: [T.gamma.id], requestedStandardIds: [S.house.id] });
+  checks += 1;
+  assert.strictEqual(across.ok, false, "one customer's private framework must not reach another");
+  checks += 1;
+  assert.strictEqual(across.code, 'PRIVATE_FRAMEWORK');
+  checks += 1;
+  assert.strictEqual(across.status, 403);
+  checks += 1;
+  assert.ok(/ALPHA-SEC/.test(across.message), 'the refusal must name the framework it refused');
+  checks += 1;
+  assert.ok(/Nothing was changed/.test(across.message), 'and say nothing was changed');
+
+  // One bad target refuses the whole request, exactly like out-of-scope.
+  const mixed = plan({
+    requestedTenantIds: [T.alpha.id, T.beta.id, T.gamma.id],
+    requestedStandardIds: [S.house.id],
+  });
+  checks += 1;
+  assert.strictEqual(mixed.ok, false, 'one out-of-organisation target must refuse the whole request');
+  checks += 1;
+  assert.strictEqual(mixed.code, 'PRIVATE_FRAMEWORK');
+
+  // A published standard is unaffected by the rule.
+  const pub = plan({
+    requestedTenantIds: [T.alpha.id, T.gamma.id], requestedStandardIds: [S.iso.id],
+  });
+  ok(pub.ok, 'a platform-published framework belongs to everyone in scope');
+}
+
+// ── An unanswerable ownership question is a refusal ─────────────────────
+// A private standard whose author has no path, or a target with none, cannot be
+// shown to be inside the organisation. Passing on missing data is how the hole
+// this rule closes was open in the first place.
+{
+  const noOwnerPath = plan({
+    requestedTenantIds: [T.alpha.id],
+    requestedStandardIds: [S.house.id],
+    standards: [S.iso, S.pdpl, { id: 's-house', code: 'ALPHA-SEC', tenantId: 't-alpha' }],
+  });
+  checks += 1;
+  assert.strictEqual(noOwnerPath.ok, false, 'a private standard with no owner path must refuse');
+  checks += 1;
+  assert.strictEqual(noOwnerPath.code, 'PRIVATE_FRAMEWORK');
+
+  const noTargetPath = plan({
+    requestedTenantIds: [T.alpha.id],
+    requestedStandardIds: [S.house.id],
+    targets: [{ id: T.alpha.id, name: T.alpha.name }],
+  });
+  checks += 1;
+  assert.strictEqual(noTargetPath.ok, false, 'a target with no path must refuse a private framework');
+}
+
+// ── A prefix that is not a subtree must not pass ─────────────────────────
+// '/ALPHA2/' starts with '/ALPHA' but is a different organisation. The paths
+// carry trailing separators precisely so a prefix test means what it says.
+{
+  const r = plan({
+    scopeTenantIds: ['t-alpha2'],
+    requestedTenantIds: ['t-alpha2'],
+    requestedStandardIds: [S.house.id],
+    targets: [{ id: 't-alpha2', name: 'Alpha Two', path: '/ALPHA2/' }],
+  });
+  checks += 1;
+  assert.strictEqual(
+    r.ok, false,
+    'a sibling whose path merely shares a prefix must not count as inside the organisation',
+  );
 }
 
 console.log(`enablement-plan: ${checks} assertions passed (pure, no database)`);

@@ -32,7 +32,9 @@ async function loadScope(req: AuthenticatedRequest) {
   const [tenants, standards] = await Promise.all([
     prisma.tenant.findMany({
       where: { id: { in: scope.tenantIds } },
-      select: { id: true, name: true, type: true },
+      // path carries the hierarchy, and planEnablement needs it to keep a
+      // private framework inside the organisation that wrote it.
+      select: { id: true, name: true, type: true, path: true },
       orderBy: { name: 'asc' },
     }),
     prisma.standard.findMany({
@@ -41,11 +43,29 @@ async function loadScope(req: AuthenticatedRequest) {
       // framework belonging to another organisation is not here, so it cannot
       // be named in a plan.
       where: { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] },
-      select: { id: true, code: true, title: true, version: true, tenantId: true },
+      select: {
+        id: true, code: true, title: true, version: true, tenantId: true,
+        // The author's own path, for the private-framework rule. Null for a
+        // platform-published standard, which belongs to everyone in scope.
+        tenant: { select: { name: true, path: true } },
+      },
       orderBy: { code: 'asc' },
     }),
   ]);
-  return { scope, tenants, standards };
+
+  // Flattened here rather than in the plan, so the pure function stays free of
+  // Prisma's include shapes.
+  const withOwner = standards.map((s) => ({
+    id: s.id,
+    code: s.code,
+    title: s.title,
+    version: s.version,
+    tenantId: s.tenantId,
+    ownerName: s.tenant?.name || null,
+    ownerPath: s.tenant?.path || null,
+  }));
+
+  return { scope, tenants, standards: withOwner };
 }
 
 /**

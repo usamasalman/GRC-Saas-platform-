@@ -248,30 +248,20 @@ const FrameworkAuthoring: React.FC = () => {
     finally { setDialogBusy(false); }
   };
 
-  const enableStandard = async (std: Standard) => {
-    try {
-      const res = await apiClient.post('/api/grc/standards/enable', { standardId: std.id, applicability: 'Full' });
-      setNotice(res.data?.message || `${std.code} enabled`);
-      await load();
-    } catch (err) { setNotice(apiError(err)); }
-  };
-
-  /**
-   * Stop assessing against a standard.
+  /*
+   * Enabling and disabling used to live here too, posting without a tenantId
+   * and so always targeting whoever was signed in.
    *
-   * Until this existed, deleteStandard refused while any tenant had the
-   * standard enabled and told the user to disable it everywhere first —
-   * pointing at a capability the product did not have. A standard created by
-   * mistake could never be removed.
+   * That is defensible in an organisation's own workspace and wrong in the
+   * control plane, which is where this screen is reached as "Standard
+   * Repository": a platform operator pressing enable was enabling the framework
+   * for the platform's own tenant, silently, and nothing said otherwise.
+   *
+   * Nothing is lost by removing them. An organisation enables for itself from
+   * Standards & frameworks, and the control plane does it for a named entity —
+   * or many — from Standard enablement, which is the screen that can say which
+   * entity it means.
    */
-  const disableStandard = async (std: Standard) => {
-    setNotice('');
-    try {
-      const res = await apiClient.post('/api/grc/standards/disable', { standardId: std.id });
-      setNotice(res.data?.message || `${std.code} disabled`);
-      await load();
-    } catch (err) { setNotice(apiError(err)); }
-  };
 
   /**
    * Rename a standard, or correct its authority and version.
@@ -561,15 +551,8 @@ const FrameworkAuthoring: React.FC = () => {
                             gated on those alone, so a role with no authoring
                             duty was offered enable, rename, disable and delete
                             and found out by pressing one. */}
-                        {can(MAY.AUTHOR_STANDARD) && !s.isEnabledHere && <button onClick={() => enableStandard(s)} style={linkBtn('var(--brand)')}>enable</button>}
                         {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => addClauses(s)} style={linkBtn('var(--info)')}>add clauses</button>}
                         {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => renameStandard(s)} style={linkBtn('var(--info)')}>rename</button>}
-                        {/* Only when it IS enabled — offering "disable" on
-                            something that is not enabled is a button that can
-                            only ever return an error. */}
-                        {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && s.isEnabledHere && (
-                          <button onClick={() => disableStandard(s)} style={linkBtn('var(--warning)')}>disable</button>
-                        )}
                         {can(MAY.AUTHOR_STANDARD) && s.isOwnedHere && <button onClick={() => removeStandard(s)} style={linkBtn('var(--danger)')}>delete</button>}
                         {(!s.isOwnedHere || !can(MAY.AUTHOR_STANDARD)) && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>read-only</span>}
                       </td>

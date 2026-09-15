@@ -47,6 +47,27 @@ const uiList = library.match(/options: \[([^\]]*)\]/);
 assert.ok(uiList, 'the applicability select was not found in StandardsLibrary.tsx');
 const ui = [...uiList[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
 
+// The enablement screen carries its own copy, because the frontend does not
+// import from the API package. Two copies is tolerable; two copies where only
+// one is pinned is not, now that the server answers 400 on anything else.
+const enablementScreen = fs.readFileSync(
+  path.join(WEB, 'pages', 'grc', 'TenantStandardEnablement.tsx'), 'utf8',
+);
+const screenList = enablementScreen.match(/const APPLICABILITY = \[([^\]]*)\]/);
+assert.ok(
+  screenList,
+  'TenantStandardEnablement.tsx no longer declares APPLICABILITY. If it now imports the list from '
+  + 'somewhere, pin that instead — do not leave it unchecked.',
+);
+const screen = [...screenList[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+checks += 1;
+assert.deepStrictEqual(
+  screen, server,
+  'The enablement screen offers applicability values the server does not accept.\n'
+  + `  screen: ${screen.join(', ')}\n  server: ${server.join(', ')}\n`
+  + 'The server answers 400 on anything else, so a drift here is a dead button.',
+);
+
 checks += 1;
 assert.deepStrictEqual(
   ui, server,

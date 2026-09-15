@@ -223,7 +223,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
   const SRC = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'grc');
   const MUST_BE_GUARDED = {
     'FrameworkAuthoring.tsx': [
-      'enableStandard', 'disableStandard', 'removeStandard', 'renameStandard', 'addClauses',
+      'removeStandard', 'renameStandard', 'addClauses',
       'cloneControl', 'remapControl', 'removeControl',
     ],
     'StandardsLibrary.tsx': ['setEnabling'],

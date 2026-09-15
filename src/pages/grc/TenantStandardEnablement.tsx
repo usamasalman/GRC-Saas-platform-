@@ -97,6 +97,23 @@ const TenantStandardEnablement: React.FC = () => {
     return by;
   }, [enablements]);
 
+  // How much each entity carries overall, not just for the selected framework.
+  //
+  // The screen is framework-first, which answers "who has ISO 27001" well and
+  // "what does Contoso have" not at all. A full pivot is a second layout; this
+  // column answers the reverse question at a glance for the cost of one derived
+  // map, and names the frameworks rather than only counting them.
+  const perTenant = useMemo(() => {
+    const by = new Map<string, string[]>();
+    const codeOf = new Map(standards.map((s) => [s.id, s.code]));
+    for (const e of enablements) {
+      if (!by.has(e.tenantId)) by.set(e.tenantId, []);
+      by.get(e.tenantId)!.push(codeOf.get(e.standardId) || '—');
+    }
+    for (const codes of by.values()) codes.sort();
+    return by;
+  }, [enablements, standards]);
+
   const standard = standards.find((s) => s.id === selected) || null;
   const enabledHere = (standard && enabledTenantIds.get(standard.id)) || new Set<string>();
 
@@ -306,13 +323,14 @@ const TenantStandardEnablement: React.FC = () => {
                         <th style={S.th}>Entity</th>
                         <th style={S.th}>Operating model</th>
                         <th style={S.th}>{standard.code}</th>
+                        <th style={S.th}>All frameworks</th>
                         <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {shownTenants.length === 0 ? (
                         <tr>
-                          <td colSpan={4} style={{ padding: 22, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                          <td colSpan={5} style={{ padding: 22, textAlign: 'center', color: 'var(--ink-muted)' }}>
                             {tenants.length === 0
                               ? 'No entities in scope.'
                               : 'No entity matches that filter.'}
@@ -333,6 +351,20 @@ const TenantStandardEnablement: React.FC = () => {
                                   </span>
                                 )
                                 : <span style={pill('var(--ink-muted)', 'var(--line)')}>not enabled</span>}
+                            </td>
+                            <td style={{ ...S.td, fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                              {(() => {
+                                const codes = perTenant.get(t.id) || [];
+                                if (codes.length === 0) return <span style={{ color: 'var(--warning)' }}>none</span>;
+                                return (
+                                  <>
+                                    <strong style={{ color: 'var(--ink-body)' }}>{codes.length}</strong>
+                                    {' · '}
+                                    {codes.slice(0, 3).join(', ')}
+                                    {codes.length > 3 && ` +${codes.length - 3}`}
+                                  </>
+                                );
+                              })()}
                             </td>
                             <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                               <Can do={MAY.AUTHOR_STANDARD}>

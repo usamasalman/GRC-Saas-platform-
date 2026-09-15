@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import DialogShell from './Dialog';
-import { S, primaryBtn, ghostBtn } from '../pages/iam/iamStyles';
+import { S, primaryBtn, ghostBtn, linkBtn } from '../pages/iam/iamStyles';
 
 /**
  * Pick several things from a list.
@@ -93,6 +93,51 @@ const PickManyDialog: React.FC<{
               placeholder="Search…"
               onChange={(e) => setQuery(e.target.value)}
             />
+          )}
+
+          {/* Choosing everything was one click per row.
+              That is not a nicety here: the owner's request was to enable a
+              standard "from saas to all tenants", and doing it forty times is
+              how an operator gets to entity thirty-one and stops.
+
+              "All" means what is on screen. When a search is active the button
+              acts on the matches and says so, because a control that silently
+              includes rows the reader filtered out is worse than none — it is
+              the same class of surprise as a truncated list that still indexes
+              the full array, which is what this component was written to
+              replace. */}
+          {items.length > 1 && (
+            <div style={{
+              display: 'flex', gap: 10, alignItems: 'center',
+              marginBottom: 8, fontSize: 11.5,
+            }}>
+              <button
+                type="button"
+                disabled={busy || shown.every((i) => picked.has(i.id))}
+                onClick={() => setPicked((prev) => {
+                  const next = new Set(prev);
+                  for (const i of shown) next.add(i.id);
+                  return next;
+                })}
+                style={linkBtn('var(--info)')}
+              >
+                {query.trim()
+                  ? `Select all ${shown.length} matching`
+                  : `Select all ${items.length}`}
+              </button>
+              <button
+                type="button"
+                disabled={busy || !shown.some((i) => picked.has(i.id))}
+                onClick={() => setPicked((prev) => {
+                  const next = new Set(prev);
+                  for (const i of shown) next.delete(i.id);
+                  return next;
+                })}
+                style={linkBtn('var(--ink-muted)')}
+              >
+                Clear
+              </button>
+            </div>
           )}
 
           <div style={{
