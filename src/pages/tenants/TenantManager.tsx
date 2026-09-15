@@ -18,6 +18,23 @@ interface TenantRow {
 }
 
 interface PlanRow { id: string; name: string; priceMonthly: number; maxUsers: number }
+interface RoleRow { id: string; name: string; portal: string }
+
+/**
+ * What the server hands back once, and only once.
+ *
+ * Both onboard and invite mint a temporary password, hash it, and return the
+ * plaintext in that one response. It is never retrievable afterwards, so the
+ * screen has to be deliberate about showing it: prominently, with its expiry,
+ * and saying plainly that it will not appear again.
+ */
+interface Provisioned {
+  tenantName: string;
+  adminEmail: string;
+  adminRole: string;
+  temporaryPassword: string;
+  expiresAt: string | null;
+}
 
 const TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER'];
 
@@ -37,7 +54,14 @@ const TenantManager: React.FC = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<TenantRow | null>(null);
-  const [form, setForm] = useState({ name: '', type: 'BRANCH', parentId: '', planId: '' });
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [form, setForm] = useState({
+    name: '', type: 'BRANCH', parentId: '', planId: '',
+    adminName: '', adminEmail: '', adminRoleId: '',
+  });
+  const [provisioned, setProvisioned] = useState<Provisioned | null>(null);
+  /** An existing tenant that has nobody in it, being given its first administrator. */
+  const [adopting, setAdopting] = useState<TenantRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -45,13 +69,18 @@ const TenantManager: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [tRes, pRes] = await Promise.all([
+      const [tRes, pRes, rRes] = await Promise.all([
         apiClient.get('/api/tenants'),
         apiClient.get('/api/admin/db/table/Plan').catch(() => null),
+        // A tenant cannot be provisioned without naming its administrator's
+        // role, so this list is load-bearing rather than decorative. Caught
+        // individually: the tenant table is still worth showing without it.
+        apiClient.get('/api/iam/roles').catch(() => null),
       ]);
       setTenants(tRes.data?.tenants || []);
       setScope(tRes.data?.scope || '');
       if (pRes) setPlans(pRes.data?.records || []);
+      setRoles(rRes?.data?.roles || []);
     } catch (err: any) {
       const s = err?.response?.status;
       if (s === 401) setError('Session expired. Please sign in again.');
@@ -66,14 +95,20 @@ const TenantManager: React.FC = () => {
 
   const openCreate = (parentId = '') => {
     setEditing(null);
-    setForm({ name: '', type: 'BRANCH', parentId, planId: '' });
+    setForm({
+      name: '', type: 'BRANCH', parentId, planId: '',
+      adminName: '', adminEmail: '', adminRoleId: '',
+    });
     setNotice('');
     setShowModal(true);
   };
 
   const openEdit = (t: TenantRow) => {
     setEditing(t);
-    setForm({ name: t.name, type: t.type, parentId: t.parentId || '', planId: '' });
+    setForm({
+      name: t.name, type: t.type, parentId: t.parentId || '', planId: '',
+      adminName: '', adminEmail: '', adminRoleId: '',
+    });
     setNotice('');
     setShowModal(true);
   };
@@ -85,18 +120,83 @@ const TenantManager: React.FC = () => {
     try {
       if (editing) {
         await apiClient.patch(`/api/tenants/${editing.id}`, { name: form.name, type: form.type });
-      } else {
-        await apiClient.post('/api/tenants', {
-          name: form.name,
-          type: form.type,
-          parentId: form.parentId || undefined,
-          planId: form.planId || undefined,
-        });
+        setShowModal(false);
+        await load();
+        return;
       }
+
+      // Onboard, not create.
+      //
+      // This posted to /api/tenants, which makes a tenant and nobody in it. The
+      // organisation then exists, appears in every list, counts against nothing,
+      // and cannot be entered by anyone at all -- the operator's only remaining
+      // move is to go and invite a user into it from another screen, if they
+      // realise they have to.
+      //
+      // /api/tenants/onboard has existed the whole time, is routed, is
+      // capability-guarded, and creates the tenant and its first administrator
+      // in one transaction with one audit record. Nothing called it.
+      const res = await apiClient.post('/api/tenants/onboard', {
+        name: form.name,
+        type: form.type,
+        parentId: form.parentId || undefined,
+        planId: form.planId || undefined,
+        admin: {
+          name: form.adminName,
+          email: form.adminEmail,
+          roleId: form.adminRoleId,
+        },
+      });
+
       setShowModal(false);
+      // Held outside the modal, because the modal is about to close and this is
+      // the only time this value exists anywhere.
+      setProvisioned({
+        tenantName: form.name,
+        adminEmail: res.data?.administrator?.email || form.adminEmail,
+        adminRole: res.data?.administrator?.role || '',
+        temporaryPassword: res.data?.temporaryPassword || '',
+        expiresAt: res.data?.temporaryPasswordExpiresAt || null,
+      });
       await load();
     } catch (err: any) {
       setNotice(err?.response?.data?.message || 'Save failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /**
+   * Give an organisation that has nobody in it its first administrator.
+   *
+   * Every tenant created before this screen sent an administrator is in that
+   * state, and so is any created through the API directly. inviteUser has always
+   * accepted a tenantId and checked it against scope; no screen sent one, so
+   * there was no way to do this from the product at all.
+   */
+  const adopt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adopting) return;
+    setSubmitting(true);
+    setNotice('');
+    try {
+      const res = await apiClient.post('/api/iam/users/invite', {
+        tenantId: adopting.id,
+        name: form.adminName,
+        email: form.adminEmail,
+        roleId: form.adminRoleId,
+      });
+      setProvisioned({
+        tenantName: adopting.name,
+        adminEmail: res.data?.user?.email || form.adminEmail,
+        adminRole: res.data?.user?.role || '',
+        temporaryPassword: res.data?.temporaryPassword || '',
+        expiresAt: res.data?.temporaryPasswordExpiresAt || null,
+      });
+      setAdopting(null);
+      await load();
+    } catch (err: any) {
+      setNotice(err?.response?.data?.message || 'Could not create the administrator');
     } finally {
       setSubmitting(false);
     }
@@ -162,6 +262,43 @@ const TenantManager: React.FC = () => {
         </div>
       </div>
 
+      {/* Shown once, because it exists once. The server hashes the password and
+          returns the plaintext in that single response; there is no endpoint
+          that can produce it again. Leaving it in a toast that auto-dismisses,
+          or only in the modal that just closed, would lose it. */}
+      {provisioned && (
+        <div style={{
+          background: 'var(--success-bg)', border: '1px solid var(--success-line)',
+          borderRadius: 10, padding: 16, marginBottom: 20,
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, marginBottom: 6 }}>
+            {provisioned.tenantName} is provisioned and can be signed in to.
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.7 }}>
+            <div>{provisioned.adminEmail}{provisioned.adminRole && ` · ${provisioned.adminRole}`}</div>
+            <div style={{ marginTop: 8 }}>
+              Temporary password:{' '}
+              <code style={{
+                background: 'var(--surface)', border: '1px solid var(--line)',
+                borderRadius: 4, padding: '3px 8px', fontSize: 13, color: 'var(--ink)',
+                userSelect: 'all',
+              }}>{provisioned.temporaryPassword}</code>
+            </div>
+            <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+              This will not be shown again. Pass it to them out of band; it must be changed at
+              first sign-in
+              {provisioned.expiresAt && `, and stops working on ${new Date(provisioned.expiresAt).toLocaleDateString()}`}.
+            </div>
+          </div>
+          <button
+            onClick={() => setProvisioned(null)}
+            style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', marginTop: 12 }}
+          >
+            I have copied it
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 20 }}>
         {[
           ['Tenants', tenants.length], ['Root entities', totals.roots],
@@ -221,10 +358,36 @@ const TenantManager: React.FC = () => {
                   </td>
                   <td style={{ padding: '10px 12px', color: 'var(--ink-muted)' }}>{t.parentName || '—'}</td>
                   <td style={{ padding: '10px 12px', color: t.plan ? 'var(--success)' : 'var(--ink-body)' }}>{t.plan || 'none'}</td>
-                  <td style={{ padding: '10px 12px' }}>{t.counts.users}</td>
+                  {/* Zero was rendered as a plain "0" beside every other count,
+                      which is true and says nothing. A tenant with no users
+                      cannot be entered by anyone, and that is the one number on
+                      this row that means the organisation does not work. */}
+                  <td style={{ padding: '10px 12px' }}>
+                    {t.counts.users === 0
+                      ? <span style={{ color: 'var(--warning)' }} title="Nobody can sign in to this organisation">0 · no one</span>
+                      : t.counts.users}
+                  </td>
                   <td style={{ padding: '10px 12px' }}>{t.counts.documents}</td>
                   <td style={{ padding: '10px 12px' }}>{t.counts.tickets}</td>
                   <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                    {t.counts.users === 0 && (
+                      <button
+                        onClick={() => {
+                          setNotice('');
+                          // Cleared, because this dialog shares the create form's
+                          // state: without it, opening "add administrator" for one
+                          // organisation offers the name and email of the person
+                          // provisioned into the last one, pre-filled and ready to
+                          // submit against the wrong tenant.
+                          setForm((f) => ({ ...f, adminName: '', adminEmail: '', adminRoleId: '' }));
+                          setAdopting(t);
+                        }}
+                        title="Create the first administrator for this organisation"
+                        style={{ ...btn('transparent', 'var(--warning)'), padding: '4px 8px', fontSize: 11 }}
+                      >
+                        + admin
+                      </button>
+                    )}
                     <button onClick={() => openCreate(t.id)} title="Add sub-entity"
                       style={{ ...btn('transparent', 'var(--info)'), padding: '4px 8px', fontSize: 11 }}>+ child</button>
                     <button onClick={() => openEdit(t)}
@@ -273,14 +436,105 @@ const TenantManager: React.FC = () => {
                     <option value="">— no subscription —</option>
                     {plans.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.maxUsers} users</option>)}
                   </select>
+
+                  {/* Not optional, and not a separate step. An organisation
+                      nobody can sign in to is not provisioned, it is just a row. */}
+                  <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16, marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 2 }}>
+                      First administrator
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', lineHeight: 1.5 }}>
+                      Created with the organisation, in one step. A temporary password is issued
+                      once and must be changed at first sign-in.
+                    </div>
+                  </div>
+
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Administrator name</label>
+                  <input
+                    required
+                    value={form.adminName}
+                    onChange={(e) => setForm({ ...form, adminName: e.target.value })}
+                    style={{ ...inputStyle, marginBottom: 14 }}
+                  />
+
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Administrator email</label>
+                  <input
+                    required
+                    type="email"
+                    value={form.adminEmail}
+                    onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
+                    style={{ ...inputStyle, marginBottom: 14 }}
+                  />
+
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Administrator role</label>
+                  <select
+                    required
+                    value={form.adminRoleId}
+                    onChange={(e) => setForm({ ...form, adminRoleId: e.target.value })}
+                    style={{ ...inputStyle, marginBottom: 8 }}
+                  >
+                    <option value="">— choose a role —</option>
+                    {roles.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.portal}</option>)}
+                  </select>
+                  {roles.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--warning)', marginBottom: 14, lineHeight: 1.5 }}>
+                      The role list could not be loaded, so an organisation cannot be provisioned
+                      right now. Refresh and try again.
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 20, lineHeight: 1.5 }}>
+                    You can only grant a role whose privileges you hold yourself; the server
+                    refuses and names the excess otherwise.
+                  </div>
                 </>
               )}
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <button type="submit" disabled={submitting} style={{ ...btn(submitting ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}>
-                  {submitting ? 'Saving…' : editing ? 'Save changes' : 'Provision tenant'}
+                <button
+                  type="submit"
+                  disabled={submitting || (!editing && roles.length === 0)}
+                  style={{ ...btn(submitting || (!editing && roles.length === 0) ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}
+                >
+                  {submitting ? 'Saving…' : editing ? 'Save changes' : 'Provision with administrator'}
                 </button>
                 <button type="button" onClick={() => setShowModal(false)} style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', padding: 11 }}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {adopting && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
+          <div style={{ ...card, width: '100%', maxWidth: 460, borderRadius: 12, padding: 26 }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, color: 'var(--ink)' }}>
+              First administrator for {adopting.name}
+            </h3>
+            <p style={{ margin: '0 0 18px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+              Nobody can sign in to this organisation. A temporary password is issued once and must
+              be changed at first sign-in.
+            </p>
+            {notice && (
+              <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', padding: 10, borderRadius: 6, color: 'var(--danger)', marginBottom: 14, fontSize: 12 }}>{notice}</div>
+            )}
+            <form onSubmit={adopt}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Name</label>
+              <input required value={form.adminName} onChange={(e) => setForm({ ...form, adminName: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Email</label>
+              <input required type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Role</label>
+              <select required value={form.adminRoleId} onChange={(e) => setForm({ ...form, adminRoleId: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }}>
+                <option value="">— choose a role —</option>
+                {roles.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.portal}</option>)}
+              </select>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="submit" disabled={submitting || roles.length === 0} style={{ ...btn(submitting || roles.length === 0 ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}>
+                  {submitting ? 'Creating…' : 'Create administrator'}
+                </button>
+                <button type="button" onClick={() => setAdopting(null)} style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', padding: 11 }}>Cancel</button>
               </div>
             </form>
           </div>
