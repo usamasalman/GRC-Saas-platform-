@@ -128,17 +128,49 @@ const add = (over) => planMemberAdd({
 {
   for (const raci of RACI) ok(add({ raci }).ok, `${raci} is a valid RACI`);
   is(add({ raci: 'X' }).code, 'BAD_RACI', 'and anything else is refused');
-  for (const side of SIDES) {
-    const r = add({ side });
-    ok(r.ok, `${side} is a valid side`);
-  }
-  is(add({ side: 'Vendor' }).code, 'BAD_SIDE');
+  is(add({ side: 'Vendor' }).code, 'BAD_SIDE', 'a side outside the list is refused');
+  // Each valid side, with somebody who actually belongs to that organisation.
+  ok(add({ side: 'Client' }).ok, 'Client is valid for a client-tenant person');
+  ok(
+    add({ candidate: U('u2', 'provider', 'Sam'), side: 'Provider' }).ok,
+    'Provider is valid for a provider-tenant person',
+  );
 
   is(add({ roleLabel: '   ' }).code, 'ROLE_REQUIRED', 'a blank role is refused');
   ok(
     /cannot be read by anybody who was not there/.test(add({ roleLabel: '' }).message),
     'and the refusal says why a list of names without roles is useless',
   );
+}
+
+// ── The side must match the organisation the person belongs to ───────────
+// Validating it only against the list and against the project having a provider
+// let a client-tenant person be stored as Provider, which nothing would ever
+// contradict: the team list, the engagement payload and every report reading
+// this column would all say they answer to the delivery firm. Nothing
+// authorises off it, so it is a labelling error rather than a hole — but a RACI
+// chart that misstates which firm somebody answers to is the kind of record
+// this product exists to keep straight.
+{
+  const wrongWay = add({ side: 'Provider' });
+  is(wrongWay.ok, false, 'a client-tenant person cannot be recorded on the provider side');
+  is(wrongWay.code, 'SIDE_MISMATCH');
+  ok(/client organisation/.test(wrongWay.message), 'and the refusal names which side they are on');
+
+  const otherWay = add({ candidate: U('u2', 'provider', 'Sam'), side: 'Client' });
+  is(otherWay.ok, false, 'nor a provider-tenant person on the client side');
+  is(otherWay.code, 'SIDE_MISMATCH');
+
+  // Unstated is derived, not defaulted. Defaulting to Client would be wrong for
+  // every provider-side person, and the screen has no business asking for a
+  // fact that follows from which organisation somebody belongs to.
+  const derivedProvider = add({ candidate: U('u2', 'provider', 'Sam'), side: undefined });
+  ok(derivedProvider.ok, 'an unstated side is derived rather than refused');
+  is(derivedProvider.side, 'Provider', 'and derived from the organisation they belong to');
+
+  const derivedClient = add({ side: undefined });
+  ok(derivedClient.ok);
+  is(derivedClient.side, 'Client');
 }
 
 // ── Allocation is a whole percentage, or genuinely unstated ──────────────

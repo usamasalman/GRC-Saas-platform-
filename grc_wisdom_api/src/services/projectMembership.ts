@@ -7,12 +7,16 @@
  * index on [userId, active], which exists for exactly one question: which
  * projects is this person on.
  *
- * Nothing used any of it. The table is written in one place in the whole API —
- * a createMany at project creation that adds the owner and the manager — and
- * read nowhere. There is no endpoint to add, remove or change anybody, and
- * canReadProject decides access from tenant scope alone, so membership governs
- * nothing either. Meanwhile the portfolio renders a member count, so the
- * product displays the size of a set nobody can change.
+ * WHAT THIS REPLACED — history, not current behaviour. None of it was used:
+ * the table was written in one place in the whole API (a createMany at project
+ * creation adding the owner and the manager) and read nowhere, with no endpoint
+ * to add, remove or change anybody. That is fixed by this service and
+ * controllers/projectMemberController.
+ *
+ * One part of it is NOT fixed and remains true today: canReadProject decides
+ * access from tenant scope alone, so membership still governs nothing. Staffing
+ * somebody onto an engagement records who is on it; it does not grant or
+ * withhold access to it.
  *
  * That is the owner's complaint almost word for word: "who will be inculde and
  * manage ... one person works on differrent project this will be specify that
@@ -153,7 +157,15 @@ export function planMemberAdd(input: {
     };
   }
 
-  const side = String(input.side || 'Client');
+  // Which side somebody is on is a fact about their organisation, not a choice,
+  // so it is derived when unstated rather than defaulted to Client — which
+  // would be wrong for every provider-side person and refused below. A caller
+  // that does state it is still checked, because an explicit wrong answer
+  // should be corrected rather than quietly overwritten.
+  const derivedSide = candidate.tenantId === project.tenantId ? 'Client' : 'Provider';
+  const side = input.side === undefined || input.side === null || input.side === ''
+    ? derivedSide
+    : String(input.side);
   if (!(SIDES as readonly string[]).includes(side)) {
     return {
       ok: false,
@@ -169,6 +181,26 @@ export function planMemberAdd(input: {
       status: 400,
       code: 'NO_PROVIDER',
       message: 'This engagement has no delivery provider, so everybody on it is on the client side.',
+    };
+  }
+
+  // And the side has to match the organisation the person actually belongs to.
+  //
+  // Checking it only against the list and against the project having a provider
+  // let a client-tenant person be stored as Provider, which nothing would ever
+  // contradict: the team list, the engagement payload and any report reading
+  // this column would all say they answer to the delivery firm. Nothing
+  // authorises off this column -- guardProject derives the caller's side from
+  // tenant scope -- so it is a labelling error rather than a hole, but a RACI
+  // chart that misstates which firm somebody answers to is exactly the kind of
+  // record this product exists to keep straight.
+  if (side !== derivedSide) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'SIDE_MISMATCH',
+      message: `${candidate.name} belongs to the ${derivedSide.toLowerCase()} organisation on this `
+        + `engagement, so they cannot be recorded on the ${side.toLowerCase()} side.`,
     };
   }
 

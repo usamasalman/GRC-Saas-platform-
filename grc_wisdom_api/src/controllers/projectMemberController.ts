@@ -11,11 +11,12 @@ import {
 /**
  * Staffing an engagement.
  *
- * ProjectMember was written in exactly one place in the whole API — a
- * createMany at project creation putting the owner and manager on the team —
- * and read nowhere. No endpoint added, removed or changed anybody, while the
+ * WHAT THIS REPLACED — history, not current behaviour. Until these handlers
+ * existed, ProjectMember was written in exactly one place in the whole API (a
+ * createMany at project creation putting the owner and manager on the team) and
+ * read nowhere; no endpoint added, removed or changed anybody, while the
  * portfolio rendered a member count, so the product showed the size of a set
- * that could never move.
+ * that could never move. That is fixed by the code below.
  *
  * The decisions are in services/projectMembership, pure and pinned without a
  * database. This loads rows, calls them, and audits.

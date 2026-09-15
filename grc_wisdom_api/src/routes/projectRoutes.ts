@@ -75,8 +75,9 @@ router.get('/task-statuses', taskStatuses);
 
 // ── Who is on the engagement ──────────────────────────────────────────────
 // ProjectMember modelled all of this from the start — side, RACI, allocation,
-// deactivate-rather-than-delete — and was written in one place and read
-// nowhere. Declared above '/:id' so the literal segment is not read as an id.
+// deactivate-rather-than-delete — and, until these four routes existed, was
+// written in one place and read nowhere.
+// Declared above '/:id' so the literal segment is not read as an id.
 router.get('/commitments', getCommitments);
 router.get('/:id/members', listMembers);
 router.post('/:id/members', requireCapability(CAP.MANAGE_PROJECT), addMember);

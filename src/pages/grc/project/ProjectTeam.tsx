@@ -8,12 +8,11 @@ import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../
 /**
  * Who is on this engagement, and how much of them it has.
  *
- * ProjectMember modelled all of this from the start — side, role, R/A/C/I,
- * allocation, and an active flag so removal keeps history — and was written in
- * exactly one place in the API and read nowhere. The portfolio rendered a
- * member count, so the product displayed the size of a set nobody could change
- * and which could only ever be two: the owner and the manager, added at
- * creation.
+ * WHAT THIS REPLACED — history, not current behaviour. ProjectMember modelled
+ * all of this from the start (side, role, R/A/C/I, allocation, and an active
+ * flag so removal keeps history) and was written in exactly one place in the API
+ * and read nowhere, so the portfolio's member count described a set nobody could
+ * change and which could only ever be two. This screen is what changed that.
  *
  * The owner's complaint was precisely this: "who will be inculde and manage ...
  * one person works on differrent project this will be specify that
@@ -45,7 +44,6 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [members, setMembers] = useState<Member[]>([]);
   const [accountable, setAccountable] = useState<{ ownerId: string; managerId: string } | null>(null);
   const [hasProvider, setHasProvider] = useState(false);
-  const [sides, setSides] = useState<string[]>(['Client']);
   const [raciOptions, setRaciOptions] = useState<string[]>(['R', 'A', 'C', 'I']);
 
   const [people, setPeople] = useState<Candidate[]>([]);
@@ -67,7 +65,6 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
       setMembers(res.data?.members || []);
       setAccountable(res.data?.accountable || null);
       setHasProvider(Boolean(res.data?.hasProvider));
-      setSides(res.data?.sides || ['Client']);
       setRaciOptions(res.data?.raci || ['R', 'A', 'C', 'I']);
       setLoaded(true);
     } catch (err) {
@@ -110,7 +107,6 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
       const body = {
         roleLabel: values.roleLabel,
         raci: values.raci,
-        side: values.side,
         // An empty box means unstated, which is not the same as zero.
         allocation: values.allocation === '' ? null : Number(values.allocation),
       };
@@ -182,14 +178,10 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
       value: m?.raci || 'R',
       help: raciOptions.map((r) => RACI_MEANS[r] || r).join(' · '),
     },
-    ...(hasProvider ? [{
-      name: 'side',
-      label: 'Side',
-      type: 'select' as const,
-      options: sides,
-      value: m?.side || 'Client',
-      help: 'Which organisation they answer to on this engagement.',
-    }] : []),
+    // Side is not asked for. It follows from which organisation the person
+    // belongs to, so offering it as a choice only creates a way to record it
+    // wrongly; the server derives it and refuses an explicit contradiction.
+
     {
       name: 'allocation',
       label: 'Allocation (%)',
