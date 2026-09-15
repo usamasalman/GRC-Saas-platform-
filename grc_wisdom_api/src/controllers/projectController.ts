@@ -8,6 +8,7 @@ import { schedule, derivedStatus, parseFrameworks } from '../services/projectSch
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
+import { planStandardBinding } from '../services/projectStandards';
 
 /**
  * Delivery projects — slice 1.
@@ -55,6 +56,10 @@ const LIST_SELECT = {
   baselineSetAt: true, baselineVersion: true,
   startDate: true, targetEndDate: true, actualEndDate: true, frameworks: true,
   tenantId: true, providerTenantId: true, createdAt: true,
+  standards: {
+    select: { standard: { select: { id: true, code: true, title: true } } },
+    orderBy: { standard: { code: 'asc' } },
+  },
   owner: { select: { id: true, name: true, email: true } },
   manager: { select: { id: true, name: true, email: true } },
   tenant: { select: { id: true, name: true } },
@@ -65,9 +70,18 @@ const LIST_SELECT = {
 /** Adds the derived figures no column should hold. */
 function decorate(p: any, scope: any) {
   const s = schedule(p);
+  const bound = (p.standards || []).map((b: any) => b.standard);
   return {
     ...p,
-    frameworks: parseFrameworks(p.frameworks),
+    // The frameworks this engagement is actually bound to, resolvable to
+    // clauses. `frameworks` below is the free-text column that preceded it: it
+    // is still shown for engagements created before the binding existed, and
+    // is empty for everything since.
+    standards: bound,
+    frameworks: bound.length > 0
+      ? bound.map((b: any) => b.code)
+      : parseFrameworks(p.frameworks),
+    frameworksAreLegacy: bound.length === 0 && parseFrameworks(p.frameworks).length > 0,
     schedule: s,
     derivedStatus: derivedStatus(p, s),
     side: sideOf(scope, p),
@@ -169,7 +183,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
   try {
     const scope = await resolveTenantScope(req.user!);
     const {
-      name, description, objectives, projectType, priority, frameworks,
+      name, description, objectives, projectType, priority, standardIds,
       startDate, targetEndDate, ownerId, managerId, sponsorId, verificationPolicy,
       tenantId: bodyTenantId, providerTenantId,
     } = req.body || {};
@@ -235,6 +249,55 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
+    // Frameworks, if any were named. Validated here rather than after creation
+    // so a refused framework does not leave a project behind: an engagement
+    // created with the wrong scope is harder to notice than one not created.
+    const requestedStandards = Array.isArray(standardIds) ? standardIds.map(String).filter(Boolean) : [];
+    let bindIds: string[] = [];
+    if (requestedStandards.length > 0) {
+      const enablements = await prisma.tenantStandardEnablement.findMany({
+        where: { tenantId },
+        select: {
+          applicability: true,
+          standard: { select: { id: true, code: true, title: true, tenantId: true } },
+        },
+      });
+      const enabledIds = new Set(enablements.map((e) => e.standard.id));
+      const extra = requestedStandards.filter((id) => !enabledIds.has(id));
+      const others = extra.length
+        ? await prisma.standard.findMany({
+          where: { id: { in: extra } },
+          select: { id: true, code: true, title: true, tenantId: true },
+        })
+        : [];
+
+      const plan = planStandardBinding({
+        projectTenantId: tenantId,
+        requested: requestedStandards,
+        found: [
+          ...enablements.map((e) => ({
+            id: e.standard.id,
+            code: e.standard.code,
+            title: e.standard.title,
+            tenantId: e.standard.tenantId,
+            enabled: true,
+            applicability: e.applicability,
+          })),
+          ...others.map((o) => ({
+            id: o.id, code: o.code, title: o.title, tenantId: o.tenantId,
+            enabled: false, applicability: null,
+          })),
+        ],
+        bound: [],
+        inUse: [],
+      });
+      if (!plan.ok) {
+        res.status(plan.status).json({ status: 'error', code: plan.code, message: plan.message });
+        return;
+      }
+      bindIds = plan.add;
+    }
+
     const ref = await nextRef(tenantId);
 
     const created = await prisma.$transaction(async (tx) => {
@@ -249,7 +312,6 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
           projectType: projectType || 'Readiness',
           priority: priority || 'Medium',
           verificationPolicy: verificationPolicy || 'SelectedTasks',
-          frameworks: JSON.stringify(Array.isArray(frameworks) ? frameworks.map(String) : []),
           startDate: start,
           targetEndDate: target,
           ownerId: str(ownerId),
@@ -271,6 +333,15 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
         })),
         skipDuplicates: true,
       });
+
+      if (bindIds.length > 0) {
+        await tx.projectStandard.createMany({
+          data: bindIds.map((standardId) => ({
+            projectId: project.id, standardId, addedById: str(req.user!.id),
+          })),
+          skipDuplicates: true,
+        });
+      }
 
       await writeAudit(tx, {
         tenantId,
@@ -323,8 +394,22 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     if (b.objectives !== undefined) data.objectives = b.objectives ? str(b.objectives) : null;
     if (b.healthNote !== undefined) data.healthNote = b.healthNote ? str(b.healthNote) : null;
     if (b.sponsorId !== undefined) data.sponsorId = b.sponsorId ? str(b.sponsorId) : null;
+    // frameworks is no longer written. It was free text -- "ISO27001", "ISO
+    // 27001" and a typo were three different values, none of which resolved to
+    // a Standard row -- so the readiness report could not ask what this
+    // engagement was in scope for and inferred it from the clause links the
+    // tasks already held. Scope now lives in ProjectStandard, set through
+    // PUT /api/projects/:id/standards, which accepts only frameworks the client
+    // organisation has enabled. The column stays readable for engagements
+    // created before that table existed.
     if (b.frameworks !== undefined) {
-      data.frameworks = JSON.stringify(Array.isArray(b.frameworks) ? b.frameworks.map(String) : []);
+      res.status(400).json({
+        status: 'error',
+        code: 'FRAMEWORKS_READ_ONLY',
+        message: 'Frameworks are no longer free text. Bind the engagement to the frameworks '
+          + 'this organisation has enabled, with PUT /api/projects/:id/standards.',
+      });
+      return;
     }
 
     // Typed as readonly string[] rather than `as const`: a union of literal

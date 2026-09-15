@@ -19,6 +19,7 @@ import {
   parseFrameworks, isComplete, isConfirmed, requiresVerification, taskTiming,
 } from '../services/deliveryReportData';
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
+import { readinessScope } from '../services/projectStandards';
 import {
   criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
 } from '../services/projectDependency';
@@ -986,15 +987,34 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
   );
 
   const mappedIds = new Set(tasks.flatMap((t) => t.clauseLinks.map((l) => l.clauseId)));
-  const standardIds = [...new Set(
-    tasks.flatMap((t) => t.clauseLinks.map((l) => l.clause.standard.id)),
-  )];
 
-  // Only clauses of standards this engagement actually touches. Listing every
-  // clause of every standard in the library would bury the real gaps.
-  const allClauses = standardIds.length
+  // The denominator comes from what the ENGAGEMENT declares it is being run
+  // against, never from the links themselves.
+  //
+  // It used to be the second of those:
+  //
+  //     const standardIds = [...new Set(
+  //       tasks.flatMap((t) => t.clauseLinks.map((l) => l.clause.standard.id)),
+  //     )];
+  //
+  // which made the denominator a function of the numerator. A project with no
+  // clause links named no standards, so it had no clauses in scope, so it had
+  // no gaps, and this paper -- the one a certification body reads -- printed
+  // "Clauses in scope with no task at all: 0" for the engagement that had
+  // mapped nothing at all. A framework named but never mapped vanished from
+  // the report entirely. See services/projectStandards.
+  const boundStandards = await prisma.projectStandard.findMany({
+    where: { projectId: e.id },
+    select: { standardId: true },
+  });
+  const scope = readinessScope({
+    boundStandardIds: boundStandards.map((b) => b.standardId),
+    legacyFrameworks: parseFrameworks(e.frameworks),
+  });
+
+  const allClauses = scope.standardIds.length
     ? await prisma.standardClause.findMany({
-      where: { standardId: { in: standardIds } },
+      where: { standardId: { in: scope.standardIds } },
       select: {
         id: true, ref: true, title: true,
         standard: { select: { code: true } },
@@ -1037,11 +1057,26 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
             + 'mapped task is finished is something you can defend. Only the '
             + 'second figure is evidence of anything.',
         },
-        { label: 'Clauses in scope with no task at all', value: String(gaps.length) },
+        {
+          label: 'Clauses in scope with no task at all',
+          // An em dash, not a zero. "Nothing is missing" and "we have not
+          // looked" render identically as 0, and only one of them is a reason
+          // to go to certification.
+          value: scope.stated ? String(gaps.length) : '—',
+        },
         { label: 'Tasks carrying a clause link', value: `${coverage.tasksMapped} of ${coverage.tasksTotal}` },
       ],
     },
   ];
+
+  if (!scope.stated) {
+    // First, before any figure on the page can be read as a readiness claim.
+    sections.splice(1, 0, {
+      kind: 'fields',
+      title: 'This report states no readiness figure',
+      fields: [{ label: 'Why', value: scope.caveat || '' }],
+    });
+  }
 
   const perStandard = Object.entries(coverage.byStandard);
   if (perStandard.length) {

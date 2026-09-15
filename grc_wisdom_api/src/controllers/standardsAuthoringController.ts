@@ -267,14 +267,22 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
     // take a delivery project's traceability with it — the clause rows vanish,
     // the ProjectTaskClause rows cascade behind them, and the engagement quietly
     // stops being able to say which framework it was delivered against.
-    const [mapped, delivered] = await Promise.all([
+    //
+    // A binding counts too, and does so even when nothing has been mapped yet:
+    // ProjectStandard is what an engagement's scope statement is made of, and
+    // it cascades from Standard. Deleting one out from under a live engagement
+    // would change what that engagement says it is being run against, with no
+    // record that anything happened.
+    const [mapped, delivered, bound] = await Promise.all([
       prisma.controlClauseLink.count({ where: { clause: { standardId: id } } }),
       prisma.projectTaskClause.count({ where: { clause: { standardId: id } } }),
+      prisma.projectStandard.count({ where: { standardId: id } }),
     ]);
-    if (mapped > 0 || delivered > 0) {
+    if (mapped > 0 || delivered > 0 || bound > 0) {
       const parts = [
         mapped > 0 ? `${mapped} control mapping(s)` : null,
         delivered > 0 ? `${delivered} delivery task link(s)` : null,
+        bound > 0 ? `${bound} engagement(s) are being run against it` : null,
       ].filter(Boolean);
       res.status(409).json({
         status: 'error',

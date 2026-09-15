@@ -4,6 +4,7 @@ import FormDialog from '../../../components/FormDialog';
 import { ReasonDialog, ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY, can } from '../../../components/Can';
 import { calendarDate } from '../../../utils/calendarDate';
+import ClauseMapDialog from '../ClauseMapDialog';
 import { S, pill, ghostBtn } from '../../iam/iamStyles';
 
 /**
@@ -52,6 +53,23 @@ interface Task {
   needsVerification: boolean;
   timing: Timing;
   slippage: { baselined: boolean; slipDays: number; slipped: boolean };
+  /**
+   * The framework clauses this task satisfies.
+   *
+   * getPlan has always selected these. Nothing declared them and no screen
+   * showed them, so the two endpoints that create and remove them -- routed and
+   * capability-guarded since the module was written -- had no caller, and the
+   * traceability report measured an engagement against whatever links somebody
+   * had managed to create through the API by hand.
+   */
+  clauseLinks: {
+    id: string;
+    note: string | null;
+    clause: {
+      id: string; ref: string; title: string;
+      standard: { id: string; code: string; title: string };
+    };
+  }[];
   impediments: {
     id: string; ref: string; title: string; category: string;
     owingSide: string; severity: string; raisedAt: string;
@@ -302,6 +320,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   const openNewTask = (ph: Phase) => { setError(''); setTaskForPhase(ph); };
   const openDeletePhase = (ph: Phase) => { setError(''); setDeletingPhase(ph); };
   const openDeleteTask = (ph: Phase, task: Task) => { setError(''); setDeletingTask({ phase: ph, task }); };
+  const openClauses = (task: Task) => { setError(''); setClausesFor(task); };
 
   /** A whole reload after a structural change: the rollup moves everywhere. */
   const savePhase = async (values: Record<string, string>) => {
@@ -384,6 +403,59 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
     } catch (err: any) {
       setError(apiError(err));
       setDeletingTask(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // The clauses this engagement may map to: every clause of the frameworks it
+  // is bound to, and nothing else. Fetched once, because the set only changes
+  // when the engagement's scope does.
+  const [clauseCatalogue, setClauseCatalogue] = useState<{
+    clauses: { id: string; ref: string; title: string; standardCode: string }[];
+    bound: number;
+  }>({ clauses: [], bound: 0 });
+  const [clausesFor, setClausesFor] = useState<Task | null>(null);
+
+  useEffect(() => {
+    apiClient.get(`/api/projects/${projectId}/clauses`)
+      .then((res) => setClauseCatalogue({
+        clauses: res.data?.clauses || [],
+        bound: res.data?.bound || 0,
+      }))
+      .catch(() => setClauseCatalogue({ clauses: [], bound: 0 }));
+  }, [projectId]);
+
+  /**
+   * The dialog hands back the whole set, and the API adds and removes
+   * separately, so the difference is worked out here.
+   *
+   * Removals go first. Sending the additions first would briefly leave the task
+   * mapped to both sets, and a coverage figure read in that window would count
+   * clauses the manager has just taken off.
+   */
+  const saveClauses = async (task: Task, clauseIds: string[]) => {
+    setSaving(true);
+    setError('');
+    try {
+      const wanted = new Set(clauseIds);
+      const gone = (task.clauseLinks || []).filter((l) => !wanted.has(l.clause.id));
+      const held = new Set((task.clauseLinks || []).map((l) => l.clause.id));
+      const added = clauseIds.filter((id) => !held.has(id));
+
+      for (const link of gone) {
+        await apiClient.delete(`/api/projects/clauses/${link.id}`);
+      }
+      if (added.length > 0) {
+        await apiClient.post(`/api/projects/tasks/${task.id}/clauses`, { clauseIds: added });
+      }
+      setClausesFor(null);
+      await load();
+    } catch (err: any) {
+      // The server refuses a clause outside the engagement's frameworks and
+      // names it. That is the message worth keeping.
+      setError(apiError(err));
+      setClausesFor(null);
     } finally {
       setSaving(false);
     }
@@ -730,6 +802,34 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                   {t.verificationRound > 1 && (
                                     <span> · round {t.verificationRound}</span>
                                   )}
+                                </div>
+
+                                {/* Which clauses this work satisfies. Shown on
+                                    the task rather than on a traceability screen
+                                    of its own because the person who knows the
+                                    answer is the one looking at the task. */}
+                                <div style={{ marginTop: 4, display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  {(t.clauseLinks || []).map((l) => (
+                                    <span
+                                      key={l.id}
+                                      style={{ ...pill('var(--ink-muted)', 'var(--line)'), fontSize: 10.5 }}
+                                      title={`${l.clause.standard.title} — ${l.clause.title}`}
+                                    >
+                                      {l.clause.standard.code} {l.clause.ref}
+                                    </span>
+                                  ))}
+                                  <Can do={MAY.MANAGE_PROJECT}>
+                                    <button
+                                      style={{ ...actionBtn('var(--ink-faint)', busy), marginRight: 0 }}
+                                      disabled={busy || saving || clauseCatalogue.bound === 0}
+                                      title={clauseCatalogue.bound === 0
+                                        ? 'This engagement is not bound to any framework yet — set its frameworks on the Evidence tab'
+                                        : undefined}
+                                      onClick={() => openClauses(t)}
+                                    >
+                                      {(t.clauseLinks || []).length === 0 ? '+ clause' : 'clauses'}
+                                    </button>
+                                  </Can>
                                 </div>
                               </td>
 
@@ -1090,6 +1190,17 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           )}
           onConfirm={() => removeTask(deletingTask.task)}
           onCancel={() => setDeletingTask(null)}
+        />
+      )}
+
+      {clausesFor && (
+        <ClauseMapDialog
+          subject={`${clausesFor.ref} — ${clausesFor.name}`}
+          clauses={clauseCatalogue.clauses}
+          initiallySelected={(clausesFor.clauseLinks || []).map((l) => l.clause.id)}
+          busy={saving}
+          onSubmit={(ids) => saveClauses(clausesFor, ids)}
+          onCancel={() => setClausesFor(null)}
         />
       )}
     </div>

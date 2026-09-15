@@ -185,6 +185,7 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
     'TenantStandardEnablement.tsx': ['MAY.AUTHOR_STANDARD'],
     'project/ProjectTeam.tsx': ['MAY.MANAGE_PROJECT'],
     'project/ProjectPlan.tsx': ['MAY.MANAGE_PROJECT'],
+    'project/ProjectEvidence.tsx': ['MAY.MANAGE_PROJECT'],
     'audit/IssueRegister.tsx': [
       'MAY.MANAGE_ISSUE', 'MAY.RESPOND_TO_ISSUE', 'MAY.ASSIGN_CAP', 'MAY.CLOSE_ISSUE',
     ],
@@ -235,7 +236,8 @@ for (const [key, anchor] of Object.entries(ANCHOR)) {
     'StandardsLibrary.tsx': ['setEnabling'],
     'TenantStandardEnablement.tsx': ['runBatch', 'setConfirming'],
     'project/ProjectTeam.tsx': ['openEdit', 'openRemove', 'openAdd'],
-    'project/ProjectPlan.tsx': ['openNewPhase', 'openEditPhase', 'openNewTask', 'openDeletePhase', 'openDeleteTask'],
+    'project/ProjectPlan.tsx': ['openNewPhase', 'openEditPhase', 'openNewTask', 'openDeletePhase', 'openDeleteTask', 'openClauses'],
+    'project/ProjectEvidence.tsx': ['openScope'],
     'RiskRegister.tsx': ['openEdit', 'openCreate', 'accept'],
     'AssetRegister.tsx': ['openEdit', 'openCreate', 'setLinking', 'setReviewing'],
     'VendorRegister.tsx': ['openEdit', 'openCreate', 'setAssessing'],

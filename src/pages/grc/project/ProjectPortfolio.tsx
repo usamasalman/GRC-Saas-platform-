@@ -33,6 +33,8 @@ interface Project {
   startDate: string;
   targetEndDate: string;
   frameworks: string[];
+  /** True when `frameworks` is the old free-text column and nothing is bound. */
+  frameworksAreLegacy: boolean;
   schedule: Schedule;
   derivedStatus: 'OnTrack' | 'AtRisk' | 'Delayed' | 'Completed' | 'NotStarted';
   side: 'Client' | 'Provider' | null;
@@ -222,6 +224,19 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                           {p.ref} · {p.projectType}
                           {(p.frameworks?.length || 0) > 0 && ` · ${p.frameworks.join(', ')}`}
+                          {/* These frameworks were typed as free text before an
+                              engagement could be bound to the library, so they
+                              resolve to nothing and no clause can be traced
+                              through them. Saying so here is the only place the
+                              list of engagements still needing it appears. */}
+                          {p.frameworksAreLegacy && (
+                            <span
+                              style={{ color: 'var(--warning)' }}
+                              title="Typed as free text, so it resolves to no framework in the library. Bind the engagement on its Evidence tab."
+                            >
+                              {' '}· not bound
+                            </span>
+                          )}
                         </div>
                         {/* Only meaningful on consultant-led work; hidden otherwise. */}
                         {p.side === 'Provider' && p.tenant && (

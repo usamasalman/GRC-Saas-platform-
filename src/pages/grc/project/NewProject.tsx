@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
+import PickManyDialog from '../../../components/PickManyDialog';
 
 /**
  * Starting an engagement.
@@ -9,6 +10,14 @@ import { S, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
  * the two people who answer for it. Everything else — type, priority,
  * frameworks, sponsor — is editable afterwards, and asking for all of it before
  * anyone can begin is how a form stops being filled in.
+ *
+ * Frameworks are CHOSEN, not typed. This field used to be a text box with the
+ * placeholder "ISO27001, SOC2" whose contents were stored as a JSON array of
+ * strings, so "ISO27001", "ISO 27001" and a typo were three different values
+ * and none of them resolved to a framework in the library. Nothing downstream
+ * could follow one to a clause — which is why the readiness report worked out
+ * an engagement's scope from the clause links its own tasks held, and reported
+ * no gaps for a project that had mapped nothing.
  *
  * Two choices here are worth understanding before you make them, so both carry
  * a line of explanation rather than a tooltip nobody opens:
@@ -76,7 +85,6 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
     description: '',
     projectType: 'Readiness',
     priority: 'Medium',
-    frameworks: '',
     startDate: today(),
     targetEndDate: inMonths(3),
     ownerId: '',
@@ -116,6 +124,28 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
     })();
   }, []);
 
+  // The organisation's enabled frameworks, which are the only ones an
+  // engagement may be run against: adopting a framework is the organisation's
+  // decision, recorded under Organization Standards, and a project should not
+  // be the back door around it.
+  const [standards, setStandards] = useState<
+    { id: string; code: string; title: string; clauseCount: number }[]
+  >([]);
+  const [standardIds, setStandardIds] = useState<string[]>([]);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    apiClient.get('/api/grc/standards')
+      .then((res) => setStandards(
+        (res.data?.standards || [])
+          .filter((s: any) => s.isEnabledHere)
+          .map((s: any) => ({
+            id: s.id, code: s.code, title: s.title, clauseCount: s.clauseCount || 0,
+          })),
+      ))
+      .catch(() => setStandards([]));
+  }, []);
+
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
@@ -138,10 +168,9 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
         description: form.description.trim() || undefined,
         projectType: form.projectType,
         priority: form.priority,
-        // The API stores this as a JSON array of framework codes.
-        frameworks: form.frameworks
-          ? form.frameworks.split(',').map((s) => s.trim()).filter(Boolean)
-          : undefined,
+        // Real framework rows, bound in the same transaction as the project.
+        // The server refuses any the organisation has not enabled, and names it.
+        standardIds: standardIds.length > 0 ? standardIds : undefined,
         startDate: form.startDate,
         targetEndDate: form.targetEndDate,
         ownerId: form.ownerId,
@@ -225,13 +254,27 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
 
           <div>
             <span style={label}>Frameworks in scope</span>
-            <input
-              style={field}
-              value={form.frameworks}
-              placeholder="ISO27001, SOC2"
-              onChange={(e) => set('frameworks', e.target.value)}
-            />
-            <div style={help}>Comma separated. Traceability is mapped per task later.</div>
+            <button
+              type="button"
+              style={{ ...field, textAlign: 'left', cursor: 'pointer' }}
+              onClick={() => setPicking(true)}
+              disabled={busy}
+            >
+              {standardIds.length === 0
+                ? 'Choose frameworks…'
+                : standards
+                  .filter((s) => standardIds.includes(s.id))
+                  .map((s) => s.code)
+                  .join(', ')}
+            </button>
+            <div style={help}>
+              {standards.length === 0
+                ? 'This organisation has no frameworks enabled yet. One can be enabled under '
+                  + 'Organization Standards and bound to the engagement afterwards.'
+                : 'From the frameworks this organisation has enabled. These clauses are what '
+                  + 'the readiness report measures the engagement against, and work is mapped '
+                  + 'to them task by task.'}
+            </div>
           </div>
 
           <div>
@@ -302,6 +345,34 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
           </span>
         </div>
       </div>
+
+      {picking && (
+        <PickManyDialog
+          title="Frameworks this engagement is run against"
+          intro={(
+            <>
+              Only frameworks this organisation has enabled appear here. They can be changed
+              after the engagement exists, on its Evidence tab.
+            </>
+          )}
+          items={standards.map((s) => ({
+            id: s.id,
+            label: s.code,
+            sublabel: `${s.title} · ${s.clauseCount} clause${s.clauseCount === 1 ? '' : 's'}`,
+          }))}
+          initiallySelected={standardIds}
+          confirmLabel="Choose"
+          emptyMessage={(
+            <>
+              No frameworks are enabled for this organisation yet. Enable one under
+              Organization Standards — an engagement cannot adopt a framework on the
+              organisation&rsquo;s behalf.
+            </>
+          )}
+          onSubmit={(ids) => { setStandardIds(ids); setPicking(false); }}
+          onCancel={() => setPicking(false)}
+        />
+      )}
     </div>
   );
 };

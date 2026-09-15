@@ -142,6 +142,7 @@ model User {
   ticketWorkNotes         TicketWorkNote[]  @relation("TicketWorkNoteAuthor")
   knowledgeArticles       KnowledgeArticle[] @relation("KnowledgeAuthor")
   standardsOwned          TenantStandardEnablement[] @relation("StandardOwner")
+  projectStandardsBound   ProjectStandard[] @relation("ProjectStandardBinder")
   implementationsOwned    ControlImplementation[] @relation("ImplementationOwner")
   implementationsOperated ControlImplementation[] @relation("ImplementationOperator")
   implementationsValidated ControlImplementation[] @relation("ImplementationValidator")
@@ -334,6 +335,7 @@ model Standard {
   clauses     StandardClause[]
   enablements TenantStandardEnablement[]
   imports     FrameworkImport[]
+  projects    ProjectStandard[]
 
   /// Two organisations may both author a framework called POLICY-01.
   @@unique([tenantId, code])
@@ -2619,6 +2621,7 @@ model Project {
   evidence         ProjectEvidence[]
   reportIssues     ReportIssue[]
   dependencies     ProjectDependency[]
+  standards        ProjectStandard[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -3221,6 +3224,38 @@ model ProjectEvidence {
 /// STRINGS with no foreign key, and Standard.code is unique only per tenant, so
 /// matching on it would silently resolve to another organisation's private
 /// framework that happens to share a code.
+/// Which frameworks an engagement is being run against.
+///
+/// Project.frameworks is a JSON array of free text, so "ISO27001", "ISO 27001"
+/// and a typo are three different values and none of them resolves to a
+/// Standard row. Nothing downstream could follow one to a clause, which is why
+/// the certification-readiness report used to work out an engagement's scope by
+/// reading the clause links its own tasks already held -- building the
+/// denominator out of the numerator, and reporting no gaps for the project that
+/// had mapped nothing.
+///
+/// This is the denominator. Populated from the client organisation's ENABLED
+/// standards only: an engagement cannot adopt a framework on the
+/// organisation's behalf.
+///
+/// frameworks is left in place and still read for engagements created before
+/// this table existed. Nothing writes it any more.
+model ProjectStandard {
+  id         String   @id @default(uuid())
+
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  standardId String
+  standard   Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  addedById  String
+  addedBy    User     @relation("ProjectStandardBinder", fields: [addedById], references: [id], onDelete: Cascade)
+  addedAt    DateTime @default(now())
+
+  @@unique([projectId, standardId])
+  @@index([standardId])
+}
+
 model ProjectTaskClause {
   id        String   @id @default(uuid())
 

@@ -14,6 +14,7 @@ import {
 import {
   decodeUpload, putEvidence, resolveEvidencePath, verifyStoredHash,
 } from '../services/evidenceStore';
+import { clausesInScope } from '../services/projectStandards';
 
 /**
  * Evidence for delivered work, and the line from that work back to the clause
@@ -409,6 +410,37 @@ export const linkClauses = async (req: AuthenticatedRequest, res: Response): Pro
         code: 'CLAUSE_OUT_OF_SCOPE',
         message: 'You cannot map this engagement to another organisation\'s private '
           + `framework (${[...new Set(blocked.map((c) => c.standard.code))].join(', ')}).`,
+      });
+      return;
+    }
+
+    // And within reach is not the same as in scope. The engagement declares
+    // the frameworks it is being run against, and their clauses are the
+    // denominator the readiness report measures against; a link to a clause
+    // outside them puts a row in the numerator that the denominator does not
+    // contain, which is how a coverage figure comes to exceed what was scoped.
+    const bound = await prisma.projectStandard.findMany({
+      where: { projectId: project.id },
+      select: { standardId: true },
+    });
+    const { rejected } = clausesInScope({
+      boundStandardIds: bound.map((b) => b.standardId),
+      clauses: clauses.map((c) => ({
+        id: c.id, standardId: c.standard.id, code: c.standard.code, ref: c.ref,
+      })),
+    });
+    if (rejected.length > 0) {
+      res.status(400).json({
+        status: 'error',
+        code: bound.length === 0 ? 'PROJECT_HAS_NO_FRAMEWORKS' : 'CLAUSE_NOT_IN_ENGAGEMENT_SCOPE',
+        message: bound.length === 0
+          ? 'This engagement is not bound to any framework yet, so there is nothing to map work '
+            + 'to. Set its frameworks first — only frameworks the organisation has enabled '
+            + 'can be used.'
+          : `${rejected.map((r) => `${r.code} ${r.ref}`).join(', ')} `
+            + `${rejected.length === 1 ? 'is' : 'are'} outside the frameworks this engagement is `
+            + 'being run against. Add the framework to the engagement, or map the work to a '
+            + 'clause of one already in scope.',
       });
       return;
     }

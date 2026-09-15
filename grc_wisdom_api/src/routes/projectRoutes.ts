@@ -39,6 +39,11 @@ import {
   verifyEvidenceIntegrity,
 } from '../controllers/projectEvidenceController';
 import {
+  listProjectStandards,
+  setProjectStandards,
+  projectClauses,
+} from '../controllers/projectStandardController';
+import {
   raiseImpediment,
   blockTask,
   resolveImpediment,
@@ -156,6 +161,18 @@ router.post('/evidence/:evidenceId/withdraw',
 
 router.post('/tasks/:taskId/clauses', requireCapability(CAP.MANAGE_PROJECT), linkClauses);
 router.delete('/clauses/:linkId', requireCapability(CAP.MANAGE_PROJECT), unlinkClause);
+
+// Which frameworks the engagement is being run against, and the clauses that
+// follow from them. Declaring scope is a management act; reading it is not,
+// because every screen that shows a clause needs to know what is in scope.
+//
+// The binding is the DENOMINATOR of the readiness report. Before it existed the
+// report inferred an engagement's frameworks from the clause links its own
+// tasks held, so a project that had mapped nothing was reported as having no
+// gaps -- see services/projectStandards.
+router.get('/:id/standards', listProjectStandards);
+router.put('/:id/standards', requireCapability(CAP.MANAGE_PROJECT), setProjectStandards);
+router.get('/:id/clauses', projectClauses);
 
 // ── Reports ───────────────────────────────────────────────────────────────
 //

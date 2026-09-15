@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { ReasonDialog } from '../../../components/Dialog';
+import PickManyDialog from '../../../components/PickManyDialog';
+import Can, { MAY } from '../../../components/Can';
 import { S, pill, ghostBtn, apiError } from '../../iam/iamStyles';
 
 /**
@@ -15,6 +17,13 @@ import { S, pill, ghostBtn, apiError } from '../../iam/iamStyles';
  *     intention; clauses whose every task is finished are something an
  *     organisation can defend. One number would let a project claim coverage it
  *     has not delivered.
+ *
+ * The frameworks strip above them exists because both numbers are meaningless
+ * without a denominator. Project.frameworks was free text that resolved to
+ * nothing, so the readiness report worked out an engagement's scope from the
+ * clause links its own tasks held -- and an engagement that had mapped nothing
+ * was reported as having no gaps. The strip is where that denominator is set,
+ * and where its absence is stated rather than rendered as a zero.
  */
 
 interface Person { id: string; name: string }
@@ -38,6 +47,27 @@ interface Evidence {
   uploadedBy: Person | null;
   withdrawnBy: Person | null;
   task: { id: string; ref: string; name: string; status: string } | null;
+}
+
+interface BoundStandard {
+  id: string;
+  code: string;
+  title: string;
+  clauseCount: number;
+  private: boolean;
+}
+
+interface AvailableStandard extends BoundStandard {
+  applicability: string;
+}
+
+interface Scope {
+  standards: BoundStandard[];
+  available: AvailableStandard[];
+  legacyFrameworks: string[];
+  /** Whether a coverage figure means anything yet. */
+  measurable: boolean;
+  caveat: string | null;
 }
 
 interface Coverage {
@@ -97,6 +127,53 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The frameworks this engagement is being run against. Fetched separately
+  // from the register because it is the denominator of everything on it: the
+  // coverage card above the table is a fraction whose bottom half lives here.
+  const [scope, setScope] = useState<Scope | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [savingScope, setSavingScope] = useState(false);
+
+  const loadScope = useCallback(async () => {
+    try {
+      const res = await apiClient.get(`/api/projects/${projectId}/standards`);
+      setScope({
+        standards: res.data?.standards || [],
+        available: res.data?.available || [],
+        legacyFrameworks: res.data?.legacyFrameworks || [],
+        measurable: !!res.data?.measurable,
+        caveat: res.data?.caveat || null,
+      });
+    } catch {
+      setScope(null);
+    }
+  }, [projectId]);
+
+  useEffect(() => { loadScope(); }, [loadScope]);
+
+  const openScope = () => { setError(''); setPicking(true); };
+
+  const saveScope = async (standardIds: string[]) => {
+    setSavingScope(true);
+    setError('');
+    try {
+      await apiClient.put(`/api/projects/${projectId}/standards`, { standardIds });
+      setPicking(false);
+      await loadScope();
+      // Every figure on this screen is computed against the frameworks bound
+      // here, so changing them repaints the register too.
+      await load();
+    } catch (err: any) {
+      // The server names which framework it refused and why: not enabled,
+      // marked not applicable, or still carrying clause links. That message is
+      // the whole value of the refusal.
+      setError(apiError(err));
+      setPicking(false);
+    } finally {
+      setSavingScope(false);
+    }
+  };
 
   /**
    * Fetch the file through the authenticated endpoint and hand it to the
@@ -165,6 +242,62 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
   return (
     <div>
       {error && <div style={S.error}>{error}</div>}
+
+      {/* ── What the coverage below is measured against ────────────── */}
+      {scope && (
+        <div style={{ ...S.card, padding: '14px 18px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              Frameworks in scope
+            </span>
+
+            {scope.standards.length > 0 ? scope.standards.map((st) => (
+              <span key={st.id} style={pill('var(--ink)', 'var(--line)')} title={st.title}>
+                {st.code}
+                <span style={{ color: 'var(--ink-faint)', marginLeft: 5 }}>
+                  {st.clauseCount} clause{st.clauseCount === 1 ? '' : 's'}
+                </span>
+              </span>
+            )) : (
+              <span style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}>None bound</span>
+            )}
+
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <Can
+                do={MAY.MANAGE_PROJECT}
+                otherwise={(
+                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                    Scope is the project manager's to set.
+                  </span>
+                )}
+              >
+                <button
+                  style={ghostBtn}
+                  onClick={openScope}
+                  disabled={savingScope}
+                >
+                  {scope.standards.length > 0 ? 'Change frameworks' : 'Set frameworks'}
+                </button>
+              </Can>
+            </span>
+          </div>
+
+          {/* The absence of a denominator, stated. A gap count of zero on an
+              engagement bound to nothing means nobody has looked, and the
+              readiness report now refuses to print one for exactly this
+              reason — so the screen says the same thing rather than leaving
+              the reader to infer it from an empty row of pills. */}
+          {!scope.measurable && scope.caveat && (
+            <div style={{
+              marginTop: 10, padding: '9px 11px', borderRadius: 6,
+              background: 'var(--warning-bg)', border: '1px solid var(--warning-line)',
+              fontSize: 12, color: 'var(--ink-body)', lineHeight: 1.6,
+            }}>
+              {scope.caveat}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Traceability ───────────────────────────────────────────────── */}
       {coverage && (
@@ -320,6 +453,37 @@ const ProjectEvidence: React.FC<{ projectId: string }> = ({ projectId }) => {
           )}
           onConfirm={(reason) => withdraw(withdrawing, reason)}
           onCancel={() => setWithdrawing(null)}
+        />
+      )}
+
+      {picking && scope && (
+        <PickManyDialog
+          title="Frameworks this engagement is run against"
+          intro={(
+            <>
+              Only frameworks this organisation has enabled appear here — an engagement cannot
+              adopt a framework on the organisation&rsquo;s behalf. These clauses are what the
+              coverage figures are measured against, and what the readiness report calls a gap.
+            </>
+          )}
+          items={scope.available.map((a) => ({
+            id: a.id,
+            label: a.code,
+            sublabel: `${a.title} · ${a.clauseCount} clause${a.clauseCount === 1 ? '' : 's'}`
+              + (a.applicability && a.applicability !== 'Full' ? ` · ${a.applicability}` : '')
+              + (a.private ? ' · authored here' : ''),
+          }))}
+          initiallySelected={scope.standards.map((st) => st.id)}
+          confirmLabel={savingScope ? 'Saving…' : 'Set frameworks'}
+          busy={savingScope}
+          emptyMessage={(
+            <>
+              This organisation has no frameworks enabled, so there is nothing to run an
+              engagement against. Enable one under Organization Standards first.
+            </>
+          )}
+          onSubmit={saveScope}
+          onCancel={() => setPicking(false)}
         />
       )}
     </div>
