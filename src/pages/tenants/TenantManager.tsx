@@ -21,7 +21,7 @@ interface TenantRow {
 }
 
 interface PlanRow { id: string; name: string; priceMonthly: number; maxUsers: number }
-interface RoleRow { id: string; name: string; portal: string }
+interface RoleRow { id: string; name: string; portal: string; tenantId: string | null }
 
 /**
  * What the server hands back once, and only once.
@@ -70,6 +70,22 @@ const TenantManager: React.FC = () => {
   const [actionErr, setActionErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
+
+  /**
+   * Roles that may be given to a first administrator.
+   *
+   * Global roles only when provisioning: a tenant that does not exist yet cannot
+   * own a custom role, and a custom role belonging to somebody else cascades
+   * away with its owner — taking the new organisation's only administrator down
+   * to zero capabilities. The server refuses these; offering them anyway would
+   * just move the refusal to after the operator filled the form.
+   *
+   * Adopting an existing organisation is the one case where a tenant-owned role
+   * is legitimate: its own.
+   */
+  const rolesFor = (tenantId: string | null): RoleRow[] => roles.filter(
+    (r) => !r.tenantId || (tenantId != null && r.tenantId === tenantId),
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -544,9 +560,9 @@ const TenantManager: React.FC = () => {
                     style={{ ...inputStyle, marginBottom: 8 }}
                   >
                     <option value="">— choose a role —</option>
-                    {roles.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.portal}</option>)}
+                    {rolesFor(null).map((r) => <option key={r.id} value={r.id}>{r.name} · {r.portal}</option>)}
                   </select>
-                  {roles.length === 0 && (
+                  {rolesFor(null).length === 0 && (
                     <div style={{ fontSize: 11, color: 'var(--warning)', marginBottom: 14, lineHeight: 1.5 }}>
                       The role list could not be loaded, so an organisation cannot be provisioned
                       right now. Refresh and try again.
@@ -562,8 +578,8 @@ const TenantManager: React.FC = () => {
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   type="submit"
-                  disabled={submitting || (!editing && roles.length === 0)}
-                  style={{ ...btn(submitting || (!editing && roles.length === 0) ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}
+                  disabled={submitting || (!editing && rolesFor(null).length === 0)}
+                  style={{ ...btn(submitting || (!editing && rolesFor(null).length === 0) ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}
                 >
                   {submitting ? 'Saving…' : editing ? 'Save changes' : 'Provision with administrator'}
                 </button>
@@ -657,11 +673,15 @@ const TenantManager: React.FC = () => {
               <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Role</label>
               <select required value={form.adminRoleId} onChange={(e) => setForm({ ...form, adminRoleId: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }}>
                 <option value="">— choose a role —</option>
-                {roles.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.portal}</option>)}
+                {rolesFor(adopting.id).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} · {r.portal}{r.tenantId ? ' · own role' : ''}
+                  </option>
+                ))}
               </select>
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <button type="submit" disabled={submitting || roles.length === 0} style={{ ...btn(submitting || roles.length === 0 ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}>
+                <button type="submit" disabled={submitting || rolesFor(adopting.id).length === 0} style={{ ...btn(submitting || roles.length === 0 ? 'var(--ink-body)' : 'var(--info)'), flex: 1, padding: 11 }}>
                   {submitting ? 'Creating…' : 'Create administrator'}
                 </button>
                 <button type="button" onClick={() => setAdopting(null)} style={{ ...btn('transparent', 'var(--ink-muted)'), border: '1px solid var(--line)', padding: 11 }}>Cancel</button>

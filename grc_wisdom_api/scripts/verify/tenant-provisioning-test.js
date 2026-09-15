@@ -181,4 +181,45 @@ ok(
   );
 }
 
+// ── The first administrator holds a role nobody else can take away ───────
+// onboardTenant resolved admin.roleId with a bare findUnique and never checked
+// role.tenantId, while inviteUser and assignRole both refuse exactly that and
+// transferUser treats it as an invariant. The delegation ceiling does not cover
+// it either: excessCapabilities returns an empty list unconditionally for a
+// platform actor, who is also the actor whose scope reaches every custom role
+// in the estate.
+//
+// The consequence is the failure onboarding exists to prevent. A custom Role
+// cascades away with its owning tenant, User.roleId is SetNull, and the new
+// organisation's only administrator is left with no capabilities at all.
+{
+  const at = tenantCtrl.indexOf('export const onboardTenant =');
+  const end = tenantCtrl.indexOf('\nexport const ', at + 1);
+  const body = tenantCtrl.slice(at, end > 0 ? end : tenantCtrl.length);
+
+  // Both the branch and its code: an error code left inside a disabled branch
+  // reads as a guard and is not one.
+  ok(
+    /if \(role\.tenantId\)/.test(body) && /ROLE_NOT_GLOBAL/.test(body),
+    'onboardTenant must refuse a tenant-owned role. A tenant that does not exist yet cannot own '
+    + 'one, so anything with a tenantId belongs to somebody else.',
+  );
+  checks += 1;
+  assert.ok(
+    body.indexOf('role.tenantId') < body.indexOf('tx.user.create'),
+    'the check must happen before the administrator is created',
+  );
+
+  // And the picker must not offer what the server will refuse.
+  ok(
+    /rolesFor\(null\)/.test(screenCode),
+    'the provisioning role picker must offer global roles only. Offering the rest just moves the '
+    + 'refusal to after the operator has filled the form.',
+  );
+  ok(
+    /r\.tenantId/.test(screenCode),
+    'the screen must read tenantId from the role list — it is already in the payload and was ignored',
+  );
+}
+
 console.log(`tenant-provisioning: ${checks} assertions passed`);

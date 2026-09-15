@@ -494,6 +494,36 @@ export const onboardTenant = async (req: AuthenticatedRequest, res: Response): P
     const role = await prisma.role.findUnique({ where: { id: admin.roleId } });
     if (!role) { res.status(400).json({ status: 'error', message: 'admin.roleId does not exist' }); return; }
 
+    // The first administrator of a new organisation must hold a global role.
+    //
+    // This was a bare findUnique with no tenancy check, while inviteUser and
+    // assignRole both refuse exactly this and transferUser treats it as an
+    // invariant ("a custom role is tenant-bound, so a transfer must drop it").
+    // onboardTenant was the one door left open, and the delegation ceiling does
+    // not cover it: excessCapabilities returns an empty list unconditionally for
+    // a platform actor, who is also the actor whose scope reaches every custom
+    // role in the estate.
+    //
+    // The consequence is the exact failure onboarding exists to prevent. A
+    // custom Role cascades away when its owning tenant is deleted, User.roleId
+    // is SetNull, capabilitiesOfRole then returns nothing, and the new
+    // organisation's ONLY administrator is left signed in to a portal where
+    // nothing acts. Short of that, tenant A's role administrator can rewrite
+    // the privileges of tenant B's administrator, because updateRole authorises
+    // against the role's owning tenant.
+    //
+    // A tenant that does not exist yet cannot own a role, so "global" is the
+    // whole rule -- there is no legitimate custom role to allow here.
+    if (role.tenantId) {
+      res.status(400).json({
+        status: 'error',
+        code: 'ROLE_NOT_GLOBAL',
+        message: `"${role.name}" belongs to another organisation. The first administrator of a new `
+          + 'organisation must hold one of the platform roles, which nobody else can change or delete.',
+      });
+      return;
+    }
+
     // The delegation ceiling applies here as it does everywhere else.
     const excess = await excessCapabilities(req.user!.id, req.user!.tenantId, capabilitiesOfRole(role));
     if (excess.length > 0) {
