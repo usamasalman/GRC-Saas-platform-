@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface FeatureFlag {
@@ -11,8 +12,17 @@ interface FeatureFlag {
   scope: string;
   expiryDate: string;
   rolloutPercentage: number;
-  tenantOverrides: string[];
+  /**
+   * Organisations held apart from the platform-wide setting.
+   *
+   * This was `string[]` — a list of identifiers like 'HOLDING_1' that matched
+   * no tenant in any database, declared here and rendered nowhere. They are
+   * rows against real organisations now.
+   */
+  tenantOverrides: { tenantId: string; tenantName: string; enabled: boolean; note: string | null }[];
 }
+
+interface TenantRow { id: string; name: string }
 
 /**
  * Feature flags, as the server has them.
@@ -31,6 +41,9 @@ const FeatureFlagsManager: React.FC = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [overriding, setOverriding] = useState<FeatureFlag | null>(null);
+  const [overrideBusy, setOverrideBusy] = useState(false);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,6 +52,15 @@ const FeatureFlagsManager: React.FC = () => {
   const [flagScope, setFlagScope] = useState('Platform');
   const [flagOwner, setFlagOwner] = useState('Engineering');
   const [submitting, setSubmitting] = useState(false);
+
+  // The organisations an override can name. Caught on its own: the flags are
+  // still worth showing if this fails, with the override control turned off
+  // rather than offering a list the screen cannot vouch for.
+  useEffect(() => {
+    apiClient.get('/api/tenants')
+      .then((res) => setTenants(res.data?.tenants || []))
+      .catch(() => setTenants([]));
+  }, []);
 
   const loadFlags = useCallback(async () => {
     setLoading(true);
@@ -95,6 +117,32 @@ const FeatureFlagsManager: React.FC = () => {
       setError(apiError(err, 'Could not register the flag.'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * Hold one organisation apart from the platform-wide setting.
+   *
+   * Takes its arguments rather than reading state the dialog set in the same
+   * tick: a setState is not visible to the handler that queued it, so reading
+   * it back here would post the previous selection.
+   */
+  const saveOverride = async (flag: FeatureFlag, tenantId: string, enabled: boolean) => {
+    setOverrideBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await apiClient.post(
+        `/api/marketplace/feature-flags/${flag.id}/override`,
+        { tenantId, enabled },
+      );
+      setNotice(res.data?.message || 'Override saved.');
+      setOverriding(null);
+      await loadFlags();
+    } catch (err) {
+      setError(apiError(err, 'Could not save the override.'));
+    } finally {
+      setOverrideBusy(false);
     }
   };
 
@@ -158,7 +206,41 @@ const FeatureFlagsManager: React.FC = () => {
                   <span>Rollout: <strong style={{ color: 'var(--success)' }}>{f.rolloutPercentage}%</strong></span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                {/* An override that cannot be seen is indistinguishable from
+                    none, and this list was declared in the type and rendered
+                    nowhere at all. */}
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10 }}>
+                  {(f.tenantOverrides || []).length === 0
+                    ? <span>No organisation is held apart from this setting.</span>
+                    : (
+                      <>
+                        <div style={{ marginBottom: 4 }}>Held apart:</div>
+                        {f.tenantOverrides.map((o) => (
+                          <div key={o.tenantId} style={{ marginBottom: 2 }}>
+                            <strong style={{ color: 'var(--ink-body)' }}>{o.tenantName}</strong>
+                            {' · '}
+                            <span style={{ color: o.enabled ? 'var(--success)' : 'var(--warning)' }}>
+                              {o.enabled ? 'on' : 'off'}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                  <button
+                    onClick={() => {
+                      setOverriding(f);
+                    }}
+                    disabled={tenants.length === 0}
+                    title={tenants.length === 0
+                      ? 'The organisation list could not be loaded'
+                      : 'Hold one organisation apart from this setting'}
+                    style={{ ...ghostBtn, fontSize: 12, padding: '5px 12px' }}
+                  >
+                    Override…
+                  </button>
                   <button
                     onClick={() => handleToggle(f)}
                     disabled={togglingId === f.id}
@@ -231,6 +313,45 @@ const FeatureFlagsManager: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+      {overriding && (
+        <FormDialog
+          title={`Override "${overriding.key}"`}
+          intro={(
+            <>
+              <div>
+                The flag is currently <strong>{overriding.status}</strong> platform-wide. An override
+                holds one organisation apart from that, whichever way the platform setting moves.
+              </div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                Recorded in that organisation's own audit trail as well as the platform's, so the
+                customer can see a switch was held open or shut for them specifically.
+              </div>
+            </>
+          )}
+          submitLabel={overrideBusy ? 'Saving…' : 'Save override'}
+          busy={overrideBusy}
+          fields={[
+            {
+              name: 'tenantId',
+              label: 'Organisation',
+              type: 'select',
+              options: tenants.map((x) => x.name),
+              help: 'Only organisations in your scope.',
+            },
+            {
+              name: 'state',
+              label: 'Hold it',
+              type: 'select',
+              options: ['on', 'off'],
+            },
+          ]}
+          onSubmit={(v) => {
+            const match = tenants.find((x) => x.name === v.tenantId);
+            if (match) saveOverride(overriding, match.id, v.state === 'on');
+          }}
+          onCancel={() => setOverriding(null)}
+        />
       )}
     </div>
   );

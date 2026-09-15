@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import RBAC from './utils/rbacData.json';
+import { MODULE_CATALOGUE, FEATURE_FLAG_CATALOGUE } from './utils/platformCatalogue';
 
 /**
  * Provisioning — what a production database needs before anyone can log in.
@@ -178,6 +179,74 @@ async function provisionSodRules(): Promise<number> {
   return SOD_DEFAULTS.length;
 }
 
+/**
+ * The module catalogue and the feature flags.
+ *
+ * Reference data, like the capabilities and the SoD rules above: shipped with
+ * the product, converged on every deploy, and owned by the database afterwards.
+ * They used to be mutable arrays in a controller, so every publish and every
+ * toggle lasted until the process restarted.
+ *
+ * Existing rows are updated in their descriptive fields only. Whatever an
+ * operator has decided -- a module's maturity or status, a flag's status,
+ * rollout or per-tenant overrides -- is left exactly as they left it, for the
+ * same reason provisionSodRules does not re-assert isActive: a deploy must not
+ * silently undo a deliberate decision.
+ */
+async function provisionModuleCatalogue(): Promise<number> {
+  for (const m of MODULE_CATALOGUE) {
+    const describe = {
+      name: m.name,
+      category: m.category,
+      readinessPhase: m.readinessPhase,
+      description: m.description,
+      dependencies: JSON.stringify(m.dependencies),
+    };
+    const existing = await prisma.platformModule.findUnique({
+      where: { key: m.key }, select: { id: true },
+    });
+    if (existing) {
+      await prisma.platformModule.update({ where: { key: m.key }, data: describe });
+    } else {
+      await prisma.platformModule.create({
+        data: {
+          ...describe,
+          key: m.key,
+          maturity: m.maturity,
+          commercialModel: m.commercialModel,
+          status: m.status,
+          config: JSON.stringify(m.config ?? {}),
+        },
+      });
+    }
+  }
+  return MODULE_CATALOGUE.length;
+}
+
+async function provisionFeatureFlags(): Promise<number> {
+  for (const f of FEATURE_FLAG_CATALOGUE) {
+    const describe = { description: f.description, owner: f.owner, scope: f.scope };
+    const existing = await prisma.featureFlag.findUnique({
+      where: { key: f.key }, select: { id: true },
+    });
+    if (existing) {
+      await prisma.featureFlag.update({ where: { key: f.key }, data: describe });
+    } else {
+      const expires = new Date(f.expiryDate);
+      await prisma.featureFlag.create({
+        data: {
+          ...describe,
+          key: f.key,
+          status: f.status,
+          rolloutPercentage: f.rolloutPercentage,
+          expiryDate: Number.isNaN(expires.getTime()) ? null : expires,
+        },
+      });
+    }
+  }
+  return FEATURE_FLAG_CATALOGUE.length;
+}
+
 async function provisionControlPlaneTenant(): Promise<{ id: string; name: string }> {
   // requirePlatformTenant tests tenant.type, not the name, so an existing
   // control plane under any name is honoured rather than duplicated.
@@ -287,6 +356,12 @@ async function main(): Promise<void> {
 
   const sod = await provisionSodRules();
   console.log(`  SoD rules:      ${sod}`);
+
+  const modules = await provisionModuleCatalogue();
+  console.log(`  modules:        ${modules}`);
+
+  const flags = await provisionFeatureFlags();
+  console.log(`  feature flags:  ${flags}`);
 
   const tenant = await provisionControlPlaneTenant();
   console.log(`  control plane:  ${tenant.name}`);

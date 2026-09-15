@@ -112,6 +112,7 @@ jobs:
           node scripts/verify/enablement-plan-test.js
           node scripts/verify/tenant-provisioning-test.js
           node scripts/verify/tenant-suspension-test.js
+          node scripts/verify/persisted-state-test.js
           node scripts/verify/no-invented-data-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js

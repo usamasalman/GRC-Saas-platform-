@@ -30,186 +30,14 @@ function str(val: unknown): string {
 }
 
 // Seed GRC modules catalog
-let grcModulesStore: GrcModuleItem[] = [
-  {
-    id: 'MOD-DMS',
-    name: 'Document Management & E-Signature (DMS)',
-    category: 'Core GRC',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Entitled',
-    description: 'Document authoring, multi-stage approval routing, cryptographic e-signature and version control.',
-    dependencies: ['Auth', 'AuditLog', 'WorkflowEngine'],
-    status: 'Active',
-    config: { autoArchiveDays: 365, requireMfaSignature: true, defaultRetentionYears: 7 }
-  },
-  {
-    id: 'MOD-RISK',
-    name: 'Enterprise Risk Management (ERM)',
-    category: 'Core GRC',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Entitled',
-    description: 'Inherent & residual risk scoring, risk appetite alignment, KRI monitoring and treatment plans.',
-    dependencies: ['Auth', 'AuditLog'],
-    status: 'Active',
-    config: { scoringMatrix: '5x5', autoCalculateResidual: true, appetiteAlertThreshold: 'High' }
-  },
-  {
-    id: 'MOD-AUDIT',
-    name: 'Internal Audit & Assurance',
-    category: 'Core GRC',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Entitled',
-    description: 'Risk-based audit planning, workpaper management, finding tracking and CAP closure verification.',
-    dependencies: ['Auth', 'DMS', 'WorkflowEngine'],
-    status: 'Active',
-    config: { requireIndependentClosure: true, automatedReminders: true }
-  },
-  {
-    id: 'MOD-TPRM',
-    name: 'Third-Party Risk Management (TPRM)',
-    category: 'Assurance',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Add-on',
-    description: 'Vendor inventory, criticality assessment, questionnaire dispatch and supply chain risk tracking.',
-    dependencies: ['Auth', 'Risk'],
-    status: 'Active',
-    config: { reviewCadenceDays: 365, requireCriticalVendorSca: true }
-  },
-  {
-    id: 'MOD-ASM',
-    name: 'Wisdom Eye — Attack Surface Management (ASM)',
-    category: 'Security Services',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Add-on',
-    description: 'Continuous external exposure monitoring, service discovery, vulnerability scanning and breach signals.',
-    dependencies: ['Auth', 'TicketDesk'],
-    status: 'Active',
-    config: { scanFrequencyDays: 7, requireAuthorizationRecord: true }
-  },
-  {
-    id: 'MOD-PHISH',
-    name: 'Eye Phish — Human Risk & Phishing Simulation',
-    category: 'Security Services',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Add-on',
-    description: 'Multilingual phishing simulations, QR/attachment scenarios, BEC awareness and remedial training.',
-    dependencies: ['Auth', 'Learning'],
-    status: 'Active',
-    config: { enforcePrivacyScrubbing: true, maxMonthlyCampaigns: 4 }
-  },
-  {
-    id: 'MOD-ITSM',
-    name: 'ITSM Service Desk & Escalations',
-    category: 'Service Management',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Entitled',
-    description: 'Incident ticketing, SLA management, queue routing, escalation policies and knowledge base.',
-    dependencies: ['Auth', 'WorkflowEngine'],
-    status: 'Active',
-    config: { p1SlaHours: 1, p2SlaHours: 8, p3SlaHours: 72 }
-  },
-  {
-    id: 'MOD-ZATCA',
-    name: 'ZATCA E-Invoicing & Billing Gateway',
-    category: 'Commercial',
-    maturity: 'Released',
-    readinessPhase: 'General Availability',
-    commercialModel: 'Entitled',
-    description: 'Phase 2 ZATCA UBL 2.1 e-invoicing compliance, ECDSA signing, TLV QR generation and VAT settlement.',
-    dependencies: ['Auth', 'Billing'],
-    status: 'Active',
-    config: { vatRatePercent: 15, zatcaEnvironment: 'Sandbox' }
-  },
-  {
-    id: 'MOD-AI',
-    name: 'AI Compliance & Policy RAG Assistant',
-    category: 'Intelligence',
-    maturity: 'Beta',
-    readinessPhase: 'Controlled Rollout',
-    commercialModel: 'Enterprise',
-    description: 'Retrieval-Augmented Generation (RAG) assistant for querying internal policies and regulatory standards.',
-    dependencies: ['DMS', 'Standards'],
-    status: 'Active',
-    config: { rateLimitPerTenantHour: 100, privateLLmOnly: true }
-  }
-];
+// The module catalogue and the feature flags used to live here, as mutable
+// module-scope arrays. Every publish, configuration change and toggle mutated
+// process memory: gone on the next restart, invisible to any other instance,
+// and recorded in the WORM audit log as though it had happened.
+//
+// They are rows now. src/utils/platformCatalogue.ts holds the shipped starting
+// point; the database is the live state.
 
-// Seed feature flags catalog
-let featureFlagsStore = [
-  {
-    id: 'FLAG-SELF-SIGNUP',
-    key: 'Tenant Self Sign-Up',
-    description: 'Allow new customer organizations to self-register from the public site.',
-    status: 'Disabled',
-    owner: 'Product Operations',
-    scope: 'Platform',
-    expiryDate: '2026-12-31',
-    rolloutPercentage: 0,
-    tenantOverrides: [] as string[]
-  },
-  {
-    id: 'FLAG-AI-BETA',
-    key: 'Beta AI Assistant',
-    description: 'Expose RAG compliance query assistant to selected enterprise tenants.',
-    status: 'Enabled',
-    owner: 'AI R&D',
-    scope: 'Selected Tenants',
-    expiryDate: '2026-10-15',
-    rolloutPercentage: 25,
-    tenantOverrides: ['HOLDING_1', 'ORG_2']
-  },
-  {
-    id: 'FLAG-STRICT-BRANCH-QUOTA',
-    key: 'Strict Branch Quota Enforcer',
-    description: 'Hard-stop branch provisioning when tenant plan quota is exhausted.',
-    status: 'Enabled',
-    owner: 'Engineering',
-    scope: 'Platform',
-    expiryDate: '2026-11-30',
-    rolloutPercentage: 100,
-    tenantOverrides: [] as string[]
-  },
-  {
-    id: 'FLAG-MAINTENANCE-BANNER',
-    key: 'Maintenance Mode Banner',
-    description: 'Display scheduled platform maintenance banner across all tenant dashboards.',
-    status: 'Disabled',
-    owner: 'DevOps',
-    scope: 'Platform',
-    expiryDate: '2026-09-01',
-    rolloutPercentage: 0,
-    tenantOverrides: [] as string[]
-  },
-  {
-    id: 'FLAG-DMS-SEMANTIC-DIFF',
-    key: 'DMS Semantic Diff Viewer',
-    description: 'Side-by-side version comparison with semantic change highlight for policy documents.',
-    status: 'Enabled',
-    owner: 'Frontend Lead',
-    scope: 'Platform',
-    expiryDate: '2026-12-31',
-    rolloutPercentage: 100,
-    tenantOverrides: [] as string[]
-  },
-  {
-    id: 'FLAG-OCI-PRIVATE-AI',
-    key: 'OCI Private AI Deployment',
-    description: 'Dedicated private AI model option hosted exclusively in OCI Riyadh.',
-    status: 'Pilot',
-    owner: 'Platform Security',
-    scope: 'Selected Tenants',
-    expiryDate: '2026-10-31',
-    rolloutPercentage: 10,
-    tenantOverrides: ['HOLDING_1']
-  }
-];
 
 // In-memory store for tool installations
 let installationsStore: Array<{
@@ -268,104 +96,192 @@ let installationsStore: Array<{
 
 // ── 1. GRC MODULES ─────────────────────────────────────────────────────────
 
+/** JSON columns, read defensively: a hand-edited row must not 500 the list. */
+function parseJson<T>(raw: string | null | undefined, fallback: T): T {
+  try {
+    const v = JSON.parse(String(raw == null ? '' : raw));
+    return (v === null || v === undefined) ? fallback : (v as T);
+  } catch {
+    return fallback;
+  }
+}
+
+/** The row, in the shape the screens already expect. */
+function toModule(m: any) {
+  return {
+    id: m.key,
+    key: m.key,
+    name: m.name,
+    category: m.category,
+    maturity: m.maturity,
+    readinessPhase: m.readinessPhase,
+    commercialModel: m.commercialModel,
+    description: m.description,
+    dependencies: parseJson(m.dependencies, []) as string[],
+    status: m.status,
+    config: parseJson(m.config, {}) as Record<string, unknown>,
+  };
+}
+
 export const listModules = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const category = parseQueryStr(req.query.category);
     const search = parseQueryStr(req.query.search);
-    let modules = [...grcModulesStore];
 
-    if (category) {
-      modules = modules.filter(m => m.category.toLowerCase() === category.toLowerCase());
-    }
+    const where: any = {};
+    if (category) where.category = { equals: category, mode: 'insensitive' };
     if (search) {
-      const q = search.toLowerCase();
-      modules = modules.filter(m => m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q));
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
-    res.json({
-      status: 'success',
-      count: modules.length,
-      modules
-    });
+    const rows = await prisma.platformModule.findMany({ where, orderBy: { name: 'asc' } });
+    res.json({ status: 'success', count: rows.length, modules: rows.map(toModule) });
   } catch (error: any) {
+    console.error('[List Modules Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to list modules' });
   }
 };
 
+/**
+ * The catalogue belongs to the platform, and only the platform edits it.
+ *
+ * PUBLISH_MODULE is held by organization-admin as well as by the platform
+ * roles, and neither createModule nor configureModule checked anything beyond
+ * the capability. Because the catalogue is one global list, a customer's own
+ * administrator could rename, reconfigure or disable a platform module for
+ * every other customer at once.
+ *
+ * The capability says what kind of act this is. It cannot say whose catalogue
+ * it is, because there is only one, so the tenant has to be asked separately.
+ */
+async function refuseIfNotPlatform(req: AuthenticatedRequest, res: Response): Promise<boolean> {
+  const scope = await resolveTenantScope(req.user!);
+  if (scope.kind !== 'PLATFORM') {
+    res.status(403).json({
+      status: 'error',
+      code: 'PLATFORM_ONLY',
+      message: 'The module catalogue is published by the platform operator. Your organisation can '
+        + 'install and configure modules for itself, but not change the catalogue everyone sees.',
+    });
+    return true;
+  }
+  return false;
+}
+
 export const createModule = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { name, category, commercialModel, description } = req.body;
+    if (await refuseIfNotPlatform(req, res)) return;
+
+    const { name, category, commercialModel, description, key } = req.body || {};
     if (!name) {
-      res.status(400).json({ status: 'error', message: 'Module name is required' });
+      res.status(400).json({ status: 'error', code: 'NAME_REQUIRED', message: 'Module name is required' });
       return;
     }
 
-    const newMod: GrcModuleItem = {
-      id: `MOD-${Date.now().toString(36).toUpperCase()}`,
-      name: String(name),
-      category: String(category || 'Custom Capability'),
-      maturity: 'Planned',
-      readinessPhase: 'Initial Scoping',
-      commercialModel: String(commercialModel || 'Entitled'),
-      description: String(description || 'Governed platform capability.'),
-      dependencies: ['Auth'],
-      status: 'Active',
-      config: {}
-    };
+    // Derived from the name rather than from a timestamp, so publishing the
+    // same module twice collides instead of quietly becoming two catalogue
+    // entries with the same name and different ids.
+    const derived = String(name).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const moduleKey = String(key || ('MOD-' + derived)).slice(0, 60);
 
-    grcModulesStore.push(newMod);
+    if (await prisma.platformModule.findUnique({ where: { key: moduleKey } })) {
+      res.status(409).json({
+        status: 'error',
+        code: 'MODULE_EXISTS',
+        message: 'A module with the key "' + moduleKey + '" is already published.',
+      });
+      return;
+    }
 
-    await writeAudit(prisma, {
-      tenantId: str(req.user!.tenantId),
-      actorId: str(req.user!.id),
-      action: 'marketplace.module.create',
-      subjectType: 'Module',
-      subjectId: str(newMod.id),
-      payload: newMod as unknown as Record<string, unknown>
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.platformModule.create({
+        data: {
+          key: moduleKey,
+          name: String(name),
+          category: String(category || 'Custom Capability'),
+          maturity: 'Planned',
+          readinessPhase: 'Initial Scoping',
+          commercialModel: String(commercialModel || 'Entitled'),
+          description: String(description || 'Governed platform capability.'),
+          dependencies: JSON.stringify(['Auth']),
+          status: 'Active',
+          config: '{}',
+        },
+      });
+      // Inside the transaction, like every other audit write here. It used to
+      // be called with the base client beside a push onto an array, so there
+      // was nothing for it to commit with.
+      await writeAudit(tx, {
+        tenantId: str(req.user!.tenantId),
+        actorId: str(req.user!.id),
+        action: 'marketplace.module.publish',
+        subjectType: 'Module',
+        subjectId: row.key,
+        payload: { key: row.key, name: row.name, category: row.category },
+      });
+      return row;
     });
 
     res.status(201).json({
       status: 'success',
-      message: `Module "${name}" added to marketplace.`,
-      module: newMod
+      message: 'Module "' + created.name + '" published.',
+      module: toModule(created),
     });
   } catch (error: any) {
+    console.error('[Create Module Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to create module' });
   }
 };
 
 export const configureModule = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const targetId = str(req.params.id);
-    const { maturity, commercialModel, status, config } = req.body;
+    if (await refuseIfNotPlatform(req, res)) return;
 
-    const mod = grcModulesStore.find(m => m.id === targetId);
+    const targetKey = str(req.params.id);
+    const { maturity, commercialModel, status, config } = req.body || {};
+
+    const mod = await prisma.platformModule.findUnique({ where: { key: targetKey } });
     if (!mod) {
-      res.status(404).json({ status: 'error', message: 'Module not found' });
+      res.status(404).json({ status: 'error', code: 'MODULE_NOT_FOUND', message: 'Module not found' });
       return;
     }
 
-    const prev = { ...mod };
-    if (maturity) mod.maturity = String(maturity);
-    if (commercialModel) mod.commercialModel = String(commercialModel);
-    if (status) mod.status = String(status);
-    if (config) mod.config = { ...mod.config, ...config };
+    const prev = toModule(mod);
+    const nextConfig = (config && typeof config === 'object')
+      ? { ...prev.config, ...config }
+      : prev.config;
 
-    await writeAudit(prisma, {
-      tenantId: str(req.user!.tenantId),
-      actorId: str(req.user!.id),
-      action: 'marketplace.module.configure',
-      subjectType: 'Module',
-      subjectId: targetId,
-      payload: { prev, updated: mod } as Record<string, unknown>
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.platformModule.update({
+        where: { key: targetKey },
+        data: {
+          ...(maturity ? { maturity: String(maturity) } : {}),
+          ...(commercialModel ? { commercialModel: String(commercialModel) } : {}),
+          ...(status ? { status: String(status) } : {}),
+          config: JSON.stringify(nextConfig),
+        },
+      });
+      await writeAudit(tx, {
+        tenantId: str(req.user!.tenantId),
+        actorId: str(req.user!.id),
+        action: 'marketplace.module.configure',
+        subjectType: 'Module',
+        subjectId: targetKey,
+        payload: { prev, updated: toModule(row) } as Record<string, unknown>,
+      });
+      return row;
     });
 
     res.json({
       status: 'success',
-      message: `Module "${mod.name}" updated.`,
-      module: mod
+      message: 'Module "' + updated.name + '" updated.',
+      module: toModule(updated),
     });
   } catch (error: any) {
+    console.error('[Configure Module Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to configure module' });
   }
 };
@@ -592,87 +508,254 @@ export const testInstallationHealth = async (req: AuthenticatedRequest, res: Res
 
 // ── 4. FEATURE FLAGS ────────────────────────────────────────────────────────
 
+/** The row plus its overrides, in the shape the screen already reads. */
+function toFlag(f: any) {
+  return {
+    id: f.id,
+    key: f.key,
+    description: f.description || '',
+    status: f.status,
+    owner: f.owner || '',
+    scope: f.scope,
+    expiryDate: f.expiryDate ? new Date(f.expiryDate).toISOString().slice(0, 10) : null,
+    rolloutPercentage: f.rolloutPercentage,
+    // Real organisations, named. This used to be a string array of invented
+    // identifiers -- 'HOLDING_1', 'ORG_2' -- that matched no tenant anywhere,
+    // so the screen displayed overrides that governed nothing.
+    tenantOverrides: (f.overrides || []).map((o: any) => ({
+      tenantId: o.tenantId,
+      tenantName: o.tenant?.name || o.tenantId,
+      enabled: o.enabled,
+      note: o.note || null,
+    })),
+  };
+}
+
+/**
+ * Flags are the platform's, and so are their overrides.
+ *
+ * GOVERN_FLAG is held only by platform roles today, so this changes nothing
+ * about who gets in. It is here because the capability cannot express it: a
+ * flag is one global row, and a tenant-side role granted GOVERN_FLAG tomorrow
+ * would otherwise be toggling a switch for every customer at once.
+ */
+async function refuseIfNotPlatformFlags(req: AuthenticatedRequest, res: Response): Promise<boolean> {
+  const scope = await resolveTenantScope(req.user!);
+  if (scope.kind !== 'PLATFORM') {
+    res.status(403).json({
+      status: 'error',
+      code: 'PLATFORM_ONLY',
+      message: 'Feature flags are governed by the platform operator.',
+    });
+    return true;
+  }
+  return false;
+}
+
 export const listFeatureFlags = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    res.json({
-      status: 'success',
-      count: featureFlagsStore.length,
-      flags: featureFlagsStore
+    const scope = await resolveTenantScope(req.user!);
+    const flags = await prisma.featureFlag.findMany({
+      orderBy: { key: 'asc' },
+      include: {
+        // An operator sees every override; anyone else sees only their own
+        // organisation's, because another customer's exemption is not theirs
+        // to read.
+        overrides: scope.kind === 'PLATFORM'
+          ? { include: { tenant: { select: { name: true } } } }
+          : {
+            where: { tenantId: { in: scope.tenantIds } },
+            include: { tenant: { select: { name: true } } },
+          },
+      },
     });
+    res.json({ status: 'success', count: flags.length, flags: flags.map(toFlag) });
   } catch (error: any) {
+    console.error('[List Feature Flags Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to list feature flags' });
   }
 };
 
 export const createFeatureFlag = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { key, description, scope, expiryDate, owner } = req.body;
+    if (await refuseIfNotPlatformFlags(req, res)) return;
+
+    const { key, description, scope: flagScope, expiryDate, owner } = req.body || {};
     if (!key) {
-      res.status(400).json({ status: 'error', message: 'Flag key name is required' });
+      res.status(400).json({ status: 'error', code: 'KEY_REQUIRED', message: 'Flag key name is required' });
       return;
     }
 
-    const flag = {
-      id: `FLAG-${Date.now().toString(36).toUpperCase()}`,
-      key: String(key),
-      description: String(description || 'Platform capability feature flag.'),
-      status: 'Disabled',
-      owner: String(owner || 'Engineering'),
-      scope: String(scope || 'Platform'),
-      expiryDate: String(expiryDate || new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10)),
-      rolloutPercentage: 0,
-      tenantOverrides: [] as string[]
-    };
+    const cleanKey = String(key).trim();
+    if (await prisma.featureFlag.findUnique({ where: { key: cleanKey } })) {
+      res.status(409).json({
+        status: 'error',
+        code: 'FLAG_EXISTS',
+        message: 'A flag called "' + cleanKey + '" already exists.',
+      });
+      return;
+    }
 
-    featureFlagsStore.push(flag);
+    // Ninety days out, as before. A flag with no expiry is a flag nobody ever
+    // removes, which is how a temporary switch becomes permanent branching.
+    const expires = expiryDate ? new Date(String(expiryDate)) : new Date(Date.now() + 90 * 864e5);
 
-    await writeAudit(prisma, {
-      tenantId: str(req.user!.tenantId),
-      actorId: str(req.user!.id),
-      action: 'marketplace.flag.create',
-      subjectType: 'FeatureFlag',
-      subjectId: flag.id,
-      payload: flag as unknown as Record<string, unknown>
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.featureFlag.create({
+        data: {
+          key: cleanKey,
+          description: String(description || 'Platform capability feature flag.'),
+          status: 'Disabled',
+          owner: String(owner || 'Engineering'),
+          scope: String(flagScope || 'Platform'),
+          expiryDate: Number.isNaN(expires.getTime()) ? null : expires,
+          rolloutPercentage: 0,
+        },
+      });
+      await writeAudit(tx, {
+        tenantId: str(req.user!.tenantId),
+        actorId: str(req.user!.id),
+        action: 'marketplace.flag.create',
+        subjectType: 'FeatureFlag',
+        subjectId: row.id,
+        payload: { key: row.key, scope: row.scope, owner: row.owner },
+      });
+      return row;
     });
 
     res.status(201).json({
       status: 'success',
-      message: `Feature flag "${key}" created.`,
-      flag
+      message: 'Feature flag "' + created.key + '" created.',
+      flag: toFlag({ ...created, overrides: [] }),
     });
   } catch (error: any) {
+    console.error('[Create Feature Flag Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to create feature flag' });
   }
 };
 
 export const toggleFeatureFlag = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    if (await refuseIfNotPlatformFlags(req, res)) return;
+
     const targetId = str(req.params.id);
-    const flag = featureFlagsStore.find(f => f.id === targetId);
+    const flag = await prisma.featureFlag.findUnique({ where: { id: targetId } });
     if (!flag) {
-      res.status(404).json({ status: 'error', message: 'Feature flag not found' });
+      res.status(404).json({ status: 'error', code: 'FLAG_NOT_FOUND', message: 'Feature flag not found' });
       return;
     }
 
-    const prevStatus = flag.status;
-    flag.status = flag.status === 'Enabled' ? 'Disabled' : 'Enabled';
-    flag.rolloutPercentage = flag.status === 'Enabled' ? 100 : 0;
+    const nextStatus = flag.status === 'Enabled' ? 'Disabled' : 'Enabled';
 
-    await writeAudit(prisma, {
-      tenantId: str(req.user!.tenantId),
-      actorId: str(req.user!.id),
-      action: 'marketplace.flag.toggle',
-      subjectType: 'FeatureFlag',
-      subjectId: targetId,
-      payload: { prevStatus, newStatus: flag.status } as Record<string, unknown>
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.featureFlag.update({
+        where: { id: targetId },
+        data: {
+          status: nextStatus,
+          rolloutPercentage: nextStatus === 'Enabled' ? 100 : 0,
+        },
+        include: { overrides: { include: { tenant: { select: { name: true } } } } },
+      });
+      await writeAudit(tx, {
+        tenantId: str(req.user!.tenantId),
+        actorId: str(req.user!.id),
+        action: 'marketplace.flag.toggle',
+        subjectType: 'FeatureFlag',
+        subjectId: targetId,
+        payload: { key: row.key, prevStatus: flag.status, newStatus: row.status },
+      });
+      return row;
     });
 
     res.json({
       status: 'success',
-      message: `Feature flag "${flag.key}" status changed to ${flag.status}.`,
-      flag
+      message: 'Feature flag "' + updated.key + '" status changed to ' + updated.status + '.',
+      flag: toFlag(updated),
     });
   } catch (error: any) {
+    console.error('[Toggle Feature Flag Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to toggle feature flag' });
   }
 };
+
+/**
+ * Hold one organisation apart from a flag's platform-wide setting.
+ *
+ * The overrides were display-only: a list of strings on an in-memory object,
+ * with no endpoint to change them and no tenant behind them. An override that
+ * cannot be set is not an override.
+ */
+export const setFlagOverride = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (await refuseIfNotPlatformFlags(req, res)) return;
+
+    const flagId = str(req.params.id);
+    const { tenantId, enabled, note, remove } = req.body || {};
+
+    const flag = await prisma.featureFlag.findUnique({ where: { id: flagId } });
+    if (!flag) {
+      res.status(404).json({ status: 'error', code: 'FLAG_NOT_FOUND', message: 'Feature flag not found' });
+      return;
+    }
+
+    const targetTenantId = String(tenantId || '');
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: targetTenantId },
+      select: { id: true, name: true },
+    });
+    if (!tenant) {
+      res.status(404).json({
+        status: 'error',
+        code: 'TENANT_NOT_FOUND',
+        message: 'That organisation was not found.',
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      if (remove) {
+        await tx.featureFlagOverride.deleteMany({ where: { flagId, tenantId: targetTenantId } });
+      } else {
+        await tx.featureFlagOverride.upsert({
+          where: { flagId_tenantId: { flagId, tenantId: targetTenantId } },
+          create: { flagId, tenantId: targetTenantId, enabled: Boolean(enabled), note: note || null },
+          update: { enabled: Boolean(enabled), note: note || null },
+        });
+      }
+      // Two rows: the platform's record of the decision, and the affected
+      // organisation's own, because a customer reading their trail has to be
+      // able to see that a switch was held open or shut for them specifically.
+      for (const auditTenantId of [str(req.user!.tenantId), targetTenantId]) {
+        await writeAudit(tx, {
+          tenantId: auditTenantId,
+          actorId: str(req.user!.id),
+          action: remove ? 'marketplace.flag.override.clear' : 'marketplace.flag.override.set',
+          subjectType: 'FeatureFlag',
+          subjectId: flagId,
+          payload: {
+            key: flag.key,
+            tenantId: targetTenantId,
+            tenantName: tenant.name,
+            enabled: remove ? null : Boolean(enabled),
+          },
+        });
+      }
+      return tx.featureFlag.findUnique({
+        where: { id: flagId },
+        include: { overrides: { include: { tenant: { select: { name: true } } } } },
+      });
+    });
+
+    res.json({
+      status: 'success',
+      message: remove
+        ? 'Override for ' + tenant.name + ' removed.'
+        : tenant.name + ' is now held ' + (enabled ? 'on' : 'off') + ' for "' + flag.key + '".',
+      flag: result ? toFlag(result) : null,
+    });
+  } catch (error: any) {
+    console.error('[Set Flag Override Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to set the override' });
+  }
+};
+

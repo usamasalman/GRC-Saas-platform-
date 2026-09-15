@@ -37,6 +37,8 @@ model Tenant {
   /// Why, in the operator's words. Shown to anyone refused at the door.
   suspendedReason  String?
 
+  flagOverrides FeatureFlagOverride[]
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -3283,4 +3285,70 @@ model ProjectVerification {
   @@index([projectId, createdAt])
   @@index([taskId, round])
   @@index([actorId, createdAt])
+}
+
+/// A capability of the platform itself, as the control plane publishes it.
+///
+/// This lived in a module-scope array in marketplaceController. Every publish
+/// and every configuration change mutated process memory: lost on restart,
+/// invisible to any other instance, and — worst of the three — recorded in the
+/// WORM audit log as having happened. An immutable trail asserting changes the
+/// system silently reverted is worse than no trail.
+model PlatformModule {
+  id              String   @id @default(uuid())
+  /// Stable identifier used by the catalogue and by anything referencing it.
+  key             String   @unique
+  name            String
+  category        String
+  maturity        String   @default("Planned")
+  readinessPhase  String   @default("Initial Scoping")
+  commercialModel String   @default("Entitled")
+  description     String
+  /// JSON array of module keys this one needs.
+  dependencies    String   @default("[]")
+  status          String   @default("Active")
+  /// JSON object. Shape is per module and deliberately not modelled.
+  config          String   @default("{}")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// A switch the platform operator controls.
+model FeatureFlag {
+  id                String    @id @default(uuid())
+  key               String    @unique
+  description       String?
+  status            String    @default("Disabled")
+  owner             String?
+  scope             String    @default("Platform")
+  expiryDate        DateTime?
+  rolloutPercentage Int       @default(0)
+
+  overrides         FeatureFlagOverride[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+/// One organisation held apart from a flag's platform-wide setting.
+///
+/// The overrides were a string array of invented identifiers — 'HOLDING_1',
+/// 'ORG_2' — that matched no tenant in any database. A row with a real foreign
+/// key cannot drift from the estate, and disappears with the tenant it names.
+model FeatureFlagOverride {
+  id        String      @id @default(uuid())
+  flagId    String
+  flag      FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// True turns the flag on for this organisation, false holds it off.
+  enabled   Boolean
+  note      String?
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([flagId, tenantId])
+  @@index([tenantId])
 }

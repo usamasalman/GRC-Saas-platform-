@@ -5,7 +5,7 @@ import {
   listModules, createModule, configureModule,
   listTools, submitTool, reviewTool, purchaseTool,
   listInstallations, testInstallationHealth,
-  listFeatureFlags, createFeatureFlag, toggleFeatureFlag
+  listFeatureFlags, createFeatureFlag, toggleFeatureFlag, setFlagOverride
 } from '../controllers/marketplaceController';
 
 const router = Router();
@@ -39,5 +39,9 @@ router.post('/installations/:id/health', requireCapability(CAP.ONBOARD_TOOL), te
 router.get('/feature-flags', listFeatureFlags);
 router.post('/feature-flags', requireCapability(CAP.GOVERN_FLAG), createFeatureFlag);
 router.patch('/feature-flags/:id/toggle', requireCapability(CAP.GOVERN_FLAG), toggleFeatureFlag);
+// Holding one organisation apart from a flag's platform-wide setting. The
+// overrides were display-only before: a list of strings with no endpoint to
+// change them and no tenant behind them.
+router.post('/feature-flags/:id/override', requireCapability(CAP.GOVERN_FLAG), setFlagOverride);
 
 export default router;
