@@ -121,7 +121,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
-      'Always include framework mappings (e.g. ISO 27001, NCA ECC) in the document metadata to streamline audit evidence.',
+      'Open a document and use the Governs tab to link the controls it mandates, the risks it treats and the framework clauses it satisfies (e.g. ISO 27001, NCA ECC). Those links are what let the clause be reported as addressed.',
       'Published documents can be assigned for mandatory employee acknowledgement in one click.'
     ],
     relatedTabs: [
@@ -156,7 +156,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Perform Content & Diff Inspection',
-        instruction: 'Click "Review" on any item to view side-by-side content changes, compliance clause coverage, and author notes.',
+        instruction: 'Click "Review" on any item to read the document and its author notes before approving or returning it.',
         tip: 'SOD engine prevents authors from approving their own submissions.'
       },
       {
@@ -1981,7 +1981,7 @@ export const MASTER_WORKFLOWS: PlatformWorkflow[] = [
         tabId: 'library',
         tabTitle: 'Document Library',
         action: 'Create Document with Reference Code',
-        details: 'Create a new controlled draft with standardized code (e.g. POL-SEC-001) and map relevant regulatory standard clauses.'
+        details: 'Create a new controlled draft with a standardized code (e.g. POL-SEC-001), then open it and use the Governs tab to map the regulatory clauses it satisfies.'
       },
       {
         phase: '2. Concurrency Lock',

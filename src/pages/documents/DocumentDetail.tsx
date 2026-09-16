@@ -1,6 +1,7 @@
 import Icon from '../../components/Icon';
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
+import PickManyDialog from '../../components/PickManyDialog';
 
 interface DocumentDetailProps {
   documentId: string;
@@ -11,7 +12,79 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const [document, setDocument] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'reader' | 'file' | 'versions' | 'approvals'>('reader');
+  const [activeTab, setActiveTab] = useState<
+    'reader' | 'file' | 'versions' | 'approvals' | 'governs'
+  >('reader');
+
+  // What this policy governs.
+  //
+  // There was no fifth tab because there was nothing to put in it: five foreign
+  // keys pointed at the Document table and none came from Control, Risk or
+  // StandardClause. The user guide told people to "always include framework
+  // mappings in the document metadata" and to "map relevant regulatory standard
+  // clauses" as phase one of the documented lifecycle, and neither had a field.
+  const [links, setLinks] = useState<any[]>([]);
+  const [linkSummary, setLinkSummary] = useState<any>(null);
+  const [options, setOptions] = useState<{
+    controls: any[]; risks: any[]; clauses: any[]; enabledFrameworks: number;
+  }>({ controls: [], risks: [], clauses: [], enabledFrameworks: 0 });
+  const [picking, setPicking] = useState<'control' | 'risk' | 'clause' | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState('');
+
+  const loadLinks = async () => {
+    try {
+      const res = await apiClient.get(`/api/documents/${documentId}/links`);
+      setLinks(res.data?.links || []);
+      setLinkSummary(res.data?.summary || null);
+    } catch {
+      setLinks([]);
+      setLinkSummary(null);
+    }
+  };
+
+  useEffect(() => {
+    loadLinks();
+    apiClient.get('/api/documents/link-options')
+      .then((res) => setOptions({
+        controls: res.data?.controls || [],
+        risks: res.data?.risks || [],
+        clauses: res.data?.clauses || [],
+        enabledFrameworks: res.data?.enabledFrameworks || 0,
+      }))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId]);
+
+  const addLinks = async (target: string, ids: string[]) => {
+    setLinkBusy(true);
+    setLinkError('');
+    try {
+      await apiClient.post(`/api/documents/${documentId}/links`, { target, ids });
+      setPicking(null);
+      await loadLinks();
+    } catch (e: any) {
+      // The server names what it refused and why: not found, another
+      // organisation's, archived. That message is the useful part.
+      setLinkError(e.response?.data?.message || 'The link could not be made.');
+      setPicking(null);
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const removeLink = async (linkId: string) => {
+    setLinkBusy(true);
+    setLinkError('');
+    try {
+      await apiClient.delete(`/api/documents/links/${linkId}`);
+      await loadLinks();
+    } catch (e: any) {
+      setLinkError(e.response?.data?.message || 'The link could not be removed.');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
   const [readerMode, setReaderMode] = useState<'pdf-embed' | 'pdf-page' | 'raw-text'>('pdf-embed');
   const [downloading, setDownloading] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -217,7 +290,117 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
           >
             ✍️ Digital Signatures ({document?.approvals?.length || 0})
           </button>
+          <button
+            onClick={() => setActiveTab('governs')}
+            style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'governs' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'governs' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'governs' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
+          >
+            <Icon name="controls" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Governs ({linkSummary?.total ?? 0})
+          </button>
         </nav>
+
+        {activeTab === 'governs' && (
+          <div style={{ padding: '20px 24px', overflowY: 'auto' }}>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.6, maxWidth: 680 }}>
+              The controls this policy mandates, the risks it treats and the framework clauses it
+              satisfies. This is what turns a document into evidence: without it a policy is a
+              file, and the control it exists to require cannot say what requires it.
+            </p>
+
+            {linkError && (
+              <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 6, background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', fontSize: 12.5 }}>
+                {linkError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              {(['control', 'risk', 'clause'] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => { setLinkError(''); setPicking(k); }}
+                  disabled={linkBusy}
+                  style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--info)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}
+                >
+                  + Link {k === 'clause' ? 'framework clause' : k}
+                </button>
+              ))}
+            </div>
+
+            {links.length === 0 ? (
+              <div style={{ padding: '32px 20px', textAlign: 'center', border: '1px dashed var(--line)', borderRadius: 8 }}>
+                <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600, marginBottom: 5 }}>
+                  This document does not say what it governs
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', maxWidth: 460, margin: '0 auto', lineHeight: 1.6 }}>
+                  Nothing is linked to it yet. A policy with no links cannot be shown as evidence
+                  for a clause, and no control can point back at it as the reason it exists.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {links.map((l) => (
+                  <div
+                    key={l.id}
+                    style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 6 }}
+                  >
+                    <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--ink-faint)', minWidth: 58 }}>
+                      {l.target === 'clause' ? 'satisfies' : l.target === 'risk' ? 'treats' : 'mandates'}
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--ink)' }}>
+                      {l.control && `${l.control.code} — ${l.control.title}`}
+                      {l.risk && `${l.risk.ref} — ${l.risk.title}`}
+                      {l.clause && `${l.clause.standard.code} ${l.clause.ref} — ${l.clause.title}`}
+                    </span>
+                    {l.note && (
+                      <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>· {l.note}</span>
+                    )}
+                    <button
+                      onClick={() => removeLink(l.id)}
+                      disabled={linkBusy}
+                      style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {picking && (
+          <PickManyDialog
+            title={`Link ${picking === 'clause' ? 'framework clauses' : `${picking}s`} to ${document?.code || 'this document'}`}
+            intro={
+              picking === 'clause'
+                ? 'Clauses of the frameworks this organisation has enabled. A policy linked to a '
+                  + 'clause is what lets the clause be reported as addressed.'
+                : picking === 'control'
+                  ? 'The control this policy mandates. The control screen can then say what '
+                    + 'requires it.'
+                  : 'The risk this policy treats.'
+            }
+            items={(picking === 'control' ? options.controls
+              : picking === 'risk' ? options.risks
+                : options.clauses).map((x: any) => ({
+              id: x.id,
+              label: picking === 'clause' ? `${x.standardCode} ${x.ref}` : (x.code || x.ref),
+              sublabel: x.title,
+            }))}
+            initiallySelected={links
+              .filter((l) => l.target === picking)
+              .map((l) => (l.control?.id || l.risk?.id || l.clause?.id))}
+            confirmLabel={linkBusy ? 'Linking…' : 'Link'}
+            busy={linkBusy}
+            emptyMessage={
+              picking === 'clause' && options.enabledFrameworks === 0
+                ? 'This organisation has no framework enabled, so there is no clause to link to. '
+                  + 'Enable one under Organization Standards first.'
+                : `There is no ${picking} in this organisation to link to yet.`
+            }
+            onSubmit={(ids) => addLinks(picking, ids)}
+            onCancel={() => setPicking(null)}
+          />
+        )}
 
         {/* Tab Content Container */}
         <div style={{ flex: 1, overflow: 'auto', padding: '24px', background: 'var(--surface-sunk)' }}>

@@ -200,6 +200,7 @@ model User {
   acknowledgementsAsked   AcknowledgementRequest[] @relation("AcknowledgementRecipient")
   acknowledgementsRaised  AcknowledgementRequest[] @relation("AcknowledgementRequester")
   documentsPublished      Document[]               @relation("DocumentPublisher")
+  documentLinksMade       DocumentLink[]           @relation("DocumentLinker")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
 
@@ -357,6 +358,7 @@ model StandardClause {
 
   links      ControlClauseLink[]
   taskLinks  ProjectTaskClause[]
+  documentLinks DocumentLink[]
 
   @@unique([standardId, ref])
 }
@@ -376,6 +378,7 @@ model Control {
   updatedAt DateTime @updatedAt
 
   clauseLinks     ControlClauseLink[]
+  documentLinks   DocumentLink[]
   implementations ControlImplementation[]
 
   @@unique([tenantId, code])
@@ -588,6 +591,8 @@ model Risk {
   /// Risks this one causes, and risks that cause it. Flat likelihood x impact
   /// cannot see concentration; the network can.
   vendorLinks        VendorRiskLink[]
+  /// The policies that treat this risk.
+  documentLinks       DocumentLink[]
   causes             RiskLink[] @relation("RiskCause")
   effects            RiskLink[] @relation("RiskEffect")
   snapshots          RiskScoreSnapshot[]
@@ -1489,6 +1494,7 @@ model Document {
   approvals     ApprovalQueue[]
   acknowledgements Acknowledgement[]
   acknowledgementRequests AcknowledgementRequest[]
+  governs       DocumentLink[]
   chunks        DocumentChunk[]
 }
 
@@ -1545,6 +1551,80 @@ model AcknowledgementRequest {
   @@index([userId, requestedAt])
   /// "Who has not signed this" -- the tracker's own question.
   @@index([documentId, version])
+}
+
+/// What a policy governs: a control it mandates, a risk it treats, or a
+/// framework clause it satisfies.
+///
+/// This was the most GRC-specific thing the brief asked for and it had no
+/// representation at all. Exactly five models declared a field of type
+/// Document -- DocumentVersion, ApprovalQueue, Acknowledgement,
+/// AcknowledgementRequest and DocumentChunk -- and the generated SQL agreed:
+/// five foreign keys pointed at the table, none of them from Control, Risk,
+/// StandardClause, ControlImplementation, Issue, Audit, Asset or Vendor. Risk
+/// even carries a comment block headed "the linkage spine"; it had no document
+/// vertebra.
+///
+/// The gap was ADVERTISED. The user guide told people to "always include
+/// framework mappings ... in the document metadata" and listed "map relevant
+/// regulatory standard clauses" as phase one of the documented governance
+/// lifecycle. Neither had a field, and the only place a clause could actually
+/// be written was the free-prose body, whose placeholder invites exactly that.
+///
+/// Exactly ONE of controlId, riskId and clauseId is set on a row. Three
+/// nullable typed foreign keys rather than an untyped targetType/targetId pair,
+/// because Issue already models several possible targets this way and because
+/// a text column holding an id the database cannot check is how dangling
+/// references are born.
+///
+/// Built to the shape of ProjectTaskClause rather than ControlClauseLink: it
+/// carries who linked it, when, and an optional note. ControlClauseLink records
+/// none of those and has no reverse index even though its own comment names the
+/// clause-first query as its reason for existing.
+model DocumentLink {
+  id         String   @id @default(uuid())
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  /// The control this policy mandates. Points at the library requirement, the
+  /// way ControlClauseLink does -- a policy mandates the control, and an
+  /// implementation is how one entity satisfies it.
+  controlId  String?
+  control    Control? @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  /// The risk this policy treats.
+  riskId     String?
+  risk       Risk?    @relation(fields: [riskId], references: [id], onDelete: Cascade)
+
+  /// The framework clause this policy satisfies.
+  clauseId   String?
+  clause     StandardClause? @relation(fields: [clauseId], references: [id], onDelete: Cascade)
+
+  /// "Covers sections 4 and 5 only -- the rest is in the standard." Free text,
+  /// because a link that needs a qualification and cannot carry one gets made
+  /// anyway and silently overstates.
+  note       String?
+
+  /// SetNull, not Cascade: deleting a person must not delete the record of what
+  /// they connected. ProjectStandard and ProjectTaskClause both cascade here,
+  /// which is the one thing about them not worth copying.
+  linkedById String?
+  linkedBy   User?    @relation("DocumentLinker", fields: [linkedById], references: [id], onDelete: SetNull)
+  linkedAt   DateTime @default(now())
+
+  /// Postgres treats NULLs as distinct in a unique index, so these constrain
+  /// only the rows that actually name that target: one document cannot be
+  /// linked to the same control twice, while still linking to many risks.
+  @@unique([documentId, controlId])
+  @@unique([documentId, riskId])
+  @@unique([documentId, clauseId])
+
+  /// The reverse direction -- "which policy governs this control" -- is the
+  /// question an auditor asks, and is the one ControlClauseLink forgot to index.
+  @@index([controlId])
+  @@index([riskId])
+  @@index([clauseId])
 }
 
 model ApprovalQueue {

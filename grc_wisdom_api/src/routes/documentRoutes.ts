@@ -2,6 +2,13 @@ import { Router } from 'express';
 import { requireAuth, enforceTenantIsolation, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
+  listDocumentLinks,
+  addDocumentLinks,
+  removeDocumentLink,
+  linkOptions,
+  governingDocuments,
+} from '../controllers/documentLinkController';
+import {
   listDocuments,
   getDocument,
   createDocument,
@@ -44,6 +51,12 @@ router.get('/stats', getDocumentStats);
 // and the audience options are what a publisher needs BEFORE the publish call
 // can refuse them for choosing badly; the publish itself stays guarded.
 router.get('/my-acknowledgements', myAcknowledgements);
+router.get('/link-options', linkOptions);
+// The reverse direction, which is the one an auditor asks in. Up here with the
+// other literals: three segments means '/:id' cannot swallow it today, but the
+// rule "literal paths before the wildcard" is the one worth keeping, not the
+// segment-counting that happens to make an exception safe.
+router.get('/governing/:target/:targetId', governingDocuments);
 router.get('/audience-options', publishOptions);
 
 // CRUD
@@ -78,5 +91,14 @@ router.post('/:id/legal-hold/release', requireCapability(CAP.RETENTION_HOLD), re
 // Acknowledgements
 router.post('/:id/acknowledge', acknowledgeDocument);
 router.get('/:id/acknowledgements', getAcknowledgements);
+
+// What a policy governs: the control it mandates, the risk it treats, the
+// clause it satisfies. Reading is open to anyone who may read the document;
+// asserting it carries the same capability as authoring a version, because
+// claiming a policy covers a clause is an authoring act with audit consequences.
+router.get('/:id/links', listDocumentLinks);
+router.post('/:id/links', requireCapability(CAP.VERSION_DOCUMENT), addDocumentLinks);
+router.delete('/links/:linkId', requireCapability(CAP.VERSION_DOCUMENT), removeDocumentLink);
+
 
 export default router;
