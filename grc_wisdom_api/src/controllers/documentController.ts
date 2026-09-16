@@ -6,6 +6,10 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { generateHash } from '../utils/cryptoUtils';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { notify } from '../services/notificationService';
+import {
+  planPublication, coverage, AUDIENCE_KINDS,
+} from '../services/documentPublication';
 import { checkSod, SodViolation } from '../services/sodEngine';
 
 const SUBJECT_DOCUMENT = 'Document';
@@ -629,6 +633,16 @@ export const rejectDocument = async (req: AuthenticatedRequest, res: Response): 
 
 // ─── Publish ────────────────────────────────────────────────────────────────
 
+/**
+ * Issue an approved document to the people who have to read it.
+ *
+ * This used to flip one status column and write an audit row. Nothing was
+ * raised, nobody was told, and no audience was recorded — so a published policy
+ * reached its readers only if one of them happened to open the acknowledgement
+ * screen unprompted, and "who has not read it" had no answer in the data.
+ *
+ * The rules are in services/documentPublication and run without a database.
+ */
 export const publishDocument = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const tenantId = req.user!.tenantId;
@@ -637,25 +651,137 @@ export const publishDocument = async (req: AuthenticatedRequest, res: Response):
 
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
-    if (doc.status !== 'APPROVED') {
-      res.status(400).json({ status: 'error', message: `Cannot publish — document status is "${doc.status}" (must be APPROVED)` });
+
+    const [users, existing] = await Promise.all([
+      prisma.user.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, status: true, department: true, role: true },
+      }),
+      prisma.acknowledgementRequest.findMany({
+        where: { documentId: id, version: doc.version },
+        select: { userId: true },
+      }),
+    ]);
+
+    const plan = planPublication({
+      document: {
+        status: doc.status,
+        version: doc.version,
+        publishedVersion: doc.publishedVersion,
+      },
+      kind: req.body?.audienceKind,
+      value: req.body?.audienceValue,
+      users,
+      alreadyAsked: existing.map((e) => e.userId),
+    });
+
+    if (!plan.ok) {
+      res.status(plan.status).json({ status: 'error', code: plan.code, message: plan.message });
       return;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.document.update({ where: { id }, data: { status: 'PUBLISHED' } });
+    const published = await prisma.$transaction(async (tx) => {
+      const u = await tx.document.update({
+        where: { id },
+        data: {
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+          publishedById: userId,
+          publishedVersion: doc.version,
+          audienceKind: plan.kind,
+          audienceValue: plan.value,
+        },
+      });
+
+      // One row per person asked, per version. The unique key makes a repeated
+      // publish idempotent rather than double-asking anybody.
+      if (plan.recipientIds.length > 0) {
+        await tx.acknowledgementRequest.createMany({
+          data: plan.recipientIds.map((uid) => ({
+            documentId: id,
+            version: doc.version,
+            userId: uid,
+            requestedById: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_PUBLISHED',
         subjectType: SUBJECT_DOCUMENT, subjectId: id,
-        payload: { documentId: id, version: doc.version },
+        // The audience belongs in the trail. An entry that records a policy went
+        // live without recording who it went to cannot answer the question an
+        // auditor asks of it.
+        payload: {
+          documentId: id,
+          version: doc.version,
+          audienceKind: plan.kind,
+          audienceValue: plan.value,
+          asked: plan.recipientIds.length,
+        },
       });
+
+      // And the people themselves. This module called notify() nowhere at all,
+      // so publishing a mandatory policy told its readers nothing.
+      await notify(tx, plan.recipientIds.map((recipientId) => ({
+        tenantId,
+        recipientId,
+        actorId: userId,
+        event: 'DOCUMENT_PUBLISHED',
+        subjectType: SUBJECT_DOCUMENT,
+        subjectId: id,
+        title: `Please read and acknowledge: ${doc.title}`,
+        body: `${doc.code} v${doc.version}. You have been asked to confirm you have read it.`,
+        link: 'acknowledgements',
+      })));
+
       return u;
     });
 
-    res.json({ status: 'success', message: 'Document published successfully', document: updated });
+    res.json({
+      status: 'success',
+      message: plan.recipientIds.length > 0
+        ? `Published and issued to ${plan.recipientIds.length} ${plan.recipientIds.length === 1 ? 'person' : 'people'}.`
+        : 'Published. Everybody in this audience had already been asked to acknowledge this version.',
+      document: published,
+      asked: plan.recipientIds.length,
+      warnings: plan.warnings,
+    });
   } catch (error: any) {
     console.error('[Publish Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to publish document' });
+  }
+};
+
+/** The audience shapes a publisher may choose, and the values each offers. */
+export const publishOptions = async (
+  req: AuthenticatedRequest, res: Response,
+): Promise<void> => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const users = await prisma.user.findMany({
+      where: { tenantId, status: 'Active' },
+      select: { department: true, role: true },
+    });
+
+    const unique = (xs: (string | null)[]) => Array.from(
+      new Set(xs.map((x) => String(x ?? '').trim()).filter(Boolean)),
+    ).sort();
+
+    res.json({
+      status: 'success',
+      kinds: AUDIENCE_KINDS,
+      // Served rather than hardcoded in the screen: the audience is matched
+      // against these exact values, and a fourth copy in the browser is how a
+      // form comes to offer one the server matches nothing against.
+      departments: unique(users.map((u) => u.department)),
+      roles: unique(users.map((u) => u.role)),
+      activeUsers: users.length,
+    });
+  } catch (error: any) {
+    console.error('[Publish Options Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load audience options' });
   }
 };
 
@@ -738,7 +864,12 @@ export const acknowledgeDocument = async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
-    const existing = await prisma.acknowledgement.findFirst({ where: { documentId: id, userId } });
+    const live = doc.publishedVersion || doc.version;
+    const existing = await prisma.acknowledgement.findFirst({
+      // Per VERSION. Checking the document alone would refuse a signature on a
+      // revised policy because the reader had signed the previous one.
+      where: { documentId: id, userId, version: live },
+    });
     if (existing) {
       res.status(409).json({ status: 'error', message: 'You have already acknowledged this document' });
       return;
@@ -746,7 +877,15 @@ export const acknowledgeDocument = async (req: AuthenticatedRequest, res: Respon
 
     const ack = await prisma.$transaction(async (tx) => {
       const a = await tx.acknowledgement.create({
-        data: { documentId: id, userId, ipAddress: req.ip || 'unknown' },
+        // Against the version that was read. Without it a signature on v1.0 is
+        // indistinguishable from one on v3.0, so a revised policy would show as
+        // already acknowledged by everyone who had read the old one.
+        data: {
+          documentId: id,
+          userId,
+          version: doc.publishedVersion || doc.version,
+          ipAddress: req.ip || 'unknown',
+        },
       });
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_ACKNOWLEDGED',
@@ -762,6 +901,20 @@ export const acknowledgeDocument = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
+/**
+ * Who was asked, who has signed, and who has not.
+ *
+ * The third of those is the only one anybody opens this for, and it was the one
+ * the module could not answer. Acknowledgement rows exist only once somebody
+ * signs, so the non-signers were never materialised: they were the arithmetic
+ * difference against `user.count({ tenantId, status: 'Active' })` — every
+ * active person in the organisation, a denominator nobody chose. A policy
+ * issued to the finance team reported as a few percent read, and the twenty-odd
+ * people who actually owed it could not be named.
+ *
+ * Now the requests raised at publication ARE the denominator, and the
+ * outstanding list is a real set of people with names.
+ */
 export const getAcknowledgements = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const tenantId = req.user!.tenantId;
@@ -770,23 +923,113 @@ export const getAcknowledgements = async (req: AuthenticatedRequest, res: Respon
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
 
-    const acknowledgements = await prisma.acknowledgement.findMany({
-      where: { documentId: id },
-      include: { user: { select: { id: true, name: true, email: true, role: true } } },
-      orderBy: { completedAt: 'desc' },
+    const live = doc.publishedVersion || doc.version;
+
+    const [requests, signatures] = await Promise.all([
+      prisma.acknowledgementRequest.findMany({
+        where: { documentId: id, version: live },
+        include: { user: { select: { id: true, name: true, email: true, role: true, department: true } } },
+        orderBy: { requestedAt: 'asc' },
+      }),
+      prisma.acknowledgement.findMany({
+        where: { documentId: id, version: live },
+        include: { user: { select: { id: true, name: true, email: true, role: true } } },
+        orderBy: { completedAt: 'desc' },
+      }),
+    ]);
+
+    const signedIds = new Set(signatures.map((a) => a.userId));
+    const outstanding = requests.filter((r) => !signedIds.has(r.userId));
+
+    const figures = coverage({
+      requested: requests.length,
+      signed: requests.filter((r) => signedIds.has(r.userId)).length,
+      published: doc.status === 'PUBLISHED' || doc.publishedAt !== null,
     });
-    const totalUsers = await prisma.user.count({ where: { tenantId, status: 'Active' } });
 
     res.json({
       status: 'success',
       documentId: id,
-      acknowledged: acknowledgements.length,
-      totalUsers,
-      completionRate: totalUsers > 0 ? Math.round((acknowledgements.length / totalUsers) * 100) : 0,
-      acknowledgements,
+      version: live,
+      audience: doc.audienceKind
+        ? { kind: doc.audienceKind, value: doc.audienceValue }
+        : null,
+      publishedAt: doc.publishedAt,
+      coverage: figures,
+      // Named, not counted. A tracker that can only produce a percentage sends
+      // the reader to find the stragglers themselves.
+      outstanding: outstanding.map((r) => ({
+        userId: r.userId,
+        name: r.user.name,
+        email: r.user.email,
+        role: r.user.role,
+        department: r.user.department,
+        requestedAt: r.requestedAt,
+        dueAt: r.dueAt,
+      })),
+      acknowledgements: signatures,
     });
   } catch (error: any) {
+    console.error('[Acknowledgements Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch acknowledgements' });
+  }
+};
+
+/**
+ * What the caller has been asked to read and has not signed.
+ *
+ * The acknowledgement screen listed every PUBLISHED document in the tenant and
+ * offered a button on each, whether or not the reader owed it and whether or
+ * not they had already signed — its own DocumentItem interface declared
+ * `acknowledgedByMe` and nothing ever set it, so a second click produced a 409
+ * rendered in the success banner.
+ */
+export const myAcknowledgements = async (
+  req: AuthenticatedRequest, res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const tenantId = req.user!.tenantId;
+
+    const requests = await prisma.acknowledgementRequest.findMany({
+      where: { userId, document: { tenantId } },
+      include: {
+        document: {
+          select: {
+            id: true, code: true, title: true, category: true, classification: true,
+            status: true, publishedAt: true,
+            owner: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { requestedAt: 'desc' },
+      take: 200,
+    });
+
+    const signed = await prisma.acknowledgement.findMany({
+      where: { userId, documentId: { in: requests.map((r) => r.documentId) } },
+      select: { documentId: true, version: true, completedAt: true },
+    });
+    const signedKey = new Set(signed.map((a) => `${a.documentId}@${a.version ?? ''}`));
+
+    const rows = requests.map((r) => ({
+      documentId: r.documentId,
+      version: r.version,
+      requestedAt: r.requestedAt,
+      dueAt: r.dueAt,
+      // The field the screen declared and nobody ever set.
+      acknowledgedByMe: signedKey.has(`${r.documentId}@${r.version}`),
+      document: r.document,
+    }));
+
+    res.json({
+      status: 'success',
+      outstanding: rows.filter((r) => !r.acknowledgedByMe).length,
+      requests: rows,
+    });
+  } catch (error: any) {
+    console.error('[My Acknowledgements Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load your acknowledgements' });
   }
 };
 

@@ -31,11 +31,13 @@ const assert = require('assert');
 
 const ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'grcRoutes.ts');
 const PROJECT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'projectRoutes.ts');
+const DOCUMENT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'documentRoutes.ts');
 const NAV = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'navCapabilities.ts');
 
-// Two route files now. MAY describes rules wherever they are enforced, and a
+// Three route files now. MAY describes rules wherever they are enforced, and a
 // key pinned against a file it does not live in would silently verify nothing.
-const routes = [ROUTES, PROJECT_ROUTES].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES]
+  .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const nav = fs.readFileSync(NAV, 'utf8');
 
 /**
@@ -62,6 +64,9 @@ const ANCHOR = {
   // Attaching evidence to a task: EXECUTE_PROJECT_WORK or MANAGE_PROJECT,
   // mirroring the MAY.EXECUTE_WORK set in navCapabilities.ts.
   EXECUTE_WORK: "router.post('/tasks/:taskId/evidence',",
+  // Issuing a policy to the people who must read it. The route existed and was
+  // guarded for the life of the module; nothing called it.
+  SIGN_DOCUMENT: "router.post('/:id/publish',",
 };
 
 let checks = 0;
@@ -118,7 +123,7 @@ function capsIn(expr) {
 for (const [key, anchor] of Object.entries(ANCHOR)) {
   const at = routes.indexOf(anchor);
   checks += 1;
-  assert.ok(at >= 0, `Route anchor for MAY.${key} not found in grcRoutes.ts: ${anchor}`);
+  assert.ok(at >= 0, `Route anchor for MAY.${key} not found in any routes file: ${anchor}`);
 
   // The guard is what sits between the path and the controller.
   const line = routes.slice(at, routes.indexOf('\n', at));

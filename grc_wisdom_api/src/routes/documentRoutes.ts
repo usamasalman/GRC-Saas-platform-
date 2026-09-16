@@ -12,6 +12,8 @@ import {
   approveDocument,
   rejectDocument,
   publishDocument,
+  publishOptions,
+  myAcknowledgements,
   archiveDocument,
   deleteDocument,
   acknowledgeDocument,
@@ -34,6 +36,15 @@ router.use(enforceTenantIsolation);
 
 // Stats
 router.get('/stats', getDocumentStats);
+
+// Literal segments, all declared above '/:id' — the wildcard would otherwise
+// match them and answer "Document not found" for a path that is not an id.
+//
+// Neither is capability-gated. What a person has been asked to read is theirs,
+// and the audience options are what a publisher needs BEFORE the publish call
+// can refuse them for choosing badly; the publish itself stays guarded.
+router.get('/my-acknowledgements', myAcknowledgements);
+router.get('/audience-options', publishOptions);
 
 // CRUD
 router.get('/', listDocuments);

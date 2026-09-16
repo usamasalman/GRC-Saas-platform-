@@ -2,6 +2,8 @@ import Icon from '../../components/Icon';
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 import DocumentDetail from './DocumentDetail';
+import FormDialog from '../../components/FormDialog';
+import Can, { MAY } from '../../components/Can';
 
 interface DocumentItem {
   id: string;
@@ -52,6 +54,53 @@ export default function DocumentLibrary() {
 
   // Selected document for detailed view
   const [selectedDoc, setSelectedDoc] = useState<DocumentItem | null>(null);
+
+  // Publishing. The endpoint has existed, routed and capability-guarded, for
+  // the life of this module, and no screen ever called it -- so a document
+  // reached APPROVED and stopped there, while the approval response told the
+  // user it was "ready for publication".
+  const [publishing, setPublishing] = useState<DocumentItem | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [audience, setAudience] = useState<{
+    kinds: string[]; departments: string[]; roles: string[]; activeUsers: number;
+  }>({ kinds: ['Everyone'], departments: [], roles: [], activeUsers: 0 });
+
+  useEffect(() => {
+    apiClient.get('/api/documents/audience-options')
+      .then((res) => setAudience({
+        kinds: res.data?.kinds || ['Everyone'],
+        departments: res.data?.departments || [],
+        roles: res.data?.roles || [],
+        activeUsers: res.data?.activeUsers || 0,
+      }))
+      .catch(() => undefined);
+  }, []);
+
+  const openPublish = (doc: DocumentItem) => { setError(''); setPublishing(doc); };
+
+  const handlePublish = async (values: Record<string, string>) => {
+    if (!publishing) return;
+    setPublishBusy(true);
+    try {
+      const kind = values.audienceKind;
+      const res = await apiClient.post(`/api/documents/${publishing.id}/publish`, {
+        audienceKind: kind,
+        audienceValue: kind === 'Department' ? values.department
+          : kind === 'Role' ? values.role
+            : undefined,
+      });
+      setError(res.data?.message || 'Published.');
+      setPublishing(null);
+      fetchDocuments();
+    } catch (e: any) {
+      // The server names the audience it refused and why -- empty, too large,
+      // not approved. That message is the useful part.
+      setError(e.response?.data?.message || 'Publishing failed');
+      setPublishing(null);
+    } finally {
+      setPublishBusy(false);
+    }
+  };
 
   const fetchDocuments = async () => {
     setLoading(true);
@@ -438,6 +487,21 @@ export default function DocumentLibrary() {
                         ⇩ Download
                       </button>
 
+                      {/* The step the approval response already promises:
+                          "Document fully approved and ready for publication".
+                          Until now the product offered no control that did it. */}
+                      {doc.status === 'APPROVED' && (
+                        <Can do={MAY.SIGN_DOCUMENT}>
+                          <button
+                            onClick={() => openPublish(doc)}
+                            style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--info)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                            title="Issue this to the people who have to read it"
+                          >
+                            Publish
+                          </button>
+                        </Can>
+                      )}
+
                       {['DRAFT', 'RETURNED'].includes(doc.status) && (
                         <>
                           <button
@@ -642,6 +706,49 @@ export default function DocumentLibrary() {
             </div>
           </form>
         </div>
+      )}
+
+      {publishing && (
+        <FormDialog
+          title={`Publish ${publishing.code}`}
+          intro={(
+            <>
+              Publishing makes this the live version and asks a named set of people to
+              acknowledge they have read it. Each of them is told, and the tracker then shows
+              who has signed and who has not.
+              {' '}This organisation has {audience.activeUsers} active {audience.activeUsers === 1 ? 'person' : 'people'}.
+            </>
+          )}
+          submitLabel={publishBusy ? 'Publishing\u2026' : 'Publish'}
+          busy={publishBusy}
+          fields={[
+            {
+              name: 'audienceKind',
+              label: 'Issue it to',
+              type: 'select',
+              required: true,
+              options: audience.kinds,
+              help: 'Publishing to nobody in particular is how a policy goes live that nobody '
+                + 'is ever asked to read, so an audience is required.',
+            },
+            {
+              name: 'department',
+              label: 'Which department',
+              type: 'select',
+              options: ['', ...audience.departments],
+              help: 'Only when issuing to a department.',
+            },
+            {
+              name: 'role',
+              label: 'Which role',
+              type: 'select',
+              options: ['', ...audience.roles],
+              help: 'Only when issuing to a role.',
+            },
+          ]}
+          onSubmit={handlePublish}
+          onCancel={() => setPublishing(null)}
+        />
       )}
     </div>
   );

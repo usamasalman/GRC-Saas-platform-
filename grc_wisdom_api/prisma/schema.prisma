@@ -197,6 +197,9 @@ model User {
   documentsOwned Document[]
   approvals     ApprovalQueue[]
   acknowledgements Acknowledgement[]
+  acknowledgementsAsked   AcknowledgementRequest[] @relation("AcknowledgementRecipient")
+  acknowledgementsRaised  AcknowledgementRequest[] @relation("AcknowledgementRequester")
+  documentsPublished      Document[]               @relation("DocumentPublisher")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
 
@@ -1462,9 +1465,30 @@ model Document {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  /// Set when the document is published. Null while it is still being written,
+  /// reviewed or approved.
+  ///
+  /// The model had no publish-specific column of any kind: no publishedAt, no
+  /// effective date, no audience, no pointer to the live version. Publishing
+  /// wrote one status string, so "what is live, since when, and who was it
+  /// issued to" had no answer anywhere in the data.
+  publishedAt      DateTime?
+  publishedById    String?
+  publishedBy      User?    @relation("DocumentPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  /// The version string as it stood at publication. `version` keeps moving with
+  /// checkin, so without this an acknowledgement cannot be tied to what was read.
+  publishedVersion String?
+
+  /// Who it was issued to: Everyone | Department | Role, and the value the
+  /// second two are matched against. Recorded so a re-publish can repeat the
+  /// same audience, and so the coverage figure can say what it is a fraction of.
+  audienceKind     String?
+  audienceValue    String?
+
   versions      DocumentVersion[]
   approvals     ApprovalQueue[]
   acknowledgements Acknowledgement[]
+  acknowledgementRequests AcknowledgementRequest[]
   chunks        DocumentChunk[]
 }
 
@@ -1483,6 +1507,44 @@ model DocumentVersion {
   fileHash      String?  // SHA-256 of the actual file
   createdById   String?
   createdAt     DateTime @default(now())
+}
+
+/// Somebody who has been asked to acknowledge a published document.
+///
+/// Acknowledgement could only ever record a COMPLETED signature -- its columns
+/// are documentId, userId, completedAt defaulted to now(), and an IP address.
+/// There was no status, no requestedAt, no due date, so the schema could not
+/// represent "asked and not yet signed". The consequence reached the reporting:
+/// getAcknowledgements could name the people who had signed, and could only
+/// derive the rest as arithmetic against "every active user in the tenant" -- a
+/// denominator nobody chose. So "who has not read the policy", the only question
+/// an acknowledgement tracker exists to answer, was unanswerable.
+///
+/// Raised by publishing: one row per person in the audience, per version.
+model AcknowledgementRequest {
+  id            String   @id @default(uuid())
+
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// The published version this request is for. A new version raises new
+  /// requests rather than reopening the old ones, so the record of who read
+  /// what survives the revision.
+  version       String
+
+  userId        String
+  user          User     @relation("AcknowledgementRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  requestedAt   DateTime @default(now())
+  requestedById String
+  requestedBy   User     @relation("AcknowledgementRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  dueAt         DateTime?
+
+  /// Publishing the same version twice must not ask anybody twice.
+  @@unique([documentId, version, userId])
+  /// "What am I being asked to read" -- the recipient's own list.
+  @@index([userId, requestedAt])
+  /// "Who has not signed this" -- the tracker's own question.
+  @@index([documentId, version])
 }
 
 model ApprovalQueue {
@@ -1510,6 +1572,14 @@ model Acknowledgement {
   user        User     @relation(fields: [userId], references: [id])
   completedAt DateTime @default(now())
   ipAddress   String?
+
+  /// The version that was live when this was signed.
+  ///
+  /// Nullable because rows predating this column cannot be attributed to one.
+  /// Without it a signature on v1.0 is indistinguishable from a signature on
+  /// v3.0, so a revised policy would show as already acknowledged by everyone
+  /// who had read the old one.
+  version     String?
 }
 
 // ----------------------------------------------------------------------

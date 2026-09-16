@@ -189,6 +189,8 @@ export const MAY = {
   ASSIGN_CAP: [CAP.EXECUTE_AUDIT, CAP.MANAGE_IMPLEMENTATION],
   /** Closing, reopening and escalating an issue — audit's decision alone. */
   CLOSE_ISSUE: [CAP.EXECUTE_AUDIT],
+  /** POST /api/documents/:id/publish — issuing a policy to its readers. */
+  SIGN_DOCUMENT: [CAP.SIGN_DOCUMENT],
   /** POST, PATCH, DELETE /api/grc/standards and /api/grc/clauses. */
   AUTHOR_STANDARD: [CAP.ENABLE_STANDARD],
   /** POST, PATCH, DELETE /api/grc/controls and clause mapping. */
