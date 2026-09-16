@@ -6,6 +6,7 @@ import {
   getProject,
   createProject,
   updateProject,
+  activateProject,
   closeProject,
   rebaselineProject,
 } from '../controllers/projectController';
@@ -93,6 +94,7 @@ router.get('/:id', getProject);
 
 router.post('/', requireCapability(CAP.MANAGE_PROJECT), createProject);
 router.patch('/:id', requireCapability(CAP.MANAGE_PROJECT), updateProject);
+router.post('/:id/activate', requireCapability(CAP.MANAGE_PROJECT), activateProject);
 router.post('/:id/close', requireCapability(CAP.MANAGE_PROJECT), closeProject);
 // Moving the agreed plan is a management act with a reason attached — it is the
 // only thing that can move a baseline after the engagement starts.

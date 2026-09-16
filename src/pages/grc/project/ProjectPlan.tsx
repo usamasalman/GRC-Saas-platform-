@@ -5,7 +5,7 @@ import { ReasonDialog, ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY, can } from '../../../components/Can';
 import { calendarDate } from '../../../utils/calendarDate';
 import ClauseMapDialog from '../ClauseMapDialog';
-import { S, pill, ghostBtn } from '../../iam/iamStyles';
+import { S, pill, ghostBtn, primaryBtn } from '../../iam/iamStyles';
 
 /**
  * The work breakdown for one project: phases, and the tasks beneath them.
@@ -271,6 +271,10 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [busyTask, setBusyTask] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
+  const [projectStatus, setProjectStatus] = useState<string>('Draft');
+  const [activating, setActivating] = useState(false);
+  const [showActivateDialog, setShowActivateDialog] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -278,6 +282,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       const res = await apiClient.get(`/api/projects/${projectId}/plan`);
       setPhases(res.data?.phases || []);
       setTotals(res.data?.totals || null);
+      if (res.data?.projectStatus) setProjectStatus(res.data.projectStatus);
     } catch (err: any) {
       setError(apiError(err));
       setPhases([]);
@@ -285,6 +290,22 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       setLoading(false);
     }
   }, [projectId]);
+
+  const handleActivate = async () => {
+    setActivating(true);
+    setError('');
+    try {
+      await apiClient.post(`/api/projects/${projectId}/activate`);
+      setShowActivateDialog(false);
+      setProjectStatus('Active');
+      await load();
+    } catch (err: any) {
+      setShowActivateDialog(false);
+      setError(apiError(err));
+    } finally {
+      setActivating(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -621,7 +642,25 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           {totals.rejected > 0 && (
             <span style={{ color: 'var(--danger)' }}><strong>{totals.rejected}</strong> sent back</span>
           )}
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            {projectStatus === 'Draft' && (
+              <Can do={MAY.MANAGE_PROJECT}>
+                <button
+                  onClick={() => setShowActivateDialog(true)}
+                  disabled={saving || activating || (totals?.tasks ?? 0) === 0}
+                  title={(totals?.tasks ?? 0) === 0
+                    ? 'Add tasks before agreeing the plan'
+                    : 'Agree this plan and stamp baseline dates'}
+                  style={{
+                    ...primaryBtn(saving || activating || (totals?.tasks ?? 0) === 0),
+                    fontSize: 12,
+                    padding: '5px 12px',
+                  }}
+                >
+                  {activating ? 'Activating…' : 'Activate plan'}
+                </button>
+              </Can>
+            )}
             <Can do={MAY.MANAGE_PROJECT}>
               <button
                 onClick={openNewPhase}
@@ -1201,6 +1240,28 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           busy={saving}
           onSubmit={(ids) => saveClauses(clausesFor, ids)}
           onCancel={() => setClausesFor(null)}
+        />
+      )}
+
+      {showActivateDialog && (
+        <ConfirmDialog
+          title="Agree plan and activate engagement?"
+          confirmLabel={activating ? 'Activating…' : 'Agree plan & activate'}
+          busy={activating}
+          message={(
+            <>
+              <div>
+                Activating moves this engagement from <strong>Draft</strong> to <strong>Active</strong> and
+                permanently stamps the baseline schedule for all phases and tasks.
+              </div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                Slippage and delivery delays will be measured against these agreed dates.
+                Make sure all phases and work packages are planned before agreeing the plan.
+              </div>
+            </>
+          )}
+          onConfirm={handleActivate}
+          onCancel={() => setShowActivateDialog(false)}
         />
       )}
     </div>

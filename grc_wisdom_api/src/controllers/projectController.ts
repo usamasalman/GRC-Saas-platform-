@@ -9,6 +9,7 @@ import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
 import { planStandardBinding } from '../services/projectStandards';
+import { planActivation } from '../services/projectActivation';
 
 /**
  * Delivery projects — slice 1.
@@ -371,7 +372,10 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
 
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, ref: true, status: true },
+      select: {
+        id: true, tenantId: true, providerTenantId: true, ref: true,
+        status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
+      },
     });
     if (!existing || !canReadProject(scope, existing)) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
@@ -441,6 +445,8 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
 
     // Status changes go through the transition table. Closure has its own
     // endpoint because it needs a reason and stamps the completion date.
+    let activationDecision: any = null;
+    let activationCounts: { phaseCount: number; taskCount: number } = { phaseCount: 0, taskCount: 0 };
     if (b.status !== undefined) {
       if (!STATUSES.includes(b.status)) {
         res.status(400).json({ status: 'error', message: `status must be one of: ${STATUSES.join(', ')}` });
@@ -462,6 +468,39 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         });
         return;
       }
+
+      if (b.status === 'Active' && existing.status === 'Draft') {
+        const phases = await prisma.projectPhase.findMany({
+          where: { projectId: id },
+          select: { id: true, tasks: { select: { id: true, dueDate: true } } },
+        });
+        const phaseCount = phases.length;
+        const allTasks = phases.flatMap((p) => p.tasks);
+        const taskCount = allTasks.length;
+        const tasksWithoutDueDate = allTasks.filter((t) => !t.dueDate).length;
+
+        const decision = planActivation({
+          status: existing.status,
+          startDate: existing.startDate,
+          targetEndDate: data.targetEndDate || existing.targetEndDate,
+          baselineSetAt: existing.baselineSetAt,
+          phaseCount,
+          taskCount,
+          tasksWithoutDueDate,
+        }, new Date());
+
+        if (!decision.ok) {
+          res.status(decision.status).json({
+            status: 'error',
+            code: decision.code,
+            message: decision.message,
+          });
+          return;
+        }
+        activationDecision = decision;
+        activationCounts = { phaseCount, taskCount };
+      }
+
       data.status = b.status;
     }
 
@@ -493,6 +532,19 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
       // resuming is not renegotiating.
       if (data.status === 'Active' && existing.status === 'Draft') {
         await stampBaseline(tx, id, new Date());
+        await writeAudit(tx, {
+          tenantId: existing.tenantId,
+          actorId: str(req.user!.id),
+          action: 'PROJECT_ACTIVATED',
+          subjectType: 'Project',
+          subjectId: id,
+          payload: {
+            ref: existing.ref,
+            phaseCount: activationCounts.phaseCount,
+            taskCount: activationCounts.taskCount,
+            warnings: activationDecision?.warnings || [],
+          },
+        });
       }
 
       // Re-read rather than taking the update's own return: the rollup above
@@ -501,12 +553,122 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
       return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
     });
 
-    res.json({ status: 'success', project: decorate(updated, scope) });
+    res.json({
+      status: 'success',
+      project: decorate(updated, scope),
+      warnings: activationDecision?.warnings,
+    });
   } catch (error: any) {
     console.error('[Project Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update project' });
   }
 };
+
+// ─── Activation ─────────────────────────────────────────────────────────────
+
+/**
+ * Agree the plan, set the baseline, and move an engagement from Draft to Active.
+ *
+ * Gated by planActivation: stamping an empty plan is refused because an empty
+ * baseline causes every subsequent task to be baselined at its own due date,
+ * making slip reporting permanently impossible.
+ */
+export const activateProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!);
+    const id = str(req.params.id);
+
+    const existing = await prisma.project.findUnique({
+      where: { id },
+      select: {
+        id: true, tenantId: true, providerTenantId: true, ref: true,
+        status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
+      },
+    });
+    if (!existing || !canReadProject(scope, existing)) {
+      res.status(404).json({ status: 'error', message: 'Project not found' });
+      return;
+    }
+    if (!canWriteProject(scope, existing.tenantId)) {
+      res.status(403).json({
+        status: 'error',
+        code: 'READ_ONLY_ENGAGEMENT',
+        message: 'You can view this engagement but not change it.',
+      });
+      return;
+    }
+
+    const phases = await prisma.projectPhase.findMany({
+      where: { projectId: id },
+      select: { id: true, tasks: { select: { id: true, dueDate: true } } },
+    });
+    const phaseCount = phases.length;
+    const allTasks = phases.flatMap((p) => p.tasks);
+    const taskCount = allTasks.length;
+    const tasksWithoutDueDate = allTasks.filter((t) => !t.dueDate).length;
+
+    const decision = planActivation({
+      status: existing.status,
+      startDate: existing.startDate,
+      targetEndDate: existing.targetEndDate,
+      baselineSetAt: existing.baselineSetAt,
+      phaseCount,
+      taskCount,
+      tasksWithoutDueDate,
+    }, new Date());
+
+    if (!decision.ok) {
+      res.status(decision.status).json({
+        status: 'error',
+        code: decision.code,
+        message: decision.message,
+      });
+      return;
+    }
+
+    if (req.body?.preview === true || req.query.preview === 'true') {
+      res.json({
+        status: 'success',
+        warnings: decision.warnings,
+        canActivate: true,
+      });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id },
+        data: { status: 'Active' },
+      });
+      await stampBaseline(tx, id, new Date());
+      await writeAudit(tx, {
+        tenantId: existing.tenantId,
+        actorId: str(req.user!.id),
+        action: 'PROJECT_ACTIVATED',
+        subjectType: 'Project',
+        subjectId: id,
+        payload: {
+          ref: existing.ref,
+          phaseCount,
+          taskCount,
+          warnings: decision.warnings,
+        },
+      });
+      await recomputeProject(tx, id);
+      return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
+    });
+
+    res.json({
+      status: 'success',
+      project: decorate(updated, scope),
+      warnings: decision.warnings,
+    });
+  } catch (error: any) {
+    console.error('[Project Activation Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to activate project' });
+  }
+};
+
 
 // ─── Rebaseline ─────────────────────────────────────────────────────────────
 

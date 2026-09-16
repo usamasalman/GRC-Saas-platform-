@@ -117,6 +117,7 @@ jobs:
           node scripts/verify/project-membership-test.js
           node scripts/verify/plan-builder-test.js
           node scripts/verify/project-standards-test.js
+          node scripts/verify/project-activation-test.js
           node scripts/verify/no-invented-data-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js

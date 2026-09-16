@@ -145,6 +145,9 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
     res.json({
       status: 'success',
       projectId: project.id,
+      projectRef: project.ref,
+      projectName: project.name,
+      projectStatus: project.status,
       verificationPolicy: policy,
       baselined: project.baselineSetAt !== null,
       baselineVersion: project.baselineVersion,
