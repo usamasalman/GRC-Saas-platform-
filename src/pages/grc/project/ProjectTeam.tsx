@@ -78,6 +78,62 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  // The organisation delivering this engagement.
+  //
+  // Not a person, so not a row in the table below -- but it decides who may be
+  // on the team at all (a candidate must belong to the client or to this firm)
+  // and it is what the Side column means. It was also, until now, unchangeable:
+  // the column was assigned once at creation and updateProject dropped it
+  // silently, so an engagement naming the wrong firm was stuck with it, and
+  // naming a firm grants that firm read of the whole engagement.
+  const [provider, setProvider] = useState<{ id: string; name: string } | null>(null);
+  const [providers, setProviders] = useState<
+    { id: string; name: string; type: string; reason: string }[]
+  >([]);
+  const [changingProvider, setChangingProvider] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  const loadProvider = useCallback(async () => {
+    try {
+      const res = await apiClient.get(`/api/projects/${projectId}`);
+      setProvider(res.data?.project?.providerTenant || null);
+    } catch {
+      setProvider(null);
+    }
+  }, [projectId]);
+
+  useEffect(() => { loadProvider(); }, [loadProvider]);
+
+  useEffect(() => {
+    apiClient.get('/api/projects/engageable-providers')
+      .then((res) => setProviders(res.data?.providers || []))
+      .catch(() => setProviders([]));
+  }, []);
+
+  const openProvider = () => { setError(''); setChangingProvider(true); };
+
+  const saveProvider = async (values: Record<string, string>) => {
+    setSavingProvider(true);
+    setError('');
+    try {
+      const chosen = providers.find((p) => p.name === values.provider);
+      await apiClient.patch(`/api/projects/${projectId}`, {
+        providerTenantId: chosen ? chosen.id : '',
+      });
+      setChangingProvider(false);
+      await loadProvider();
+      // Membership depends on it: who may be added, and what Side means.
+      await load();
+    } catch (err: any) {
+      // The server names which organisation it refused and why -- suspended,
+      // the client itself, not engageable. That message is the useful part.
+      setError(apiError(err));
+      setChangingProvider(false);
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
   // The people who could be added. Caught separately: the team is still worth
   // showing without it, with the add control turned off rather than offering a
   // list the screen cannot vouch for.
@@ -193,6 +249,39 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   return (
     <div>
+      {/* Who delivers this, above the people, because it decides which
+          organisations the people below may come from. */}
+      <div style={{
+        ...S.card, padding: '12px 16px', marginBottom: 12,
+        display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+          Delivered by
+        </span>
+        <span style={{ fontSize: 13, color: 'var(--ink)' }}>
+          {provider
+            ? provider.name
+            : <span style={{ color: 'var(--ink-muted)' }}>This organisation itself</span>}
+        </span>
+        {provider && (
+          <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+            &mdash; their people can read this engagement in full and record work against it
+          </span>
+        )}
+        <span style={{ marginLeft: 'auto' }}>
+          <Can
+            do={MAY.MANAGE_PROJECT}
+            otherwise={<span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+              Who delivers this is the project manager's to set.
+            </span>}
+          >
+            <button style={ghostBtn} onClick={openProvider} disabled={savingProvider}>
+              {provider ? 'Change' : 'Name a delivery firm'}
+            </button>
+          </Can>
+        </span>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 16, color: 'var(--ink)' }}>Team</h3>
@@ -339,6 +428,43 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
           )}
           onConfirm={() => remove(removing)}
           onCancel={() => setRemoving(null)}
+        />
+      )}
+
+      {changingProvider && (
+        <FormDialog
+          title="Who delivers this engagement?"
+          intro={(
+            <>
+              A delivery firm can read this engagement in full &mdash; the plan, the evidence
+              files, the impediments and every exported report &mdash; and can upload evidence,
+              map work to clauses, raise and clear blockers, change the schedule and change
+              which frameworks it is run against. They are told when they are named, the act is
+              recorded on both organisations&rsquo; audit trails, and you can remove them again.
+            </>
+          )}
+          submitLabel={savingProvider ? 'Saving…' : 'Save'}
+          busy={savingProvider}
+          error={error}
+          fields={[
+            {
+              name: 'provider',
+              label: 'Delivered by',
+              type: 'select',
+              options: [
+                'This organisation itself',
+                ...providers.map((p) => p.name),
+              ],
+              initial: provider ? provider.name : undefined,
+              help: providers.length === 0
+                ? 'No delivery firm is registered on this platform, and your group has no other '
+                  + 'organisation to name.'
+                : 'Firms registered to deliver work for others, plus any organisation in your '
+                  + 'own group.',
+            },
+          ]}
+          onSubmit={saveProvider}
+          onCancel={() => setChangingProvider(false)}
         />
       )}
     </div>

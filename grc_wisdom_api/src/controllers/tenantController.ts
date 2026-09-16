@@ -13,6 +13,7 @@ import {
   auditCrossTenantRead,
   canWriteToTenant,
 } from '../services/scopeResolver';
+import { deliveryBlocksDeletion } from '../services/providerEngagement';
 
 const SUBJECT_TENANT = 'Tenant';
 
@@ -304,7 +305,23 @@ export const deleteTenant = async (req: AuthenticatedRequest, res: Response): Pr
 
     const tenant = await prisma.tenant.findUnique({
       where: { id },
-      include: { _count: { select: { users: true, children: true, documents: true, invoices: true } } },
+      include: {
+        _count: {
+          select: {
+            users: true, children: true, documents: true, invoices: true,
+            // Delivery work counts too. These two were missing, and the
+            // engagement foreign key is ON DELETE SET NULL -- so a tenant with
+            // no users, children, documents or invoices could be deleted while
+            // delivering live engagements, and every one of them silently lost
+            // its deliverer. No error, no log line, no audit entry: the column
+            // became null and three of the five exported reports began printing
+            // "Delivered by: The organisation itself", which is not a blank but
+            // an affirmative false statement, while the impediments on the same
+            // engagement kept exporting as "Owed by: Provider".
+            projects: true, projectsDelivered: true,
+          },
+        },
+      },
     });
     if (!tenant) { res.status(404).json({ status: 'error', message: 'Tenant not found' }); return; }
 
@@ -315,6 +332,12 @@ export const deleteTenant = async (req: AuthenticatedRequest, res: Response): Pr
         status: 'error',
         message: `Tenant is not empty (${c.users} users, ${c.children} sub-entities, ${c.documents} documents, ${c.invoices} invoices). Reassign or archive them first.`,
       });
+      return;
+    }
+
+    const delivery = deliveryBlocksDeletion(c);
+    if (delivery) {
+      res.status(409).json({ status: 'error', code: 'TENANT_DELIVERS_WORK', message: delivery });
       return;
     }
 

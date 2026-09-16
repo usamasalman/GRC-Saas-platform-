@@ -10,6 +10,8 @@ import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
 import { planStandardBinding } from '../services/projectStandards';
 import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
+import { planProviderNomination, DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
+import { notify } from '../services/notificationService';
 
 /**
  * Delivery projects — slice 1.
@@ -42,6 +44,53 @@ const TRANSITIONS: Record<string, readonly string[]> = {
   Closed: [],
   Cancelled: [],
 };
+
+/**
+ * Resolve and authorise the organisation named as the deliverer.
+ *
+ * One function for both write paths. The rules are in
+ * services/providerEngagement and run without a database; this does the lookup
+ * and hands back either a refusal to send or the value to store.
+ */
+async function resolveProvider(
+  requested: unknown,
+  clientTenantId: string,
+  current: string | null,
+  scope: { tenantIds: string[]; kind: string },
+) {
+  const id = String(requested ?? '').trim();
+  const candidate = id
+    ? await prisma.tenant.findUnique({
+      where: { id },
+      select: { id: true, name: true, type: true, suspendedAt: true },
+    })
+    : null;
+
+  return planProviderNomination({
+    clientTenantId,
+    requested: id,
+    candidate,
+    current,
+    callerTenantIds: scope.tenantIds,
+    isPlatform: scope.kind === 'PLATFORM',
+  });
+}
+
+/**
+ * The people at the named firm who should hear that they have been named.
+ *
+ * Their own administrators, because the nomination grants their whole
+ * organisation access and somebody there has to know it happened. A firm told
+ * nothing cannot object, and cannot notice a client that named them by mistake.
+ */
+async function providerAdmins(tenantId: string): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: { tenantId, role: { contains: 'admin' } },
+    select: { id: true },
+    take: 25,
+  });
+  return users.map((u) => u.id);
+}
 
 /** PRJ-0001, sequential per client tenant. Matches assetController's convention. */
 async function nextRef(tenantId: string): Promise<string> {
@@ -178,6 +227,58 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
   }
 };
 
+/**
+ * Organisations this caller may name as the deliverer of an engagement.
+ *
+ * Exists so the screen can offer a list rather than a text box for a tenant
+ * uuid. The same rules run again in planProviderNomination when the value is
+ * submitted -- this is the courtesy, that is the guarantee.
+ *
+ * What it discloses, deliberately: the names of firms registered on this
+ * platform to deliver work for others. That is what the PARTNER and FRANCHISE
+ * organisation types are for, and a client cannot engage a firm it cannot name.
+ * It discloses no ordinary customer outside the caller's own scope.
+ */
+export const engageableProviders = async (
+  req: AuthenticatedRequest, res: Response,
+): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!);
+    const clientTenantId = str(req.query.tenantId || req.user!.tenantId);
+
+    const where: any = {
+      suspendedAt: null,
+      id: { not: clientTenantId },
+      OR: [
+        { type: { in: [...DELIVERY_PARTNER_TYPES] } },
+        ...(scope.kind === 'PLATFORM' ? [{}] : [{ id: { in: scope.tenantIds } }]),
+      ],
+    };
+
+    const tenants = await prisma.tenant.findMany({
+      where,
+      select: { id: true, name: true, type: true },
+      orderBy: { name: 'asc' },
+      take: 200,
+    });
+
+    res.json({
+      status: 'success',
+      providers: tenants.map((x) => ({
+        id: x.id,
+        name: x.name,
+        type: x.type,
+        // So the screen can say WHY this one is offerable, rather than listing
+        // a group subsidiary and a consultancy as if they were the same thing.
+        reason: scope.tenantIds.includes(x.id) ? 'InYourGroup' : 'DeliveryFirm',
+      })),
+    });
+  } catch (error: any) {
+    console.error('[Engageable Providers Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to list organisations' });
+  }
+};
+
 // ─── Create ─────────────────────────────────────────────────────────────────
 
 export const createProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -299,13 +400,24 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       bindIds = plan.add;
     }
 
+    // Before the transaction, so a refused deliverer does not leave a project
+    // behind. An engagement created naming the wrong firm used to be permanent:
+    // updateProject never assigned this column.
+    const provider = await resolveProvider(providerTenantId, tenantId, null, scope);
+    if (!provider.ok) {
+      res.status(provider.status).json({
+        status: 'error', code: provider.code, message: provider.message,
+      });
+      return;
+    }
+
     const ref = await nextRef(tenantId);
 
     const created = await prisma.$transaction(async (tx) => {
       const project = await tx.project.create({
         data: {
           tenantId,
-          providerTenantId: providerTenantId ? str(providerTenantId) : null,
+          providerTenantId: provider.providerTenantId,
           ref,
           name: str(name).trim(),
           description: description ? str(description) : null,
@@ -350,13 +462,53 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
         action: 'PROJECT_CREATED',
         subjectType: 'Project',
         subjectId: project.id,
-        payload: { ref, name: project.name, projectType: project.projectType, targetEndDate },
+        // The deliverer belongs in the payload. Naming an outside organisation
+        // grants it read of this engagement and write over its traceability,
+        // and an audit trail that does not record who was given that access
+        // cannot answer the only question anybody would ask of it.
+        payload: {
+          ref,
+          name: project.name,
+          projectType: project.projectType,
+          targetEndDate,
+          providerTenantId: provider.providerTenantId,
+        },
       });
+
+      if (provider.providerTenantId) {
+        // A second entry, on the NAMED firm's own trail. The first records what
+        // the client did; this one is how that firm can later answer "when were
+        // we given access to this, and by whom".
+        await writeAudit(tx, {
+          tenantId: provider.providerTenantId,
+          actorId: str(req.user!.id),
+          action: 'PROJECT_PROVIDER_NAMED',
+          subjectType: 'Project',
+          subjectId: project.id,
+          payload: { ref, clientTenantId: tenantId, change: 'set' },
+        });
+        await notify(tx, (await providerAdmins(provider.providerTenantId)).map((recipientId) => ({
+          tenantId: provider.providerTenantId as string,
+          recipientId,
+          event: 'PROJECT_PROVIDER_NAMED',
+          subjectType: 'Project',
+          subjectId: project.id,
+          title: `Your organisation has been named as the deliverer of ${ref}`,
+          body: `${project.name}. Your people can now read the plan, the evidence and the `
+            + 'reports, and record work against it.',
+          link: 'project-delivery',
+          actorId: str(req.user!.id),
+        })));
+      }
 
       return project;
     });
 
-    res.status(201).json({ status: 'success', project: decorate(created, scope) });
+    res.status(201).json({
+      status: 'success',
+      project: decorate(created, scope),
+      warnings: provider.warnings,
+    });
   } catch (error: any) {
     console.error('[Project Create Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to create project' });
@@ -373,7 +525,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, ref: true, name: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
@@ -398,6 +550,29 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     if (b.objectives !== undefined) data.objectives = b.objectives ? str(b.objectives) : null;
     if (b.healthNote !== undefined) data.healthNote = b.healthNote ? str(b.healthNote) : null;
     if (b.sponsorId !== undefined) data.sponsorId = b.sponsorId ? str(b.sponsorId) : null;
+
+    // The deliverer, which this handler used to drop silently.
+    //
+    // It was assigned in exactly one place -- createProject -- and never here,
+    // so an engagement created naming the wrong organisation could not be
+    // corrected, reassigned or taken back in-house for the life of the row.
+    // Since naming a firm grants it read of the whole engagement and write over
+    // its traceability, that made an accidental grant permanent.
+    let providerChange: Awaited<ReturnType<typeof resolveProvider>> | null = null;
+    if (b.providerTenantId !== undefined) {
+      providerChange = await resolveProvider(
+        b.providerTenantId, existing.tenantId, existing.providerTenantId, scope,
+      );
+      if (!providerChange.ok) {
+        res.status(providerChange.status).json({
+          status: 'error', code: providerChange.code, message: providerChange.message,
+        });
+        return;
+      }
+      if (providerChange.change !== 'unchanged') {
+        data.providerTenantId = providerChange.providerTenantId;
+      }
+    }
     // frameworks is no longer written. It was free text -- "ISO27001", "ISO
     // 27001" and a typo were three different values, none of which resolved to
     // a Standard row -- so the readiness report could not ask what this
@@ -520,6 +695,64 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         payload: { ref: existing.ref, changed: Object.keys(data) },
       });
 
+      // Both organisations' trails, and the firm itself.
+      //
+      // The entry on the client's trail records what they did; the entry on the
+      // named firm's records how that firm can answer "when were we given
+      // access to this, and by whom". A grant of this size recorded on only one
+      // side is a grant the other side cannot audit.
+      if (providerChange && providerChange.ok && providerChange.change !== 'unchanged') {
+        const gained = providerChange.providerTenantId;
+        const lost = existing.providerTenantId;
+        const actorId = str(req.user!.id);
+
+        for (const [tenantId, change] of [
+          [gained, providerChange.change === 'changed' ? 'set' : providerChange.change],
+          [lost, 'removed'],
+        ] as [string | null, string][]) {
+          if (!tenantId || tenantId === existing.tenantId) continue;
+          await writeAudit(tx, {
+            tenantId,
+            actorId,
+            action: change === 'removed'
+              ? 'PROJECT_PROVIDER_REMOVED'
+              : 'PROJECT_PROVIDER_NAMED',
+            subjectType: 'Project',
+            subjectId: id,
+            payload: { ref: existing.ref, clientTenantId: existing.tenantId, change },
+          });
+        }
+
+        if (gained) {
+          await notify(tx, (await providerAdmins(gained)).map((recipientId) => ({
+            tenantId: gained,
+            recipientId,
+            event: 'PROJECT_PROVIDER_NAMED',
+            subjectType: 'Project',
+            subjectId: id,
+            title: `Your organisation has been named as the deliverer of ${existing.ref}`,
+            body: `${existing.name}. Your people can now read the plan, the evidence and the `
+              + 'reports, and record work against it.',
+            link: 'project-delivery',
+            actorId,
+          })));
+        }
+        if (lost) {
+          await notify(tx, (await providerAdmins(lost)).map((recipientId) => ({
+            tenantId: lost,
+            recipientId,
+            event: 'PROJECT_PROVIDER_REMOVED',
+            subjectType: 'Project',
+            subjectId: id,
+            title: `Your organisation no longer delivers ${existing.ref}`,
+            body: `${existing.name}. Your people can no longer see this engagement. Anything `
+              + 'already uploaded stays on the record.',
+            link: 'project-delivery',
+            actorId,
+          })));
+        }
+      }
+
       // Changing the verification policy changes what every task in the tree
       // needs, so the verified figure has to be recomputed in the same
       // transaction. Otherwise switching an engagement to EveryTask leaves it
@@ -556,7 +789,10 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     res.json({
       status: 'success',
       project: decorate(updated, scope),
-      warnings: activationDecision?.warnings,
+      warnings: [
+        ...(activationDecision?.warnings || []),
+        ...(providerChange && providerChange.ok ? providerChange.warnings : []),
+      ],
     });
   } catch (error: any) {
     console.error('[Project Update Error]:', error);

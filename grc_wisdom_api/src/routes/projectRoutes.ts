@@ -3,6 +3,7 @@ import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMidd
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   listProjects,
+  engageableProviders,
   getProject,
   createProject,
   updateProject,
@@ -89,6 +90,12 @@ router.get('/:id/members', listMembers);
 router.post('/:id/members', requireCapability(CAP.MANAGE_PROJECT), addMember);
 router.patch('/:id/members/:memberId', requireCapability(CAP.MANAGE_PROJECT), updateMember);
 router.delete('/:id/members/:memberId', requireCapability(CAP.MANAGE_PROJECT), removeMember);
+
+// BEFORE '/:id', which would otherwise match it and answer "Project not found"
+// for a literal path segment. A read, so no management capability: the person
+// filling in the form needs the list before they can be refused for choosing
+// badly, and the naming itself is guarded on the write.
+router.get('/engageable-providers', engageableProviders);
 
 router.get('/:id', getProject);
 

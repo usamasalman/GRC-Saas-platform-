@@ -132,6 +132,23 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
     { id: string; code: string; title: string; clauseCount: number }[]
   >([]);
   const [standardIds, setStandardIds] = useState<string[]>([]);
+
+  // Who delivers this, when it is not the organisation itself.
+  //
+  // Offered as a list because the field behind it is a tenant uuid that used to
+  // be copied out of the request body unvalidated, and naming an organisation
+  // grants it read of the whole engagement and write over its traceability. The
+  // server refuses anything not on this list; this is so nobody has to guess.
+  const [providers, setProviders] = useState<
+    { id: string; name: string; type: string; reason: string }[]
+  >([]);
+  const [providerTenantId, setProviderTenantId] = useState('');
+
+  useEffect(() => {
+    apiClient.get('/api/projects/engageable-providers')
+      .then((res) => setProviders(res.data?.providers || []))
+      .catch(() => setProviders([]));
+  }, []);
   const [picking, setPicking] = useState(false);
 
   useEffect(() => {
@@ -171,6 +188,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
         // Real framework rows, bound in the same transaction as the project.
         // The server refuses any the organisation has not enabled, and names it.
         standardIds: standardIds.length > 0 ? standardIds : undefined,
+        providerTenantId: providerTenantId || undefined,
         startDate: form.startDate,
         targetEndDate: form.targetEndDate,
         ownerId: form.ownerId,
@@ -274,6 +292,32 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
                 : 'From the frameworks this organisation has enabled. These clauses are what '
                   + 'the readiness report measures the engagement against, and work is mapped '
                   + 'to them task by task.'}
+            </div>
+          </div>
+
+          <div>
+            <span style={label}>Delivered by</span>
+            <select
+              style={field}
+              value={providerTenantId}
+              onChange={(e) => setProviderTenantId(e.target.value)}
+              disabled={busy}
+            >
+              <option value="">This organisation itself</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.reason === 'InYourGroup' ? ' — in your group' : ' — delivery firm'}
+                </option>
+              ))}
+            </select>
+            <div style={help}>
+              {providerTenantId
+                ? 'That organisation will be able to read this engagement in full and record '
+                  + 'work against it. They are told they have been named, and you can remove '
+                  + 'them again at any time.'
+                : 'Leave this as it is for a programme the organisation runs itself, which is '
+                  + 'the ordinary case.'}
             </div>
           </div>
 
