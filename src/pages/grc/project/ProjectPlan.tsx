@@ -34,6 +34,19 @@ interface Timing {
   verificationOverdue: boolean;
 }
 
+interface EvidenceItem {
+  id: string;
+  ref: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  classification: string;
+  side: string;
+  uploadedAt: string;
+  withdrawnAt: string | null;
+}
+
 interface Task {
   id: string;
   ref: string;
@@ -74,6 +87,14 @@ interface Task {
     id: string; ref: string; title: string; category: string;
     owingSide: string; severity: string; raisedAt: string;
   }[];
+  /**
+   * Evidence attached to this task.
+   *
+   * The evidence register tab shows all evidence for the project; this array
+   * is the per-task slice that tells the plan view what has been delivered
+   * against each work package without requiring a second request.
+   */
+  evidence: EvidenceItem[];
 }
 
 interface Phase {
@@ -263,6 +284,20 @@ const VerificationCell: React.FC<{
   );
 };
 
+/** Maximum file size the evidence controller accepts (25 MB, same constant). */
+const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024;
+
+/** Extensions refused by the backend — duplicated here to catch them before upload. */
+const DANGEROUS_EXTENSIONS = [
+  'html', 'htm', 'svg', 'xhtml', 'js', 'mjs', 'exe', 'dll', 'sh', 'bat',
+  'cmd', 'com', 'scr', 'jar', 'msi', 'ps1', 'vbs', 'hta',
+];
+
+const extensionOf = (name: string): string => {
+  const i = name.lastIndexOf('.');
+  return i === -1 ? '' : name.slice(i + 1).toLowerCase();
+};
+
 const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
@@ -437,6 +472,125 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
     bound: number;
   }>({ clauses: [], bound: 0 });
   const [clausesFor, setClausesFor] = useState<Task | null>(null);
+
+  // Evidence upload: the task the dialog is open for, and the vocabulary the
+  // backend accepts for classification and side. Fetched alongside clause
+  // catalogue because both come from the evidence register endpoint.
+  const [evidenceFor, setEvidenceFor] = useState<Task | null>(null);
+  const [evidenceVocab, setEvidenceVocab] = useState<{
+    classifications: string[]; sides: string[];
+  }>({ classifications: ['Public', 'Internal', 'Confidential', 'Restricted'], sides: ['Client', 'Provider'] });
+  const [attachingEvidence, setAttachingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+
+  // Evidence dialog local form state
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceFileError, setEvidenceFileError] = useState('');
+  const [evidenceTitle, setEvidenceTitle] = useState('');
+  const [evidenceDescription, setEvidenceDescription] = useState('');
+  const [evidenceClassification, setEvidenceClassification] = useState('Internal');
+  const [evidenceSide, setEvidenceSide] = useState('Client');
+
+  useEffect(() => {
+    apiClient.get(`/api/projects/${projectId}/evidence`)
+      .then((res) => setEvidenceVocab({
+        classifications: res.data?.vocabulary?.classifications || ['Public', 'Internal', 'Confidential', 'Restricted'],
+        sides: res.data?.vocabulary?.sides || ['Client', 'Provider'],
+      }))
+      .catch(() => { /* keep defaults */ });
+  }, [projectId]);
+
+  const openEvidenceDialog = (task: Task) => {
+    setEvidenceFile(null);
+    setEvidenceFileError('');
+    setEvidenceTitle('');
+    setEvidenceDescription('');
+    setEvidenceClassification('Internal');
+    setEvidenceSide(task.side === 'Provider' ? 'Provider' : 'Client');
+    setEvidenceError('');
+    setEvidenceFor(task);
+  };
+
+  const handleEvidenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setEvidenceFileError('');
+    if (!file) { setEvidenceFile(null); return; }
+    if (file.size === 0) {
+      setEvidenceFileError('That file is empty.');
+      setEvidenceFile(null);
+      return;
+    }
+    if (file.size > MAX_EVIDENCE_BYTES) {
+      setEvidenceFileError('Evidence files are limited to 25 MB.');
+      setEvidenceFile(null);
+      return;
+    }
+    const ext = extensionOf(file.name);
+    if (DANGEROUS_EXTENSIONS.includes(ext)) {
+      setEvidenceFileError(`.${ext} files are not accepted. Attach a document, spreadsheet, image or PDF.`);
+      setEvidenceFile(null);
+      return;
+    }
+    setEvidenceFile(file);
+  };
+
+  const submitEvidence = async () => {
+    if (!evidenceFor) return;
+    if (!evidenceFile) { setEvidenceError('Choose a file to attach.'); return; }
+    if (evidenceTitle.trim().length < 3) { setEvidenceError('Title must be at least 3 characters.'); return; }
+
+    setAttachingEvidence(true);
+    setEvidenceError('');
+    try {
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = () => reject(new Error('Could not read the file.'));
+        reader.readAsDataURL(evidenceFile);
+      });
+
+      const res = await apiClient.post(
+        `/api/projects/tasks/${evidenceFor.id}/evidence`,
+        {
+          title: evidenceTitle.trim(),
+          description: evidenceDescription.trim() || undefined,
+          classification: evidenceClassification,
+          side: evidenceSide,
+          fileData,
+          fileName: evidenceFile.name,
+        },
+      );
+
+      // Patch the task's evidence array locally and apply the rollup so
+      // percentages repaint without fetching the whole plan again.
+      const newEvidence: EvidenceItem = res.data.evidence;
+      const rollup = res.data.rollup;
+      setPhases((prev) => prev.map((ph) => {
+        const rolled = rollup?.phases?.find((r: any) => r.id === ph.id);
+        return {
+          ...ph,
+          tasks: ph.tasks.map((t) => (
+            t.id === evidenceFor.id
+              ? { ...t, evidence: [...(t.evidence || []), newEvidence] }
+              : t
+          )),
+          ...(rolled ? {
+            reportedProgress: rolled.reported,
+            verifiedProgress: rolled.verified,
+            status: rolled.status,
+            counts: rolled.counts,
+          } : {}),
+        };
+      }));
+      if (rollup?.counts) setTotals((t) => (t ? { ...t, ...rollup.counts } : t));
+
+      setEvidenceFor(null);
+    } catch (err: any) {
+      setEvidenceError(apiError(err));
+    } finally {
+      setAttachingEvidence(false);
+    }
+  };
 
   useEffect(() => {
     apiClient.get(`/api/projects/${projectId}/clauses`)
@@ -870,6 +1024,53 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                     </button>
                                   </Can>
                                 </div>
+
+                                {/* Evidence attached to this task.
+                                    The badge shows how many files are standing
+                                    (not withdrawn); clicking it opens the upload
+                                    dialog so the same control serves both
+                                    purposes. A task in a frozen project can still
+                                    be inspected — the button is just disabled. */}
+                                <div style={{ marginTop: 4, display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  {(() => {
+                                    const standing = (t.evidence || []).filter((e) => !e.withdrawnAt);
+                                    const withdrawn = (t.evidence || []).filter((e) => e.withdrawnAt);
+                                    return standing.length > 0 ? (
+                                      <span
+                                        style={{
+                                          ...pill('var(--success)', 'var(--success-line)'),
+                                          fontSize: 10.5, cursor: 'default',
+                                        }}
+                                        title={[
+                                          ...standing.map((e) => `${e.ref} ${e.title} (${e.fileName})`),
+                                          ...(withdrawn.length > 0
+                                            ? [`${withdrawn.length} withdrawn`]
+                                            : []),
+                                        ].join('\n')}
+                                      >
+                                        {standing.length === 1
+                                          ? '1 file'
+                                          : `${standing.length} files`}
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                  <Can do={MAY.EXECUTE_WORK}>
+                                    <button
+                                      id={`evidence-btn-${t.id}`}
+                                      style={{
+                                        ...actionBtn('var(--info)', busy || saving || t.status === 'Verified'),
+                                        marginRight: 0,
+                                      }}
+                                      disabled={busy || saving || t.status === 'Verified'}
+                                      title={t.status === 'Verified'
+                                        ? 'Evidence cannot be added to a verified task'
+                                        : 'Attach a deliverable to this task'}
+                                      onClick={() => openEvidenceDialog(t)}
+                                    >
+                                      + evidence
+                                    </button>
+                                  </Can>
+                                </div>
                               </td>
 
                               <td style={{ ...S.td, fontSize: 12.5 }}>
@@ -1241,6 +1442,156 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           onSubmit={(ids) => saveClauses(clausesFor, ids)}
           onCancel={() => setClausesFor(null)}
         />
+      )}
+
+      {/* ── Evidence upload dialog ─────────────────────────────────────────
+          The FormDialog component wraps the input pattern used everywhere
+          else in the project. Using it here keeps focus-trap and overlay
+          behaviour consistent without duplicating the CSS.
+
+          Files are read by the browser as base64 via FileReader. The data
+          never goes to an uploads/ directory — the controller writes it to
+          the evidence store (hashed, not public). */}
+      {evidenceFor && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Attach evidence to ${evidenceFor.ref}`}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 900,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: 'var(--surface)', borderRadius: 10,
+            boxShadow: '0 8px 40px rgba(0,0,0,0.22)',
+            padding: '28px 32px', width: 480, maxWidth: '92vw',
+            maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6, color: 'var(--ink)' }}>
+              Attach evidence to {evidenceFor.ref}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 18 }}>
+              {evidenceFor.name}
+            </div>
+
+            {evidenceError && (
+              <div style={{
+                padding: '10px 14px', marginBottom: 14,
+                borderLeft: '3px solid var(--danger)',
+                background: 'var(--danger-line)', color: 'var(--danger)',
+                borderRadius: 5, fontSize: 13,
+              }}>
+                {evidenceError}
+              </div>
+            )}
+
+            <label style={{ display: 'block', marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 5 }}>
+                File <span style={{ color: 'var(--danger)' }}>*</span>
+              </div>
+              <input
+                id="evidence-file-input"
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.gif,.zip,.pptx,.ppt"
+                onChange={handleEvidenceFileChange}
+                style={{ fontSize: 13, color: 'var(--ink)', width: '100%' }}
+              />
+              {evidenceFileError && (
+                <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 4 }}>
+                  {evidenceFileError}
+                </div>
+              )}
+              {evidenceFile && !evidenceFileError && (
+                <div style={{ color: 'var(--success)', fontSize: 12, marginTop: 4 }}>
+                  {evidenceFile.name} ({(evidenceFile.size / 1024).toFixed(0)} KB)
+                </div>
+              )}
+            </label>
+
+            <label style={{ display: 'block', marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 5 }}>
+                Title <span style={{ color: 'var(--danger)' }}>*</span>
+              </div>
+              <input
+                id="evidence-title-input"
+                type="text"
+                value={evidenceTitle}
+                onChange={(e) => setEvidenceTitle(e.target.value)}
+                placeholder="Gap assessment report v1.2"
+                style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+              />
+            </label>
+
+            <label style={{ display: 'block', marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 5 }}>
+                Description
+              </div>
+              <textarea
+                id="evidence-description-input"
+                value={evidenceDescription}
+                onChange={(e) => setEvidenceDescription(e.target.value)}
+                rows={2}
+                placeholder="Optional — what this file is and what it demonstrates."
+                style={{ ...S.input, width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+              />
+            </label>
+
+            <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 5 }}>
+                  Classification
+                </div>
+                <select
+                  id="evidence-classification-select"
+                  value={evidenceClassification}
+                  onChange={(e) => setEvidenceClassification(e.target.value)}
+                  style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                >
+                  {evidenceVocab.classifications.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 5 }}>
+                  Side
+                </div>
+                <select
+                  id="evidence-side-select"
+                  value={evidenceSide}
+                  onChange={(e) => setEvidenceSide(e.target.value)}
+                  style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                >
+                  {evidenceVocab.sides.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+              <button
+                id="evidence-cancel-btn"
+                style={ghostBtn}
+                disabled={attachingEvidence}
+                onClick={() => setEvidenceFor(null)}
+              >
+                Cancel
+              </button>
+              <button
+                id="evidence-submit-btn"
+                style={primaryBtn(attachingEvidence || !evidenceFile || evidenceTitle.trim().length < 3)}
+                disabled={attachingEvidence || !evidenceFile || evidenceTitle.trim().length < 3}
+                onClick={submitEvidence}
+              >
+                {attachingEvidence ? 'Attaching…' : 'Attach evidence'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showActivateDialog && (

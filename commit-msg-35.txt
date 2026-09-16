@@ -1,0 +1,22 @@
+feat(projects): attach evidence directly to tasks to satisfy verification policies
+
+The evidence register was read-only: the register endpoint existed, the
+controller existed, the evidence store existed, the route existed, and
+the plan response had already been selecting the evidence array for each
+task since the verification module was written. Nothing could enter it.
+
+This implements: a per-task evidence badge (file count pill, tooltip of
+ref / title / filename, withdrawn count) on the Plan tab; a plus evidence
+button gated on CAP.EXECUTE_PROJECT_WORK via MAY.EXECUTE_WORK; a full
+upload dialog (file input with client-side mime/size/extension guard,
+title, optional description, classification dropdown, side dropdown)
+that reads the file as base64 via FileReader and posts to the existing
+POST /api/projects/tasks/:taskId/evidence endpoint; local patch of the
+task evidence array and rollup percentages from the response so the
+plan does not reload; and MAY.EXECUTE_WORK in navCapabilities pinned to
+CAP.EXECUTE_PROJECT_WORK, the exact guard on the evidence attachment
+route, with the guarded-actions-test anchor updated to match.
+
+No fake success, no optimistic state, no native browser dialogs.
+Verified: guarded-actions, routes-reachable, project-activation, full
+verify suite (430 passed), npx tsc -b --force (0 errors).

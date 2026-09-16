@@ -59,6 +59,9 @@ const ANCHOR = {
   MANAGE_IMPLEMENTATION: "router.post('/implementations',",
   MANAGE_SHARED_SERVICE: "router.post('/shared-services',",
   MANAGE_PROJECT: "router.post('/:id/members',",
+  // Attaching evidence to a task: EXECUTE_PROJECT_WORK or MANAGE_PROJECT,
+  // mirroring the MAY.EXECUTE_WORK set in navCapabilities.ts.
+  EXECUTE_WORK: "router.post('/tasks/:taskId/evidence',",
 };
 
 let checks = 0;

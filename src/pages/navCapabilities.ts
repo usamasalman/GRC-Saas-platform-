@@ -197,6 +197,12 @@ export const MAY = {
   MANAGE_IMPLEMENTATION: [CAP.MANAGE_IMPLEMENTATION],
   /** Staffing a delivery engagement: POST/PATCH/DELETE /api/projects/:id/members. */
   MANAGE_PROJECT: [CAP.MANAGE_PROJECT],
+  /**
+   * Executing project work: attaching evidence, updating task status, submitting.
+   * Mirrors requireCapability(CAP.EXECUTE_PROJECT_WORK) on attachEvidence and
+   * related task-execution routes. MANAGE_PROJECT is a separate, heavier guard.
+   */
+  EXECUTE_WORK: [CAP.EXECUTE_PROJECT_WORK],
   /** POST, PATCH, DELETE /api/grc/shared-services. */
   MANAGE_SHARED_SERVICE: [CAP.MANAGE_TENANT, CAP.MANAGE_IMPLEMENTATION],
 } as const;
