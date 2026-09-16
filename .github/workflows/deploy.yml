@@ -120,6 +120,7 @@ jobs:
           node scripts/verify/project-activation-test.js
           node scripts/verify/report-honesty-test.js
           node scripts/verify/provider-engagement-test.js
+          node scripts/verify/work-notification-test.js
           node scripts/verify/no-invented-data-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js

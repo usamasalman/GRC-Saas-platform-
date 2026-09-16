@@ -39,6 +39,8 @@ import Implementations from './grc/Implementations';
 import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
 import DeliveryProjects from './grc/DeliveryProjects';
+import MyWork from './grc/project/MyWork';
+import NotificationBell from '../components/NotificationBell';
 import ReportBranding from './settings/ReportBranding';
 import AssetRegister from './grc/AssetRegister';
 import VendorRegister from './grc/VendorRegister';
@@ -158,7 +160,7 @@ const NAV: Record<string, any[]> = {
   ],
   holding: [
     ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['subsidiaries', '▥', 'Subsidiary Scorecards'], ['shared-services', '⇄', 'Shared Services']]],
-    ['Assurance', [['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -166,7 +168,7 @@ const NAV: Record<string, any[]> = {
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['posture', '◈', 'Branch Posture'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
-    ['Assurance', [['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
@@ -174,7 +176,7 @@ const NAV: Record<string, any[]> = {
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
-    ['Assurance', [['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
@@ -191,7 +193,7 @@ const NAV: Record<string, any[]> = {
     ['Support', [['itsm', '?', 'Auditor Support Desk'], ['contacts', '♣', 'Engagement Contacts']]]
   ],
   partner: [
-    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['project-delivery', '▶', 'Consulting Delivery'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
+    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Consulting Delivery'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
     ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards'], ['framework-authoring', '✎', 'Framework Authoring']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
@@ -450,6 +452,9 @@ const AppShell = () => {
     if (currentPage === 'standards') {
       return <StandardsLibrary key={`${account.id}-${currentPage}`} />;
     }
+    if (currentPage === 'my-work') {
+      return <MyWork key={`${account.id}-${currentPage}`} onOpenProject={() => setCurrentPage('project-delivery')} />;
+    }
     if (currentPage === 'project-delivery') {
       return <DeliveryProjects key={`${account.id}-${currentPage}`} />;
     }
@@ -685,9 +690,10 @@ const AppShell = () => {
           <button className="icon-btn" id="langBtn" onClick={toggleLanguage} title="English / العربية">
             {isRtl ? 'AR' : 'EN'}
           </button>
-          <button className="icon-btn" id="notifyBtn" title="Notifications">
-            ♢<i className="notification-dot"></i>
-          </button>
+          {/* Was a button with no onClick and an unconditional dot: a permanent
+              red "you have something" indicator that opened nothing. Every
+              project notification was written to a table nothing read. */}
+          <NotificationBell onNavigate={setCurrentPage} />
           <div className="persona">
             <div
               className="persona-avatar"

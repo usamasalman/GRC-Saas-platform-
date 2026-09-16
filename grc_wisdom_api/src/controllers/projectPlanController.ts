@@ -4,6 +4,12 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
+import { resolveTenantScope } from '../services/scopeResolver';
+import { projectWhere } from '../services/projectAccess';
+import { notify } from '../services/notificationService';
+import {
+  assignmentAudience, bucketWork, bucketRank, summarise, WORK_BUCKETS,
+} from '../services/myWork';
 import { requiresDelayReason, slippage } from '../services/projectDelay';
 import {
   TASK_STATUSES, VERIFICATION_POLICIES, checkTaskUpdate, requiresVerification,
@@ -157,6 +163,166 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
   } catch (error: any) {
     console.error('[Plan Read Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to load the plan' });
+  }
+};
+
+/**
+ * Tell the people whose work just changed hands.
+ *
+ * This controller had no notification of any kind: a task could be created
+ * with an assignee, or handed from one person to another, and the only trace
+ * was an audit row nobody reads. Being told in a meeting was the mechanism.
+ *
+ * Called inside the caller's transaction so nobody is told about an assignment
+ * that rolled back, and both ends of a reassignment are told -- see
+ * assignmentAudience for why the outgoing person matters as much as the
+ * incoming one.
+ */
+async function tellAboutAssignment(
+  tx: any,
+  args: {
+    actorId: string;
+    tenantId: string;
+    projectRef: string;
+    taskId: string;
+    taskRef: string;
+    taskName: string;
+    dueDate: Date | null;
+    previousAssigneeId: string | null;
+    nextAssigneeId: string | null;
+  },
+): Promise<void> {
+  const audience = assignmentAudience({
+    previousAssigneeId: args.previousAssigneeId,
+    nextAssigneeId: args.nextAssigneeId,
+  });
+  if (audience.length === 0) return;
+
+  const due = args.dueDate
+    ? ` Due ${new Date(args.dueDate).toISOString().slice(0, 10)}.`
+    : ' No due date has been set.';
+
+  await notify(tx, audience.map((a) => ({
+    tenantId: args.tenantId,
+    recipientId: a.recipientId,
+    actorId: args.actorId,
+    event: a.kind === 'Assigned' ? 'PROJECT_TASK_ASSIGNED' : 'PROJECT_TASK_UNASSIGNED',
+    subjectType: 'ProjectTask',
+    subjectId: args.taskId,
+    title: a.kind === 'Assigned'
+      ? `${args.taskRef} is now yours: ${args.taskName}`
+      : `${args.taskRef} is no longer yours: ${args.taskName}`,
+    body: a.kind === 'Assigned'
+      ? `On ${args.projectRef}.${due}`
+      : `On ${args.projectRef}. It has been given to somebody else.`,
+    link: 'my-work',
+  })));
+}
+
+// ─── One person's work, across every engagement ───────────────────
+
+/**
+ * Every task assigned to the caller, wherever it lives.
+ *
+ * ProjectTask has carried @@index([assigneeId, status]) since the module was
+ * written and no query in the API used it. Every multi-row task query was
+ * scoped to one project, so the product could answer "what is in this plan" and
+ * could not answer "what do I have to do" — which is the question somebody
+ * actually opens the product with. GET /api/projects/commitments looks like the
+ * answer and is not: it aggregates ProjectMember rows for everyone in scope and
+ * reads no task at all, so it reports who is over-allocated, never what anybody
+ * has to do.
+ *
+ * Scoped by assignee AND by what the caller may read. The first is the point;
+ * the second is because a task can be reassigned to somebody whose access to
+ * the engagement has since been withdrawn, and their own inbox must not become
+ * the back door to it.
+ */
+export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!);
+    const userId = str(req.user!.id);
+    const now = new Date();
+    const includeDone = String(req.query.includeDone || '') === 'true';
+
+    const tasks = await prisma.projectTask.findMany({
+      where: {
+        assigneeId: userId,
+        project: {
+          ...projectWhere(scope),
+          status: { notIn: ['Closed', 'Cancelled'] },
+        },
+        ...(includeDone ? {} : { status: { notIn: ['Done', 'Verified'] } }),
+      },
+      select: {
+        id: true, ref: true, name: true, status: true, completionPercent: true,
+        dueDate: true, priority: true, side: true,
+        phase: { select: { id: true, name: true } },
+        project: {
+          select: {
+            id: true, ref: true, name: true, status: true,
+            tenant: { select: { name: true } },
+            providerTenant: { select: { name: true } },
+          },
+        },
+        impediments: {
+          where: { kind: 'Blocker', resolvedAt: null },
+          select: { id: true, ref: true, title: true, owingSide: true },
+        },
+      },
+      orderBy: [{ dueDate: 'asc' }],
+      take: 300,
+    });
+
+    const rows = tasks.map((tk) => {
+      const bucket = bucketWork(
+        { status: tk.status, dueDate: tk.dueDate, blockers: tk.impediments.length },
+        now,
+      );
+      return {
+        id: tk.id,
+        ref: tk.ref,
+        name: tk.name,
+        status: tk.status,
+        completionPercent: tk.completionPercent,
+        dueDate: tk.dueDate,
+        priority: tk.priority,
+        side: tk.side,
+        bucket,
+        phase: tk.phase,
+        project: {
+          id: tk.project.id,
+          ref: tk.project.ref,
+          name: tk.project.name,
+          status: tk.project.status,
+          client: tk.project.tenant?.name ?? null,
+          provider: tk.project.providerTenant?.name ?? null,
+        },
+        // Named, not counted. "Blocked" with no blocker on the row is the
+        // status everyone asks about and nobody can answer.
+        blockers: tk.impediments,
+      };
+    });
+
+    // Bucket first, then the due date inside it. Sorting by date alone would
+    // put work the reader cannot start at the top of their day.
+    rows.sort((a, b) => {
+      const byBucket = bucketRank(a.bucket) - bucketRank(b.bucket);
+      if (byBucket !== 0) return byBucket;
+      if (!a.dueDate) return b.dueDate ? 1 : 0;
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+
+    res.json({
+      status: 'success',
+      buckets: WORK_BUCKETS,
+      summary: summarise(rows.map((r) => r.bucket)),
+      tasks: rows,
+    });
+  } catch (error: any) {
+    console.error('[My Work Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load your work' });
   }
 };
 
@@ -435,6 +601,19 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
         subjectId: created.id,
         payload: { projectRef: project.ref, ref, name: created.name, phase: phase.name },
       });
+
+      await tellAboutAssignment(tx, {
+        actorId: str(req.user!.id),
+        tenantId: project.tenantId,
+        projectRef: project.ref,
+        taskId: created.id,
+        taskRef: created.ref,
+        taskName: created.name,
+        dueDate: created.dueDate,
+        previousAssigneeId: null,
+        nextAssigneeId: created.assigneeId,
+      });
+
       // A new task changes the denominator, so the percentages move even though
       // nothing was completed.
       await recomputeProject(tx, project.id);
@@ -636,6 +815,24 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
           ...(data.status ? { from: existing.status, to: data.status } : {}),
         },
       });
+
+      // This handler is also the reassignment path. Both ends are told: one
+      // person has work they did not have, and the other has stopped being
+      // answerable for something they may still think is theirs.
+      if (data.assigneeId !== undefined) {
+        await tellAboutAssignment(tx, {
+          actorId: userId,
+          tenantId: project.tenantId,
+          projectRef: project.ref,
+          taskId,
+          taskRef: updated.ref,
+          taskName: updated.name,
+          dueDate: updated.dueDate,
+          previousAssigneeId: existing.assigneeId,
+          nextAssigneeId: data.assigneeId,
+        });
+      }
+
       const rollup = await recomputeProject(tx, project.id);
       return { updated, rollup };
     });

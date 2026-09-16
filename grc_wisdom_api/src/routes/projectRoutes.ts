@@ -13,6 +13,7 @@ import {
 } from '../controllers/projectController';
 import {
   getPlan,
+  myWork,
   createPhase,
   updatePhase,
   deletePhase,
@@ -95,6 +96,14 @@ router.delete('/:id/members/:memberId', requireCapability(CAP.MANAGE_PROJECT), r
 // for a literal path segment. A read, so no management capability: the person
 // filling in the form needs the list before they can be refused for choosing
 // badly, and the naming itself is guarded on the write.
+// Every task assigned to the caller, wherever it lives. Declared above '/:id'
+// for the same reason as the others: the wildcard would read it as a project id
+// and answer "Project not found" for a literal path segment.
+//
+// No capability gate. A person's own work is theirs, and requiring a management
+// capability to see what you have been given would be the wrong way round.
+router.get('/my-work', myWork);
+
 router.get('/engageable-providers', engageableProviders);
 
 router.get('/:id', getProject);

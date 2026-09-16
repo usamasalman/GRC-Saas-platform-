@@ -15,7 +15,13 @@ export const listNotifications = async (req: AuthenticatedRequest, res: Response
 
     const notifications = await prisma.notification.findMany({
       where,
-      orderBy: [{ readAt: 'asc' }, { createdAt: 'desc' }],
+      // nulls: 'first' is load-bearing. This is Postgres, where ASC sorts NULLs
+      // LAST -- and readAt is null exactly on the unread ones. So the intended
+      // "unread at the top" ordering did the opposite, and with take: 100 a
+      // person holding a hundred read notifications would have seen none of
+      // their unread ones at all. The `unread` figure below is counted from the
+      // same page, so it under-reported too.
+      orderBy: [{ readAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }],
       take: 100,
     });
 

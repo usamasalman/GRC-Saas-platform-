@@ -157,7 +157,16 @@ export const raiseImpediment = async (req: AuthenticatedRequest, res: Response):
 
       // The side that owes it cannot be notified — it is an organisation, not a
       // person — so the people accountable for the plan are told instead.
-      await notify(tx, [project.managerId, project.ownerId].map((rid) => ({
+      //
+      // And whoever holds the task, when it was raised against one. They were
+      // missing: blockTask told the assignee and this path did not, so whether
+      // the person trying to do the work found out depended on which endpoint
+      // the blocker came in through. notify() deduplicates nothing, so the list
+      // is made unique here.
+      const raiseAudience = Array.from(new Set(
+        [project.managerId, project.ownerId, scope.assigneeId].filter(Boolean),
+      )) as string[];
+      await notify(tx, raiseAudience.map((rid) => ({
         tenantId: project.tenantId,
         recipientId: rid,
         actorId: str(req.user!.id),
@@ -183,18 +192,24 @@ export const raiseImpediment = async (req: AuthenticatedRequest, res: Response):
 
 /** Confirms a supplied task or phase belongs to this project. Null means it does not. */
 async function resolveScope(projectId: string, taskId: unknown, phaseId: unknown) {
-  const scope: { taskId: string | null; phaseId: string | null } = { taskId: null, phaseId: null };
+  const scope: {
+    taskId: string | null; phaseId: string | null; assigneeId: string | null;
+  } = { taskId: null, phaseId: null, assigneeId: null };
 
   if (taskId) {
     const task = await prisma.projectTask.findFirst({
       where: { id: str(taskId), projectId },
-      select: { id: true, phaseId: true },
+      select: { id: true, phaseId: true, assigneeId: true },
     });
     if (!task) return null;
     // A task-scoped impediment is also phase-scoped, so a phase report does not
     // have to join through every task to find what is holding it up.
     scope.taskId = task.id;
     scope.phaseId = task.phaseId;
+    // Carried so a blocker raised against a task can reach the person holding
+    // it. blockTask already told them; this path did not, so whether the person
+    // trying to do the work found out depended on which endpoint was used.
+    scope.assigneeId = task.assigneeId;
     return scope;
   }
   if (phaseId) {
@@ -385,14 +400,16 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
       // and reporting the work as moving again would be a lie the plan screen
       // would then repeat.
       let released: any = null;
+      let blockedAssigneeId: string | null = null;
       if (imp.taskId) {
         const stillBlocked = await tx.projectImpediment.count({
           where: { taskId: imp.taskId, kind: 'Blocker', resolvedAt: null },
         });
         if (stillBlocked === 0) {
           const task = await tx.projectTask.findUnique({
-            where: { id: imp.taskId }, select: { status: true },
+            where: { id: imp.taskId }, select: { status: true, assigneeId: true },
           });
+          blockedAssigneeId = task?.assigneeId ?? null;
           if (task?.status === 'Blocked') {
             released = await tx.projectTask.update({
               where: { id: imp.taskId },
@@ -411,17 +428,26 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
         payload: { projectRef: project.ref, ref: imp.ref, costDays: cost, released: !!released },
       });
 
-      await notify(tx, {
+      // The raiser, and the person whose task just became workable again.
+      //
+      // Only the raiser was told, so the assignee — the one who has been unable
+      // to start, and whose task this transaction may have just moved out of
+      // Blocked — learned nothing. Being told the way is clear is the whole
+      // point of clearing it.
+      const clearAudience = Array.from(new Set(
+        [imp.raisedById, released ? blockedAssigneeId : null].filter(Boolean),
+      )) as string[];
+      await notify(tx, clearAudience.map((rid) => ({
         tenantId: project.tenantId,
-        recipientId: imp.raisedById,
+        recipientId: rid,
         actorId: userId,
         event: 'PROJECT_BLOCKER_CLEARED',
         subjectType: 'ProjectImpediment',
         subjectId: id,
         title: `${imp.ref} has been cleared`,
         body: `${imp.title} — ${cost} day(s) lost.`,
-        link: 'project-delivery',
-      });
+        link: rid === blockedAssigneeId ? 'my-work' : 'project-delivery',
+      })));
 
       const rollup = await recomputeProject(tx, project.id);
       return { cleared, released, rollup };

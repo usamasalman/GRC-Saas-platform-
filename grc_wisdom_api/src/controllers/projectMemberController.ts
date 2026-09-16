@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, StaleTenantError } from '../services/scopeResolver';
 import { guardProject } from '../services/projectGuard';
+import { notify } from '../services/notificationService';
 import {
   planMemberAdd, planMemberRemove, commitments, MemberRow, RACI, SIDES,
 } from '../services/projectMembership';
@@ -166,6 +167,23 @@ export const addMember = async (req: AuthenticatedRequest, res: Response): Promi
           allocation: plan.allocation,
         },
       });
+
+      // Being staffed onto an engagement told nobody, including the person
+      // staffed. They were expected to discover it by opening a project they
+      // had no reason to look at.
+      await notify(tx, {
+        tenantId: project.tenantId,
+        recipientId: candidate!.id,
+        actorId: String(req.user!.id),
+        event: 'PROJECT_MEMBER_ADDED',
+        subjectType: SUBJECT,
+        subjectId: project.id,
+        title: `You are on ${project.ref}: ${project.name}`,
+        body: `As ${plan.roleLabel} (${plan.raci})`
+          + `${plan.allocation === null ? '' : `, ${plan.allocation}% of your time`}.`,
+        link: 'my-work',
+      });
+
       return row;
     });
 
