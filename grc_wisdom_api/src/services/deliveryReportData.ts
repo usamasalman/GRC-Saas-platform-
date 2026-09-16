@@ -3,7 +3,7 @@ import {
 } from './projectSchedule';
 import { taskCounts, taskTiming, isComplete, requiresVerification, VERIFICATION_SLA_DAYS } from './projectLifecycle';
 import { slippage, attribute } from './projectDelay';
-import { evidenceStanding, clauseCoverage } from './projectEvidence';
+import { evidenceStanding, clauseCoverage, hasEverHadEvidence } from './projectEvidence';
 
 /**
  * Everything the five delivery reports read, shaped once.
@@ -233,6 +233,8 @@ export function verificationIntegrity(rows: readonly VerifiedTaskRow[]): {
   unestablished: number;
   withEvidenceAddedLater: number;
   acceptedFirstTime: number;
+  /** How many acceptances there were to assess. Zero is not a pass. */
+  assessed: number;
   clean: boolean;
 } {
   // Counted apart from failures, because they mean different things: one is a
@@ -250,7 +252,103 @@ export function verificationIntegrity(rows: readonly VerifiedTaskRow[]): {
     unestablished,
     withEvidenceAddedLater: addedLater,
     acceptedFirstTime: rows.filter((r) => r.rejections === 0).length,
-    clean: notIndependent === 0 && unestablished === 0 && addedLater === 0,
+    // An EMPTY set is not a clean set. With no rows at all the three counts
+    // above are each zero and this used to report clean: true — the vacuous
+    // truth that nothing failed because nothing was ever tested. The audit
+    // report renders those three counts as the word "None" apiece, so an
+    // engagement where nobody verified anything presented three adverse-finding
+    // rows as three passes, under the heading "The basis of the confirmed
+    // figure", in the document an external auditor reads.
+    assessed: rows.length,
+    clean: rows.length > 0 && notIndependent === 0 && unestablished === 0 && addedLater === 0,
+  };
+}
+
+// ─── What the report is allowed to say about confirmation ───────────────────
+
+export interface VerificationBasis {
+  /** Whether independent confirmation may be claimed at all. */
+  assured: boolean;
+  /** The one sentence that goes beside the progress figure. */
+  headline: string;
+  /** Why the claim cannot be made. Null when it can. */
+  caveat: string | null;
+}
+
+/**
+ * Whether "independently confirmed" means anything on this engagement.
+ *
+ * The status report used to print, on `unverifiedGap === 0`:
+ *
+ *     "100% reported, all of it independently confirmed"
+ *
+ * That gap is zero in two completely different situations. One is the good one:
+ * every task that needed a reviewer got one. The other is that NOTHING needed a
+ * reviewer — the default policy is SelectedTasks and nobody marked a task, so
+ * requiresVerification returns false everywhere, verifiedCompletion degrades to
+ * "is it complete", and the verified percentage simply copies the reported one.
+ * A manager who ticks every task Done then exports a paper telling the steering
+ * committee that all of it was independently confirmed, with zero verification
+ * rows in the database.
+ *
+ * The degenerate case is worse still: a brand-new engagement reads "0%
+ * reported, all of it independently confirmed".
+ *
+ * Pure, so every branch is exercised without a database.
+ */
+export function verificationBasis(input: {
+  policy: string;
+  /** Tasks that require an independent reviewer under the policy. */
+  needsVerification: number;
+  /** Tasks actually carrying an acceptance. */
+  verifiedCount: number;
+  reported: number;
+  verified: number;
+  unverifiedGap: number;
+}): VerificationBasis {
+  const { policy, needsVerification, verifiedCount, reported, verified, unverifiedGap } = input;
+
+  if (needsVerification === 0) {
+    const why = policy === 'None'
+      ? 'This engagement is set to require no independent review, so the figure is what the '
+        + 'people doing the work reported about their own work.'
+      : policy === 'EvidenceTasks'
+        ? 'No task on this engagement carries evidence, so under its policy none of them '
+          + 'required an independent reviewer. The figure is what the people doing the work '
+          + 'reported about their own work.'
+        : 'No task on this engagement was marked as requiring an independent reviewer, so the '
+          + 'figure is what the people doing the work reported about their own work.';
+    return {
+      assured: false,
+      headline: `${reported}% reported, none of it independently confirmed`,
+      caveat: why,
+    };
+  }
+
+  if (verifiedCount === 0) {
+    return {
+      assured: false,
+      headline: `${reported}% reported / ${verified}% independently confirmed`,
+      caveat: `${needsVerification} task(s) require an independent reviewer and none has been `
+        + 'confirmed yet. Nothing here has been checked by anybody other than the person who '
+        + 'did it.',
+    };
+  }
+
+  if (unverifiedGap === 0) {
+    return {
+      assured: true,
+      headline: `${reported}% reported, all of it independently confirmed across `
+        + `${verifiedCount} task(s)`,
+      caveat: null,
+    };
+  }
+
+  return {
+    assured: true,
+    headline: `${reported}% reported / ${verified}% independently confirmed — `
+      + `${unverifiedGap} points claimed but not confirmed`,
+    caveat: null,
   };
 }
 
@@ -286,4 +384,4 @@ export function unmappedClauses(
     .sort((a, b) => (a.standardCode + a.ref).localeCompare(b.standardCode + b.ref));
 }
 
-export { taskCounts, taskTiming, isComplete, requiresVerification, attribute, slippage, clauseCoverage, parseFrameworks, VERIFICATION_SLA_DAYS };
+export { taskCounts, taskTiming, isComplete, requiresVerification, hasEverHadEvidence, attribute, slippage, clauseCoverage, parseFrameworks, VERIFICATION_SLA_DAYS };

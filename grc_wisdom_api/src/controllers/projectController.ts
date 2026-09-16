@@ -9,7 +9,7 @@ import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
 import { planStandardBinding } from '../services/projectStandards';
-import { planActivation } from '../services/projectActivation';
+import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 
 /**
  * Delivery projects — slice 1.
@@ -727,11 +727,12 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
     }
 
     const reason = req.body?.reason ? str(req.body.reason).trim() : '';
-    if (reason.length < 10) {
+    if (!noteIsEnough(reason)) {
       res.status(400).json({
         status: 'error',
         code: 'REASON_REQUIRED',
-        message: 'Say why the plan is being reset — at least 10 characters. A baseline moved '
+        message: `Say why the plan is being reset — at least ${MIN_NOTE} characters. A `
+          + 'baseline moved '
           + 'without a reason is a baseline nobody can defend at the next steering meeting.',
       });
       return;
@@ -781,9 +782,9 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
       res.status(400).json({ status: 'error', message: "outcome must be 'Closed' or 'Cancelled'" });
       return;
     }
-    // Ten characters is not a quality bar; it is enough to stop an empty string
-    // and a full stop from becoming the permanent record of why this ended.
-    if (!closureNote || str(closureNote).trim().length < 10) {
+    // One length rule, in services/projectActivation, so closing and
+    // rebaselining cannot drift apart on what counts as an explanation.
+    if (!noteIsEnough(closureNote)) {
       res.status(400).json({
         status: 'error',
         code: 'CLOSURE_NOTE_REQUIRED',

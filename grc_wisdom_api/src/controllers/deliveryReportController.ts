@@ -17,6 +17,7 @@ import {
   statusFigures, attentionLists, verificationRows, verificationIntegrity,
   unmappedClauses, taskCounts, attribute, slippage, clauseCoverage,
   parseFrameworks, isComplete, isConfirmed, requiresVerification, taskTiming,
+  verificationBasis,
 } from '../services/deliveryReportData';
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
 import { readinessScope } from '../services/projectStandards';
@@ -51,6 +52,32 @@ const str = (v: unknown): string => String(v ?? '');
 const pct = (n: number) => `${n}%`;
 const day = (d: Date | null | undefined) =>
   d ? new Date(d).toISOString().slice(0, 10) : '—';
+
+/**
+ * A test that was never run, as distinct from one that passed.
+ *
+ * "None" three times down a column reads as three clean findings. An em dash
+ * cannot be read that way.
+ */
+const NOT_ASSESSED = '— nothing was assessed';
+
+/**
+ * The frameworks this engagement is bound to.
+ *
+ * Reads ProjectStandard, not the legacy free-text column. That column stopped
+ * being written when the binding landed, so every engagement created since
+ * would have printed an em dash here — including on the certification
+ * readiness paper, whose whole subject is the frameworks in scope. It is still
+ * read as a fallback for engagements that predate the binding, and marked as
+ * unresolved text when it is all there is.
+ */
+function frameworksInScope(e: { standards: { standard: { code: string } }[]; frameworks: string }): string {
+  const bound = e.standards.map((b) => b.standard.code);
+  if (bound.length > 0) return bound.join(', ');
+  const legacy = parseFrameworks(e.frameworks);
+  if (legacy.length === 0) return '—';
+  return `${legacy.join(', ')} (named as free text; not bound to the framework library)`;
+}
 
 /** Slip is meaningless without an agreed date to slip from. */
 const slipText = (baselined: boolean, days: number) =>
@@ -117,6 +144,10 @@ async function loadEngagement(projectId: string) {
       sponsor: { select: { id: true, name: true } },
       tenant: { select: { name: true } },
       providerTenant: { select: { name: true } },
+      standards: {
+        select: { standard: { select: { code: true } } },
+        orderBy: { standard: { code: 'asc' } },
+      },
       phases: {
         orderBy: [{ sequence: 'asc' }],
         select: {
@@ -190,6 +221,34 @@ async function loadEngagement(projectId: string) {
 type Engagement = NonNullable<Awaited<ReturnType<typeof loadEngagement>>>;
 
 const allTasks = (e: Engagement) => e.phases.flatMap((p) => p.tasks);
+
+/**
+ * The tasks, with needsVerification resolved.
+ *
+ * taskCounts() reads `needsVerification` off each row, and it is not a column:
+ * it is derived from the engagement's policy, the task's own override and
+ * whether the task carries evidence. The reports used to hand taskCounts raw
+ * Prisma rows, where that property is simply absent — and because the parameter
+ * type declares it optional, that compiled. So `counts.needsVerification` was
+ * structurally zero in every delivery report ever produced, and both papers
+ * printed "0" under "Requiring independent review" even for an engagement on
+ * EveryTask with every task genuinely reviewed.
+ *
+ * This controller already imported requiresVerification and hasEverHadEvidence
+ * for exactly this purpose and called neither. projectPlanController does it
+ * correctly, which is why the screens were right and only the exports were
+ * wrong.
+ */
+const countable = (policy: string, tasks: readonly any[]) => tasks.map((tk) => ({
+  ...tk,
+  needsVerification: requiresVerification(
+    policy,
+    tk.verificationOverride,
+    hasEverHadEvidence(tk.evidence.filter((v: any) => !v.withdrawnAt)),
+  ),
+}));
+
+const countableTasks = (e: Engagement) => countable(e.verificationPolicy, allTasks(e));
 
 /** Names resolved from what the query already loaded, not by a second lookup. */
 function nameLookup(e: Engagement): (id: string | null) => string {
@@ -357,7 +416,15 @@ function decisionsRequested(
 function statusSections(e: Engagement, now: Date): ReportSection[] {
   const f = statusFigures(e as any, now);
   const tasks = allTasks(e);
-  const counts = taskCounts(tasks, now);
+  const counts = taskCounts(countableTasks(e), now);
+  const basis = verificationBasis({
+    policy: e.verificationPolicy,
+    needsVerification: counts.needsVerification,
+    verifiedCount: counts.verified,
+    reported: f.reported,
+    verified: f.verified,
+    unverifiedGap: f.unverifiedGap,
+  });
   const openImpediments = e.impediments.filter((i) => i.kind === 'Blocker' && !i.resolvedAt);
   const att = attribute(e.impediments as any, now);
 
@@ -391,14 +458,19 @@ function statusSections(e: Engagement, now: Date): ReportSection[] {
         // ONE field, one string. Two adjacent fields can be separated by eye,
         // by highlighter, or by copy-and-paste into minutes; fused, the
         // flattering number cannot travel without the other.
-        {
-          label: 'Progress',
-          value: f.unverifiedGap === 0
-            ? pct(f.reported) + ' reported, all of it independently confirmed'
-            : pct(f.reported) + ' reported / ' + pct(f.verified)
-              + ' independently confirmed \u2014 ' + f.unverifiedGap
-              + ' points claimed but not confirmed',
-        },
+        // An unverified gap of zero has two completely different causes, and
+        // this line used to read "all of it independently confirmed" for both.
+        // One is that every task needing a reviewer got one. The other is that
+        // NOTHING needed one — the default policy is SelectedTasks, nobody
+        // marked a task, so the verified percentage simply copies the reported
+        // percentage. A manager could tick every task Done and hand the
+        // steering committee a paper claiming independent confirmation with
+        // zero verification rows in the database. verificationBasis tells the
+        // two apart.
+        { label: 'Progress', value: basis.headline },
+        ...(basis.caveat
+          ? [{ label: 'What that figure rests on', value: basis.caveat }]
+          : []),
         { label: 'What confirmation means here', value: assuranceNote(e.verificationPolicy) },
         // Project.health DEFAULTS to Green, so an untouched field and a
         // considered assessment are indistinguishable in the data. Printing a
@@ -533,7 +605,11 @@ function phaseSections(e: Engagement, phaseId: string, now: Date): ReportSection
   if (!p) return null;
 
   const att = attentionLists(p.tasks as any, now);
-  const counts = taskCounts(p.tasks as any, now);
+  // Decorated even though this report prints no review figure today. An
+  // undecorated call is the trap the other two fell into: taskCounts reads a
+  // derived property that is optional on its parameter type, so passing raw
+  // rows compiles and pins the count to zero with nothing to show for it.
+  const counts = taskCounts(countable(e.verificationPolicy, p.tasks), now);
   const phaseImpediments = e.impediments.filter(
     (i) => i.phase?.name === p.name && i.kind === 'Blocker' && !i.resolvedAt,
   );
@@ -674,7 +750,7 @@ function auditSections(e: Engagement, now: Date): ReportSection[] {
   const nameOf = nameLookup(e);
   const rows = verificationRows(tasks as any, nameOf);
   const integrity = verificationIntegrity(rows);
-  const counts = taskCounts(tasks, now);
+  const counts = taskCounts(countableTasks(e), now);
 
   // Coverage measured against CONFIRMED work, not merely finished work.
   // clauseCoverage's default predicate admits Done, which would call a clause
@@ -701,7 +777,7 @@ function auditSections(e: Engagement, now: Date): ReportSection[] {
         { label: 'Client', value: e.tenant?.name ?? '—' },
         { label: 'Delivered by', value: e.providerTenant?.name ?? 'The organisation itself' },
         { label: 'Type', value: e.projectType },
-        { label: 'Frameworks in scope', value: parseFrameworks(e.frameworks).join(', ') || '—' },
+        { label: 'Frameworks in scope', value: frameworksInScope(e) },
         { label: 'Period', value: `${day(e.startDate)} to ${day(e.actualEndDate || e.targetEndDate)}` },
         { label: 'Status at export', value: e.status },
         { label: 'Accountable', value: e.owner?.name ?? '—' },
@@ -717,33 +793,53 @@ function auditSections(e: Engagement, now: Date): ReportSection[] {
         { label: 'Work claimed complete', value: pct(e.reportedProgress) },
         { label: 'Independently confirmed', value: pct(e.verifiedProgress) },
         { label: 'Tasks requiring review', value: String(counts.needsVerification) },
+        ...(integrity.assessed === 0
+          ? [{
+            label: 'What was assessed',
+            value: 'Nothing. No task on this engagement has been independently confirmed, so '
+              + 'the rows below record no findings because no test was run — not because the '
+              + 'tests passed. This report supports no assurance conclusion.',
+          }]
+          : []),
         { label: 'Tasks confirmed', value: String(integrity.verifiedCount) },
         { label: 'Confirmed at the first attempt', value: String(integrity.acceptedFirstTime) },
         {
           label: 'Acceptances by someone other than the doer',
           value: `${integrity.independentCount} of ${integrity.verifiedCount}`,
         },
+        // "None" three times in a row reads as three clean findings. On an
+        // engagement where nobody ever verified anything all three counts are
+        // zero, so this section presented "nothing was tested" as "nothing
+        // failed" — under the heading "The basis of the confirmed figure", in
+        // the document an external auditor reads. An em dash is the honest
+        // rendering of a test that was never run.
         {
           label: 'Acceptances failing that test',
-          value: integrity.notIndependent === 0
-            ? 'None'
-            : `${integrity.notIndependent} — see the table below`,
+          value: integrity.assessed === 0
+            ? NOT_ASSESSED
+            : integrity.notIndependent === 0
+              ? 'None'
+              : `${integrity.notIndependent} — see the table below`,
         },
         // Counted apart from failures, because they are different findings. An
         // unverifiable control is not a passed control, and presenting it as
         // one is the error this row exists to prevent.
         {
           label: 'Acceptances that could not be tested',
-          value: integrity.unestablished === 0
-            ? 'None'
-            : `${integrity.unestablished} — the record does not establish who put `
-              + 'the work forward, so independence cannot be demonstrated',
+          value: integrity.assessed === 0
+            ? NOT_ASSESSED
+            : integrity.unestablished === 0
+              ? 'None'
+              : `${integrity.unestablished} — the record does not establish who put `
+                + 'the work forward, so independence cannot be demonstrated',
         },
         {
           label: 'Evidence attached after its acceptance',
-          value: integrity.withEvidenceAddedLater === 0
-            ? 'None'
-            : `${integrity.withEvidenceAddedLater} task(s)`,
+          value: integrity.assessed === 0
+            ? NOT_ASSESSED
+            : integrity.withEvidenceAddedLater === 0
+              ? 'None'
+              : `${integrity.withEvidenceAddedLater} task(s)`,
         },
       ],
     },
@@ -850,6 +946,17 @@ function delaySections(e: Engagement, now: Date): ReportSection[] {
         { label: 'Plan version', value: String(e.baselineVersion) },
       ],
     },
+    ...(e.baselineSetAt ? [] : [{
+      kind: 'fields' as const,
+      title: 'This report states no schedule movement',
+      fields: [{
+        label: 'Why',
+        value: 'This engagement was never activated, so no plan was ever agreed and no task '
+          + 'carries a baselined date. Every slippage figure below is therefore zero because '
+          + 'nothing was measured, not because nothing moved. Dates on this engagement have '
+          + 'been free to change without recording anything.',
+      }],
+    }]),
     {
       kind: 'fields',
       title: 'Days lost, and to whom',
@@ -863,7 +970,19 @@ function delaySections(e: Engagement, now: Date): ReportSection[] {
         // pulled back in is never refunded, because the recovery was somebody's
         // work and netting it off would let one side's effort silently cancel
         // days attributed to the other.
-        { label: 'Net movement across tasks', value: `${netTaskSlip} day(s)` },
+        // Only where there is an agreed plan to move away from. Without a
+        // baseline every task's slippage() returns slipped:false, netTaskSlip
+        // is zero, and this line printed "0 day(s)" with no qualification --
+        // so a client reading the contract-review paper concluded the provider
+        // had lost no days, when in truth nothing was ever measured. The status
+        // and phase reports already said "Not baselined" here; this one did
+        // not, and it is the one that goes to the other party.
+        {
+          label: 'Net movement across tasks',
+          value: e.baselineSetAt
+            ? `${netTaskSlip} day(s)`
+            : '— no agreed plan to measure against',
+        },
         {
           label: 'Why those two differ',
           value: 'Recorded days are gross. Where a date slipped and was later '
@@ -1036,7 +1155,7 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
       fields: [
         { label: 'Engagement', value: `${e.ref} — ${e.name}` },
         { label: 'Client', value: e.tenant?.name ?? '—' },
-        { label: 'Frameworks in scope', value: parseFrameworks(e.frameworks).join(', ') || '—' },
+        { label: 'Frameworks in scope', value: frameworksInScope(e) },
         { label: 'Status at export', value: e.status },
       ],
     },

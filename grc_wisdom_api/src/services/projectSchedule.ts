@@ -93,10 +93,28 @@ export function derivedStatus(
   // it as Not started keeps it out of the delivery figures without inventing a
   // sixth colour for the dashboard.
   if (p.status === 'Cancelled') return 'NotStarted';
-  if (p.status === 'Draft') return 'NotStarted';
 
+  // Draft is tested AFTER the schedule, not before it.
+  //
+  // It used to return early, above these two lines, which meant a draft that
+  // had run months past the date it set for itself was reported as "Not
+  // started". The portfolio then showed that engagement with a grey Not-started
+  // pill, the words "184 days overdue" in red two columns to its left, and a
+  // Delayed count of zero — three statements about one row, two of them false.
+  // The steering report went further: because NotStarted is neither AtRisk nor
+  // Delayed, healthDisagrees compared it against a default-Green health flag,
+  // agreed with it, and told the committee "These two agree."
+  //
+  // Nothing could leave Draft at the time, so every engagement in the product
+  // was in that state.
   if (s.overdue) return 'Delayed';
   if (s.elapsedPercent - p.reportedProgress >= AT_RISK_DRIFT_POINTS) return 'AtRisk';
+
+  // Neither concern fired, so a draft is what it says it is. This stays last:
+  // reaching it means the calendar has not yet outrun the work, and a draft
+  // whose window has not opened has elapsed nothing and drifted nowhere.
+  if (p.status === 'Draft') return 'NotStarted';
+
   return 'OnTrack';
 }
 
