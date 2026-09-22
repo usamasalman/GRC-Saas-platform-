@@ -258,6 +258,13 @@
       "module": "Delivery",
       "number": 33,
       "tenancySpecific": true
+    },
+    {
+      "key": "offboard-a-user-with-handover",
+      "name": "Offboard a user with handover",
+      "module": "IAM",
+      "number": 34,
+      "tenancySpecific": true
     }
   ],
   "roles": [
@@ -282,7 +289,8 @@
         "monitor-security-and-handle-incidents",
         "publish-or-enable-a-module",
         "transfer-a-user-between-branches-or-entities",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -337,7 +345,8 @@
         "create-import-and-version-a-document",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -354,7 +363,8 @@
         "maintain-roles-and-permissions",
         "assess-and-treat-a-risk",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -375,7 +385,8 @@
         "create-or-manage-a-tenant",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -394,7 +405,8 @@
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -471,7 +483,8 @@
         "manage-a-subscription",
         "onboard-or-purchase-an-open-source-tool",
         "generate-and-distribute-a-report",
-        "create-or-manage-a-tenant"
+        "create-or-manage-a-tenant",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -508,7 +521,8 @@
         "create-or-manage-a-tenant",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -525,7 +539,8 @@
         "assess-and-treat-a-risk",
         "acknowledge-or-monitor-a-policy",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -634,7 +649,8 @@
         "acknowledge-or-monitor-a-policy",
         "assign-or-complete-learning",
         "operate-wisdom-eye-and-eye-phish",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -698,7 +714,8 @@
         "acknowledge-or-monitor-a-policy",
         "assign-or-complete-learning",
         "operate-wisdom-eye-and-eye-phish",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "offboard-a-user-with-handover"
       ]
     },
     {
@@ -922,7 +939,8 @@
         "manage-partner-client-workspaces-and-engagements",
         "generate-and-distribute-a-report",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "offboard-a-user-with-handover"
       ]
     },
     {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, ghostBtn, linkBtn, pill, STATUS_PILL, apiError } from './iamStyles';
 import FormDialog from '../../components/FormDialog';
+import Can, { MAY } from '../../components/Can';
 
 export type Tier = 'saas' | 'org' | 'branch' | 'all';
 
@@ -10,9 +11,10 @@ interface UserRow {
   roleName: string; roleIsSystem: boolean; roleNeedsReview: boolean; capabilityCount: number;
   department: string | null; branch: string | null; status: string;
   mfaEnabled: boolean; mustChangePassword: boolean;
-  tenantName: string; tenantType: string;
+  tenantId: string; tenantName: string; tenantType: string;
 }
 interface RoleOption { id: string; name: string; isSystem: boolean; tenantId: string | null }
+interface DeptOption { id: string; name: string }
 
 const TITLES: Record<Tier, { title: string; blurb: string }> = {
   saas: { title: 'SaaS admin users', blurb: 'Platform staff operating the control plane.' },
@@ -24,30 +26,37 @@ const TITLES: Record<Tier, { title: string; blurb: string }> = {
 const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [depts, setDepts] = useState<DeptOption[]>([]);
   const [totals, setTotals] = useState<any>({});
   const [scope, setScope] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('Active');
+  const [departmentFilter, setDepartmentFilter] = useState('');
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const q = tier === 'all' ? '' : `?tier=${tier}`;
-      const [uRes, rRes] = await Promise.all([
-        apiClient.get(`/api/iam/users${q}`),
+      const params = new URLSearchParams();
+      if (tier !== 'all') params.set('tier', tier);
+      if (departmentFilter) params.set('department', departmentFilter);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const [uRes, rRes, dRes] = await Promise.all([
+        apiClient.get(`/api/iam/users${qs}`),
         apiClient.get('/api/iam/roles').catch(() => null),
+        apiClient.get('/api/iam/departments').catch(() => null),
       ]);
       setUsers(uRes.data?.users || []);
       setTotals(uRes.data?.totals || {});
       setScope(uRes.data?.scope || '');
       setRoles(rRes?.data?.roles || []);
+      setDepts(dRes?.data?.departments || []);
     } catch (err) {
       setError(apiError(err, 'Failed to load users'));
     } finally { setLoading(false); }
-  }, [tier]);
+  }, [tier, departmentFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -58,14 +67,40 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
    */
   const [dialog, setDialog] = useState<
     null | { kind: 'role'; u: UserRow } | { kind: 'status'; u: UserRow; next: string }
+    | { kind: 'offboard'; u: UserRow }
   >(null);
+
+  // What the leaver holds, fetched before anything is asked of the
+  // administrator. An offboarding moves every risk, control, document, project
+  // and open ticket they own; confirming that on a dialog alone would ask
+  // somebody to authorise a blast radius they were never shown.
+  const [preview, setPreview] = useState<any>(null);
+  const [successorId, setSuccessorId] = useState('');
+  const [offboardReason, setOffboardReason] = useState('');
+  const [roleDialogValue, setRoleDialogValue] = useState('');
+
   const [dialogBusy, setDialogBusy] = useState(false);
 
-  const roleOptionsFor = (u: UserRow) =>
-    roles.filter((r) => !r.tenantId || r.name === u.roleName);
+  const openRoleDialog = (u: UserRow) => {
+    setRoleDialogValue(u.roleId || '');
+    setDialog({ kind: 'role', u });
+  };
 
-  const saveRole = async (u: UserRow, roleName: string) => {
-    const chosen = roleOptionsFor(u).find((r) => r.name === roleName);
+  /**
+   * Platform roles (tenantId null) are always offered — they are the standard
+   * set and any tenant may use them. Custom roles (tenantId set) are offered
+   * only when they belong to the user's own tenant: a custom role for Tenant A
+   * cannot be assigned to someone in Tenant B, and the server enforces this
+   * too. Before this fix the filter was `!r.tenantId || r.name === u.roleName`,
+   * which kept the role the person already held but excluded every other custom
+   * role their tenant had defined — so a custom role could never actually be
+   * assigned.
+   */
+  const roleOptionsFor = (u: UserRow) =>
+    roles.filter((r) => !r.tenantId || r.tenantId === u.tenantId);
+
+  const saveRole = async (u: UserRow, roleId: string) => {
+    const chosen = roles.find((r) => r.id === roleId);
     if (!chosen) return;
     setDialogBusy(true);
     try {
@@ -86,6 +121,36 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
       await load();
     } catch (err) { setError(apiError(err, 'Status change failed')); setDialog(null); }
     finally { setDialogBusy(false); }
+  };
+
+  const openOffboard = async (u: UserRow) => {
+    setPreview(null);
+    setSuccessorId('');
+    setOffboardReason('');
+    setDialog({ kind: 'offboard', u });
+    try {
+      const res = await apiClient.get(`/api/iam/users/${u.id}/offboard-preview`);
+      setPreview(res.data || null);
+    } catch (err) {
+      setError(apiError(err, 'Could not work out what this person holds'));
+      setDialog(null);
+    }
+  };
+
+  const doOffboard = async (u: UserRow) => {
+    setDialogBusy(true);
+    try {
+      const res = await apiClient.post(`/api/iam/users/${u.id}/offboard`, {
+        successorId,
+        reason: offboardReason,
+      });
+      setDialog(null);
+      setNotice(res.data?.message || `${u.email} offboarded`);
+      await load();
+    } catch (err) {
+      setError(apiError(err, 'Offboarding failed'));
+      setDialog(null);
+    } finally { setDialogBusy(false); }
   };
 
   const visible = users.filter((u) => {
@@ -122,10 +187,20 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input placeholder="Search name, email or role…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 280 }} />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...S.input, maxWidth: 180 }}>
+          <option value="Active">Active only</option>
           <option value="">All statuses</option>
-          <option value="Active">Active</option>
           <option value="Suspended">Suspended</option>
-          <option value="Inactive">Inactive</option>
+          <option value="Inactive">Inactive (leavers)</option>
+        </select>
+        <select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          style={{ ...S.input, maxWidth: 200 }}
+        >
+          <option value="">All departments</option>
+          {depts.map((d) => (
+            <option key={d.id} value={d.name}>{d.name}</option>
+          ))}
         </select>
       </div>
 
@@ -172,10 +247,17 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
                   </td>
                   <td style={S.td}><span style={STATUS_PILL[u.status] || STATUS_PILL.Inactive}>{u.status}</span></td>
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                    <button onClick={() => setDialog({ kind: 'role', u })} style={linkBtn('var(--info)')}>role</button>
+                    <button onClick={() => openRoleDialog(u)} style={linkBtn('var(--info)')}>role</button>
                     <button onClick={() => setDialog({ kind: 'status', u, next: u.status === 'Active' ? 'Suspended' : 'Active' })} style={linkBtn(u.status === 'Active' ? 'var(--warning)' : 'var(--success)')}>
                       {u.status === 'Active' ? 'suspend' : 'activate'}
                     </button>
+                    {u.status !== 'Inactive' && (
+                      <Can do={MAY.OFFBOARD_USER}>
+                        <button onClick={() => openOffboard(u)} style={linkBtn('var(--danger)')}>
+                          offboard
+                        </button>
+                      </Can>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -189,23 +271,157 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
         </div>
       )}
 
-      {dialog?.kind === 'role' && (
-        <FormDialog
-          title={`Assign a role to ${dialog.u.email}`}
-          intro={<>Currently <strong>{dialog.u.roleName}</strong>. The role decides what this person can do; the menu and the API both follow it.</>}
-          submitLabel="Assign role"
-          busy={dialogBusy}
-          fields={[{
-            name: 'role',
-            label: 'Role',
-            type: 'select',
-            options: roleOptionsFor(dialog.u).map((r) => r.name),
-            initial: dialog.u.roleName,
-          }]}
-          onSubmit={(v) => saveRole(dialog.u, v.role)}
-          onCancel={() => setDialog(null)}
-        />
+      {dialog?.kind === 'offboard' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
+          <div style={{ ...S.card, width: '100%', maxWidth: 560, padding: 26, borderRadius: 12, maxHeight: '86vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, color: 'var(--ink)' }}>
+              Offboard {dialog.u.name}
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+              Everything this person is responsible for moves to their successor, and their
+              access ends. The account is not deleted: their name stays on the approvals they
+              signed, the policies they acknowledged and the audit entries they caused.
+            </p>
+
+            {!preview ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 12.5, padding: '12px 0' }}>
+                Working out what they hold…
+              </div>
+            ) : (
+              <>
+                <div style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                    {preview.summary?.ownsNothing
+                      ? 'This person holds nothing that needs handing over'
+                      : `${preview.summary?.total} record${preview.summary?.total === 1 ? '' : 's'} will move`}
+                  </div>
+                  {preview.summary?.ownsNothing ? (
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+                      Nothing names them as owner, assignee or approver. A successor is still
+                      required, so the record says who picked the work up.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {(preview.summary?.moving || []).map((m: any) => (
+                        <div key={`${m.model}.${m.column}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-muted)' }}>
+                          <span>{m.label}</span>
+                          <strong style={{ color: 'var(--ink)' }}>{m.count}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(preview.withdraw?.acknowledgementRequests > 0 || preview.withdraw?.checkedOutDocuments > 0) && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)', fontSize: 11.5, color: 'var(--warning)', lineHeight: 1.6 }}>
+                      {preview.withdraw.acknowledgementRequests > 0 && (
+                        <div>
+                          {preview.withdraw.acknowledgementRequests} acknowledgement request
+                          {preview.withdraw.acknowledgementRequests === 1 ? '' : 's'} will be
+                          withdrawn — they can no longer sign, and leaving them would hold
+                          those policies below full coverage forever.
+                        </div>
+                      )}
+                      {preview.withdraw.checkedOutDocuments > 0 && (
+                        <div>
+                          {preview.withdraw.checkedOutDocuments} checked-out document
+                          {preview.withdraw.checkedOutDocuments === 1 ? '' : 's'} will be
+                          released, or nobody could open them again.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 6 }}>
+                  Who takes over
+                </label>
+                <select
+                  value={successorId}
+                  onChange={(e) => setSuccessorId(e.target.value)}
+                  style={{ ...S.input, marginBottom: 14 }}
+                >
+                  <option value="">Choose a successor…</option>
+                  {users
+                    .filter((c) => c.id !== dialog.u.id && c.status === 'Active' && c.tenantId === dialog.u.tenantId)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.name} — {c.roleName}</option>
+                    ))}
+                </select>
+
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 6 }}>
+                  Why they are leaving
+                </label>
+                <textarea
+                  value={offboardReason}
+                  onChange={(e) => setOffboardReason(e.target.value)}
+                  rows={3}
+                  placeholder="The one line that explains this handover to whoever reads the audit log."
+                  style={{ ...S.input, marginBottom: 18, fontFamily: 'inherit' }}
+                />
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setDialog(null)} style={ghostBtn} disabled={dialogBusy}>Cancel</button>
+              <button
+                onClick={() => doOffboard(dialog.u)}
+                disabled={dialogBusy || !preview || !successorId || offboardReason.trim().length < 4}
+                style={{ ...ghostBtn, color: 'var(--danger)', borderColor: 'var(--danger-line)', opacity: (!preview || !successorId || offboardReason.trim().length < 4) ? 0.5 : 1 }}
+              >
+                {dialogBusy ? 'Handing over…' : 'Offboard and hand over'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
+
+      {dialog?.kind === 'role' && (() => {
+        const opts = roleOptionsFor(dialog.u);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
+            <div style={{ ...S.card, width: '100%', maxWidth: 460, padding: 26, borderRadius: 12 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 17, color: 'var(--ink)' }}>Assign a role to {dialog.u.email}</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+                Currently <strong style={{ color: 'var(--ink-body)' }}>{dialog.u.roleName}</strong>. The role decides what this person can do; the menu and the API both follow it.
+              </p>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: 'var(--ink-muted)' }}>Role</label>
+              <select
+                value={roleDialogValue}
+                onChange={(e) => setRoleDialogValue(e.target.value)}
+                style={{ ...S.input, marginBottom: 20 }}
+              >
+                <option value="">— select a role —</option>
+                {opts.some((r) => r.isSystem) && (
+                  <optgroup label="Platform roles">
+                    {opts.filter((r) => r.isSystem).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {opts.some((r) => !r.isSystem) && (
+                  <optgroup label={`Custom roles — ${dialog.u.tenantName}`}>
+                    {opts.filter((r) => !r.isSystem).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  disabled={dialogBusy || !roleDialogValue}
+                  style={{ flex: 1, padding: 11, cursor: roleDialogValue ? 'pointer' : 'default', background: roleDialogValue ? 'var(--brand)' : 'var(--ink-muted)', color: '#fff', border: 'none', borderRadius: 6, fontFamily: 'inherit', fontSize: 13 }}
+                  onClick={() => roleDialogValue && saveRole(dialog.u, roleDialogValue)}
+                >
+                  {dialogBusy ? 'Saving…' : 'Assign role'}
+                </button>
+                <button onClick={() => setDialog(null)} style={{ padding: 11, cursor: 'pointer', background: 'transparent', border: '1px solid var(--line)', borderRadius: 6, fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-muted)' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {dialog?.kind === 'status' && (
         <FormDialog

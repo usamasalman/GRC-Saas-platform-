@@ -28,6 +28,11 @@ export const CAP = {
   ADD_USER: 'add-a-user-with-role-based-access',
   MAINTAIN_ROLES: 'maintain-roles-and-permissions',
   TRANSFER_USER: 'transfer-a-user-between-branches-or-entities',
+  // Held apart from ADD_USER on purpose. Suspension is gated on ADD_USER,
+  // which fifteen roles hold including branch HR and support coordinators;
+  // offboarding reassigns every risk, control, document and project somebody
+  // owned and then ends their access, which is not the same decision.
+  OFFBOARD_USER: 'offboard-a-user-with-handover',
   MONITOR_SECURITY: 'monitor-security-and-handle-incidents',
   GOVERN_FLAG: 'govern-a-feature-flag',
   PUBLISH_MODULE: 'publish-or-enable-a-module',

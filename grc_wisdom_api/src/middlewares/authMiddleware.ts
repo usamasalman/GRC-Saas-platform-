@@ -64,10 +64,45 @@ export const requireAuth = async (
     // wrong answer into a 401 that tells the user what to do about it.
     {
       const { prisma } = await import('../db');
-      const tenant = await prisma.tenant.findUnique({
-        where: { id: String(decoded.tenantId) },
-        select: { id: true, suspendedAt: true, suspendedReason: true },
-      });
+      const [tenant, actor] = await Promise.all([
+        prisma.tenant.findUnique({
+          where: { id: String(decoded.tenantId) },
+          select: { id: true, suspendedAt: true, suspendedReason: true },
+        }),
+        // ── The account itself ──────────────────────────────────────────────
+        //
+        // User.status was read by nothing in the auth path: login never
+        // consulted it, this middleware never loaded the User row, and refresh
+        // checked only the token. So suspending somebody, or marking them
+        // Inactive, did not stop them working -- they kept full access until
+        // their access token expired, and a suspension that clears the refresh
+        // token still leaves fifteen minutes.
+        //
+        // Offboarding is what forced the issue: ending a leaver's access is
+        // the whole point, and it cannot be done by a status column nothing
+        // reads. One indexed primary-key lookup, alongside the tenant one that
+        // was already here.
+        prisma.user.findUnique({
+          where: { id: String(decoded.userId ?? decoded.id ?? '') },
+          select: { status: true },
+        }),
+      ]);
+
+      // Refused only on a status this deliberately blocks. An account whose
+      // row could not be read at all falls through to the tenant checks below
+      // rather than locking every user out of a working system over a
+      // transient database error -- the same call this file already makes for
+      // rejectIfMustChangePassword.
+      if (actor && (actor.status === 'Suspended' || actor.status === 'Inactive')) {
+        res.status(403).json({
+          status: 'error',
+          code: actor.status === 'Inactive' ? 'ACCOUNT_CLOSED' : 'ACCOUNT_SUSPENDED',
+          message: actor.status === 'Inactive'
+            ? 'This account has been closed. Its work was handed over to somebody else.'
+            : 'This account is suspended. Speak to an administrator.',
+        });
+        return;
+      }
       if (!tenant) {
         res.status(401).json({
           status: 'error',

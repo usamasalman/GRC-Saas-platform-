@@ -93,6 +93,7 @@ model Tenant {
   automationRules AutomationRule[]
   importJobs    ImportJob[]
   frameworkImports FrameworkImport[]
+  departments      Department[]
 
   /// Delivery projects this tenant owns — its own compliance programme.
   projects         Project[]
@@ -117,7 +118,11 @@ model User {
   profile       String?
   context       String?
   branch        String?
+  /// Freeform label, kept for display and backward compat. departmentId is authoritative.
   department    String?
+  /// FK to the Department record for this tenant. Nullable during migration.
+  departmentId  String?
+  departmentRef Department? @relation("DepartmentMembers", fields: [departmentId], references: [id], onDelete: SetNull)
   status        String   @default("Active")
   
   // Phase 1: Trust Foundation (MFA)
@@ -206,6 +211,21 @@ model User {
   documentsPublished      Document[]               @relation("DocumentPublisher")
   documentLinksMade       DocumentLink[]           @relation("DocumentLinker")
   documentsRead           DocumentAccess[]         @relation("DocumentReader")
+
+  /// ── Offboarding ─────────────────────────────────────────────────────────
+  ///
+  /// The row is never deleted: this person's name appears on approvals they
+  /// signed, policies they acknowledged and audit entries they caused, and all
+  /// of that has to stay readable. These three columns record that they left
+  /// and who picked up their work, so "who took over from them" has an answer
+  /// without reading the audit log.
+  offboardedAt            DateTime?
+  offboardedById          String?
+  offboardedBy            User?                    @relation("Offboarder", fields: [offboardedById], references: [id], onDelete: SetNull)
+  offboardedUsers         User[]                   @relation("Offboarder")
+  successorId             String?
+  successor               User?                    @relation("Succession", fields: [successorId], references: [id], onDelete: SetNull)
+  predecessors            User[]                   @relation("Succession")
   documentsDisposed       Document[]               @relation("DocumentDisposer")
   retentionSchedulesMade  RetentionSchedule[]      @relation("RetentionScheduleAuthor")
   mattersOpened           LegalMatter[]            @relation("MatterOpener")
@@ -233,6 +253,31 @@ model User {
   brandingEdited TenantBranding[] @relation("BrandingEditor")
   reportsIssued ReportIssue[] @relation("ReportIssuer")
   dependenciesLinked ProjectDependency[] @relation("DependencyLinker")
+  departmentsHeaded  Department[]       @relation("DepartmentHead")
+
+  @@index([tenantId, departmentId])
+}
+
+/// A department that belongs to a tenant, with a named head.
+///
+/// Department was a free-text String on User. "Finance" and "finance" were
+/// two departments, and moving someone from Finance to Internal Audit was
+/// impossible without a raw database write because there was no Department row
+/// to reference. This model is the authoritative record; User.department stays
+/// for display and backward compatibility while the FK column is populated.
+model Department {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  headId    String?
+  head      User?    @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
+  members   User[]   @relation("DepartmentMembers")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Plan {

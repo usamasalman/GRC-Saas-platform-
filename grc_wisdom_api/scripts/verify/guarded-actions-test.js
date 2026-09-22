@@ -33,11 +33,12 @@ const ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'grcRoutes.ts')
 const PROJECT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'projectRoutes.ts');
 const DOCUMENT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'documentRoutes.ts');
 const RETENTION_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'retentionRoutes.ts');
+const IAM_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'iamRoutes.ts');
 const NAV = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'navCapabilities.ts');
 
-// Four route files now. MAY describes rules wherever they are enforced, and a
+// Five route files now. MAY describes rules wherever they are enforced, and a
 // key pinned against a file it does not live in would silently verify nothing.
-const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES, RETENTION_ROUTES]
+const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES, RETENTION_ROUTES, IAM_ROUTES]
   .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const nav = fs.readFileSync(NAV, 'utf8');
 
@@ -71,6 +72,9 @@ const ANCHOR = {
   // Destroying a record. The menu offered "Retention Schedules" from the start
   // and rendered the audit log; there was nothing behind it to guard.
   DISPOSE_RECORD: "router.post('/documents/:id/dispose',",
+  // Offboarding a leaver: reassigns every record they owned, then ends their
+  // access. Gated separately from ADD_USER / suspend (packet 5.1).
+  OFFBOARD_USER: "router.post('/users/:id/offboard',",
 };
 
 let checks = 0;

@@ -40,6 +40,7 @@ export const CAP = {
   ADD_USER: 'add-a-user-with-role-based-access',
   MAINTAIN_ROLES: 'maintain-roles-and-permissions',
   TRANSFER_USER: 'transfer-a-user-between-branches-or-entities',
+  OFFBOARD_USER: 'offboard-a-user-with-handover',
   MONITOR_SECURITY: 'monitor-security-and-handle-incidents',
   GOVERN_FLAG: 'govern-a-feature-flag',
   PUBLISH_MODULE: 'publish-or-enable-a-module',
@@ -197,6 +198,11 @@ export const MAY = {
    * destroyed are the same decision a month apart, so they carry one grant.
    */
   DISPOSE_RECORD: [CAP.RETENTION_HOLD],
+  /**
+   * POST /api/iam/users/:id/offboard — handing over everything somebody owned
+   * and ending their access. Not ADD_USER, which merely suspends.
+   */
+  OFFBOARD_USER: [CAP.OFFBOARD_USER],
   /** POST, PATCH, DELETE /api/grc/standards and /api/grc/clauses. */
   AUTHOR_STANDARD: [CAP.ENABLE_STANDARD],
   /** POST, PATCH, DELETE /api/grc/controls and clause mapping. */
