@@ -48,6 +48,7 @@ model Tenant {
   auditLogs     AuditLog[]
   documents     Document[]
   documentAccesses DocumentAccess[]
+  retentionSchedules RetentionSchedule[]
   apiKeys       ApiKey[]
   webhooks      WebhookEndpoint[]
   riskSnapshots RiskScoreSnapshot[]
@@ -203,6 +204,8 @@ model User {
   documentsPublished      Document[]               @relation("DocumentPublisher")
   documentLinksMade       DocumentLink[]           @relation("DocumentLinker")
   documentsRead           DocumentAccess[]         @relation("DocumentReader")
+  documentsDisposed       Document[]               @relation("DocumentDisposer")
+  retentionSchedulesMade  RetentionSchedule[]      @relation("RetentionScheduleAuthor")
   documentVersionsEdited  DocumentVersionEditor[]  @relation("DocumentVersionEditor")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
@@ -1493,6 +1496,40 @@ model Document {
   audienceKind     String?
   audienceValue    String?
 
+  /// When it was archived. archiveDocument wrote only `status: 'ARCHIVED'`, so
+  /// "archived" was a word with no moment attached and a retention schedule
+  /// triggered on archiving had nothing to count from. Rows archived before
+  /// this column existed keep a null and report as unscheduled, which is what
+  /// is true of them -- inferring a date from updatedAt would put a disposal
+  /// date on a record nobody had dated.
+  archivedAt       DateTime?
+
+  /// ── Retention ───────────────────────────────────────────────────────────
+  ///
+  /// The menu has offered "Retention Schedules" from the start and rendered
+  /// the audit log. Nothing computed a disposal date because there was nothing
+  /// to compute one from.
+  retentionScheduleId String?
+  retentionSchedule   RetentionSchedule? @relation(fields: [retentionScheduleId], references: [id], onDelete: SetNull)
+
+  /// Derived from the schedule and the moment its trigger fired, and stored so
+  /// the queue is an indexed query rather than a scan that re-derives a date
+  /// for every document in the tenant on every page load.
+  disposalDueAt       DateTime?
+
+  /// Disposal destroys the CONTENT and keeps the record. Seven foreign keys
+  /// cascade off this table -- approvals and signatures, acknowledgements,
+  /// acknowledgement requests, versions, version editors, read history and
+  /// links -- so deleting the row to dispose of a document would destroy the
+  /// evidence that it existed, was approved, and was read. These three columns
+  /// are what survives to show the disposal was authorised.
+  disposedAt          DateTime?
+  disposedById        String?
+  disposedBy          User?     @relation("DocumentDisposer", fields: [disposedById], references: [id], onDelete: SetNull)
+  disposalReason      String?
+
+  @@index([tenantId, disposalDueAt])
+
   versions      DocumentVersion[]
   approvals     ApprovalQueue[]
   acknowledgements Acknowledgement[]
@@ -1500,6 +1537,57 @@ model Document {
   governs       DocumentLink[]
   accesses      DocumentAccess[]
   chunks        DocumentChunk[]
+}
+
+/// How long a class of record is kept, and what starts the clock.
+///
+/// The Governance menu has offered "Retention Schedules" since the beginning
+/// and the entry rendered AuditLogViewer -- the same component 'legal-hold'
+/// and 'logs' rendered, so three menu items were one page. There was no model,
+/// no column and no endpoint behind it.
+///
+/// The promise was made in four other places too. platformCatalogue ships the
+/// document module with `defaultRetentionYears: 7` and nothing read it; the
+/// System Health screen reported an "Evidence Expiry & Retention Reminder
+/// Worker" as Idle with a last run that morning, for a worker that did not
+/// exist.
+model RetentionSchedule {
+  id            String   @id @default(uuid())
+
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Short, and what a disposal record names. Upper-cased on the way in so
+  /// RET-7Y and ret-7y cannot both exist and be told apart only by eye.
+  code          String
+  name          String
+  description   String?
+
+  /// A whole number of months, which is the convention already in this schema:
+  /// auditCycleMonths Int @default(24) is literally a two-year schedule.
+  retainMonths  Int
+
+  /// Published | Archived | Created -- the moment the clock starts.
+  trigger       String
+
+  /// How long before the disposal date a document enters the review queue, so
+  /// disposal is a decision somebody makes rather than a date that passes.
+  reviewWindowDays Int   @default(30)
+
+  /// Applied to documents that name no schedule of their own.
+  isDefault     Boolean  @default(false)
+
+  createdById   String?
+  createdBy     User?    @relation("RetentionScheduleAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  documents     Document[]
+
+  /// One code per organisation. A disposal record that names RET-7Y must have
+  /// exactly one schedule it could mean.
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
 /// Who opened a document, and when.

@@ -11,6 +11,7 @@ import {
   planPublication, coverage, AUDIENCE_KINDS,
 } from '../services/documentPublication';
 import { checkSod, SodViolation } from '../services/sodEngine';
+import { recomputeDisposalDue } from './retentionController';
 import {
   EDITOR_VIA, versionEditorIds, selfApprovalRefusal, approversWhoDidNotEdit,
 } from '../services/documentEditors';
@@ -821,6 +822,16 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
 
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+    // A held document was still approvable and publishable. isFrozenByLegalHold
+    // guarded update, checkout, checkin, submit, archive and delete, and these
+    // two were missed -- so a document frozen as evidence in a matter could be
+    // signed off and issued to an audience with notifications, which is the
+    // opposite of frozen.
+    if (isFrozenByLegalHold(doc)) {
+      res.status(423).json({ status: 'error', message: 'Document is under legal hold and cannot be approved' });
+      return;
+    }
+
 
     const approval = await prisma.approvalQueue.findFirst({
       where: { documentId: id, approverId: userId, status: 'PENDING' },
@@ -962,6 +973,16 @@ export const publishDocument = async (req: AuthenticatedRequest, res: Response):
 
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+    // A held document was still approvable and publishable. isFrozenByLegalHold
+    // guarded update, checkout, checkin, submit, archive and delete, and these
+    // two were missed -- so a document frozen as evidence in a matter could be
+    // signed off and issued to an audience with notifications, which is the
+    // opposite of frozen.
+    if (isFrozenByLegalHold(doc)) {
+      res.status(423).json({ status: 'error', message: 'Document is under legal hold and cannot be published' });
+      return;
+    }
+
 
     const [users, existing] = await Promise.all([
       prisma.user.findMany({
@@ -1003,6 +1024,11 @@ export const publishDocument = async (req: AuthenticatedRequest, res: Response):
           audienceValue: plan.value,
         },
       });
+
+      // Publishing starts the clock on a Published schedule. Without this a
+      // disposal date would exist only for documents whose schedule was bound
+      // after they went live, and every other one would sit unscheduled.
+      await recomputeDisposalDue(tx as any, id);
 
       // One row per person asked, per version. The unique key makes a repeated
       // publish idempotent rather than double-asking anybody.
@@ -1112,7 +1138,13 @@ export const archiveDocument = async (req: AuthenticatedRequest, res: Response):
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.document.update({ where: { id }, data: { status: 'ARCHIVED' } });
+      const u = await tx.document.update({
+        where: { id },
+        // Archiving had no moment attached, so a retention schedule triggered
+        // on it had nothing to count from.
+        data: { status: 'ARCHIVED', archivedAt: new Date() },
+      });
+      await recomputeDisposalDue(tx as any, id);
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_ARCHIVED',
         subjectType: SUBJECT_DOCUMENT, subjectId: id,

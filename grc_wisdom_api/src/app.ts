@@ -6,6 +6,7 @@ import path from 'path';
 import authRoutes from './routes/authRoutes';
 import dbAdminRoutes from './routes/dbAdminRoutes';
 import documentRoutes from './routes/documentRoutes';
+import retentionRoutes from './routes/retentionRoutes';
 import adminSodRoutes from './routes/adminSodRoutes';
 import passwordResetRoutes from './routes/passwordResetRoutes';
 import tenantRoutes from './routes/tenantRoutes';
@@ -167,6 +168,11 @@ app.use('/api/admin/db', dbAdminRoutes);
 
 // Phase 2 Document Management Routes
 app.use('/api/documents', documentRoutes);
+
+// Retention schedules, the disposition queue and disposal. The Governance
+// menu has offered "Retention Schedules" from the start and rendered the audit
+// log; there was no model, no column and no endpoint behind it.
+app.use('/api/retention', retentionRoutes);
 
 // Phase 1 SoD Engine — admin CRUD for rules
 app.use('/api/admin/sod-rules', adminSodRoutes);

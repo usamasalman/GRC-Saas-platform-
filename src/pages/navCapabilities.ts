@@ -191,6 +191,12 @@ export const MAY = {
   CLOSE_ISSUE: [CAP.EXECUTE_AUDIT],
   /** POST /api/documents/:id/publish — issuing a policy to its readers. */
   SIGN_DOCUMENT: [CAP.SIGN_DOCUMENT],
+  /**
+   * POST /api/retention/documents/:id/dispose, and everything that sets how
+   * long a record is kept. Destroying a record and deciding when it may be
+   * destroyed are the same decision a month apart, so they carry one grant.
+   */
+  DISPOSE_RECORD: [CAP.RETENTION_HOLD],
   /** POST, PATCH, DELETE /api/grc/standards and /api/grc/clauses. */
   AUTHOR_STANDARD: [CAP.ENABLE_STANDARD],
   /** POST, PATCH, DELETE /api/grc/controls and clause mapping. */

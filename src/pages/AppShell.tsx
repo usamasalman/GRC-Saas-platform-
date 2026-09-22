@@ -11,6 +11,7 @@ import DocumentLibrary from './documents/DocumentLibrary';
 import ApprovalQueue from './documents/ApprovalQueue';
 import AcknowledgementTracker from './documents/AcknowledgementTracker';
 import AuditLogViewer from './documents/AuditLogViewer';
+import RetentionSchedules from './documents/RetentionSchedules';
 
 // Real Tenant Components
 import TenantManager from './tenants/TenantManager';
@@ -557,7 +558,12 @@ const AppShell = () => {
     if (currentPage === 'acknowledgements') {
       return <AcknowledgementTracker key={`${account.id}-${currentPage}`} />;
     }
-    if (currentPage === 'logs' || currentPage === 'hash-check' || currentPage === 'retention' || currentPage === 'legal-hold') {
+    // 'retention' used to land here too, so Retention Schedules, Legal Hold and
+    // Immutable Audit Log were three menu entries rendering one page.
+    if (currentPage === 'retention') {
+      return <RetentionSchedules key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'logs' || currentPage === 'hash-check' || currentPage === 'legal-hold') {
       return <AuditLogViewer key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'dashboard') {

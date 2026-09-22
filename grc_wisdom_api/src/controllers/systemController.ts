@@ -39,7 +39,20 @@ export const getSystemHealth = async (req: AuthenticatedRequest, res: Response):
       { id: 'JOB-SYS-01', name: 'WORM Cryptographic Chain Audit', type: 'Cron (Hourly)', schedule: '0 * * * *', lastRun: new Date(Date.now() - 1800000).toISOString(), nextRun: new Date(Date.now() + 1800000).toISOString(), status: 'Idle', durationMs: 420 },
       { id: 'JOB-SYS-02', name: 'SLA Breach Monitoring & Auto-Escalation', type: 'Cron (Every 5 mins)', schedule: '*/5 * * * *', lastRun: new Date(Date.now() - 120000).toISOString(), nextRun: new Date(Date.now() + 180000).toISOString(), status: 'Idle', durationMs: 180 },
       { id: 'JOB-SYS-03', name: 'Daily Regulatory Standards Sync (NCA / ISO)', type: 'Cron (Daily 02:00)', schedule: '0 2 * * *', lastRun: new Date(Date.now() - 43200000).toISOString(), nextRun: new Date(Date.now() + 43200000).toISOString(), status: 'Idle', durationMs: 1250 },
-      { id: 'JOB-SYS-04', name: 'Evidence Expiry & Retention Reminder Worker', type: 'Cron (Daily 06:00)', schedule: '0 6 * * *', lastRun: new Date(Date.now() - 28800000).toISOString(), nextRun: new Date(Date.now() + 57600000).toISOString(), status: 'Idle', durationMs: 890 },
+      // JOB-SYS-04 was "Evidence Expiry & Retention Reminder Worker", reported
+      // as Idle with a last run eight hours ago and a duration of 890ms. No
+      // such worker existed. An operator asking whether retention was running
+      // was told it ran at six that morning.
+      //
+      // Retention is derived on read -- the disposition queue is a query over
+      // disposalDueAt, not a timer -- so there is no job to report here. The
+      // row is gone rather than restated, because the honest answer to "is the
+      // retention worker running" is that there is no retention worker.
+      //
+      // The rows that remain are not audited by this change. Only two timers
+      // exist in this API (SLA escalation and risk review, started in
+      // server.ts), so at least JOB-SYS-01, -03 and -05 describe work nothing
+      // performs, and the real risk-review scanner is not listed at all.
       { id: 'JOB-SYS-05', name: 'ZATCA E-Invoice XML Signer & Hash Verification', type: 'Queue Worker', schedule: 'Event Driven', lastRun: new Date(Date.now() - 600000).toISOString(), nextRun: 'On Event', status: 'Idle', durationMs: 110 },
     ];
 

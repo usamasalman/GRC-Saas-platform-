@@ -32,11 +32,12 @@ const assert = require('assert');
 const ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'grcRoutes.ts');
 const PROJECT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'projectRoutes.ts');
 const DOCUMENT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'documentRoutes.ts');
+const RETENTION_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'retentionRoutes.ts');
 const NAV = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'navCapabilities.ts');
 
-// Three route files now. MAY describes rules wherever they are enforced, and a
+// Four route files now. MAY describes rules wherever they are enforced, and a
 // key pinned against a file it does not live in would silently verify nothing.
-const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES]
+const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES, RETENTION_ROUTES]
   .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const nav = fs.readFileSync(NAV, 'utf8');
 
@@ -67,6 +68,9 @@ const ANCHOR = {
   // Issuing a policy to the people who must read it. The route existed and was
   // guarded for the life of the module; nothing called it.
   SIGN_DOCUMENT: "router.post('/:id/publish',",
+  // Destroying a record. The menu offered "Retention Schedules" from the start
+  // and rendered the audit log; there was nothing behind it to guard.
+  DISPOSE_RECORD: "router.post('/documents/:id/dispose',",
 };
 
 let checks = 0;
