@@ -49,6 +49,8 @@ model Tenant {
   documents     Document[]
   documentAccesses DocumentAccess[]
   retentionSchedules RetentionSchedule[]
+  legalMatters  LegalMatter[]
+  legalHolds    LegalHold[]
   apiKeys       ApiKey[]
   webhooks      WebhookEndpoint[]
   riskSnapshots RiskScoreSnapshot[]
@@ -206,6 +208,10 @@ model User {
   documentsRead           DocumentAccess[]         @relation("DocumentReader")
   documentsDisposed       Document[]               @relation("DocumentDisposer")
   retentionSchedulesMade  RetentionSchedule[]      @relation("RetentionScheduleAuthor")
+  mattersOpened           LegalMatter[]            @relation("MatterOpener")
+  mattersReleased         LegalMatter[]            @relation("MatterReleaser")
+  holdsPlaced             LegalHold[]              @relation("HoldPlacer")
+  holdsReleased           LegalHold[]              @relation("HoldReleaser")
   documentVersionsEdited  DocumentVersionEditor[]  @relation("DocumentVersionEditor")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
@@ -1536,7 +1542,85 @@ model Document {
   acknowledgementRequests AcknowledgementRequest[]
   governs       DocumentLink[]
   accesses      DocumentAccess[]
+  legalHolds    LegalHold[]
   chunks        DocumentChunk[]
+}
+
+/// A matter that documents are held for.
+///
+/// A hold was four columns on Document and the matter was free text typed per
+/// document, so "Ivanov v. Acme" on forty documents was forty strings. Nobody
+/// could ask what a matter covered, a typo on the fortieth quietly made it a
+/// different matter, and applyLegalHold's 409 meant a document relevant to two
+/// investigations could be recorded against only one of them.
+model LegalMatter {
+  id            String   @id @default(uuid())
+
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// What the hold on each document points at. Upper-cased on the way in.
+  reference     String
+  title         String
+  description   String?
+
+  /// Open | Released. A released matter holds nothing new.
+  status        String   @default("Open")
+
+  openedById    String?
+  openedBy      User?    @relation("MatterOpener", fields: [openedById], references: [id], onDelete: SetNull)
+  openedAt      DateTime @default(now())
+
+  releasedById  String?
+  releasedBy    User?    @relation("MatterReleaser", fields: [releasedById], references: [id], onDelete: SetNull)
+  releasedAt    DateTime?
+  releaseReason String?
+
+  holds         LegalHold[]
+
+  /// One reference per organisation, or a hold points at two matters.
+  @@unique([tenantId, reference])
+  @@index([tenantId, status])
+}
+
+/// One document held for one matter, and the record that it was.
+///
+/// Never deleted. Releasing sets releasedAt and leaves the row, because
+/// releaseLegalHold used to null all four columns on the document, so a
+/// released document carried no trace of having been frozen -- and "were you
+/// ever held, for what, and between when and when" is the question asked at
+/// the END of a matter.
+model LegalHold {
+  id            String   @id @default(uuid())
+
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  matterId      String
+  matter        LegalMatter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+
+  documentId    String
+  /// Restrict, not Cascade. A document under hold cannot be deleted anyway --
+  /// deleteDocument refuses a frozen row -- and a hold record that vanished
+  /// with its document would lose the evidence that it had been preserved.
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  placedById    String?
+  placedBy      User?    @relation("HoldPlacer", fields: [placedById], references: [id], onDelete: SetNull)
+  placedAt      DateTime @default(now())
+  reason        String
+
+  releasedById  String?
+  releasedBy    User?    @relation("HoldReleaser", fields: [releasedById], references: [id], onDelete: SetNull)
+  releasedAt    DateTime?
+  releaseReason String?
+
+  /// A matter holds a document once. Placing it again is not a second row.
+  @@unique([matterId, documentId])
+  /// "Is this document still held, by anything" -- the freeze question, asked
+  /// on every release.
+  @@index([documentId, releasedAt])
+  @@index([tenantId, releasedAt])
 }
 
 /// How long a class of record is kept, and what starts the clock.

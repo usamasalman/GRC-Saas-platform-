@@ -1197,6 +1197,21 @@ export const deleteDocument = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
+    // A document that was ever held for a matter keeps that record, and the
+    // relation is Restrict so the row cannot go while it exists. Refused here
+    // with something a person can act on, rather than as a foreign-key error
+    // surfacing as "Failed to delete document".
+    const everHeld = await prisma.legalHold.count({ where: { documentId: id } });
+    if (everHeld > 0) {
+      res.status(409).json({
+        status: 'error',
+        code: 'HOLD_HISTORY_EXISTS',
+        message: 'This document has been held for a legal matter. That record is kept, so the '
+          + 'document cannot be deleted — the evidence that it was preserved would go with it.',
+      });
+      return;
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.document.delete({ where: { id } });
       await writeAudit(tx, {

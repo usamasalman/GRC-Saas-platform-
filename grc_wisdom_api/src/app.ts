@@ -7,6 +7,7 @@ import authRoutes from './routes/authRoutes';
 import dbAdminRoutes from './routes/dbAdminRoutes';
 import documentRoutes from './routes/documentRoutes';
 import retentionRoutes from './routes/retentionRoutes';
+import legalHoldRoutes from './routes/legalHoldRoutes';
 import adminSodRoutes from './routes/adminSodRoutes';
 import passwordResetRoutes from './routes/passwordResetRoutes';
 import tenantRoutes from './routes/tenantRoutes';
@@ -173,6 +174,11 @@ app.use('/api/documents', documentRoutes);
 // menu has offered "Retention Schedules" from the start and rendered the audit
 // log; there was no model, no column and no endpoint behind it.
 app.use('/api/retention', retentionRoutes);
+
+// Legal matters, and the documents they hold. A hold was four columns and a
+// free-text matter typed per document; the three endpoints that placed one had
+// no caller, and the Legal Hold menu entry rendered the audit log.
+app.use('/api/legal', legalHoldRoutes);
 
 // Phase 1 SoD Engine — admin CRUD for rules
 app.use('/api/admin/sod-rules', adminSodRoutes);

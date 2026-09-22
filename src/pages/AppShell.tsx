@@ -12,6 +12,7 @@ import ApprovalQueue from './documents/ApprovalQueue';
 import AcknowledgementTracker from './documents/AcknowledgementTracker';
 import AuditLogViewer from './documents/AuditLogViewer';
 import RetentionSchedules from './documents/RetentionSchedules';
+import LegalHoldMatters from './documents/LegalHoldMatters';
 
 // Real Tenant Components
 import TenantManager from './tenants/TenantManager';
@@ -563,7 +564,12 @@ const AppShell = () => {
     if (currentPage === 'retention') {
       return <RetentionSchedules key={`${account.id}-${currentPage}`} />;
     }
-    if (currentPage === 'logs' || currentPage === 'hash-check' || currentPage === 'legal-hold') {
+    // 'legal-hold' used to land here too: it showed the raw hash-chained audit
+    // trail and nothing about holds.
+    if (currentPage === 'legal-hold') {
+      return <LegalHoldMatters key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'logs' || currentPage === 'hash-check') {
       return <AuditLogViewer key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'dashboard') {
