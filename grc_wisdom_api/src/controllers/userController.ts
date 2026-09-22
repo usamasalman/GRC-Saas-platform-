@@ -56,6 +56,13 @@ export const listUsers = async (req: AuthenticatedRequest, res: Response): Promi
       where,
       select: {
         id: true, name: true, email: true, role: true, roleId: true,
+        // Selected because two screens filter on it and a Prisma select returns
+        // exactly what it lists: without this, `u.tenantId` was undefined on
+        // every row, so UserDirectory's role filter compared a real id against
+        // undefined (always false, hiding every tenant custom role) and its
+        // successor picker compared undefined against undefined (always true,
+        // offering successors from other tenants that the server then refuses).
+        tenantId: true,
         profile: true, context: true, branch: true, department: true,
         status: true, mfaEnabled: true, mustChangePassword: true, createdAt: true,
         tenant: { select: { id: true, name: true, type: true } },
@@ -111,6 +118,7 @@ export const listTeams = async (req: AuthenticatedRequest, res: Response): Promi
       where: { tenantId: { in: scope.tenantIds } },
       select: {
         id: true, name: true, email: true, role: true, department: true,
+        departmentId: true,
         branch: true, status: true, mfaEnabled: true,
         tenant: { select: { id: true, name: true } },
       },
@@ -129,7 +137,7 @@ export const listTeams = async (req: AuthenticatedRequest, res: Response): Promi
         t.departments.set(dept, { name: dept, members: [], branches: new Set<string>() });
       }
       const d = t.departments.get(dept);
-      d.members.push({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, mfaEnabled: u.mfaEnabled });
+      d.members.push({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, mfaEnabled: u.mfaEnabled, departmentId: u.departmentId });
       if (u.branch) d.branches.add(u.branch);
     }
 

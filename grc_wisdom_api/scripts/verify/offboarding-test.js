@@ -392,6 +392,41 @@ const BASE = { actorId: 'u-admin', leaver: LEAVER, successor: SUCCESSOR, reason:
     + 'most likely to assume works the other way',
   );
 
+  // The successor picker must filter on a field the endpoint actually sends.
+  //
+  // It compared `c.tenantId === dialog.u.tenantId`, and listUsers' Prisma
+  // select emitted only a nested `tenant: {id,name,type}` — so both sides were
+  // undefined, the comparison was true for every row, and a platform-scope
+  // operator was offered successors from other tenants that
+  // planOffboarding then refuses, after the blast-radius preview and the
+  // reason had been filled in. The same missing field made UserDirectory's
+  // role filter always false. A picker must not offer what the server refuses;
+  // tenant-provisioning-test.js:213 asserts the same rule for its own screen.
+  {
+    const users = code(read(API, 'controllers', 'userController.ts'));
+    const list = users.slice(users.indexOf('export const listUsers'));
+    const select = list.slice(list.indexOf('select: {'), list.indexOf('orderBy:'));
+    const filtered = [...directory.matchAll(/\bc\.(\w+) === dialog\.u\.(\w+)/g)];
+    ok(
+      filtered.length > 0,
+      'the successor picker must restrict candidates on something',
+    );
+    for (const [, left, right] of filtered) {
+      checks += 1;
+      assert.ok(
+        new RegExp(`\\b${left}: true`).test(select),
+        `the successor picker filters on user.${left}, which listUsers does not select. `
+        + 'Both sides are undefined at runtime, so the filter passes every row and the '
+        + 'server refuses the choice after the operator has filled the form',
+      );
+      checks += 1;
+      assert.strictEqual(
+        left, right,
+        'and it must compare the same field on both sides',
+      );
+    }
+  }
+
   ok(
     /offboarding-test\.js/.test(deploy),
     'CI must run this. A rule that is not in the workflow is one the next packet can delete',
