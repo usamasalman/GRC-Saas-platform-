@@ -142,6 +142,37 @@ ok(EDITOR_VIA.UPDATE === 'UPDATE' && EDITOR_VIA.CHECKIN === 'CHECKIN' && EDITOR_
   );
 }
 
+// ── The two layers nothing was holding ───────────────────────────────────
+//
+// Both survived a deliberate break of the guard while this suite still
+// passed, which means neither was being tested. Neither was a live hole --
+// approversWhoDidNotEdit runs after the query and is pinned above, and the
+// Restrict is only reachable through user deletion -- but an untested layer
+// is one the next packet removes without anything objecting.
+{
+  const submit = ctrl.slice(ctrl.indexOf('export const submitForApproval'));
+  ok(
+    /notIn: \[doc\.ownerId, \.\.\.editorIds\]/.test(submit.slice(0, 2000)),
+    'when no approvers are named, the people offered must exclude the ones who wrote the '
+    + 'version. approversWhoDidNotEdit would drop them a few lines later, but a query that '
+    + 'takes 3 and then has them filtered out can return an empty list and read as '
+    + '"this organisation has nobody to approve"',
+  );
+
+  const model = schema.slice(schema.indexOf('model DocumentVersionEditor {'));
+  const body = model.slice(0, model.indexOf('\n}'));
+  ok(
+    /user\s+User\s+@relation\([^)]*onDelete: Restrict\)/.test(body),
+    'deleting a user must NOT erase the record that they edited a version. Cascade here '
+    + 'would mean removing an account launders a self-approval: the editor set empties, '
+    + 'and the version reads as written by nobody',
+  );
+  ok(
+    /@@unique\(\[versionId, userId\]\)/.test(body),
+    'and one person editing twice is a timestamp, not a second row',
+  );
+}
+
 ok(
   /document-editors-test\.js/.test(deploy),
   'CI must run this. A rule that is not in the workflow is a rule that can be deleted by the next packet.',
