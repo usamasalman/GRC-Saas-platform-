@@ -5,6 +5,9 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import {
   planDocumentLinks, summariseLinks, targetOf, LINK_TARGETS, LinkCandidate,
 } from '../services/documentLinks';
+import {
+  loadReadable, viewerFor, audienceMembership, decideRead,
+} from '../services/documentReadGuard';
 
 /**
  * Tying a policy to what it governs.
@@ -62,11 +65,16 @@ export const listDocumentLinks = async (
     const tenantId = req.user!.tenantId;
     const id = str(req.params.id);
 
-    const doc = await prisma.document.findFirst({
-      where: { id, tenantId },
-      select: { id: true, code: true, title: true, status: true },
-    });
-    if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+    // Same reach decision as opening the document. What a Restricted policy
+    // governs is a statement about that policy, and a listing that answered it
+    // for someone who cannot read the document would put the enforcement in
+    // one handler and the disclosure in another.
+    //
+    // Not recorded as an access: this is loaded by the page that already
+    // recorded the view, and counting it again would make one read look like
+    // two in the history.
+    const gate = await loadReadable(id, req.user!.id, tenantId);
+    if (!gate) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
 
     const links = await prisma.documentLink.findMany({
       where: { documentId: id },
@@ -396,18 +404,43 @@ export const governingDocuments = async (
           select: {
             id: true, code: true, title: true, category: true, status: true,
             version: true, publishedVersion: true, publishedAt: true,
+            // For the reach decision below, not for the response.
+            tenantId: true, ownerId: true, classification: true, audienceKind: true,
           },
         },
       },
       orderBy: { linkedAt: 'asc' },
     });
 
+    // The reverse direction leaked what the forward one protects: this answers
+    // "which policies govern this control", and a Restricted policy's code and
+    // title would reach anyone who could open the control it mandates. The
+    // withheld rows are dropped silently and not counted — saying "and two
+    // more you may not see" discloses exactly what the marking exists to keep
+    // back.
+    const [viewer, audience, approvals] = await Promise.all([
+      viewerFor(req.user!.id, tenantId),
+      audienceMembership(req.user!.id, links.map((l) => l.document.id)),
+      prisma.approvalQueue.findMany({
+        where: { documentId: { in: links.map((l) => l.document.id) }, approverId: req.user!.id },
+        select: { documentId: true },
+      }),
+    ]);
+    const approvingIds = new Set(approvals.map((a) => a.documentId));
+
+    const visible = links.filter((l) => decideRead(
+      viewer,
+      l.document,
+      approvingIds.has(l.document.id) ? [req.user!.id] : [],
+      audience.has(l.document.id),
+    ).allowed);
+
     res.json({
       status: 'success',
       target,
       targetId,
-      count: links.length,
-      documents: links.map((l) => ({
+      count: visible.length,
+      documents: visible.map((l) => ({
         linkId: l.id,
         note: l.note,
         linkedAt: l.linkedAt,

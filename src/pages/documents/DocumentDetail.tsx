@@ -13,8 +13,41 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<
-    'reader' | 'file' | 'versions' | 'approvals' | 'governs'
+    'reader' | 'file' | 'versions' | 'approvals' | 'governs' | 'access'
   >('reader');
+
+  // Who has read this document.
+  //
+  // Nothing recorded a read. The acknowledgement list answers who was ASKED to
+  // sign and who SAID they had read it -- a claim by the reader, and only for
+  // the published audience. It is silent about everybody outside that
+  // audience, who are exactly the people the question is about.
+  //
+  // The tab appears only for the document's owner and for whoever holds
+  // retention and legal hold: knowing who has been reading a policy is its own
+  // disclosure. A 403 is the server saying so, and is not an error to show.
+  const [access, setAccess] = useState<any[]>([]);
+  const [accessSummary, setAccessSummary] = useState<any>(null);
+  const [maySeeAccess, setMaySeeAccess] = useState(false);
+  const [accessNote, setAccessNote] = useState('');
+  const [reach, setReach] = useState<any>(null);
+
+  const loadAccess = async () => {
+    try {
+      const res = await apiClient.get(`/api/documents/${documentId}/access`);
+      setAccess(res.data?.access || []);
+      setAccessSummary(res.data?.summary || null);
+      setAccessNote(res.data?.recordedSince || '');
+      setMaySeeAccess(true);
+    } catch {
+      setMaySeeAccess(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId]);
 
   // What this policy governs.
   //
@@ -98,6 +131,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
       if (res.data.status === 'success') {
         const doc = res.data.document;
         setDocument(doc);
+        setReach(res.data.access || null);
 
         // Fetch PDF Blob URL if an uploaded file exists or if doc has content
         loadPdfBlob(doc.id, doc.fileType);
@@ -112,7 +146,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const loadPdfBlob = async (id: string, fileType?: string) => {
     setPdfLoading(true);
     try {
-      const response = await apiClient.get(`/api/documents/${id}/download`, {
+      // Declared, because the reader pane and the Download button reach the
+      // same endpoint. Both are recorded either way; this is what separates
+      // reading on screen from taking a copy away.
+      const response = await apiClient.get(`/api/documents/${id}/download?disposition=preview`, {
         responseType: 'blob',
       });
       const mime = (response.headers['content-type'] as string) || fileType || 'application/pdf';
@@ -296,7 +333,90 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
           >
             <Icon name="controls" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Governs ({linkSummary?.total ?? 0})
           </button>
+          {maySeeAccess && (
+            <button
+              onClick={() => setActiveTab('access')}
+              style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'access' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'access' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'access' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
+            >
+              <Icon name="users" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Access ({accessSummary?.readers ?? 0})
+            </button>
+          )}
         </nav>
+
+        {reach?.openAudienceGap && (
+          <div style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 6, background: 'var(--warning-bg)', border: '1px solid var(--warning-line)', color: 'var(--warning)', fontSize: 12.5, lineHeight: 1.6 }}>
+            Marked <strong>{reach.classification}</strong>, but still readable by everyone in
+            the organisation: it was published before audiences were recorded, so there is no
+            list of who it was issued to. Its reach cannot be narrowed while this version is
+            the published one — a published document cannot be edited or re-approved. Every
+            read of it is recorded on the Access tab.
+          </div>
+        )}
+
+        {activeTab === 'access' && (
+          <div style={{ padding: '20px 24px', overflowY: 'auto' }}>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.6, maxWidth: 680 }}>
+              Who has opened this document, and who took a copy away. One row per person per
+              day. This is a record of access, not of agreement — the signatures are under
+              Digital Signatures.
+            </p>
+
+            {accessSummary && (
+              <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', margin: '0 0 16px', fontSize: 12.5 }}>
+                {[
+                  ['Readers', accessSummary.readers],
+                  ['Days read on', accessSummary.windows],
+                  ['Views', accessSummary.views],
+                  ['Downloads', accessSummary.downloads],
+                  ['Took a copy', accessSummary.downloaders],
+                ].map(([label, value]) => (
+                  <div key={String(label)}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>{String(value)}</div>
+                    <div style={{ color: 'var(--ink-faint)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {access.length === 0 ? (
+              <div style={{ padding: '32px 20px', textAlign: 'center', border: '1px dashed var(--line)', borderRadius: 8 }}>
+                <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600, marginBottom: 5 }}>
+                  Nobody has opened this document
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', maxWidth: 480, margin: '0 auto', lineHeight: 1.6 }}>
+                  {accessNote || 'No reads have been recorded.'}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {access.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 12.5 }}
+                  >
+                    <span style={{ color: 'var(--ink)', fontWeight: 600, minWidth: 160 }}>
+                      {a.user?.name || 'Unknown'}
+                    </span>
+                    <span style={{ color: 'var(--ink-muted)' }}>{a.day}</span>
+                    <span style={{ color: 'var(--ink-muted)' }}>
+                      {a.views} view{a.views === 1 ? '' : 's'}
+                      {a.downloads > 0 && `, ${a.downloads} download${a.downloads === 1 ? '' : 's'}`}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--ink-faint)' }}>
+                      {a.basis === 'legacy-publication' ? 'no audience recorded' : a.basis}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {access.length > 0 && accessNote && (
+              <p style={{ margin: '14px 0 0', fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.6, maxWidth: 680 }}>
+                {accessNote}
+              </p>
+            )}
+          </div>
+        )}
 
         {activeTab === 'governs' && (
           <div style={{ padding: '20px 24px', overflowY: 'auto' }}>

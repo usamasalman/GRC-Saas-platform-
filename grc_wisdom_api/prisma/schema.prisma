@@ -47,6 +47,7 @@ model Tenant {
   invoices      Invoice[]
   auditLogs     AuditLog[]
   documents     Document[]
+  documentAccesses DocumentAccess[]
   apiKeys       ApiKey[]
   webhooks      WebhookEndpoint[]
   riskSnapshots RiskScoreSnapshot[]
@@ -201,6 +202,8 @@ model User {
   acknowledgementsRaised  AcknowledgementRequest[] @relation("AcknowledgementRequester")
   documentsPublished      Document[]               @relation("DocumentPublisher")
   documentLinksMade       DocumentLink[]           @relation("DocumentLinker")
+  documentsRead           DocumentAccess[]         @relation("DocumentReader")
+  documentVersionsEdited  DocumentVersionEditor[]  @relation("DocumentVersionEditor")
   ticketsAssigned Ticket[] @relation("AssignedTickets")
   ticketsRequested Ticket[] @relation("RequestedTickets")
 
@@ -1495,7 +1498,73 @@ model Document {
   acknowledgements Acknowledgement[]
   acknowledgementRequests AcknowledgementRequest[]
   governs       DocumentLink[]
+  accesses      DocumentAccess[]
   chunks        DocumentChunk[]
+}
+
+/// Who opened a document, and when.
+///
+/// Nothing recorded a read. Of the 222 audit writes in the API only four are
+/// read-shaped and none of them is a document, so "who has seen this
+/// Restricted policy" had no query behind it -- not a slow one, none: there
+/// were no rows to find. The acknowledgement tables answer a different
+/// question, who was ASKED to sign and who SAID they had read it, and only for
+/// the published audience.
+///
+/// One row per person per document per UTC day, rather than per request. The
+/// WORM chain cannot carry a row per GET -- its append re-reads the tenant's
+/// unindexed log head, it is not serialized, its currentHash is @unique and is
+/// computed without the actor or the subject, and a failed audit fails the
+/// operation at 221 of 222 call sites. See services/documentAccess.ts. So this
+/// table is the complete history, and a chain entry is written only when a
+/// window opens on a Confidential or Restricted document.
+model DocumentAccess {
+  id             String   @id @default(uuid())
+
+  /// Carried rather than joined, so "what has this person been reading" is a
+  /// single indexed lookup instead of a join through Document.
+  ///
+  /// Note what this does NOT claim: the relation below cascades, so deleting a
+  /// document deletes its access history with it. That is deliberate and it is
+  /// narrow -- deleteDocument refuses anything but a DRAFT, and a draft is
+  /// readable only by its author, its approvers and the records team, so the
+  /// history being discarded is one nobody would be asked about. A published
+  /// document cannot be deleted at all.
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  documentId     String
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  userId         String
+  user           User     @relation("DocumentReader", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The UTC calendar day, "YYYY-MM-DD". A local midnight would put one read
+  /// in two windows depending on which server answered it.
+  day            String
+
+  /// Classification as it stood when the document was opened. Snapshotted
+  /// because a later re-classification must not rewrite what the marking was
+  /// at the moment somebody was handed it.
+  classification String
+  /// Why the reader was let in: owner, approver, governance, audience,
+  /// tenant, legacy-publication.
+  basis          String
+
+  views          Int      @default(0)
+  downloads      Int      @default(0)
+
+  firstAt        DateTime @default(now())
+  lastAt         DateTime @default(now())
+
+  /// The window. Also how a repeat read is told from a first one: the insert
+  /// is attempted first and a unique violation IS the answer "already open".
+  @@unique([documentId, userId, day])
+  /// "Who has read this document" -- the auditor's question.
+  @@index([documentId, firstAt])
+  /// "What has this person been reading" -- the leaver's question, which is
+  /// what packet 5.1 will ask at offboarding.
+  @@index([tenantId, userId, firstAt])
 }
 
 model DocumentVersion {
@@ -1513,6 +1582,29 @@ model DocumentVersion {
   fileHash      String?  // SHA-256 of the actual file
   createdById   String?
   createdAt     DateTime @default(now())
+  editors       DocumentVersionEditor[]
+}
+
+/// Everybody who wrote this version, not only the person who checked it in.
+///
+/// SoD for documents looked at the audit log for DOCUMENT_CREATED and
+/// DOCUMENT_CHECKED_IN. The library Edit modal writes DOCUMENT_UPDATED against
+/// the current version without a checkout, so a co-editor who used it was
+/// never the checkout holder, passed the rule, and could approve the words
+/// they typed. createdById is one person. This table is the set approval
+/// actually tests.
+model DocumentVersionEditor {
+  id        String          @id @default(uuid())
+  versionId String
+  version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation("DocumentVersionEditor", fields: [userId], references: [id], onDelete: Restrict)
+  /// How they got onto the set: CREATE | UPDATE | CHECKIN
+  via       String
+  editedAt  DateTime        @default(now())
+
+  @@unique([versionId, userId])
+  @@index([userId])
 }
 
 /// Somebody who has been asked to acknowledge a published document.

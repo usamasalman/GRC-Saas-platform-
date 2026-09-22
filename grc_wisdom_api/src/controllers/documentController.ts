@@ -11,8 +11,54 @@ import {
   planPublication, coverage, AUDIENCE_KINDS,
 } from '../services/documentPublication';
 import { checkSod, SodViolation } from '../services/sodEngine';
+import {
+  EDITOR_VIA, versionEditorIds, selfApprovalRefusal, approversWhoDidNotEdit,
+} from '../services/documentEditors';
+import { Prisma } from '@prisma/client';
+import {
+  openAudienceGap, summariseAccess, normaliseClassification, READ_EVERYTHING,
+} from '../services/documentAccess';
+import {
+  viewerFor, audienceMembership, decideRead, loadReadable,
+  recordAccess, recordingIsMandatory, NOT_FOUND_MESSAGE,
+} from '../services/documentReadGuard';
 
 const SUBJECT_DOCUMENT = 'Document';
+
+type TxClient = Prisma.TransactionClient;
+
+/**
+ * Put this person on the version's editor set. The unique key is (version, user),
+ * so a second write from the same person is a timestamp, not a second row.
+ */
+async function rememberEditor(
+  tx: TxClient,
+  versionId: string,
+  userId: string,
+  via: string,
+): Promise<void> {
+  await tx.documentVersionEditor.upsert({
+    where: { versionId_userId: { versionId, userId } },
+    create: { versionId, userId, via },
+    update: { editedAt: new Date() },
+  });
+}
+
+async function editorsOfCurrentVersion(
+  db: { documentVersion: TxClient['documentVersion'] },
+  documentId: string,
+  versionNumber: string,
+): Promise<string[]> {
+  const version = await db.documentVersion.findFirst({
+    where: { documentId, versionNumber },
+    include: { editors: { select: { userId: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  return versionEditorIds({
+    createdById: version?.createdById,
+    editors: version?.editors ?? [],
+  });
+}
 
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -93,9 +139,28 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
       orderBy: { updatedAt: 'desc' },
     });
 
+    // What this person may actually see.
+    //
+    // `classification` above is a FILTER the caller chose, and it was the only
+    // thing in this handler that ever looked at the word: passing
+    // ?classification=Restricted SELECTED the restricted documents rather than
+    // withholding them. The decision below is the restriction, and it runs
+    // after the query so that a search term can never match the content of a
+    // document the searcher may not read.
+    const viewer = await viewerFor(userId, tenantId);
+    const audience = await audienceMembership(userId, documents.map((d) => d.id));
+
+    const visible = documents.filter((d) =>
+      decideRead(
+        viewer,
+        d,
+        d.approvals.map((a) => a.approverId),
+        audience.has(d.id),
+      ).allowed);
+
     // Tell the caller where they stand, so the UI can present the right action
     // rather than guessing and being rejected.
-    const enriched = documents.map((d) => {
+    const enriched = visible.map((d) => {
       const mine = d.approvals.find((a) => a.approverId === userId && a.status === 'PENDING');
       const blockedBy = mine
         ? d.approvals.find((a) => a.status === 'PENDING' && a.sequenceOrder < mine.sequenceOrder)
@@ -123,8 +188,39 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
 export const getDocument = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
+
+    // Decided before the record is loaded, so the expensive include — every
+    // version, every approval, and every acknowledger's name and email — is
+    // never assembled for somebody who may not have it.
+    const gate = await loadReadable(id, userId, tenantId);
+    if (!gate) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+
+    const recorded = await recordAccess({
+      tenantId,
+      documentId: id,
+      userId,
+      classification: gate.doc.classification,
+      basis: gate.verdict.basis || 'tenant',
+      via: 'VIEW',
+      now: new Date(),
+    });
+    if (!recorded && recordingIsMandatory(gate.doc.classification)) {
+      // Handing over a marked document and being unable to say to whom is the
+      // failure the record exists to prevent, so it does not happen. An
+      // Internal document is not worth blocking over and is not blocked.
+      res.status(503).json({
+        status: 'error',
+        message: 'This document could not be opened because the access record could not be '
+          + 'written. A document at this classification is not released unless the read can '
+          + 'be recorded.',
+      });
+      return;
+    }
+
     const document = await prisma.document.findFirst({
-      where: { id, tenantId: req.user!.tenantId },
+      where: { id, tenantId },
       include: {
         owner: { select: { id: true, name: true, email: true, role: true } },
         versions: { orderBy: { createdAt: 'desc' } },
@@ -138,8 +234,20 @@ export const getDocument = async (req: AuthenticatedRequest, res: Response): Pro
         },
       },
     });
-    if (!document) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
-    res.json({ status: 'success', document });
+    if (!document) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+    res.json({
+      status: 'success',
+      document,
+      access: {
+        basis: gate.verdict.basis,
+        reason: gate.verdict.reason,
+        classification: normaliseClassification(document.classification),
+        // A marked document that is still readable by the whole organisation
+        // because its publication predates audiences. Reported rather than
+        // silently preserved: one re-publish records an audience and ends it.
+        openAudienceGap: openAudienceGap(document),
+      },
+    });
   } catch (error: any) {
     console.error('[Document Get Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch document' });
@@ -179,7 +287,7 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
         },
         include: { owner: { select: { id: true, name: true, email: true } } },
       });
-      await tx.documentVersion.create({
+      const version = await tx.documentVersion.create({
         data: {
           documentId: doc.id,
           versionNumber: '1.0',
@@ -194,6 +302,7 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
           }),
         },
       });
+      await rememberEditor(tx, version.id, userId, EDITOR_VIA.CREATE);
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_CREATED',
         subjectType: SUBJECT_DOCUMENT, subjectId: doc.id,
@@ -250,6 +359,46 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
         },
         include: { owner: { select: { id: true, name: true, email: true } } },
       });
+      // The Edit modal writes this version in place, without checkout. If that
+      // write is not on the editor set, the co-editor who used it still passes
+      // SoD and can approve the text they typed.
+      const wroteBody = typeof content === 'string' || !!uploaded;
+      if (wroteBody) {
+        let current = await tx.documentVersion.findFirst({
+          where: { documentId: id, versionNumber: doc.version },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (!current) {
+          current = await tx.documentVersion.create({
+            data: {
+              documentId: id,
+              versionNumber: doc.version,
+              changeType: 'Minor',
+              summary: `In-place edit of version ${doc.version}`,
+              content: content || doc.content,
+              createdById: userId,
+              ...(uploaded && {
+                fileUrl: uploaded.fileUrl, fileName: uploaded.fileName,
+                fileSize: uploaded.fileSize, fileType: uploaded.fileType,
+                fileHash: generateHash(fileData || content || doc.content),
+              }),
+            },
+          });
+        } else {
+          await tx.documentVersion.update({
+            where: { id: current.id },
+            data: {
+              ...(typeof content === 'string' ? { content } : {}),
+              ...(uploaded ? {
+                fileUrl: uploaded.fileUrl, fileName: uploaded.fileName,
+                fileSize: uploaded.fileSize, fileType: uploaded.fileType,
+                fileHash: generateHash(fileData || content || doc.content),
+              } : {}),
+            },
+          });
+        }
+        await rememberEditor(tx, current.id, userId, EDITOR_VIA.UPDATE);
+      }
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_UPDATED',
         subjectType: SUBJECT_DOCUMENT, subjectId: id,
@@ -334,7 +483,7 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
     const contentHash = generateHash(fileData || content || doc.content);
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.documentVersion.create({
+      const version = await tx.documentVersion.create({
         data: {
           documentId: id,
           versionNumber: newVersion,
@@ -352,6 +501,7 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
           }),
         },
       });
+      await rememberEditor(tx, version.id, userId, EDITOR_VIA.CHECKIN);
       const u = await tx.document.update({
         where: { id },
         data: {
@@ -384,10 +534,47 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
 export const downloadDocument = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const doc: any = await prisma.document.findFirst({
-      where: { id, tenantId: req.user!.tenantId },
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
+
+    // The only door to the bytes: uploads/ is not served statically, on
+    // purpose. Until now this handler stamped "Classification : Restricted"
+    // into the banner of a file it would hand to anybody in the tenant, and
+    // wrote nothing down about having done so.
+    const gate = await loadReadable(id, userId, tenantId);
+    if (!gate) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+
+    const recorded = await recordAccess({
+      tenantId,
+      documentId: id,
+      userId,
+      classification: gate.doc.classification,
+      basis: gate.verdict.basis || 'tenant',
+      // The reader pane fetches through this same endpoint, so without a
+      // declared disposition every on-screen read would be counted as a copy
+      // taken away and the download figure would mean nothing.
+      //
+      // Both deliver the bytes and both are recorded — the access row and the
+      // chain entry do not depend on this. Only which counter moves does, so
+      // `downloads` is a statement about what the caller said it was doing and
+      // is not itself a control.
+      via: String(req.query.disposition) === 'preview' ? 'PREVIEW' : 'DOWNLOAD',
+      now: new Date(),
     });
-    if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+    if (!recorded && recordingIsMandatory(gate.doc.classification)) {
+      res.status(503).json({
+        status: 'error',
+        message: 'This document could not be downloaded because the access record could not be '
+          + 'written. A copy at this classification is not released unless the download can '
+          + 'be recorded.',
+      });
+      return;
+    }
+
+    const doc: any = await prisma.document.findFirst({
+      where: { id, tenantId },
+    });
+    if (!doc) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
 
     if (doc.fileUrl && typeof doc.fileUrl === 'string' && doc.fileUrl.startsWith('/uploads/')) {
       const fileNameOnly = doc.fileUrl.replace('/uploads/', '');
@@ -426,6 +613,115 @@ END OF DOCUMENT — CONFIDENTIAL GRC RECORD
   }
 };
 
+/**
+ * Who has read this document.
+ *
+ * The question an auditor asks about a Restricted policy, which had no query
+ * behind it: the acknowledgement tables answer who was ASKED to sign and who
+ * SAID they had read it, which is a claim by the reader and covers only the
+ * published audience — not evidence that a particular person opened the file,
+ * and silent about everybody outside that audience, who are precisely the
+ * population the question is about.
+ *
+ * Narrower than reading the document itself. Knowing who has been reading a
+ * policy is its own disclosure, so it is the owner's and the records team's,
+ * not every colleague's.
+ */
+export const documentAccessHistory = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
+
+    const gate = await loadReadable(id, userId, tenantId);
+    if (!gate) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+
+    // Asked of the viewer directly, not read off the verdict's basis.
+    //
+    // readDecision returns the FIRST basis that lets somebody in, and
+    // 'approver' is tested before 'governance'. All three roles holding
+    // retention and legal hold also hold the signing capability, so a
+    // compliance approver assigned to a document came back as 'approver' and
+    // lost the access history on every document they had ever been asked to
+    // sign — the people this endpoint exists for, locked out by the order of
+    // two branches.
+    const viewer = await viewerFor(userId, tenantId);
+    const governs = viewer.capabilities.includes(READ_EVERYTHING);
+    if (gate.doc.ownerId !== userId && !governs) {
+      res.status(403).json({
+        status: 'error',
+        message: 'The access history of a document belongs to its owner and to whoever holds '
+          + 'retention and legal hold.',
+      });
+      return;
+    }
+
+    const PAGE = 500;
+
+    // The totals are computed over EVERY row, not over the page.
+    //
+    // Summarising the truncated page and presenting it as a total is the
+    // defect this codebase has already fixed twice: a figure that reads as a
+    // measurement when it is a sample. A document read by more than 500
+    // person-days would have quietly reported 500.
+    const [rows, byReader] = await Promise.all([
+      prisma.documentAccess.findMany({
+        where: { documentId: id, tenantId },
+        include: { user: { select: { id: true, name: true, email: true, role: true } } },
+        orderBy: { firstAt: 'desc' },
+        take: PAGE,
+      }),
+      prisma.documentAccess.groupBy({
+        by: ['userId'],
+        where: { documentId: id, tenantId },
+        _sum: { views: true, downloads: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const summary = {
+      readers: byReader.length,
+      windows: byReader.reduce((n, r) => n + r._count._all, 0),
+      views: byReader.reduce((n, r) => n + (r._sum.views || 0), 0),
+      downloads: byReader.reduce((n, r) => n + (r._sum.downloads || 0), 0),
+      downloaders: byReader.filter((r) => (r._sum.downloads || 0) > 0).length,
+      neverOpened: byReader.length === 0,
+    };
+
+    res.json({
+      status: 'success',
+      count: rows.length,
+      // Said, because a list of 500 that stops is indistinguishable from a
+      // list of 500 that ends.
+      truncated: summary.windows > rows.length,
+      pageSize: PAGE,
+      summary,
+      access: rows.map((r) => ({
+        id: r.id,
+        user: r.user,
+        day: r.day,
+        views: r.views,
+        downloads: r.downloads,
+        basis: r.basis,
+        classification: r.classification,
+        firstAt: r.firstAt,
+        lastAt: r.lastAt,
+      })),
+      // Said so the reader knows what a zero means. Reads before this was
+      // built were not recorded, and an empty history is not proof that
+      // nobody opened the document.
+      recordedSince: 'Reads have been recorded since access logging was introduced; '
+        + 'anything before that was never written down.',
+    });
+  } catch (error: any) {
+    console.error('[Document Access History Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch access history' });
+  }
+};
+
 // ─── Submit for Approval ────────────────────────────────────────────────────
 
 export const submitForApproval = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -451,21 +747,26 @@ export const submitForApproval = async (req: AuthenticatedRequest, res: Response
     }
 
     let approvers = (approverIds as string[]) || [];
+    const editorIds = await editorsOfCurrentVersion(prisma, id, doc.version);
     if (approvers.length === 0) {
       const tenantUsers = await prisma.user.findMany({
-        where: { tenantId, id: { not: doc.ownerId }, status: 'Active' },
+        where: {
+          tenantId,
+          status: 'Active',
+          id: { notIn: [doc.ownerId, ...editorIds] },
+        },
         select: { id: true },
         take: 3,
       });
       approvers = tenantUsers.map(u => u.id);
     }
 
-    // SoD: author cannot approve their own document
-    approvers = Array.from(new Set(approvers.filter(a => a && a !== doc.ownerId)));
+    // Owner and anyone who wrote this version are not valid approvers.
+    approvers = approversWhoDidNotEdit(approvers, editorIds, doc.ownerId);
     if (approvers.length === 0) {
       res.status(400).json({
         status: 'error',
-        message: 'SoD violation: at least one valid approver (not the document author) is required',
+        message: 'SoD violation: at least one valid approver who did not edit this version is required',
       });
       return;
     }
@@ -545,7 +846,16 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
     const signatureHash = generateHash(signaturePayload);
 
     const { allApproved } = await prisma.$transaction(async (tx) => {
-      // SoD: engine-enforced — blocks author, checked-in editors, etc.
+      const editorIds = await editorsOfCurrentVersion(tx, id, doc.version);
+      const refusal = selfApprovalRefusal(userId, editorIds);
+      if (refusal) {
+        throw Object.assign(new Error(refusal.message), {
+          status: refusal.status,
+          code: refusal.code,
+        });
+      }
+
+      // SoD: engine-enforced — blocks the original author via DOCUMENT_CREATED.
       await checkSod(tx, {
         tenantId, actorId: userId,
         guardedAction: 'DOCUMENT_APPROVED',
@@ -589,6 +899,7 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
   } catch (error: any) {
     // SoD violations are a first-class 403 handled by the global error middleware.
     if (error instanceof SodViolation) throw error;
+    if (error?.status === 403 && error?.code === 'SELF_APPROVAL') throw error;
     console.error('[Approve Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to approve document' });
   }
@@ -810,7 +1121,26 @@ export const archiveDocument = async (req: AuthenticatedRequest, res: Response):
       return u;
     });
 
-    res.json({ status: 'success', message: 'Document archived', document: updated });
+    // The lifecycle result, not the document.
+    //
+    // This echoed the whole row back, `content` included, to anyone holding
+    // the authoring capability — eleven roles, among them client-contributor
+    // and vendor-owner, which is precisely the breadth documentAccess.ts
+    // gives as the reason the read override is the NARROW capability. A
+    // caller archiving a document does not need its body returned to them.
+    res.json({
+      status: 'success',
+      message: 'Document archived',
+      document: {
+        id: updated.id,
+        code: updated.code,
+        title: updated.title,
+        status: updated.status,
+        version: updated.version,
+        classification: updated.classification,
+        updatedAt: updated.updatedAt,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to archive document' });
   }
@@ -918,10 +1248,22 @@ export const acknowledgeDocument = async (req: AuthenticatedRequest, res: Respon
 export const getAcknowledgements = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
     const id = req.params.id as string;
 
+    // Same reach decision as opening the document.
+    //
+    // This hands back every recipient's name, email, role and department for
+    // a policy — the full reader roster. It had `{ id, tenantId }` as its
+    // whole access decision, so it answered "who was issued this Restricted
+    // policy" for any tenant member: the same roster that /:id/access
+    // deliberately narrows to the owner and the records team, reachable
+    // through a different URL with no guard at all.
+    const gate = await loadReadable(id, userId, tenantId);
+    if (!gate) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
-    if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+    if (!doc) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
 
     const live = doc.publishedVersion || doc.version;
 
@@ -1167,27 +1509,60 @@ export const getDocumentStats = async (req: AuthenticatedRequest, res: Response)
     const tenantId = req.user!.tenantId;
     const userId = req.user!.id;
 
-    const [total, draft, inReview, approved, published, archived, returned, onLegalHold] = await Promise.all([
-      prisma.document.count({ where: { tenantId } }),
-      prisma.document.count({ where: { tenantId, status: 'DRAFT' } }),
-      prisma.document.count({ where: { tenantId, status: 'IN_REVIEW' } }),
-      prisma.document.count({ where: { tenantId, status: 'APPROVED' } }),
-      prisma.document.count({ where: { tenantId, status: 'PUBLISHED' } }),
-      prisma.document.count({ where: { tenantId, status: 'ARCHIVED' } }),
-      prisma.document.count({ where: { tenantId, status: 'RETURNED' } }),
-      prisma.document.count({ where: { tenantId, legalHoldAt: { not: null } } }),
+    // Counted over what this person can see, not over the tenant.
+    //
+    // Ten count() queries across the whole table would now disagree with the
+    // list beside them — "12 documents" above a page showing five — and the
+    // difference would itself say how many Restricted documents exist. The
+    // rule lives in one pure function, so the tally reuses it rather than
+    // restating it in SQL, where the two would drift.
+    const [rows, myApprovals] = await Promise.all([
+      prisma.document.findMany({
+        where: { tenantId },
+        select: {
+          id: true, tenantId: true, ownerId: true, status: true, code: true,
+          classification: true, publishedAt: true, audienceKind: true, legalHoldAt: true,
+        },
+      }),
+      prisma.approvalQueue.findMany({
+        where: { approverId: userId },
+        select: { documentId: true, status: true },
+      }),
     ]);
 
-    const pendingMyApproval = await prisma.approvalQueue.count({
-      where: { approverId: userId, status: 'PENDING' },
-    });
+    const [viewer, audience] = await Promise.all([
+      viewerFor(userId, tenantId),
+      audienceMembership(userId, rows.map((d) => d.id)),
+    ]);
+    const myApproverOf = new Set(myApprovals.map((a) => a.documentId));
 
-    const myUnacknowledged = await prisma.document.count({
-      where: {
-        tenantId, status: 'PUBLISHED',
-        acknowledgements: { none: { userId } },
-      },
+    const mine = rows.filter((d) => decideRead(
+      viewer,
+      d,
+      myApproverOf.has(d.id) ? [userId] : [],
+      audience.has(d.id),
+    ).allowed);
+
+    const countOf = (status: string): number => mine.filter((d) => d.status === status).length;
+    const total = mine.length;
+    const draft = countOf('DRAFT');
+    const inReview = countOf('IN_REVIEW');
+    const approved = countOf('APPROVED');
+    const published = countOf('PUBLISHED');
+    const archived = countOf('ARCHIVED');
+    const returned = countOf('RETURNED');
+    const onLegalHold = mine.filter((d) => d.legalHoldAt !== null).length;
+
+    const pendingMyApproval = myApprovals.filter((a) => a.status === 'PENDING').length;
+
+    const visibleIds = new Set(mine.map((d) => d.id));
+    const acked = await prisma.acknowledgement.findMany({
+      where: { userId, documentId: { in: [...visibleIds] } },
+      select: { documentId: true },
     });
+    const ackedIds = new Set(acked.map((a) => a.documentId));
+    const myUnacknowledged = mine
+      .filter((d) => d.status === 'PUBLISHED' && !ackedIds.has(d.id)).length;
 
     res.json({
       status: 'success',

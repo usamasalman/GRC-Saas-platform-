@@ -27,6 +27,7 @@ import {
   getAcknowledgements,
   getDocumentStats,
   downloadDocument,
+  documentAccessHistory,
   applyLegalHold,
   releaseLegalHold,
   forceReleaseCheckout,
@@ -87,6 +88,12 @@ router.post('/:id/archive', requireCapability(CAP.VERSION_DOCUMENT), archiveDocu
 router.post('/:id/force-release', requireCapability(CAP.RETENTION_HOLD), forceReleaseCheckout);
 router.post('/:id/legal-hold', requireCapability(CAP.RETENTION_HOLD), applyLegalHold);
 router.post('/:id/legal-hold/release', requireCapability(CAP.RETENTION_HOLD), releaseLegalHold);
+
+// Who has read it. Not capability-gated on the route: the handler narrows it
+// to the document's owner and to whoever holds retention and legal hold, and
+// a route-level capability would lock the owner out of their own document's
+// history.
+router.get('/:id/access', documentAccessHistory);
 
 // Acknowledgements
 router.post('/:id/acknowledge', acknowledgeDocument);
