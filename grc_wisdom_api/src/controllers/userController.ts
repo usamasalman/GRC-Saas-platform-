@@ -24,6 +24,36 @@ const TIER_TYPES: Record<string, string[]> = {
   branch: ['BRANCH'],
 };
 
+/**
+ * Tie a department name to the record for it, in one tenant.
+ *
+ * User.department is free text and User.departmentId is a relation, and until
+ * now nothing kept them in step: invite wrote the string and never the
+ * relation, and a cross-entity transfer rewrote the string while leaving the
+ * relation pointing at a department in the tenant the person had just left.
+ * A record and a string that can disagree is worse than either alone.
+ *
+ * So the record wins when one exists -- the stored name is copied from it --
+ * and when none exists the relation stays null rather than inventing a
+ * department out of whatever somebody typed into an invite form.
+ */
+async function resolveDepartment(
+  db: { department: { findFirst: Function } },
+  tenantId: string,
+  name: unknown,
+): Promise<{ department: string | null; departmentId: string | null }> {
+  const wanted = String(name ?? '').trim();
+  if (!wanted) return { department: null, departmentId: null };
+
+  const record = await db.department.findFirst({
+    where: { tenantId, name: wanted },
+    select: { id: true, name: true },
+  });
+  return record
+    ? { department: record.name, departmentId: record.id }
+    : { department: wanted, departmentId: null };
+}
+
 export const listUsers = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
@@ -41,7 +71,16 @@ export const listUsers = async (req: AuthenticatedRequest, res: Response): Promi
     }
 
     const where: any = { tenantId: { in: tenantIds } };
-    if (status) where.status = status;
+    // Active unless asked otherwise.
+    //
+    // This returned everybody when no status was passed, so every picker that
+    // forgot to ask offered suspended people and leavers as owners, assignees
+    // and approvers. Nine callers each remembering a filter is not a default:
+    // the tenth forgets, and the defect comes back silently. `status=any` is
+    // the deliberate opt-out, for the screens that manage people rather than
+    // assign work to them.
+    if (status && status !== 'any') where.status = status;
+    else if (!status) where.status = 'Active';
     if (roleId) where.roleId = roleId;
     if (department) where.department = department;
     if (search) {
@@ -65,6 +104,11 @@ export const listUsers = async (req: AuthenticatedRequest, res: Response): Promi
         tenantId: true,
         profile: true, context: true, branch: true, department: true,
         status: true, mfaEnabled: true, mustChangePassword: true, createdAt: true,
+        // Written by the handover and, until now, read by nothing -- so "who
+        // took over from them", the stated reason the columns exist, had no
+        // answer outside the audit log.
+        offboardedAt: true,
+        successor: { select: { id: true, name: true, email: true } },
         tenant: { select: { id: true, name: true, type: true } },
         roleRef: { select: { id: true, name: true, isSystem: true, capabilityGrants: true, needsReview: true } },
       },
@@ -222,7 +266,7 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
           role: role.name,
           roleId: role.id,
           context: tenant?.name || null,
-          department: department || null,
+          ...(await resolveDepartment(tx, targetTenantId, department)),
           branch: branch || null,
           profile: profile || null,
           status: 'Active',
@@ -359,7 +403,10 @@ export const transferUser = async (req: AuthenticatedRequest, res: Response): Pr
         data: {
           tenantId: targetTenantId,
           context: target.name,
-          department: newDepartment ?? user.department,
+          // Resolved against the tenant being moved INTO. Rewriting the
+          // string while leaving departmentId pointing at the old tenant's
+          // department is the one outcome worse than not having records.
+          ...(await resolveDepartment(tx, targetTenantId, newDepartment ?? user.department)),
           branch: newBranch ?? null,
           ...(roleSurvives ? {} : { roleId: null }),
           // A move revokes the old scope's sessions.
@@ -407,15 +454,44 @@ export const setUserStatus = async (req: AuthenticatedRequest, res: Response): P
   try {
     const id = req.params.id as string;
     const { status, reason } = req.body || {};
-    const allowed = ['Active', 'Suspended', 'Inactive'];
+    // Inactive is deliberately not here any more.
+    //
+    // It used to be, on a grant fifteen roles hold, and it wrote the column
+    // with no successor and no reassignment -- so a person could be closed
+    // down with every risk, control and document they owned still pointing at
+    // them. Worse, it was then permanent: planOffboarding refuses a leaver who
+    // is already Inactive, so the only path that hands anything over could
+    // never be used on them again. Closing an account is the offboarding
+    // endpoint, which requires a successor and its own capability.
+    const allowed = ['Active', 'Suspended'];
     if (!allowed.includes(status)) {
-      res.status(400).json({ status: 'error', message: `status must be one of: ${allowed.join(', ')}` });
+      res.status(400).json({
+        status: 'error',
+        code: status === 'Inactive' ? 'USE_OFFBOARDING' : 'BAD_STATUS',
+        message: status === 'Inactive'
+          ? 'Closing an account is done by offboarding, which requires a successor so the '
+            + "leaver's work is handed over rather than stranded."
+          : `status must be one of: ${allowed.join(', ')}`,
+      });
       return;
     }
 
     const scope = await resolveTenantScope(req.user!);
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) { res.status(404).json({ status: 'error', message: 'User not found' }); return; }
+
+    // Reactivating an offboarded person is not a status flip. Their work is
+    // already somebody else's, and a row reading Active with an offboardedAt
+    // date and a successor is a record that contradicts itself.
+    if (user.status === 'Inactive') {
+      res.status(409).json({
+        status: 'error',
+        code: 'ALREADY_OFFBOARDED',
+        message: 'This account was closed and its work handed over. Invite them again rather '
+          + 'than reopening it, so the handover record stays true.',
+      });
+      return;
+    }
     if (!scope.tenantIds.includes(user.tenantId)) {
       res.status(403).json({ status: 'error', message: 'User is outside your authorized scope' });
       return;

@@ -209,6 +209,28 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // The account itself, beside the organisation.
+    //
+    // requireAuth refuses every authenticated route for a closed or suspended
+    // account, so this was not an access hole -- but without it login still
+    // answered 200 with a token, a refresh token and the person's capabilities,
+    // and every screen they then opened returned 403. Told here, once, in
+    // words that say what happened.
+    //
+    // Placed after the password check for the same reason as the door check
+    // below: refusing earlier would turn the login form into an oracle for
+    // which addresses exist.
+    if (user.status === 'Inactive' || user.status === 'Suspended') {
+      res.status(403).json({
+        status: 'error',
+        code: user.status === 'Inactive' ? 'ACCOUNT_CLOSED' : 'ACCOUNT_SUSPENDED',
+        message: user.status === 'Inactive'
+          ? 'This account has been closed and its work handed over to somebody else.'
+          : 'This account is suspended. Speak to an administrator.',
+      });
+      return;
+    }
+
     // Right credentials, wrong door.
     //
     // Checked only AFTER the password verifies, which is the whole point of

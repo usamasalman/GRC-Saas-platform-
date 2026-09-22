@@ -107,6 +107,11 @@ export const HANDOVER_TARGETS: readonly HandoverTarget[] = [
   { model: 'project', column: 'sponsorId', label: 'projects sponsored', tenantScoped: true },
   { model: 'projectPhase', column: 'ownerId', label: 'project phases owned', tenantScoped: false },
   { model: 'projectTask', column: 'assigneeId', label: 'project tasks assigned', tenantScoped: false },
+  // Heading a department is a standing duty. onDelete: SetNull never fires
+  // here because the user row is deliberately never deleted, so leaving it
+  // would show a closed account as the head of a department on the org chart
+  // with nothing prompting anybody to fix it.
+  { model: 'department', column: 'headId', label: 'departments headed', tenantScoped: true },
 ];
 
 /**

@@ -133,8 +133,8 @@ const BASE = { actorId: 'u-admin', leaver: LEAVER, successor: SUCCESSOR, reason:
 // ─── What moves, and what must never ────────────────────────────────────────
 {
   eq(
-    HANDOVER_TARGETS.length, 25,
-    'the 89 User relations are not 89 ownership references. 25 are a live responsibility; '
+    HANDOVER_TARGETS.length, 26,
+    'the User relations are not all ownership references. 26 are a live responsibility; '
     + 'the rest record who did something, and moving those would forge history',
   );
 
@@ -427,6 +427,83 @@ const BASE = { actorId: 'u-admin', leaver: LEAVER, successor: SUCCESSOR, reason:
     }
   }
 
+}
+
+// ─── The gaps the Phase 5 audit found ───────────────────────────────────────
+{
+  const users = code(read(API, 'controllers', 'userController.ts'));
+  const auth2 = code(read(API, 'controllers', 'authController.ts'));
+
+  // Closing an account has exactly one door.
+  const setStatus = users.slice(users.indexOf('export const setUserStatus'));
+  ok(
+    /const allowed = \['Active', 'Suspended'\];/.test(setStatus),
+    "setUserStatus must NOT accept 'Inactive'. It is guarded by ADD_USER, which fifteen "
+    + 'roles hold, and it wrote the column with no successor and no reassignment — so a '
+    + 'person could be closed down with everything they owned still pointing at them, and '
+    + 'then permanently, because planOffboarding refuses a leaver who is already Inactive',
+  );
+  ok(
+    /USE_OFFBOARDING/.test(setStatus),
+    'and it must say where closing an account actually happens, rather than refusing a '
+    + 'value with no explanation',
+  );
+  ok(
+    /if \(user\.status === 'Inactive'\)[^]{0,200}?ALREADY_OFFBOARDED/.test(setStatus),
+    'nor may an offboarded account be flipped back to Active: their work is already '
+    + "somebody else's, and a row reading Active beside an offboardedAt date contradicts itself",
+  );
+
+  // The list defaults to people who can act.
+  const list = users.slice(users.indexOf('export const listUsers'), users.indexOf('export const listTeams'));
+  ok(
+    /else if \(!status\) where\.status = 'Active';/.test(list),
+    'listUsers must default to Active. Nine callers each remembering a filter is not a '
+    + 'default — the tenth forgets, and leavers are offered as owners again',
+  );
+  ok(
+    /status !== 'any'/.test(list),
+    'with an explicit opt-out for the screens that manage people rather than assign work',
+  );
+  ok(
+    /successor: \{ select:/.test(list),
+    '"who took over from them" must have a read path. The columns were written by the '
+    + 'handover and read by nothing, which is the stated reason they exist going unmet',
+  );
+
+  // Login says what happened.
+  ok(
+    /code: user\.status === 'Inactive' \? 'ACCOUNT_CLOSED'/.test(auth2),
+    'login must refuse a closed or suspended account. requireAuth already blocked every '
+    + 'route, so this was not an access hole — but login still answered 200 with a token '
+    + 'and capabilities, and every screen then returned 403',
+  );
+
+  // Departments: the string and the record cannot disagree.
+  ok(
+    /async function resolveDepartment\(/.test(users),
+    'one resolver ties the free-text department to its record',
+  );
+  const invite = users.slice(users.indexOf('export const inviteUser'), users.indexOf('export const assignRole'));
+  ok(
+    /await resolveDepartment\(tx, targetTenantId, department\)/.test(invite),
+    'invite must resolve the department rather than writing a bare string with no record',
+  );
+  const transfer = users.slice(users.indexOf('export const transferUser'), users.indexOf('export const setUserStatus'));
+  ok(
+    /await resolveDepartment\(tx, targetTenantId,/.test(transfer),
+    'and a cross-entity transfer must resolve against the tenant being moved INTO. Rewriting '
+    + "the string while leaving departmentId pointing at the old tenant's department is the "
+    + 'one outcome worse than having no records at all',
+  );
+
+  // The duty the first classification missed.
+  ok(
+    HANDOVER_TARGETS.some((t) => t.model === 'department' && t.column === 'headId'),
+    'heading a department is a standing duty and must be handed over. onDelete: SetNull '
+    + 'never fires for it, because the user row is deliberately never deleted — so a closed '
+    + 'account would stay on the org chart as a department head',
+  );
   ok(
     /offboarding-test\.js/.test(deploy),
     'CI must run this. A rule that is not in the workflow is one the next packet can delete',

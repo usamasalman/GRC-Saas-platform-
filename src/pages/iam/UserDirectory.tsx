@@ -42,6 +42,10 @@ const UserDirectory: React.FC<{ tier: Tier }> = ({ tier }) => {
       const params = new URLSearchParams();
       if (tier !== 'all') params.set('tier', tier);
       if (departmentFilter) params.set('department', departmentFilter);
+      // This screen manages people rather than assigning work to them, so it
+      // asks for everybody and filters below. The endpoint now returns Active
+      // only unless asked, which is what stops the pickers offering leavers.
+      params.set('status', 'any');
       const qs = params.toString() ? `?${params.toString()}` : '';
       const [uRes, rRes, dRes] = await Promise.all([
         apiClient.get(`/api/iam/users${qs}`),

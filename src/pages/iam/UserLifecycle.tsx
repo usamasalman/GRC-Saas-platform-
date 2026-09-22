@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, STATUS_PILL, apiError } from './iamStyles';
+import { useAuth } from '../../context/AuthContext';
+import Can, { MAY } from '../../components/Can';
 
 interface UserRow {
   id: string; name: string; email: string; roleName: string; roleId: string | null;
@@ -11,7 +13,15 @@ interface UserRow {
 interface RoleOption { id: string; name: string; isSystem: boolean; tenantId: string | null }
 interface TenantOption { id: string; name: string; type: string; depth: number }
 
+interface OffboardPreview {
+  leaver: { id: string; name: string; email: string; status: string };
+  summary: { total: number; moving: { label: string; count: number }[] };
+  withdraw: { acknowledgementRequests: number; checkedOutDocuments: number };
+  note: string;
+}
+
 const UserLifecycle: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
@@ -20,6 +30,7 @@ const UserLifecycle: React.FC = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invite, setInvite] = useState({ name: '', email: '', roleId: '', tenantId: '', department: '', branch: '' });
@@ -29,13 +40,22 @@ const UserLifecycle: React.FC = () => {
   const [transferFor, setTransferFor] = useState<UserRow | null>(null);
   const [transfer, setTransfer] = useState({ targetTenantId: '', reason: '', newDepartment: '' });
   const [transferErr, setTransferErr] = useState('');
+
+  const [offboardFor, setOffboardFor] = useState<UserRow | null>(null);
+  const [offboardPreview, setOffboardPreview] = useState<OffboardPreview | null>(null);
+  const [offboardPreviewErr, setOffboardPreviewErr] = useState('');
+  const [offboardConfirm, setOffboardConfirm] = useState({ successorId: '', reason: '' });
+  const [offboardErr, setOffboardErr] = useState('');
+  const [offboardResult, setOffboardResult] = useState<string>('');
+
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const [uRes, rRes, tRes] = await Promise.all([
-        apiClient.get('/api/iam/users'),
+        // The lifecycle screen exists to act on suspended and closed accounts.
+        apiClient.get('/api/iam/users?status=any'),
         apiClient.get('/api/iam/roles').catch(() => null),
         apiClient.get('/api/tenants').catch(() => null),
       ]);
@@ -85,9 +105,41 @@ const UserLifecycle: React.FC = () => {
     finally { setBusy(false); }
   };
 
+  const startOffboard = async (u: UserRow) => {
+    setOffboardFor(u);
+    setOffboardPreview(null);
+    setOffboardPreviewErr('');
+    setOffboardConfirm({ successorId: '', reason: '' });
+    setOffboardErr('');
+    setOffboardResult('');
+    try {
+      const res = await apiClient.get(`/api/iam/users/${u.id}/offboard-preview`);
+      setOffboardPreview(res.data);
+    } catch (err) {
+      setOffboardPreviewErr(apiError(err, 'Could not load offboarding preview'));
+    }
+  };
+
+  const submitOffboard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!offboardFor) return;
+    setBusy(true); setOffboardErr('');
+    try {
+      const res = await apiClient.post(`/api/iam/users/${offboardFor.id}/offboard`, {
+        successorId: offboardConfirm.successorId,
+        reason: offboardConfirm.reason,
+      });
+      setOffboardResult(res.data?.message || 'Offboarded');
+      await load();
+    } catch (err) { setOffboardErr(apiError(err, 'Offboarding failed')); }
+    finally { setBusy(false); }
+  };
+
   const q = search.toLowerCase();
-  const visible = users.filter((u) =>
-    !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.tenantName.toLowerCase().includes(q));
+  const visible = users.filter((u) => {
+    if (!showInactive && u.status === 'Inactive') return false;
+    return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.tenantName.toLowerCase().includes(q);
+  });
 
   // Only platform roles are safe to offer for an invite into an arbitrary tenant.
   const assignableRoles = roles.filter((r) => !r.tenantId || r.tenantId === invite.tenantId);
@@ -117,6 +169,10 @@ const UserLifecycle: React.FC = () => {
 
       <input placeholder="Search name, email or entity…" value={search}
         onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 320, marginBottom: 14 }} />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-muted)', marginBottom: 14, cursor: 'pointer' }}>
+        <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+        Show inactive (leavers)
+      </label>
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
@@ -159,6 +215,12 @@ const UserLifecycle: React.FC = () => {
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                     <button onClick={() => { setTransferErr(''); setTransfer({ targetTenantId: '', reason: '', newDepartment: '' }); setTransferFor(u); }}
                       style={linkBtn('var(--info)')}>transfer</button>
+                    {u.status !== 'Inactive' && u.id !== currentUser?.id && (
+                      <Can do={MAY.OFFBOARD_USER}>
+                        <button onClick={() => startOffboard(u)}
+                          style={{ ...linkBtn('var(--danger)'), marginLeft: 10 }}>offboard</button>
+                      </Can>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -260,6 +322,86 @@ const UserLifecycle: React.FC = () => {
                 <button type="button" onClick={() => setTransferFor(null)} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {offboardFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>
+          <div style={{ ...S.card, width: '100%', maxWidth: 520, padding: 26, borderRadius: 12, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, color: 'var(--ink)' }}>Offboard {offboardFor.name}</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+              Everything this person owns moves to a successor in one transaction. Their account is then deactivated. History stays under their name.
+            </p>
+
+            {offboardResult ? (
+              <>
+                <div style={{ background: 'var(--success-bg)', border: '1px solid var(--success-line)', padding: 14, borderRadius: 8, marginBottom: 16, color: 'var(--success)', fontSize: 12 }}>
+                  ✓ {offboardResult}
+                </div>
+                <button onClick={() => setOffboardFor(null)} style={{ ...primaryBtn(), width: '100%', padding: 11 }}>Done</button>
+              </>
+            ) : (
+              <>
+                {offboardPreviewErr && <div style={{ ...S.error, marginBottom: 14 }}>{offboardPreviewErr}</div>}
+
+                {offboardPreview && (
+                  <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 12 }}>
+                    <div style={{ color: 'var(--ink-body)', marginBottom: 8, fontWeight: 500 }}>
+                      {offboardPreview.summary.total} record{offboardPreview.summary.total !== 1 ? 's' : ''} will move to the successor
+                    </div>
+                    {offboardPreview.summary.moving.filter((c) => c.count > 0).map((c) => (
+                      <div key={c.label} style={{ color: 'var(--ink-muted)', marginBottom: 3 }}>
+                        · {c.count} {c.label}
+                      </div>
+                    ))}
+                    {(offboardPreview.withdraw.acknowledgementRequests > 0 || offboardPreview.withdraw.checkedOutDocuments > 0) && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', color: 'var(--ink-muted)' }}>
+                        {offboardPreview.withdraw.acknowledgementRequests > 0 && (
+                          <div>· {offboardPreview.withdraw.acknowledgementRequests} acknowledgement request{offboardPreview.withdraw.acknowledgementRequests !== 1 ? 's' : ''} will be withdrawn</div>
+                        )}
+                        {offboardPreview.withdraw.checkedOutDocuments > 0 && (
+                          <div>· {offboardPreview.withdraw.checkedOutDocuments} checked-out document{offboardPreview.withdraw.checkedOutDocuments !== 1 ? 's' : ''} will be released</div>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', color: 'var(--ink-muted)', fontStyle: 'italic' }}>
+                      {offboardPreview.note}
+                    </div>
+                  </div>
+                )}
+
+                {!offboardPreview && !offboardPreviewErr && (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 12, marginBottom: 16 }}>Loading preview…</div>
+                )}
+
+                {offboardErr && <div style={{ ...S.error, marginBottom: 14 }}>{offboardErr}</div>}
+
+                <form onSubmit={submitOffboard}>
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Successor (takes ownership of everything above)</label>
+                  <select required value={offboardConfirm.successorId}
+                    onChange={(e) => setOffboardConfirm({ ...offboardConfirm, successorId: e.target.value })}
+                    style={{ ...S.input, marginBottom: 12 }}>
+                    <option value="">— select a successor —</option>
+                    {users.filter((u) => u.id !== offboardFor.id && u.status === 'Active').map((u) => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.tenantName})</option>
+                    ))}
+                  </select>
+
+                  <label style={{ display: 'block', fontSize: 12, marginBottom: 5, color: 'var(--ink-muted)' }}>Reason (audit evidence, required)</label>
+                  <textarea required rows={3} value={offboardConfirm.reason}
+                    onChange={(e) => setOffboardConfirm({ ...offboardConfirm, reason: e.target.value })}
+                    style={{ ...S.input, marginBottom: 20, resize: 'vertical' }} />
+
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button type="submit" disabled={busy || !offboardPreview}
+                      style={{ ...primaryBtn(busy || !offboardPreview), flex: 1, padding: 11, background: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                      {busy ? 'Offboarding…' : 'Confirm offboarding'}
+                    </button>
+                    <button type="button" onClick={() => setOffboardFor(null)} style={{ ...ghostBtn, padding: 11 }}>Cancel</button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
