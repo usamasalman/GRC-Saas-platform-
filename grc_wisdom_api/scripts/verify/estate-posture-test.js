@@ -216,46 +216,18 @@ const forT = (rows, id) => rows.find((r) => r.tenantId === id);
     + 'engine, which drew invented percentages against organisations that do not exist.',
   );
 
-  // The fabricated panel itself. no-invented-data-test scans src/pages and
-  // never looked here, which is how a hardcoded compliance figure survived the
-  // packet that removed fifteen others.
-  const mock = fs.readFileSync(path.join(WEB, 'utils', 'appMockEngine.js'), 'utf8');
-  // Comments are prose. The note recording what was removed quotes the entities
-  // verbatim, and quoting a defect is how it stays understood.
-  const mockCode = mock
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-
-  // The two functions this packet owns. Scoped rather than file-wide, because
-  // appMockEngine carries other fabricated screens -- hierarchyPage names
-  // entities that do not exist too -- and those are a different defect on a
-  // different screen, scheduled as the packet that replaces the mock views.
-  // What must be true here is that nothing renders invented POSTURE.
-  for (const fn of ['groupDashboard', 'subsidiariesPage']) {
-    const at = mockCode.indexOf(`function ${fn}(`);
-    ok(at > 0, `${fn} not found in the mock engine`);
-    const body = mockCode.slice(at, mockCode.indexOf('\n', at));
-    const bad = ['Saudi Technology Services', 'Jordan Operations', 'Healthcare Division', '82.4', 'Compliance Posture']
-      .filter((x) => body.includes(x));
-    checks += 1;
-    assert.deepStrictEqual(
-      bad, [],
-      `${fn} still renders invented compliance posture: ${bad.join(', ')}. These are organisations `
-      + 'that do not exist and figures nothing computed, on a screen whose whole purpose is telling '
-      + 'an executive how their estate is doing.',
-    );
-  }
-
-  // And the rest of the file cannot grow more of them.
-  const NAME_BUDGET = 6;
-  const names = ['Saudi Technology Services', 'Jordan Operations', 'Healthcare Division', 'Retail Network', 'RetailCo Franchise Network', 'Al Noor Holding Group'];
-  const remaining = names.filter((n) => mockCode.includes(n));
-  checks += 1;
-  assert.ok(
-    remaining.length <= NAME_BUDGET,
-    `The mock engine names ${remaining.length} organisations that do not exist, over a budget of `
-    + `${NAME_BUDGET}: ${remaining.join(', ')}. They belong to screens the mock-replacement packet `
-    + 'still has to reach; the budget is here so the number only ever falls.',
+  // The fabricated panel itself used to be read out of src/utils/appMockEngine.js
+  // and checked for invented organisations and posture figures. That file has
+  // since been deleted outright, which is the strongest version of what these
+  // assertions were reaching for: there is no mock engine left to render an
+  // invented percentage against an organisation that does not exist.
+  //
+  // no-mock-engine-test.js owns the "it stays deleted" rule now. Re-reading the
+  // file here would only make this suite fail for a reason it is not about.
+  ok(
+    !fs.existsSync(path.join(WEB, 'utils', 'appMockEngine.js')),
+    'the mock engine must stay deleted — if it returns, the invented posture figures this '
+    + 'packet removed can return with it',
   );
 }
 

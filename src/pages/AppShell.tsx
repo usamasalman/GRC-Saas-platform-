@@ -3,8 +3,6 @@ import type { IconName } from '../components/Icon';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
-// @ts-ignore
-import { renderMockView } from '../utils/appMockEngine.js';
 
 // Real Document Components
 import DocumentLibrary from './documents/DocumentLibrary';
@@ -154,25 +152,22 @@ const NAV: Record<string, any[]> = {
     ['Platform Control', [['dashboard', '▦', 'SaaS Dashboard'], ['library', '≡', 'Document Library'], ['tenants', '▥', 'Manage Tenants'], ['posture', '◈', 'Estate Posture'], ['impersonation', '♙', 'Impersonation Sessions']]],
     ['Users, Teams & Access', [['saas-users', '♟', 'SaaS Admin Users'], ['org-users', '♙', 'Organization Users'], ['branch-users', '⌘', 'Branch Users'], ['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'User Lifecycle & Transfers'], ['role-matrix', '⊞', 'Roles & Permissions']]],
     ['Service Management', [['itsm', '?', 'ITSM Service Desk'], ['ticket-queues', '▥', 'Ticket Queues'], ['service-catalog', '▦', 'Service Catalog'], ['sla', '◷', 'SLA & Escalations'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish'], ['asm-tenants', '◫', 'Security Service Tenants']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-review', '✓', 'Tool Review & Approval'], ['tool-installations', '⇩', 'Tenant Tool Installations'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Tenant Standard Enablement'], ['feature-flags', '⚑', 'Feature Flags']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]],
     ['Usage & Automation', [['quotas', '◒', 'Resource Usage & Quotas'], ['automation', '⎇', 'Rules, Jobs & Execution'], ['imports', '⇩', 'Imports & Migration']]],
     ['System & Infrastructure', [['health', '▰', 'Health, Jobs & API Status'], ['security', '⊛', 'Platform Security'], ['architecture', '⬡', 'OCI Riyadh Architecture'], ['brd', '◷', 'BRD Traceability']]]
   ],
   holding: [
-    ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['subsidiaries', '▥', 'Subsidiary Scorecards'], ['shared-services', '⇄', 'Shared Services']]],
+    ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['shared-services', '⇄', 'Shared Services']]],
     ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   multibranch: [
-    ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['posture', '◈', 'Branch Posture'], ['branch-lifecycle', '⇄', 'Branch Lifecycle']]],
+    ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['posture', '◈', 'Branch Posture']]],
     ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
@@ -180,7 +175,6 @@ const NAV: Record<string, any[]> = {
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
     ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
     ['Subscriptions & Billing', [['invoices', '▤', 'Branch Invoices'], ['payments', '▣', 'Branch Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
@@ -191,22 +185,20 @@ const NAV: Record<string, any[]> = {
   ],
   auditor: [
     ['Audit Engagement', [['dashboard', '▦', 'Engagement Dashboard'], ['library', '≡', 'Assurance Evidence']]],
-    ['Verification', [['logs', '▤', 'Immutable Audit Log'], ['hash-check', '⊛', 'Cryptographic Verification'], ['exports', '⇩', 'Verified Exports']]],
-    ['Support', [['itsm', '?', 'Auditor Support Desk'], ['contacts', '♣', 'Engagement Contacts']]]
+    ['Verification', [['logs', '▤', 'Immutable Audit Log'], ['hash-check', '⊛', 'Cryptographic Verification']]],
+    ['Support', [['itsm', '?', 'Auditor Support Desk']]]
   ],
   partner: [
-    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Consulting Delivery'], ['clients', '▥', 'Client Workspaces'], ['engagements', '◷', 'Engagement Tracking']]],
+    ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Consulting Delivery']]],
     ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards'], ['framework-authoring', '✎', 'Framework Authoring']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Client Tool Installations'], ['standard-repository', '§', 'Partner Standard Repository']]],
-    ['Subscriptions & Billing', [['subscriptions', '¤', 'Client Subscriptions'], ['plans', '◇', 'Wholesale Rate Cards & Plans'], ['wholesale-billing', '▤', 'Wholesale Invoices'], ['payments', '▣', 'Payments & Receipts'], ['workspace-transfer', '⇄', 'Workspace Transfer']]]
+    ['Subscriptions & Billing', [['subscriptions', '¤', 'Client Subscriptions'], ['plans', '◇', 'Wholesale Rate Cards & Plans'], ['wholesale-billing', '▤', 'Wholesale Invoices'], ['payments', '▣', 'Payments & Receipts']]]
   ],
   franchise: [
-    ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards'], ['exceptions', '⇄', 'Exception Workflows']]],
+    ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards']]],
     ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Network Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Network Teams'], ['user-admin', '♙', 'Users & Location Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Security Services', [['wisdom-eye', '◉', 'Wisdom Eye ASM'], ['eye-phish', '↗', 'Eye Phish']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Location Standard Enablement']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Franchise Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ]
@@ -226,12 +218,11 @@ const NAV_ICON: Record<string, IconName> = {
   'user-admin': 'lifecycle', 'role-matrix': 'roles',
   itsm: 'servicedesk', 'ticket-queues': 'scorecard', 'service-catalog': 'marketplace',
   sla: 'clock', knowledge: 'knowledge',
-  'wisdom-eye': 'exposure', 'eye-phish': 'phishing', 'asm-tenants': 'building',
   marketplace: 'marketplace', 'tool-marketplace': 'tools', 'tool-review': 'check',
   'tool-installations': 'install', 'standard-repository': 'repository',
   'tenant-standards': 'enablement', 'feature-flags': 'flag', posture: 'scorecard',
-  hierarchy: 'branch', subsidiaries: 'scorecard', 'shared-services': 'switch',
-  'branch-lifecycle': 'lifecycle', 'workspace-transfer': 'switch', 'wholesale-billing': 'invoices',
+  hierarchy: 'branch', 'shared-services': 'switch',
+  'wholesale-billing': 'invoices',
   branches: 'branch', locations: 'building', scorecards: 'scorecard',
   tasks: 'approvals', approvals: 'approvals', documents: 'documents', standards: 'standards',
   'framework-authoring': 'authoring', controls: 'controls',
@@ -249,7 +240,6 @@ const AppShell = () => {
   const [account, setAccount] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [apiData, setApiData] = useState<any>(null);
   const [isRtl, setIsRtl] = useState(false);
   const [tokenReady, setTokenReady] = useState(false);
   const [showUserGuide, setShowUserGuide] = useState(false);
@@ -314,27 +304,10 @@ const AppShell = () => {
       .catch(() => undefined);
   }, [navigate]);
 
-  // Supporting records for the dashboard views. All optional: each call is
-  // caught individually so one failing endpoint cannot blank the shell.
-  useEffect(() => {
-    if (!tokenReady) return;
-    Promise.all([
-      apiClient.get('/api/auth/tenant-users').catch(() => null),
-      apiClient.get('/api/tickets').catch(() => null),
-      apiClient.get('/api/marketplace/tools').catch(() => null),
-      apiClient.get('/api/asm/assets').catch(() => null),
-      apiClient.get('/api/phish/campaigns').catch(() => null),
-    ]).then(([users, tickets, tools, assets, campaigns]) => {
-      setApiData({
-        accounts: users?.data?.users || [],
-        platformUsers: users?.data?.users || [],
-        tickets: tickets?.data?.tickets || [],
-        openTools: tools?.data?.tools || [],
-        asmAssets: assets?.data?.assets || [],
-        phishCampaigns: campaigns?.data?.campaigns || [],
-      });
-    });
-  }, [tokenReady]);
+  // The five supporting fetches that used to live here are gone with the mock
+  // engine they fed. `apiData` was consumed by nothing else -- the fallback
+  // branch that rendered generated HTML was its only reader -- so every shell
+  // mount was making five requests whose answers were dropped.
 
   const toggleLanguage = () => {
     const newRtl = !isRtl;
@@ -730,14 +703,11 @@ const AppShell = () => {
       </header>
 
       <main className="main">
-        {realComp ? (
-          realComp
-        ) : (
-          <div 
-            className="content" 
-            id="content"
-            dangerouslySetInnerHTML={{ __html: renderMockView(currentPage, account, apiData) }}
-          />
+        {realComp || (
+          <div className="content" style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+            <h3 style={{ margin: '0 0 8px', color: 'var(--ink)' }}>Screen not available</h3>
+            <p style={{ fontSize: 13, margin: 0 }}>This feature has not been enabled or is under scheduled development.</p>
+          </div>
         )}
       </main>
 
