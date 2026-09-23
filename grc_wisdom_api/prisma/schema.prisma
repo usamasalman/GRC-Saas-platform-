@@ -211,6 +211,7 @@ model User {
   documentsPublished      Document[]               @relation("DocumentPublisher")
   documentLinksMade       DocumentLink[]           @relation("DocumentLinker")
   documentsRead           DocumentAccess[]         @relation("DocumentReader")
+  invoicesIssued          Invoice[]                @relation("InvoiceIssuer")
 
   /// ── Offboarding ─────────────────────────────────────────────────────────
   ///
@@ -280,6 +281,27 @@ model Department {
   @@index([tenantId])
 }
 
+/// What an invoice is made of.
+///
+/// Derived from the plan on the subscription rather than typed, so "which
+/// package is this client on" is answerable from the invoice itself.
+model InvoiceLine {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description String
+  /// Whole months. A plan prices a month and nothing finer, so billing a part
+  /// month would invent a daily rate the plan does not have.
+  quantity    Int
+  unitPrice   Decimal
+  amount      Decimal
+
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
 model Plan {
   id            String         @id @default(uuid())
   name          String         // e.g., "Essentials", "Professional", "Enterprise"
@@ -301,15 +323,50 @@ model Subscription {
   status        String   // e.g., "ACTIVE", "PENDING", "CANCELLED"
   startDate     DateTime @default(now())
   endDate       DateTime?
+  invoices      Invoice[]
 }
 
 model Invoice {
   id            String   @id @default(uuid())
   tenantId      String
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// The gross figure the client pays. Kept as it was, so nothing that reads
+  /// an invoice today has to change.
   amount        Decimal
   currency      String   @default("SAR")
   status        String   // e.g., "PAID", "UNPAID"
+
+  /// ── What this invoice is for ────────────────────────────────────────────
+  ///
+  /// An invoice carried one hand-typed amount and nothing else: no period, no
+  /// reference to the subscription, no lines. A finance manager could not bill
+  /// a duration, could not see which package a client was on, and could not
+  /// say what any figure was made of.
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  /// Half-open [start, end): a quarter ends at the first instant of the next,
+  /// so two consecutive periods cannot both contain the same month.
+  periodStart   DateTime?
+  periodEnd     DateTime?
+  periodLabel   String?
+
+  /// The net and the tax, kept rather than recoverable by division. The old
+  /// path stored only the gross, so the VAT on every invoice ever issued was
+  /// an inference.
+  netAmount     Decimal?
+  vatAmount     Decimal?
+  vatRate       Float?
+
+  /// Accepted in the request body since the beginning, written into the audit
+  /// payload, and never stored -- so it could not be printed on the document
+  /// the client pays against.
+  poNumber      String?
+
+  issuedById    String?
+  issuedBy      User?    @relation("InvoiceIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  lines         InvoiceLine[]
   
   // Phase 2: ZATCA Compliance
   zatcaXml      String?  
@@ -319,6 +376,12 @@ model Invoice {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  /// One invoice per subscription per period. Billing the same quarter twice
+  /// is the mistake that reaches a client's inbox, and a rule in a service is
+  /// not enough on its own.
+  @@unique([subscriptionId, periodStart])
+  @@index([tenantId, periodStart])
 }
 
 // ----------------------------------------------------------------------

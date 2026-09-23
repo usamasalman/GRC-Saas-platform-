@@ -4,6 +4,16 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import {
+  DEFAULT_VAT_RATE,
+  PERIOD_KINDS,
+  PeriodKind,
+  periodFor,
+  toMajor,
+  planInvoice,
+  subscriptionLedger,
+  invoiceTotals,
+} from '../services/invoicing';
 
 function str(val: unknown): string {
   if (typeof val === 'string') return val;
@@ -57,15 +67,21 @@ export const listSubscriptions = async (req: AuthenticatedRequest, res: Response
       where,
       include: {
         tenant: { select: { id: true, name: true, type: true } },
-        plan: true
+        plan: true,
+        invoices: { select: { amount: true, status: true } },
       },
       orderBy: { startDate: 'desc' }
     });
 
+    const subscriptionsWithLedger = subscriptions.map((sub: any) => ({
+      ...sub,
+      ledger: subscriptionLedger(sub.invoices || []),
+    }));
+
     res.json({
       status: 'success',
-      count: subscriptions.length,
-      subscriptions
+      count: subscriptionsWithLedger.length,
+      subscriptions: subscriptionsWithLedger,
     });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to list subscriptions' });
@@ -498,7 +514,12 @@ export const listInvoices = async (req: AuthenticatedRequest, res: Response): Pr
 
     const invoices = await prisma.invoice.findMany({
       where,
-      include: { tenant: { select: { id: true, name: true } } },
+      include: {
+        tenant: { select: { id: true, name: true } },
+        subscription: { include: { plan: true } },
+        lines: true,
+        issuedBy: { select: { id: true, name: true, email: true } },
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -512,11 +533,184 @@ export const listInvoices = async (req: AuthenticatedRequest, res: Response): Pr
   }
 };
 
+export const previewInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { subscriptionId, periodKind, anchor } = req.body || {};
+    if (!subscriptionId) {
+      res.status(400).json({ status: 'error', message: 'Subscription ID is required to preview an invoice' });
+      return;
+    }
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id: str(subscriptionId) },
+      include: { plan: true, tenant: { select: { id: true, name: true } } },
+    });
+    if (!subscription) {
+      res.status(404).json({ status: 'error', code: 'NO_SUBSCRIPTION', message: 'Subscription not found' });
+      return;
+    }
+
+    const pastInvoices = await prisma.invoice.findMany({
+      where: { subscriptionId: subscription.id, periodStart: { not: null } },
+      select: { periodStart: true },
+    });
+    const alreadyInvoiced = pastInvoices.map((i) => i.periodStart!.toISOString());
+
+    const decision = planInvoice({
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+        plan: subscription.plan ? { name: subscription.plan.name, priceMonthly: Number(subscription.plan.priceMonthly) } : null,
+      },
+      kind: periodKind || 'Quarter',
+      anchor: anchor ? new Date(anchor) : new Date(),
+      alreadyInvoiced,
+    });
+
+    if (!decision.ok) {
+      res.status(decision.status).json({ status: 'error', code: decision.code, message: decision.message });
+      return;
+    }
+
+    res.json({
+      status: 'success',
+      decision: {
+        period: decision.period,
+        lines: decision.lines.map((l) => ({
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: toMajor(l.unitPriceMinor),
+          amount: toMajor(l.amountMinor),
+        })),
+        totals: {
+          netAmount: toMajor(decision.totals.netMinor),
+          vatAmount: toMajor(decision.totals.vatMinor),
+          totalAmount: toMajor(decision.totals.totalMinor),
+          vatRate: decision.totals.vatRate,
+        },
+        months: decision.months,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: 'Failed to preview invoice' });
+  }
+};
+
 export const createInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { amount, currency, targetTenantId, poNumber } = req.body;
+    const { subscriptionId, periodKind, anchor, amount, currency, targetTenantId, poNumber } = req.body || {};
+
+    if (subscriptionId) {
+      const subscription = await prisma.subscription.findUnique({
+        where: { id: str(subscriptionId) },
+        include: { plan: true, tenant: { select: { id: true, name: true } } },
+      });
+      if (!subscription) {
+        res.status(404).json({ status: 'error', code: 'NO_SUBSCRIPTION', message: 'Subscription not found' });
+        return;
+      }
+
+      const pastInvoices = await prisma.invoice.findMany({
+        where: { subscriptionId: subscription.id, periodStart: { not: null } },
+        select: { periodStart: true },
+      });
+      const alreadyInvoiced = pastInvoices.map((i) => i.periodStart!.toISOString());
+
+      const decision = planInvoice({
+        subscription: {
+          id: subscription.id,
+          status: subscription.status,
+          startDate: subscription.startDate,
+          endDate: subscription.endDate,
+          plan: subscription.plan ? { name: subscription.plan.name, priceMonthly: Number(subscription.plan.priceMonthly) } : null,
+        },
+        kind: periodKind || 'Quarter',
+        anchor: anchor ? new Date(anchor) : new Date(),
+        alreadyInvoiced,
+      });
+
+      if (!decision.ok) {
+        res.status(decision.status).json({ status: 'error', code: decision.code, message: decision.message });
+        return;
+      }
+
+      const totalMajor = toMajor(decision.totals.totalMinor);
+      const netMajor = toMajor(decision.totals.netMinor);
+      const vatMajor = toMajor(decision.totals.vatMinor);
+
+      const zatcaHash = `SHA256-${Date.now().toString(36).toUpperCase()}`;
+      const zatcaQr = `ZATCA-QR-BASE64-${Buffer.from(`VAT:${decision.totals.vatRate * 100}%|TOTAL:${totalMajor}|HASH:${zatcaHash}`).toString('base64')}`;
+
+      const invoice = await prisma.$transaction(async (tx) => {
+        const inv = await tx.invoice.create({
+          data: {
+            tenantId: subscription.tenantId,
+            subscriptionId: subscription.id,
+            amount: totalMajor,
+            netAmount: netMajor,
+            vatAmount: vatMajor,
+            vatRate: decision.totals.vatRate,
+            periodStart: decision.period.start,
+            periodEnd: decision.period.end,
+            periodLabel: decision.period.label,
+            currency: currency || 'SAR',
+            status: 'UNPAID',
+            poNumber: poNumber ? str(poNumber).trim() : null,
+            issuedById: req.user!.id,
+            zatcaHash,
+            zatcaQr,
+            isCleared: false,
+            lines: {
+              create: decision.lines.map((l) => ({
+                description: l.description,
+                quantity: l.quantity,
+                unitPrice: toMajor(l.unitPriceMinor),
+                amount: toMajor(l.amountMinor),
+              })),
+            },
+          },
+          include: {
+            tenant: { select: { name: true } },
+            subscription: { include: { plan: true } },
+            lines: true,
+          },
+        });
+
+        await writeAudit(tx, {
+          tenantId: subscription.tenantId,
+          actorId: req.user!.id,
+          action: 'billing.invoice.create',
+          subjectType: 'Invoice',
+          subjectId: inv.id,
+          payload: {
+            invoiceId: inv.id,
+            subscriptionId: subscription.id,
+            tenant: subscription.tenant?.name,
+            plan: subscription.plan?.name,
+            period: decision.period.label,
+            months: decision.months,
+            netAmount: netMajor,
+            vatAmount: vatMajor,
+            totalAmount: totalMajor,
+            poNumber: inv.poNumber,
+          },
+        });
+
+        return inv;
+      });
+
+      res.status(201).json({
+        status: 'success',
+        message: `Tax Invoice for ${decision.period.label} generated with ${invoice.lines.length} line item(s).`,
+        invoice,
+      });
+      return;
+    }
+
     if (!amount) {
-      res.status(400).json({ status: 'error', message: 'Invoice amount is required' });
+      res.status(400).json({ status: 'error', message: 'Invoice amount or subscription is required' });
       return;
     }
 
@@ -525,7 +719,6 @@ export const createInvoice = async (req: AuthenticatedRequest, res: Response): P
     const vat = invAmount * 0.15;
     const total = invAmount + vat;
 
-    // Generate ZATCA Hash & Mock QR Code
     const zatcaHash = `SHA256-${Date.now().toString(36).toUpperCase()}`;
     const zatcaQr = `ZATCA-QR-BASE64-${Buffer.from(`VAT:15%|TOTAL:${total}|HASH:${zatcaHash}`).toString('base64')}`;
 
@@ -533,13 +726,18 @@ export const createInvoice = async (req: AuthenticatedRequest, res: Response): P
       data: {
         tenantId,
         amount: total,
+        netAmount: invAmount,
+        vatAmount: vat,
+        vatRate: 0.15,
         currency: currency || 'SAR',
         status: 'UNPAID',
+        poNumber: poNumber ? str(poNumber).trim() : null,
+        issuedById: req.user!.id,
         zatcaHash,
         zatcaQr,
-        isCleared: false
+        isCleared: false,
       },
-      include: { tenant: { select: { name: true } } }
+      include: { tenant: { select: { name: true } } },
     });
 
     await writeAudit(prisma, {
@@ -548,15 +746,24 @@ export const createInvoice = async (req: AuthenticatedRequest, res: Response): P
       action: 'billing.invoice.create',
       subjectType: 'Invoice',
       subjectId: invoice.id,
-      payload: { ...invoice, poNumber } as Record<string, unknown>
+      payload: { ...invoice, poNumber } as Record<string, unknown>,
     });
 
     res.status(201).json({
       status: 'success',
       message: `Tax Invoice ${invoice.id} generated with ZATCA QR code.`,
-      invoice
+      invoice,
     });
   } catch (error: any) {
+    if (error?.code === 'P2002') {
+      res.status(409).json({
+        status: 'error',
+        code: 'PERIOD_ALREADY_INVOICED',
+        message: 'An invoice has already been issued for this subscription and period.',
+      });
+      return;
+    }
+    console.error('[Create Invoice Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to generate invoice' });
   }
 };

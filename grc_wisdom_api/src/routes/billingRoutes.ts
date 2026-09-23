@@ -4,7 +4,7 @@ import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   listSubscriptions, createSubscription,
   listPlans, createPlan,
-  listInvoices, createInvoice, payInvoice,
+  listInvoices, createInvoice, previewInvoice, payInvoice,
   listPayments, getGatewayConfig, updateGatewayConfig,
   updatePlan,
   deletePlan,
@@ -43,6 +43,7 @@ router.delete('/plans/:id', requireCapability(CAP.SELECT_PLAN), deletePlan);
 // Invoices (ZATCA compliant)
 router.get('/invoices', listInvoices);
 router.post('/invoices', requireCapability(CAP.REVIEW_INVOICE), createInvoice);
+router.post('/invoices/preview', requireCapability(CAP.REVIEW_INVOICE), previewInvoice);
 router.post('/invoices/:id/pay', requireCapability(CAP.RECONCILE_PAYMENT), payInvoice);
 
 // Payments & Receipts
