@@ -160,14 +160,24 @@ jobs:
       - name: API — HTTP suites against a real database
         working-directory: grc_wisdom_api
         env:
-          NODE_ENV: production
           API: http://127.0.0.1:3000
           ADMIN_EMAIL: ci@example.com
           ADMIN_PASSWORD: ci-only-password-not-a-secret
           BOOTSTRAP_ADMIN_EMAIL: ci@example.com
           BOOTSTRAP_ADMIN_PASSWORD: ci-only-password-not-a-secret
         run: |
-          node dist/server.js &
+          # NODE_ENV is set on the SERVER PROCESS, not on the step.
+          #
+          # The suites need the API running as production, but the reseed in
+          # the loop below is a separate process, and seed.ts refuses to run
+          # when NODE_ENV says production — deliberately, because a container
+          # command that seeded on every restart once wiped a live database
+          # for twenty-five days. As a step-level variable it reached the
+          # reseed too, and the first iteration failed the whole job.
+          #
+          # Keeping the variable on the server alone is the fix that does not
+          # require telling the guard to stand down.
+          NODE_ENV=production node dist/server.js &
           echo $! > /tmp/http.pid
 
           for i in $(seq 1 30); do

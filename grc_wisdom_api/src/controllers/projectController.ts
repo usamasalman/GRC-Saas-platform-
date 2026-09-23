@@ -298,6 +298,21 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
+    // Refused here for the same reason updateProject refuses it, and with the
+    // same code. It was silently dropped instead: a caller still sending the
+    // old free-text field got back 201 and an engagement bound to nothing,
+    // which reads as "scope: none" on the readiness report rather than as a
+    // mistake anybody could see. standardIds is the field that means this now.
+    if ((req.body || {}).frameworks !== undefined) {
+      res.status(400).json({
+        status: 'error',
+        code: 'FRAMEWORKS_READ_ONLY',
+        message: 'Frameworks are no longer free text. Name the enabled frameworks in '
+          + 'standardIds, or bind them afterwards with PUT /api/projects/:id/standards.',
+      });
+      return;
+    }
+
     // Defaults to the caller's own tenant. A platform operator may name another,
     // which canWriteProject then has to allow.
     const tenantId = str(bodyTenantId || req.user!.tenantId);

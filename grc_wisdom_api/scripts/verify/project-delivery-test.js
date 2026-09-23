@@ -112,6 +112,25 @@ async function main() {
   // ── 3. Creation ─────────────────────────────────────────────────────────
   console.log('\n3. Creation');
 
+  // Scope is no longer free text. "ISO27001", "ISO 27001" and a typo were
+  // three different values, none of which resolved to a Standard row, so the
+  // readiness report could not say what the engagement was in scope for. It
+  // lives in ProjectStandard now, and the old field is refused rather than
+  // dropped — an engagement bound to nothing should look like a mistake.
+  const oldShape = await api('/api/projects', {
+    token, method: 'POST',
+    body: {
+      name: 'Free-text frameworks — should not be accepted',
+      frameworks: ['ISO27001', 'SOC2'],
+      startDate: iso(-30), targetEndDate: iso(60),
+      ownerId: myUserId, managerId: myUserId,
+    },
+  });
+  oldShape.status === 400 && oldShape.json?.code === 'FRAMEWORKS_READ_ONLY'
+    ? ok('free-text frameworks are refused, not silently dropped')
+    : bad('free-text frameworks are refused',
+          `${oldShape.status} ${oldShape.json?.code}`);
+
   const created = await api('/api/projects', {
     token, method: 'POST',
     body: {
@@ -119,7 +138,6 @@ async function main() {
       description: 'Created by the slice 1 verification run.',
       projectType: 'Readiness',
       priority: 'High',
-      frameworks: ['ISO27001', 'SOC2'],
       startDate: iso(-30),
       targetEndDate: iso(60),
       ownerId: myUserId,
@@ -145,9 +163,11 @@ async function main() {
     ? ok('a new project starts in Draft')
     : bad('a new project starts in Draft', project.status);
 
-  Array.isArray(project.frameworks) && project.frameworks.length === 2
-    ? ok('frameworks round-trip as an array')
-    : bad('frameworks round-trip as an array', JSON.stringify(project.frameworks));
+  Array.isArray(project.frameworks) && project.frameworks.length === 0
+  && project.frameworksAreLegacy === false
+    ? ok('a new engagement carries no legacy free-text scope')
+    : bad('a new engagement carries no legacy free-text scope',
+          `${JSON.stringify(project.frameworks)} legacy=${project.frameworksAreLegacy}`);
 
   // ── 4. Derived figures ──────────────────────────────────────────────────
   console.log('\n4. Derived schedule and status');
@@ -161,9 +181,14 @@ async function main() {
     ? ok('elapsed and remaining split correctly', `${s.elapsedDays} / ${s.remainingDays}`)
     : bad('elapsed and remaining split correctly', `${s.elapsedDays} / ${s.remainingDays}`);
 
-  project.derivedStatus === 'NotStarted'
-    ? ok('a Draft project reads as Not started')
-    : bad('a Draft project reads as Not started', project.derivedStatus);
+  // Draft is tested AFTER the schedule, not before it. This engagement opened
+  // thirty days ago and has reported nothing, so a third of its window is gone
+  // — and "Not started" is the one thing it is not. The early return used to
+  // sit above the schedule checks, which put a grey Not-started pill in the
+  // same row as "184 days overdue" in red and a Delayed count of zero.
+  project.derivedStatus === 'AtRisk'
+    ? ok('a draft that has burned a third of its window reads At risk')
+    : bad('a draft that has burned its window reads At risk', project.derivedStatus);
 
   const detail = await api(`/api/projects/${project.id}`, { token });
   const members = detail.json?.project?.members || [];
@@ -767,13 +792,32 @@ async function main() {
     : bad('a draft carries no agreed plan',
           `${bProject.json.project.baselineSetAt} / v${bProject.json.project.baselineVersion}`);
 
+  // There has to be a plan before there is a plan to agree. Activating an
+  // empty draft is refused, and that refusal is the reason a baseline means
+  // something: v1 is a stamp on work somebody actually wrote down.
+  const emptyActivation = await api(`/api/projects/${bid}`, {
+    token, method: 'PATCH', body: { status: 'Active' },
+  });
+  emptyActivation.status >= 400
+    ? ok('an empty draft cannot be activated', emptyActivation.json?.code)
+    : bad('an empty draft cannot be activated', `got ${emptyActivation.status}`);
+
+  const bPlanPhase = await api(`/api/projects/${bid}/phases`, {
+    token, method: 'POST',
+    body: { name: 'Mobilisation', startDate: iso(-5), targetEndDate: iso(30), ownerId: myUserId },
+  });
+  await api(`/api/projects/phases/${bPlanPhase.json?.phase?.id}/tasks`, {
+    token, method: 'POST',
+    body: { name: 'Agree the scope statement', assigneeId: myUserId, dueDate: iso(7) },
+  });
+
   const bActivated = await api(`/api/projects/${bid}`, {
     token, method: 'PATCH', body: { status: 'Active' },
   });
   bActivated.json?.project?.baselineSetAt && bActivated.json?.project?.baselineVersion === 1
     ? ok('activation stamps the plan that was agreed', 'v1')
     : bad('activation stamps the agreed plan',
-          `${bActivated.json?.project?.baselineSetAt} / v${bActivated.json?.project?.baselineVersion}`);
+          `${bActivated.status} ${bActivated.json?.project?.baselineSetAt} / v${bActivated.json?.project?.baselineVersion}`);
 
   const bPhase = await api(`/api/projects/${bid}/phases`, {
     token, method: 'POST',
@@ -795,7 +839,11 @@ async function main() {
     : bad('a task added to a live plan is baselined at creation');
 
   const bPlan = await api(`/api/projects/${bid}/plan`, { token });
-  const bPlanTask = bPlan.json?.phases?.[0]?.tasks?.[0];
+  // By id, not by position. The engagement now carries a mobilisation phase as
+  // well, and which one the plan returns first is the plan's business.
+  const bPlanTask = (bPlan.json?.phases || [])
+    .flatMap((p) => p.tasks || [])
+    .find((t) => t.id === btid);
   bPlanTask?.slippage?.baselined === true && bPlanTask?.slippage?.slipDays === 0
     ? ok('a freshly planned task has slipped nothing')
     : bad('a freshly planned task has slipped nothing', JSON.stringify(bPlanTask?.slippage));
