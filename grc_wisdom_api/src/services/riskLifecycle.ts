@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { nextReviewFrom } from './riskScoring';
+import { observe } from './jobReporting';
 
 /**
  * The risk lifecycle, declared rather than implied.
@@ -152,15 +153,22 @@ export async function backfillReviewDates(): Promise<number> {
 
 let timer: NodeJS.Timeout | null = null;
 
+export const RISK_REVIEW_JOB = 'JOB-RISK-REVIEW';
+
+/** Recorded so the System Health screen can report what ran, not what would look right. */
+function tick(): void {
+  observe(RISK_REVIEW_JOB, runRiskReviewScan).catch(console.error);
+}
+
 export function startRiskReviewScanner(intervalMs = 15 * 60_000): void {
   if (timer) return;
   setTimeout(() => {
     backfillReviewDates()
       .then((n) => { if (n > 0) console.log(`[Risk review] backfilled ${n} review date(s)`); })
-      .then(() => runRiskReviewScan())
+      .then(() => { tick(); })
       .catch(console.error);
   }, 12_000);
-  timer = setInterval(() => { runRiskReviewScan().catch(console.error); }, intervalMs);
+  timer = setInterval(tick, intervalMs);
   console.log(`[Risk review] scanner started (every ${Math.round(intervalMs / 60000)}m)`);
 }
 

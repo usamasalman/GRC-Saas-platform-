@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from './notificationService';
+import { observe } from './jobReporting';
 
 /**
  * ITSM priority + SLA (TRD §7.3).
@@ -133,11 +134,25 @@ export async function runEscalationScan(): Promise<{ breached: number; escalated
 
 let timer: NodeJS.Timeout | null = null;
 
+export const SLA_ESCALATION_JOB = 'JOB-SLA-ESCALATION';
+
+/**
+ * Every tick is recorded, including the ones that throw.
+ *
+ * observe() measures the call and stores the outcome, which is what lets the
+ * System Health screen report this worker from what it did rather than from a
+ * hardcoded row. The .catch stays: a failed scan must not take the timer down,
+ * and observe has already written the failure by the time it rethrows nothing.
+ */
+function tick(): void {
+  observe(SLA_ESCALATION_JOB, runEscalationScan).catch(console.error);
+}
+
 export function startEscalationScanner(intervalMs = 5 * 60_000): void {
   if (timer) return;
   // Kick once shortly after boot so a fresh start reflects reality quickly.
-  setTimeout(() => { runEscalationScan().catch(console.error); }, 10_000);
-  timer = setInterval(() => { runEscalationScan().catch(console.error); }, intervalMs);
+  setTimeout(tick, 10_000);
+  timer = setInterval(tick, intervalMs);
   console.log(`[SLA escalation] scanner started (every ${Math.round(intervalMs / 60000)}m)`);
 }
 

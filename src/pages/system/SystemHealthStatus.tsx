@@ -4,20 +4,24 @@ import { S, StatStrip, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
 interface ServiceStatus {
   name: string;
+  /** "Mounted" — that this router is in this build. Nothing measures uptime. */
   status: string;
-  latencyMs: number;
-  uptimePercent: number;
 }
 
 interface BackgroundJob {
   id: string;
   name: string;
-  type: string;
+  description: string;
   schedule: string;
-  lastRun: string;
-  nextRun: string;
-  status: string;
-  durationMs: number;
+  measures: string[];
+  /** Null until the worker has run in the process currently serving. */
+  lastRun: string | null;
+  nextRun: string | null;
+  durationMs: number | null;
+  counts: Record<string, number> | null;
+  status: 'Idle' | 'NeverRun' | 'Failed';
+  error: string | null;
+  lastRunWasManual: boolean;
 }
 
 interface HealthData {
@@ -28,6 +32,7 @@ interface HealthData {
   memory: { rssMb: number; heapTotalMb: number; heapUsedMb: number };
   services: ServiceStatus[];
   jobs: BackgroundJob[];
+  jobsNote?: string;
 }
 
 /**
@@ -45,13 +50,30 @@ interface HealthData {
  *
  * Running a job had the same shape: a refusal was reported as "executed in
  * simulation mode", which reads as success.
+ *
+ * The server now reports only the two workers it genuinely starts, from what
+ * they actually did, so this page shows a blank last run rather than filling
+ * one in. The availability and response-time columns are gone with the numbers
+ * that filled them: nothing here measures uptime, and printing 99.99% is what
+ * made the absent monitoring look like present monitoring.
  */
-const fmtDate = (d: string) => {
-  if (!d || d === 'On Event') return d;
+const fmtDate = (d: string | null) => {
+  if (!d) return null;
   try {
     const dt = new Date(d);
     return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   } catch { return d; }
+};
+
+/** An em dash with the reason beside it, never a plausible-looking value. */
+const notYet = (why: string) => (
+  <span style={{ color: 'var(--ink-faint)' }}>— {why}</span>
+);
+
+const JOB_PILL: Record<string, [string, string]> = {
+  Idle: ['var(--success)', 'var(--success-line)'],
+  Failed: ['var(--danger)', 'var(--danger)'],
+  NeverRun: ['var(--ink-muted)', 'var(--line)'],
 };
 
 const SystemHealthStatus: React.FC = () => {
@@ -83,9 +105,18 @@ const SystemHealthStatus: React.FC = () => {
 
   const handleRunJob = async (job: BackgroundJob) => {
     setTriggeringJobId(job.id);
+    setError('');
     try {
       const res = await apiClient.post('/api/system/jobs/run', { jobId: job.id });
-      setNotice(res.data?.message || `Job "${job.name}" triggered successfully.`);
+      const counts = res.data?.result?.counts as Record<string, number> | undefined;
+      // What it changed, not that it was "triggered". A scan that found
+      // nothing is a useful answer; "triggered successfully" is not an answer
+      // at all, and was the wording used when nothing ran.
+      const did = counts && Object.keys(counts).length
+        ? Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')
+        : 'nothing to action';
+      setNotice(`${job.name}: ${did} (${res.data?.result?.durationMs ?? '?'} ms).`);
+      await loadHealth();
     } catch (err) {
       setError(apiError(err, `Could not run "${job.name}".`));
     } finally {
@@ -132,15 +163,19 @@ const SystemHealthStatus: React.FC = () => {
       ]} />
 
       {/* Services Table */}
-      <h3 style={{ margin: '20px 0 10px', fontSize: 15, color: 'var(--ink)' }}>API Endpoints & Platform Microservices</h3>
+      <h3 style={{ margin: '20px 0 10px', fontSize: 15, color: 'var(--ink)' }}>API surfaces in this build</h3>
+      <div style={{ fontSize: 12, color: 'var(--ink-muted)', margin: '0 0 8px' }}>
+        That these routers are mounted is all the running process can tell you about
+        them. Per-service response times and availability need a monitor watching from
+        outside; this table used to print both as fixed numbers, unchanged even when
+        the database was unreachable.
+      </div>
       <div style={{ ...S.card, overflow: 'auto', marginBottom: 24 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={S.headRow}>
-              <th style={S.th}>Service Name</th>
+              <th style={S.th}>Service</th>
               <th style={S.th}>Status</th>
-              <th style={{ ...S.th, textAlign: 'right' }}>Response Time</th>
-              <th style={{ ...S.th, textAlign: 'right' }}>Availability SLA</th>
             </tr>
           </thead>
           <tbody>
@@ -150,10 +185,8 @@ const SystemHealthStatus: React.FC = () => {
                   <div style={{ fontWeight: 500, color: 'var(--ink-body)' }}>{s.name}</div>
                 </td>
                 <td style={S.td}>
-                  <span style={pill('var(--success)', 'var(--success-line)')}>{s.status}</span>
+                  <span style={pill('var(--ink-muted)', 'var(--line)')}>{s.status}</span>
                 </td>
-                <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{s.latencyMs} ms</td>
-                <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--success)' }}>{s.uptimePercent}%</td>
               </tr>
             ))}
           </tbody>
@@ -161,44 +194,66 @@ const SystemHealthStatus: React.FC = () => {
       </div>
 
       {/* Background Jobs Table */}
-      <h3 style={{ margin: '20px 0 10px', fontSize: 15, color: 'var(--ink)' }}>Automated Background Workers & Cron Jobs</h3>
+      <h3 style={{ margin: '20px 0 10px', fontSize: 15, color: 'var(--ink)' }}>Background workers</h3>
+      {data?.jobsNote && (
+        <div style={{ fontSize: 12, color: 'var(--ink-muted)', margin: '0 0 8px' }}>{data.jobsNote}</div>
+      )}
       <div style={{ ...S.card, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={S.headRow}>
-              <th style={S.th}>Job Name</th>
-              <th style={S.th}>Type & Schedule</th>
-              <th style={S.th}>Last Run</th>
-              <th style={S.th}>Next Run</th>
-              <th style={{ ...S.th, textAlign: 'right' }}>Avg Duration</th>
+              <th style={S.th}>Worker</th>
+              <th style={S.th}>Schedule</th>
+              <th style={S.th}>Last run</th>
+              <th style={S.th}>Next run</th>
+              <th style={S.th}>What it did</th>
+              <th style={{ ...S.th, textAlign: 'right' }}>Duration</th>
               <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {jobs.map(j => (
-              <tr key={j.id} style={S.bodyRow}>
-                <td style={S.td}>
-                  <div style={{ fontWeight: 500, color: 'var(--ink-body)' }}>{j.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--ink-muted)' }}>{j.id}</div>
-                </td>
-                <td style={S.td}>
-                  <span style={pill('var(--info)', 'var(--info-line)')}>{j.type}</span>
-                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>{j.schedule}</div>
-                </td>
-                <td style={S.td}>{fmtDate(j.lastRun)}</td>
-                <td style={S.td}>{fmtDate(j.nextRun)}</td>
-                <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{j.durationMs} ms</td>
-                <td style={{ ...S.td, textAlign: 'right' }}>
-                  <button
-                    style={{ ...ghostBtn, padding: '4px 10px', fontSize: 11 }}
-                    onClick={() => handleRunJob(j)}
-                    disabled={triggeringJobId === j.id}
-                  >
-                    {triggeringJobId === j.id ? 'Running…' : '▶ Run Job'}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {jobs.map(j => {
+              const [fg, line] = JOB_PILL[j.status] || JOB_PILL.NeverRun;
+              return (
+                <tr key={j.id} style={S.bodyRow}>
+                  <td style={S.td}>
+                    <div style={{ fontWeight: 500, color: 'var(--ink-body)' }}>{j.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>{j.description}</div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>{j.id}</div>
+                  </td>
+                  <td style={S.td}>
+                    <span style={pill(fg, line)}>{j.status === 'NeverRun' ? 'Not run yet' : j.status}</span>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>{j.schedule}</div>
+                  </td>
+                  <td style={S.td}>
+                    {fmtDate(j.lastRun) || notYet('not since restart')}
+                    {j.lastRunWasManual && (
+                      <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>run by hand</div>
+                    )}
+                  </td>
+                  <td style={S.td}>{fmtDate(j.nextRun) || notYet('after its first run')}</td>
+                  <td style={S.td}>
+                    {j.error
+                      ? <span style={{ color: 'var(--danger)' }}>{j.error}</span>
+                      : j.counts
+                        ? Object.entries(j.counts).map(([k, v]) => `${v} ${k}`).join(', ')
+                        : notYet(j.measures.join(', '))}
+                  </td>
+                  <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {j.durationMs == null ? <span style={{ color: 'var(--ink-faint)' }}>—</span> : `${j.durationMs} ms`}
+                  </td>
+                  <td style={{ ...S.td, textAlign: 'right' }}>
+                    <button
+                      style={{ ...ghostBtn, padding: '4px 10px', fontSize: 11 }}
+                      onClick={() => handleRunJob(j)}
+                      disabled={triggeringJobId === j.id}
+                    >
+                      {triggeringJobId === j.id ? 'Running…' : '▶ Run now'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

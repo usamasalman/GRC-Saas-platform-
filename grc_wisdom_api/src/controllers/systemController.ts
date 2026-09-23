@@ -3,6 +3,9 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { reportAllJobs, planTrigger, observe } from '../services/jobReporting';
+import { runEscalationScan, SLA_ESCALATION_JOB } from '../services/slaService';
+import { runRiskReviewScan, RISK_REVIEW_JOB } from '../services/riskLifecycle';
 
 function str(val: unknown): string {
   if (typeof val === 'string') return val;
@@ -23,38 +26,42 @@ export const getSystemHealth = async (req: AuthenticatedRequest, res: Response):
 
     const memoryUsage = process.memoryUsage();
 
+    // Nine services, each Healthy, each with a latency and an uptime figure.
+    // Every one of those numbers was a literal in this array. 99.95% uptime is
+    // a claim about the last year, from a process that cannot see past its own
+    // boot, and they were served unchanged while the database was unreachable.
+    //
+    // What is actually knowable from in here is: these routers are mounted in
+    // this build, and the database answered a query just now in dbLatencyMs.
+    // So that is what is reported. There is no uptimePercent, because nothing
+    // measures uptime — adding a monitor is a piece of work, and printing a
+    // number in its place was the thing that made the work look done.
     const services = [
-      { name: 'Authentication Service (/api/auth)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-      { name: 'Document Management Engine (/api/documents)', status: 'Healthy', latencyMs: 4, uptimePercent: 99.98 },
-      { name: 'SoD & Capability Engine (/api/iam)', status: 'Healthy', latencyMs: 1, uptimePercent: 100.0 },
-      { name: 'ITSM & Workflow Engine (/api/itsm)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.97 },
-      { name: 'GRC Core & Risk Register (/api/grc)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.99 },
-      { name: 'Modules & Entitlements (/api/marketplace)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-      { name: 'Subscriptions & Billing (/api/billing)', status: 'Healthy', latencyMs: 3, uptimePercent: 99.95 },
-      { name: 'Usage & Automation (/api/usage)', status: 'Healthy', latencyMs: 2, uptimePercent: 99.99 },
-      { name: 'WORM Audit Log Writer (/api/audit-logs)', status: 'Healthy', latencyMs: 1, uptimePercent: 100.0 },
-    ];
+      '/api/auth — authentication and sessions',
+      '/api/documents — document management',
+      '/api/iam — SoD and capability engine',
+      '/api/itsm — ITSM and workflow',
+      '/api/grc — GRC core and risk register',
+      '/api/marketplace — modules and entitlements',
+      '/api/billing — subscriptions and billing',
+      '/api/usage — usage and automation',
+      '/api/audit-logs — WORM audit log',
+    ].map((name) => ({ name, status: 'Mounted' as const }));
 
-    const jobs = [
-      { id: 'JOB-SYS-01', name: 'WORM Cryptographic Chain Audit', type: 'Cron (Hourly)', schedule: '0 * * * *', lastRun: new Date(Date.now() - 1800000).toISOString(), nextRun: new Date(Date.now() + 1800000).toISOString(), status: 'Idle', durationMs: 420 },
-      { id: 'JOB-SYS-02', name: 'SLA Breach Monitoring & Auto-Escalation', type: 'Cron (Every 5 mins)', schedule: '*/5 * * * *', lastRun: new Date(Date.now() - 120000).toISOString(), nextRun: new Date(Date.now() + 180000).toISOString(), status: 'Idle', durationMs: 180 },
-      { id: 'JOB-SYS-03', name: 'Daily Regulatory Standards Sync (NCA / ISO)', type: 'Cron (Daily 02:00)', schedule: '0 2 * * *', lastRun: new Date(Date.now() - 43200000).toISOString(), nextRun: new Date(Date.now() + 43200000).toISOString(), status: 'Idle', durationMs: 1250 },
-      // JOB-SYS-04 was "Evidence Expiry & Retention Reminder Worker", reported
-      // as Idle with a last run eight hours ago and a duration of 890ms. No
-      // such worker existed. An operator asking whether retention was running
-      // was told it ran at six that morning.
-      //
-      // Retention is derived on read -- the disposition queue is a query over
-      // disposalDueAt, not a timer -- so there is no job to report here. The
-      // row is gone rather than restated, because the honest answer to "is the
-      // retention worker running" is that there is no retention worker.
-      //
-      // The rows that remain are not audited by this change. Only two timers
-      // exist in this API (SLA escalation and risk review, started in
-      // server.ts), so at least JOB-SYS-01, -03 and -05 describe work nothing
-      // performs, and the real risk-review scanner is not listed at all.
-      { id: 'JOB-SYS-05', name: 'ZATCA E-Invoice XML Signer & Hash Verification', type: 'Queue Worker', schedule: 'Event Driven', lastRun: new Date(Date.now() - 600000).toISOString(), nextRun: 'On Event', status: 'Idle', durationMs: 110 },
-    ];
+    // Five rows, three of which described work nothing performed.
+    //
+    // JOB-SYS-04 "Evidence Expiry & Retention Reminder Worker" went first: it
+    // reported Idle with a last run eight hours ago and a duration of 890ms,
+    // and no such worker existed, so an operator asking whether retention was
+    // running was told it ran at six that morning. JOB-SYS-01 (WORM chain
+    // audit), -03 (standards sync) and -05 (ZATCA signer) were the same thing
+    // — `lastRun: Date.now() - 1800000` is a number that moves every time the
+    // page is refreshed, which is what made them look live.
+    //
+    // Meanwhile the two workers this API genuinely starts, in server.ts, were
+    // not on the list at all. The register is now those two, and each row is
+    // built from what the worker actually did in this process.
+    const jobs = reportAllJobs();
 
     res.json({
       status: 'success',
@@ -67,6 +74,11 @@ export const getSystemHealth = async (req: AuthenticatedRequest, res: Response):
         heapTotalMb: Math.round(memoryUsage.heapTotal / 1024 / 1024),
         heapUsedMb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
       },
+      // Said plainly, because a job list that resets on restart is otherwise
+      // read as a claim that nothing has ever run.
+      jobsNote:
+        'Job history is held in the running process. A restart clears it, so a '
+        + 'worker showing "not run since restart" has not necessarily missed a run.',
       services,
       jobs
     });
@@ -75,25 +87,78 @@ export const getSystemHealth = async (req: AuthenticatedRequest, res: Response):
   }
 };
 
+/** The two scans a person may start by hand, by the id the register uses. */
+const RUNNABLE: Record<string, () => Promise<Record<string, number>>> = {
+  [SLA_ESCALATION_JOB]: runEscalationScan,
+  [RISK_REVIEW_JOB]: runRiskReviewScan,
+};
+
+/**
+ * Run a background scan now.
+ *
+ * This used to run nothing. It took any string as a job id, wrote a
+ * SYSTEM_JOB_TRIGGERED entry into the WORM audit log, and answered
+ *
+ *   { status: 'Success', durationMs: Math.floor(Math.random() * 300) + 150 }
+ *
+ * — a random number presented to an operator as a measurement, and a claim of
+ * success for work that never happened, written permanently into the record
+ * the product exists to keep. "JOB-SYS-99" executed successfully too.
+ *
+ * Now: an unknown id is refused, the scan actually runs, the duration is the
+ * elapsed time of that run, and the audit entry records what the scan did —
+ * including when it failed, which the old shape had no way to express.
+ */
 export const triggerSystemJob = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { jobId } = req.body;
-    const jobIdStr = str(jobId);
+    const plan = planTrigger(req.body?.jobId);
+    if (!plan.ok) {
+      res.status(plan.status).json({ status: 'error', code: plan.code, message: plan.message });
+      return;
+    }
 
-    const jobResult = await prisma.$transaction(async (tx) => {
+    // Outside the transaction, deliberately. The scan opens transactions of
+    // its own for every ticket or risk it touches, and holding one open across
+    // all of them would make a manual run lock the tables it is scanning.
+    const run = await observe(plan.id, RUNNABLE[plan.id], { manual: true });
+
+    await prisma.$transaction(async (tx) => {
       await writeAudit(tx, {
         tenantId: str(req.user!.tenantId),
         actorId: str(req.user!.id),
         action: 'SYSTEM_JOB_TRIGGERED',
         subjectType: 'SystemJob',
-        subjectId: jobIdStr || 'JOB-MANUAL',
-        payload: { jobId: jobIdStr, triggeredBy: req.user!.id, timestamp: new Date().toISOString() }
+        subjectId: plan.id,
+        payload: {
+          jobId: plan.id,
+          outcome: run.outcome,
+          durationMs: run.durationMs,
+          // What it actually changed. An entry saying a scan ran is worth
+          // little; one saying it breached four tickets is the record.
+          counts: run.counts ?? null,
+          error: run.error ?? null,
+          startedAt: run.startedAt,
+        },
       });
-      return { jobId: jobIdStr, status: 'Success', executedAt: new Date().toISOString(), durationMs: Math.floor(Math.random() * 300) + 150 };
     });
 
-    res.json({ status: 'success', result: jobResult, message: `System job ${jobIdStr} executed successfully.` });
+    if (run.outcome === 'Failed') {
+      res.status(500).json({
+        status: 'error',
+        code: 'JOB_FAILED',
+        result: run,
+        message: `${plan.id} failed after ${run.durationMs}ms: ${run.error}`,
+      });
+      return;
+    }
+
+    res.json({
+      status: 'success',
+      result: run,
+      message: `${plan.id} ran in ${run.durationMs}ms.`,
+    });
   } catch (error: any) {
+    console.error('[System Job Trigger Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to execute system job' });
   }
 };
