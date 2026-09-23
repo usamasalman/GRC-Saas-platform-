@@ -14,7 +14,8 @@ import {
 const SUBJ_VENDOR = 'Vendor';
 const SUBJ_ASSESSMENT = 'VendorAssessment';
 
-async function nextVendorRef(tenantId: string): Promise<string> {
+/** Shared with the bulk importer, which mints refs the same way. */
+export async function nextVendorRef(tenantId: string): Promise<string> {
   const count = await prisma.vendor.count({ where: { tenantId } });
   return `VEN-${String(count + 1).padStart(4, '0')}`;
 }

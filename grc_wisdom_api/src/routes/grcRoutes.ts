@@ -98,6 +98,16 @@ import {
   getEnablementMatrix, bulkEnableStandards, bulkDisableStandards,
 } from '../controllers/standardEnablementController';
 import { getEstatePosture } from '../controllers/estatePostureController';
+import {
+  downloadVendorTemplate,
+  uploadVendorImport,
+  listVendorImports,
+  getVendorImport,
+  reviewVendorCandidate,
+  acceptCleanVendorRows,
+  commitVendorImport,
+  discardVendorImport,
+} from '../controllers/vendorImportController';
 
 const router = Router();
 
@@ -260,6 +270,23 @@ router.post('/assets/imports/:id/discard', MAY_MAINTAIN_ASSETS, discardAssetImpo
 const MAY_MANAGE_VENDORS = requireAnyCapability(
   CAP.ASSESS_VENDOR, CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.MANAGE_TENANT,
 );
+// -- Bulk supplier import (staged) ----------------------------------------
+// The same pipeline assets, risks and frameworks already had. Extraction
+// produces candidates, never vendors: a mis-read data-access level makes a
+// supplier look lower-risk than they are and buys them a lighter review
+// cadence for a year, so nothing enters the register until a person has seen
+// what the parser understood.
+//
+// The literals sit above '/vendors/:id', which would otherwise match them.
+router.get('/vendors/import/template', downloadVendorTemplate);
+router.get('/vendors/imports', listVendorImports);
+router.get('/vendors/imports/:id', getVendorImport);
+router.post('/vendors/import', MAY_MANAGE_VENDORS, uploadVendorImport);
+router.patch('/vendor-candidates/:candidateId', MAY_MANAGE_VENDORS, reviewVendorCandidate);
+router.post('/vendors/imports/:id/accept-clean', MAY_MANAGE_VENDORS, acceptCleanVendorRows);
+router.post('/vendors/imports/:id/commit', MAY_MANAGE_VENDORS, commitVendorImport);
+router.post('/vendors/imports/:id/discard', MAY_MANAGE_VENDORS, discardVendorImport);
+
 router.get('/vendors', listVendors);
 router.get('/vendor-analytics', vendorAnalytics);
 router.post('/vendors', MAY_MANAGE_VENDORS, createVendor);

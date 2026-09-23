@@ -5,6 +5,7 @@ import Icon from '../../components/Icon';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
 import FormDialog from '../../components/FormDialog';
 import Can, { MAY, can } from '../../components/Can';
+import VendorImport from './vendor/VendorImport';
 
 /**
  * Third-party risk management.
@@ -48,7 +49,7 @@ const label: React.CSSProperties = {
 
 const humanCategory = (c: string) => c.replace(/([a-z])([A-Z])/g, '$1 $2');
 
-type Tab = 'register' | 'diligence' | 'concentration' | 'formulas';
+type Tab = 'register' | 'import' | 'diligence' | 'concentration' | 'formulas';
 
 const VendorRegister: React.FC = () => {
   const [tab, setTab] = useState<Tab>('register');
@@ -272,6 +273,9 @@ const VendorRegister: React.FC = () => {
           <Icon name="vendors" size={16} /> Register
           <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{vendors.length}</span>
         </button>
+        <button style={tabStyle(tab === 'import')} onClick={() => setTab('import')}>
+          <Icon name="upload" size={16} /> Bulk import
+        </button>
         <button style={tabStyle(tab === 'diligence')} onClick={() => setTab('diligence')}>
           <Icon name="approvals" size={16} /> Due diligence
         </button>
@@ -282,6 +286,8 @@ const VendorRegister: React.FC = () => {
           <Icon name="gauge" size={16} /> How tiering works
         </button>
       </div>
+
+      {tab === 'import' && <VendorImport onCommitted={load} />}
 
       {/* ── Register ──────────────────────────────────────────────────── */}
       {tab === 'register' && (
