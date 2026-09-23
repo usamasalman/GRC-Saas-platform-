@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
+import Can, { MAY } from '../../components/Can';
+import FormDialog from '../../components/FormDialog';
 import { PRIORITY_COLOR } from './ServiceDesk';
 
 interface Policy {
@@ -27,6 +29,44 @@ const SlaEscalations: React.FC = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [scanning, setScanning] = useState(false);
+
+  // The targets every figure below is measured against. They could not be set:
+  // GET /sla reported how tickets were doing and POST /sla/scan re-ran the
+  // sweep, but the response and resolve minutes themselves arrived only with
+  // the seed.
+  const [editingTarget, setEditingTarget] = useState<any>(null);
+  const [withoutPolicy, setWithoutPolicy] = useState<string[]>([]);
+  const [savingTarget, setSavingTarget] = useState(false);
+
+  const loadPolicies = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/api/itsm/sla-policies');
+      setPolicies(res.data?.policies || []);
+      setWithoutPolicy(res.data?.withoutPolicy || []);
+    } catch {
+      setWithoutPolicy([]);
+    }
+  }, []);
+
+  const saveTarget = async (values: Record<string, string>) => {
+    setSavingTarget(true);
+    setError('');
+    try {
+      const res = await apiClient.put('/api/itsm/sla-policies', {
+        priority: values.priority,
+        responseMins: Number(values.responseMins),
+        resolveMins: Number(values.resolveMins),
+      });
+      if (res.data?.note) setNotice(res.data.note);
+      setEditingTarget(null);
+      await loadPolicies();
+    } catch (e: any) {
+      setError(apiError(e, 'The target could not be saved'));
+      setEditingTarget(null);
+    } finally {
+      setSavingTarget(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -93,12 +133,31 @@ const SlaEscalations: React.FC = () => {
         <div style={{ color: 'var(--ink-muted)', padding: 30 }}>Loading SLA data…</div>
       ) : (
         <>
-          <h3 style={{ fontSize: 15, color: 'var(--ink)', margin: '0 0 10px' }}>Targets</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+            <h3 style={{ fontSize: 15, color: 'var(--ink)', margin: '0 0 10px' }}>Targets</h3>
+            <Can do={MAY.AUTHOR_WORKFLOW}>
+              <button
+                onClick={() => { setError(''); setEditingTarget({}); }}
+                style={ghostBtn}
+                disabled={savingTarget}
+              >
+                Set a target
+              </button>
+            </Can>
+          </div>
+
+          {withoutPolicy.length > 0 && (
+            <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 6, background: 'var(--warning-bg)', border: '1px solid var(--warning-line)', color: 'var(--warning)', fontSize: 12.5, lineHeight: 1.6 }}>
+              {withoutPolicy.join(', ')} {withoutPolicy.length === 1 ? 'has' : 'have'} no target.
+              Tickets at {withoutPolicy.length === 1 ? 'that priority' : 'those priorities'} appear
+              on the board below measured against nothing.
+            </div>
+          )}
           <div style={{ ...S.card, overflowX: 'auto', marginBottom: 24 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={S.headRow}>
-                  {['Priority', 'Respond within', 'Resolve within', 'Applies to'].map((h) => <th key={h} style={S.th}>{h}</th>)}
+                  {['Priority', 'Respond within', 'Resolve within', 'Applies to', ''].map((h) => <th key={h} style={S.th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -109,6 +168,17 @@ const SlaEscalations: React.FC = () => {
                     <td style={S.td}>{fmtMins(p.resolveMins)}</td>
                     <td style={S.td}>
                       <span style={p.isPlatform ? pill('var(--info)', 'var(--info-line)') : pill('var(--violet)', 'var(--violet)')}>{p.scopeLabel}</span>
+                    </td>
+                    <td style={S.td}>
+                      <Can do={MAY.AUTHOR_WORKFLOW}>
+                        <button
+                          onClick={() => { setError(''); setEditingTarget(p); }}
+                          style={ghostBtn}
+                          disabled={savingTarget}
+                        >
+                          Change
+                        </button>
+                      </Can>
                     </td>
                   </tr>
                 ))}
@@ -175,6 +245,46 @@ const SlaEscalations: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {editingTarget && (
+        <FormDialog
+          title={editingTarget.priority ? `Change the ${editingTarget.priority} target` : 'Set a target'}
+          intro={
+            editingTarget.priority
+              ? 'Tickets already open are measured against the new target from now on, so the breach figures may move without any ticket changing.'
+              : 'Every SLA figure on this page is measured against these targets.'
+          }
+          fields={[
+            {
+              name: 'priority',
+              label: 'Priority',
+              type: 'select',
+              required: true,
+              initial: editingTarget.priority || 'P1',
+              options: ['P1', 'P2', 'P3', 'P4'],
+            },
+            {
+              name: 'responseMins',
+              label: 'Respond within (minutes)',
+              type: 'number',
+              required: true,
+              initial: String(editingTarget.responseMins ?? 60),
+            },
+            {
+              name: 'resolveMins',
+              label: 'Resolve within (minutes)',
+              type: 'number',
+              required: true,
+              initial: String(editingTarget.resolveMins ?? 480),
+              help: 'Cannot be shorter than the response target — a ticket is not resolved before it is answered.',
+            },
+          ]}
+          submitLabel={savingTarget ? 'Saving…' : 'Save target'}
+          busy={savingTarget}
+          onSubmit={saveTarget}
+          onCancel={() => setEditingTarget(null)}
+        />
       )}
     </div>
   );

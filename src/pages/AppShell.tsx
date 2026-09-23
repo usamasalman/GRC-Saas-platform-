@@ -27,6 +27,7 @@ import ServiceDesk from './itsm/ServiceDesk';
 import TicketQueues from './itsm/TicketQueues';
 import ServiceCatalog from './itsm/ServiceCatalog';
 import SlaEscalations from './itsm/SlaEscalations';
+import WorkflowDefinitions from './itsm/WorkflowDefinitions';
 import KnowledgeBase from './itsm/KnowledgeBase';
 
 // Real GRC Core Components
@@ -151,7 +152,7 @@ const NAV: Record<string, any[]> = {
   saas: [
     ['Platform Control', [['dashboard', '▦', 'SaaS Dashboard'], ['library', '≡', 'Document Library'], ['tenants', '▥', 'Manage Tenants'], ['posture', '◈', 'Estate Posture'], ['impersonation', '♙', 'Impersonation Sessions']]],
     ['Users, Teams & Access', [['saas-users', '♟', 'SaaS Admin Users'], ['org-users', '♙', 'Organization Users'], ['branch-users', '⌘', 'Branch Users'], ['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'User Lifecycle & Transfers'], ['role-matrix', '⊞', 'Roles & Permissions']]],
-    ['Service Management', [['itsm', '?', 'ITSM Service Desk'], ['ticket-queues', '▥', 'Ticket Queues'], ['service-catalog', '▦', 'Service Catalog'], ['sla', '◷', 'SLA & Escalations'], ['knowledge', '◎', 'Knowledge Base']]],
+    ['Service Management', [['itsm', '?', 'ITSM Service Desk'], ['ticket-queues', '▥', 'Ticket Queues'], ['service-catalog', '▦', 'Service Catalog'], ['sla', '◷', 'SLA & Escalations'], ['workflow-admin', '⇉', 'Approval Workflows'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-review', '✓', 'Tool Review & Approval'], ['tool-installations', '⇩', 'Tenant Tool Installations'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Tenant Standard Enablement'], ['feature-flags', '⚑', 'Feature Flags']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]],
     ['Usage & Automation', [['quotas', '◒', 'Resource Usage & Quotas'], ['automation', '⎇', 'Rules, Jobs & Execution'], ['imports', '⇩', 'Imports & Migration']]],
@@ -406,6 +407,9 @@ const AppShell = () => {
     }
     if (currentPage === 'sla') {
       return <SlaEscalations key={`${account.id}-${currentPage}`} />;
+    }
+    if (currentPage === 'workflow-admin') {
+      return <WorkflowDefinitions key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'knowledge') {
       return <KnowledgeBase key={`${account.id}-${currentPage}`} />;

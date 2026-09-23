@@ -128,6 +128,7 @@ jobs:
           node scripts/verify/legal-hold-test.js
           node scripts/verify/offboarding-test.js
           node scripts/verify/invoicing-test.js
+          node scripts/verify/workflow-authoring-test.js
           node scripts/verify/no-mock-engine-test.js
           node scripts/verify/document-editors-test.js
           node scripts/verify/no-invented-data-test.js

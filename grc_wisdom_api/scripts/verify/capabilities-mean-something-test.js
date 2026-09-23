@@ -43,7 +43,6 @@ const UNDEFINED_BUT_GRANTED = {
   'acknowledge-or-monitor-a-policy': 'publishing and acknowledgement are not built — plan packet 4.1',
   'assign-or-complete-learning': 'no training module exists',
   'configure-an-integration': 'no integration configuration endpoint exists',
-  'create-an-approval-or-automation-workflow': 'workflow definitions cannot be created — plan packet 6.4',
   'manage-franchise-governance': 'franchise governance has no distinct endpoints',
   'manage-group-or-regional-governance': 'group governance has no distinct endpoints',
   'manage-partner-client-workspaces-and-engagements': 'no engagement model exists — plan packets 6.2 and tracker 4/5',

@@ -34,11 +34,12 @@ const PROJECT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'projec
 const DOCUMENT_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'documentRoutes.ts');
 const RETENTION_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'retentionRoutes.ts');
 const IAM_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'iamRoutes.ts');
+const ITSM_ROUTES = path.join(__dirname, '..', '..', 'src', 'routes', 'itsmRoutes.ts');
 const NAV = path.join(__dirname, '..', '..', '..', 'src', 'pages', 'navCapabilities.ts');
 
-// Five route files now. MAY describes rules wherever they are enforced, and a
+// Six route files now. MAY describes rules wherever they are enforced, and a
 // key pinned against a file it does not live in would silently verify nothing.
-const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES, RETENTION_ROUTES, IAM_ROUTES]
+const routes = [ROUTES, PROJECT_ROUTES, DOCUMENT_ROUTES, RETENTION_ROUTES, IAM_ROUTES, ITSM_ROUTES]
   .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const nav = fs.readFileSync(NAV, 'utf8');
 
@@ -75,6 +76,10 @@ const ANCHOR = {
   // Offboarding a leaver: reassigns every record they owned, then ends their
   // access. Gated separately from ADD_USER / suspend (packet 5.1).
   OFFBOARD_USER: "router.post('/users/:id/offboard',",
+  // Authoring the approval routes other people then have to follow. The
+  // capability was granted to five roles and guarded no route at all
+  // (packet 6.4).
+  AUTHOR_WORKFLOW: "router.post('/workflows',",
 };
 
 let checks = 0;

@@ -9,6 +9,13 @@ import {
 import {
   listDefinitions, listRuns, getRun, decideRun, cancel, myInbox,
 } from '../controllers/workflowController';
+import {
+  authoringOptions,
+  createDefinition,
+  updateDefinition,
+  listSlaPolicies,
+  setSlaPolicy,
+} from '../controllers/workflowAuthoringController';
 
 const router = Router();
 
@@ -24,6 +31,18 @@ router.get('/workflows/runs/:id', getRun);
 router.post('/workflows/runs/:id/decide', decideRun);
 router.post('/workflows/runs/:id/cancel', cancel);
 
+// Authoring, as opposed to acting. The capability is named after creating a
+// workflow and until now guarded no route: it was enforced only as a STEP's
+// requiredCapability inside workflowEngine, which decides who may act on a
+// step, never who may author the thing the step belongs to.
+//
+// '/workflows/options' is above '/workflows/:id' -- the wildcard would
+// otherwise match it and answer "Workflow not found" for a path that is not
+// an id.
+router.get('/workflows/options', authoringOptions);
+router.post('/workflows', requireCapability(CAP.AUTHOR_WORKFLOW), createDefinition);
+router.put('/workflows/:id', requireCapability(CAP.AUTHOR_WORKFLOW), updateDefinition);
+
 // ── Tickets ───────────────────────────────────────────────────────────────
 router.get('/tickets', listTickets);
 router.get('/tickets/:id', getTicket);
@@ -37,6 +56,12 @@ router.get('/queues', listQueues);
 router.get('/catalog', listCatalog);
 router.get('/sla', getSlaOverview);
 router.post('/sla/scan', requireCapability(CAP.RESOLVE_TICKETS), triggerEscalationScan);
+// The targets every figure on the SLA board is measured against. Reading them
+// is open -- knowing the response target for a P1 is the policy, not a secret,
+// and somebody whose ticket is breaching should be able to see what it
+// breached. Setting them carries the authoring capability.
+router.get('/sla-policies', listSlaPolicies);
+router.put('/sla-policies', requireCapability(CAP.AUTHOR_WORKFLOW), setSlaPolicy);
 
 // ── Knowledge base ────────────────────────────────────────────────────────
 router.get('/knowledge', listArticles);

@@ -50,6 +50,12 @@ export const CAP = {
   VERSION_DOCUMENT: 'create-import-and-version-a-document',
   SIGN_DOCUMENT: 'review-approve-and-digitally-sign-a-document',
   RETENTION_HOLD: 'apply-retention-and-legal-hold',
+  // Granted to five roles and guarding no route at all until now. It was
+  // enforced, but only as a STEP's requiredCapability inside workflowEngine --
+  // which decides who may act on a step, never who may author the thing the
+  // step belongs to. So the one grant named after creating a workflow could
+  // not create one.
+  AUTHOR_WORKFLOW: 'create-an-approval-or-automation-workflow',
   RESOLVE_TICKETS: 'manage-and-resolve-support-tickets',
   CREATE_TICKET: 'create-an-itsm-ticket',
   REPORT: 'generate-and-distribute-a-report',

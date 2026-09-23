@@ -164,7 +164,7 @@ const RetentionSchedules: React.FC = () => {
       type: 'select' as const,
       required: true,
       initial: s?.trigger || 'Published',
-      options: (meta?.triggers || ['Published', 'Archived', 'Created']).map((t: string) => ({ value: t, label: t })),
+      options: (meta?.triggers || ['Published', 'Archived', 'Created']) as readonly string[],
       help: 'A document that has not reached this point yet has no disposal date.',
     },
     {

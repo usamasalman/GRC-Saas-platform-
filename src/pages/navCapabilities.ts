@@ -58,6 +58,7 @@ export const CAP = {
   VERSION_DOCUMENT: 'create-import-and-version-a-document',
   SIGN_DOCUMENT: 'review-approve-and-digitally-sign-a-document',
   RETENTION_HOLD: 'apply-retention-and-legal-hold',
+  AUTHOR_WORKFLOW: 'create-an-approval-or-automation-workflow',
   RESOLVE_TICKETS: 'manage-and-resolve-support-tickets',
   CREATE_TICKET: 'create-an-itsm-ticket',
   REPORT: 'generate-and-distribute-a-report',
@@ -100,7 +101,6 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   // role may do, turning features on for other people. There is nothing on
   // these worth reading without the duty behind them.
   tenants: [CAP.MANAGE_TENANT],
-  'asm-tenants': [CAP.MANAGE_TENANT, CAP.OPERATE_SECURITY_SERVICES],
   impersonation: [CAP.MANAGE_TENANT],
   'role-matrix': [CAP.MAINTAIN_ROLES],
   'saas-users': [CAP.ADD_USER],
@@ -203,6 +203,12 @@ export const MAY = {
    * and ending their access. Not ADD_USER, which merely suspends.
    */
   OFFBOARD_USER: [CAP.OFFBOARD_USER],
+  /**
+   * POST /api/itsm/workflows and /api/itsm/sla-policies — authoring the
+   * approval routes other people then have to follow, and setting the targets
+   * every SLA figure is measured against.
+   */
+  AUTHOR_WORKFLOW: [CAP.AUTHOR_WORKFLOW],
   /** POST, PATCH, DELETE /api/grc/standards and /api/grc/clauses. */
   AUTHOR_STANDARD: [CAP.ENABLE_STANDARD],
   /** POST, PATCH, DELETE /api/grc/controls and clause mapping. */
