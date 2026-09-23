@@ -174,6 +174,22 @@ async function main() {
   // ── 5. Lifecycle ────────────────────────────────────────────────────────
   console.log('\n5. Lifecycle');
 
+  // Activation stamps the agreed dates, and a project with no phases or tasks
+  // would be baselined against nothing. The guard that enforces that arrived
+  // after this suite was written and before it had ever run, so the setup
+  // below is what the endpoint has required since.
+  const lifecyclePhase = await api(`/api/projects/${project.id}/phases`, {
+    token, method: 'POST',
+    body: { name: 'Mobilisation', startDate: iso(-5), targetEndDate: iso(25), ownerId: myUserId },
+  });
+  const lifecyclePhaseId = lifecyclePhase.json?.phase?.id;
+  if (lifecyclePhaseId) {
+    await api(`/api/projects/phases/${lifecyclePhaseId}/tasks`, {
+      token, method: 'POST',
+      body: { name: 'Agree scope', assigneeId: myUserId, dueDate: iso(15) },
+    });
+  }
+
   const activated = await api(`/api/projects/${project.id}`, {
     token, method: 'PATCH', body: { status: 'Active' },
   });
@@ -278,8 +294,6 @@ async function main() {
   pid ? ok('project for the plan created') : bad('project for the plan created', JSON.stringify(planProject.json).slice(0, 160));
   if (!pid) { console.log('\nCannot continue.\n'); process.exit(1); }
 
-  await api(`/api/projects/${pid}`, { token, method: 'PATCH', body: { status: 'Active' } });
-
   const phaseRes = await api(`/api/projects/${pid}/phases`, {
     token, method: 'POST',
     body: {
@@ -316,6 +330,11 @@ async function main() {
     if (t.json?.task?.id) taskIds.push(t.json.task.id);
   }
   taskIds.length === 10 ? ok('ten tasks created') : bad('ten tasks created', `${taskIds.length}`);
+
+  // Activated once the plan is real. Doing it before the phase existed left
+  // the project in Draft — every baseline and slip assertion below then
+  // measured against a plan that had never been agreed.
+  await api(`/api/projects/${pid}`, { token, method: 'PATCH', body: { status: 'Active' } });
 
   let lastRollup = null;
   for (let i = 0; i < 7; i++) {

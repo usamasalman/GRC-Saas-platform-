@@ -32,12 +32,54 @@ export const listAppetites = async (req: AuthenticatedRequest, res: Response): P
       select: { category: true, residualScore: true },
     });
 
-    const withPosture = appetites.map((a) => {
-      const inCategory = risks.filter((r) => r.category === a.category);
+    // One row per category: the version actually in force.
+    //
+    // This returned every version of every category — drafts included — and
+    // banded the live register against whichever happened to come back first.
+    // So drafting a revision could move the breach count on the dashboard
+    // before anybody approved it, which is the opposite of what this file's
+    // own header says: "until a statement is approved it is a draft and does
+    // not gate anything". A threshold nobody approved must not decide whether
+    // a risk is beyond tolerance.
+    const byCategory = new Map<string, typeof appetites>();
+    for (const a of appetites) {
+      const list = byCategory.get(a.category) || [];
+      list.push(a);
+      byCategory.set(a.category, list);
+    }
+
+    const withPosture = [...byCategory.entries()].map(([category, versions]) => {
+      const approved = versions
+        .filter((v) => v.status === 'Approved')
+        .sort((x, y) => y.version - x.version)[0];
+      const draft = versions
+        .filter((v) => v.status === 'Draft')
+        .sort((x, y) => y.version - x.version)[0];
+
+      // The binding row. A category whose only version is an unapproved draft
+      // has nothing in force, and says so rather than borrowing the draft's
+      // numbers.
+      const inForce = approved || null;
+
+      const inCategory = risks.filter((r) => r.category === category);
       const bands = { WithinAppetite: 0, WithinTolerance: 0, BeyondTolerance: 0 };
-      for (const r of inCategory) bands[evaluateAppetite(r.residualScore, a)]++;
-      return { ...a, riskCount: inCategory.length, bands };
-    });
+      if (inForce) {
+        for (const r of inCategory) bands[evaluateAppetite(r.residualScore, inForce)]++;
+      }
+
+      return {
+        ...(inForce || draft),
+        // Said explicitly, so a screen cannot mistake a draft for the ceiling.
+        inForce: Boolean(inForce),
+        pendingDraft: draft && inForce
+          ? { id: draft.id, version: draft.version, appetiteThreshold: draft.appetiteThreshold, toleranceThreshold: draft.toleranceThreshold }
+          : null,
+        riskCount: inCategory.length,
+        // Null rather than zero when nothing is approved: no statement in
+        // force means these risks are un-banded, not compliant.
+        bands: inForce ? bands : null,
+      };
+    }).sort((x, y) => x.category.localeCompare(y.category));
 
     res.json({
       status: 'success',
@@ -45,9 +87,12 @@ export const listAppetites = async (req: AuthenticatedRequest, res: Response): P
       count: withPosture.length,
       totals: {
         categories: withPosture.length,
-        approved: withPosture.filter((a) => a.status === 'Approved').length,
-        draft: withPosture.filter((a) => a.status === 'Draft').length,
-        breaches: withPosture.reduce((n, a) => n + a.bands.BeyondTolerance, 0),
+        approved: withPosture.filter((a) => a.inForce).length,
+        draft: appetites.filter((a) => a.status === 'Draft').length,
+        // Only categories with an approved statement contribute. A breach is a
+        // breach OF something, and a draft is not that something.
+        breaches: withPosture.reduce((n, a) => n + (a.bands ? a.bands.BeyondTolerance : 0), 0),
+        unbanded: withPosture.filter((a) => !a.inForce).length,
       },
       appetites: withPosture,
     });

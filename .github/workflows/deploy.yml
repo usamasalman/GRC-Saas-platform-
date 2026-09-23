@@ -136,14 +136,65 @@ jobs:
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
-      - name: API — provision reference data against a real database
+      # Demo tenant data, THEN reference data. That order is load-bearing:
+      # seed:demo rebuilds the user table, so a bootstrap admin created before
+      # it is wiped and every suite that signs in as the admin then fails with
+      # "Invalid credentials". Provision is idempotent, so it goes last.
+      - name: API — seed demo data, then provision reference data
         working-directory: grc_wisdom_api
         env:
           BOOTSTRAP_ADMIN_EMAIL: ci@example.com
           BOOTSTRAP_ADMIN_PASSWORD: ci-only-password-not-a-secret
         run: |
+          npm run seed:demo
           npm run provision
 
+      # The HTTP suites. Until now none of these had ever executed — every
+      # claim they make rested on reading code — and running them found a real
+      # defect (unapproved risk-appetite drafts were being served as the
+      # binding ceiling) plus the setup problems this job now works around.
+      #
+      # Each suite mutates the demo data and says so in its own output, so the
+      # data is rebuilt between them. That costs seconds and removes the
+      # class of failure where suite N passes alone and fails after suite N-1.
+      - name: API — HTTP suites against a real database
+        working-directory: grc_wisdom_api
+        env:
+          NODE_ENV: production
+          API: http://127.0.0.1:3000
+          ADMIN_EMAIL: ci@example.com
+          ADMIN_PASSWORD: ci-only-password-not-a-secret
+          BOOTSTRAP_ADMIN_EMAIL: ci@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-only-password-not-a-secret
+        run: |
+          node dist/server.js &
+          echo $! > /tmp/http.pid
+
+          for i in $(seq 1 30); do
+            curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
+
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test
+          do
+            echo "── $suite ──"
+            npm run seed:demo > /dev/null
+            npm run provision > /dev/null
+            node "scripts/verify/$suite.js"
+          done
+
+          PID=$(cat /tmp/http.pid)
+          kill "$PID" || true
+          wait "$PID" 2>/dev/null || true
+          rm -f /tmp/http.pid
+
+      # Deliberately on its OWN server process. It makes failed logins to prove
+      # the auth limiter works, and that limiter is in-memory per process with
+      # a 15-minute window — so anything sharing a server with it afterwards
+      # fails on "Too many attempts" rather than on its own merits. A fresh
+      # process is what keeps the steps independent; do not merge this into the
+      # step above to save a boot.
       - name: API — boot and run the production-readiness suite
         working-directory: grc_wisdom_api
         env:
