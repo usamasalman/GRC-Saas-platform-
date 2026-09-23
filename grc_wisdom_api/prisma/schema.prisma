@@ -400,7 +400,13 @@ model AuditLog {
   payload       String   // JSON string
   previousHash  String
   currentHash   String   @unique
-  timestamp     DateTime @default(now())
+  timestamp     DateTime @default(now()) // when the row landed
+  /// The instant the hash covers. Separate from `timestamp` because they are
+  /// two different facts, and because hashing one while storing the other is
+  /// what made every chain unverifiable. Null on rows written before this
+  /// column existed: those hashed a value that was never stored, so the
+  /// verifier reports them as unverifiable rather than as tampered.
+  hashedAt      DateTime?
   wormLocked    Boolean  @default(true) // Enforces Write-Once-Read-Many
 
   @@index([tenantId, actorId, action, subjectId])

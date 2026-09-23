@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../db';
 import { generateHash } from '../utils/cryptoUtils';
+// Imported rather than repeated as a literal. The verifier's copy and the
+// writer's copy were two separate strings that happened to match.
+import { GENESIS_HASH } from '../middlewares/auditMiddleware';
 import { exec } from 'child_process';
 import path from 'path';
 
@@ -182,6 +185,18 @@ export const resetDatabase = async (req: Request, res: Response): Promise<void> 
 
 /**
  * Verify Audit Trail Hash Chain Integrity
+ *
+ * A row is verified against `hashedAt` — the instant the digest covers —
+ * rather than against `timestamp`, the instant the row landed. Those are
+ * milliseconds apart, and checking the digest against the wrong one is why
+ * this endpoint used to report every tenant's trail as TAMPERED.
+ *
+ * Rows written before hashedAt existed never stored the value they hashed.
+ * They are unverifiable by construction, which is a different statement from
+ * tampered, and saying the harsher one about a compliance record nobody
+ * touched is its own kind of false reporting. The chain continues through
+ * them on their stored hash, so one legacy row at the start of a tenant's
+ * history no longer hides everything written since.
  */
 export const verifyAuditTrail = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -197,33 +212,68 @@ export const verifyAuditTrail = async (req: Request, res: Response): Promise<voi
 
       let chainValid = true;
       let tamperedLogId: string | null = null;
-      let expectedHash = 'GENESIS_HASH_0000000000000000000000000000000000000000000000000000000000000000';
+      let unverifiable = 0;
+      let verified = 0;
+      let verifiableFrom: Date | null = null;
+      let expectedHash = GENESIS_HASH;
 
       for (const log of logs) {
-        // Recalculate hash
-        const computed = generateHash(`${expectedHash}:${log.action}:${log.payload}:${new Date(log.timestamp).toISOString()}`);
+        // hashedAt when the row has one. `timestamp` otherwise, because a few
+        // legacy rows were written by a path that stored the value it hashed
+        // and those do verify — reporting them as unverifiable would throw
+        // away a real check to keep the code shorter.
+        const sealed = log.hashedAt ?? log.timestamp;
+        const computed = generateHash(
+          `${expectedHash}:${log.action}:${log.payload}:${new Date(sealed).toISOString()}`
+        );
 
-        if (computed !== log.currentHash) {
-          chainValid = false;
-          overallIntegrity = false;
-          tamperedLogId = log.id;
-          break;
+        if (computed === log.currentHash) {
+          verified += 1;
+          if (!verifiableFrom) verifiableFrom = sealed;
+          expectedHash = log.currentHash;
+          continue;
         }
 
-        expectedHash = log.currentHash;
+        if (!log.hashedAt) {
+          // A mismatch on a row that never stored what it hashed proves
+          // nothing either way. Carry the chain forward on what the row
+          // recorded, and count it, rather than accusing it.
+          unverifiable += 1;
+          expectedHash = log.currentHash;
+          continue;
+        }
+
+        chainValid = false;
+        overallIntegrity = false;
+        tamperedLogId = log.id;
+        break;
       }
 
       verificationResults.push({
         tenantId: t.id,
         tenantName: t.name,
         logCount: logs.length,
-        status: chainValid ? 'VALID' : 'TAMPERED',
+        verifiedCount: verified,
+        // Named rather than folded into the count, because "142 rows, 3 of
+        // them unverifiable" is a finding somebody may need to explain to an
+        // assessor, and a single VALID would bury it.
+        unverifiableCount: unverifiable,
+        verifiableFrom,
+        status: !chainValid
+          ? 'TAMPERED'
+          : unverifiable > 0
+            ? (verified > 0 ? 'VALID_SINCE' : 'UNVERIFIABLE')
+            : 'VALID',
         firstTamperedLogId: tamperedLogId
       });
     }
 
     res.json({
       status: 'success',
+      // Only a genuine mismatch clears this. Rows that predate hashedAt leave
+      // it true and are reported per tenant, because "we cannot check the
+      // first three entries" is not the same claim as "the trail is intact"
+      // and is not the same claim as "somebody changed it" either.
       integrityVerified: overallIntegrity,
       results: verificationResults
     });

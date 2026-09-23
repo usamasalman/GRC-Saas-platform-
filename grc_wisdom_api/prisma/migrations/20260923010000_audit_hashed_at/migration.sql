@@ -1,0 +1,19 @@
+-- The audit chain could never verify itself.
+--
+-- writeAudit hashed `previousHash:action:payload:timestampStr`, where
+-- timestampStr came from the Node clock. It then inserted the row WITHOUT
+-- that value, so `timestamp` took its @default(now()) from Postgres a few
+-- milliseconds later. verifyAuditTrail recomputes the hash from the stored
+-- timestamp, which is therefore never the one that was hashed.
+--
+-- Measured on a database the product had written itself: the first row of the
+-- busiest tenant verified only against a timestamp 5 ms earlier than the one
+-- stored. Every tenant with audit rows reported TAMPERED -- a false accusation
+-- of tampering, from the one control a GRC platform exists to provide.
+--
+-- hashedAt records the instant the hash covers, kept separate from `timestamp`
+-- because they are two different facts: when the application sealed the entry,
+-- and when the row landed. Nullable, because rows written before this column
+-- existed never stored what they hashed and can never be verified -- the
+-- verifier now says exactly that about them instead of calling them tampered.
+ALTER TABLE "AuditLog" ADD COLUMN "hashedAt" TIMESTAMP(3);

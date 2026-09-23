@@ -51,6 +51,16 @@ export async function writeAudit(tx: TxClient, entry: AuditEntry): Promise<void>
       payload: payloadString,
       previousHash,
       currentHash,
+      // The instant the hash covers, stored because the hash covers it.
+      //
+      // This line is the whole fix. timestampStr went into the digest and
+      // nowhere else, so `timestamp` took @default(now()) from Postgres a few
+      // milliseconds later and the verifier — which recomputes from the stored
+      // timestamp — could never reproduce the digest. Measured against a
+      // database this product wrote itself, the first row of the busiest
+      // tenant needed a timestamp 5 ms earlier than the one stored, and every
+      // tenant holding audit rows was reported TAMPERED.
+      hashedAt: new Date(timestampStr),
       wormLocked: true,
     },
   });
