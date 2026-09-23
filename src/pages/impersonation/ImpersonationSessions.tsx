@@ -23,7 +23,7 @@ interface Session {
   tenant: { id: string; name: string };
 }
 
-interface Identity { id: string; name: string; email: string; role: string; context: string | null }
+interface Identity { id: string; name: string; email: string; role: string; context: string | null; status: string }
 
 const STATUS_STYLE: Record<string, { bg: string; fg: string; br: string }> = {
   PENDING: { bg: 'var(--warning-bg)', fg: 'var(--warning)', br: 'var(--warning-line)' },
@@ -142,8 +142,8 @@ const ImpersonationSessions: React.FC = () => {
     }
   };
 
-  // Only users outside the operator's own tenant are valid subjects.
-  const candidates = identities.filter((u) => u.context && u.context !== me?.context);
+  // Only users outside the operator's own tenant are valid subjects, and only active ones.
+  const candidates = identities.filter((u) => u.context && u.context !== me?.context && u.status === 'Active');
 
   const card: React.CSSProperties = { background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: 10 };
   const inputStyle: React.CSSProperties = {

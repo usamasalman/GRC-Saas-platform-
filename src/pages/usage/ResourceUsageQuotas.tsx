@@ -15,10 +15,9 @@ interface Quota {
 /**
  * Resource quotas, as the server has them.
  *
- * Eight quota rows were hardcoded here across two named organisations, and
- * shown whenever the API returned nothing or failed. A platform operator could
- * read that "Al-Rajhi Holding Group" was over its API call limit when no such
- * tenant existed in their data.
+ * Several quota rows were hardcoded here and shown whenever the API returned
+ * nothing or failed. A platform operator could read a tenant over its limit when
+ * no such tenant existed in their data.
  *
  * Adjusting a limit had three paths and two of them lied: if the response
  * carried no quota, or the request was refused outright, the new limit was

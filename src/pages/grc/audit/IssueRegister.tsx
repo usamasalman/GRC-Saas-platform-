@@ -103,7 +103,7 @@ const IssueRegister: React.FC = () => {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     // Only needed to name a CAP owner; a failure here must not block the register.
-    apiClient.get('/api/iam/users').then((r) => setUsers(r.data?.users || [])).catch(() => setUsers([]));
+    apiClient.get('/api/iam/users?status=Active').then((r) => setUsers(r.data?.users || [])).catch(() => setUsers([]));
   }, []);
 
   const needsSourceRef = form.source === 'Regulator' || form.source === 'ExternalAudit';

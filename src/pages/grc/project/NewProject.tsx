@@ -103,6 +103,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
           apiClient.get('/api/auth/me').catch(() => null),
         ]);
         const list: Person[] = (usersRes.data?.users || [])
+          .filter((u: any) => u.status === 'Active')
           .map((u: any) => ({ id: u.id, name: u.name, email: u.email }))
           .filter((u: Person) => u.id && u.name);
         setPeople(list);

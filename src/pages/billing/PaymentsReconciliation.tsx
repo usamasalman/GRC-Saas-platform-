@@ -16,10 +16,10 @@ interface Payment {
 /**
  * Payments, as the server has them.
  *
- * Two payments were hardcoded here as the initial state, one of them SAR
- * 215,625 from "Al-Rajhi Holding Group", and the loader kept them both when the
- * API returned an empty list and when it failed. Any tenant with no payments was
- * shown another organisation's receipts as though they were its own.
+ * Two payments were hardcoded here as the initial state, and the loader kept
+ * them both when the API returned an empty list and when it failed. Any tenant
+ * with no payments could be shown another organisation's receipts as though
+ * they were its own.
  *
  * The old loader also set "Payment records up to date." in a `finally`, so it
  * reported success on the failure path too.

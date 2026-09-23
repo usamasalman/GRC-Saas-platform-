@@ -22,12 +22,11 @@ interface ImportJob {
 /**
  * Import and migration jobs, as the server has them.
  *
- * Five jobs were hardcoded here, all belonging to "Al-Rajhi Holding Group", and
- * shown on any failure. Retrying a failed import reported "retry triggered
- * locally" and flipped the row to Processing without the server; creating one
- * appended a queued job that existed only in the browser. Both read as success,
- * so an operator could believe a migration was running when nothing had been
- * queued.
+ * Several jobs were hardcoded here and shown on any failure. Retrying a failed
+ * import reported "retry triggered locally" and flipped the row to Processing
+ * without the server; creating one appended a queued job that existed only in the
+ * browser. Both read as success, so an operator could believe a migration was
+ * running when nothing had been queued.
  */
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Queued:     pill('var(--ink-muted)', 'var(--line)'),

@@ -412,10 +412,10 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
           <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>66 users across operational departments</p>
         </div>
 
-        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('wisdom-eye')}>
-          <div className="kpi-icon red" style={{ marginBottom: '10px' }}>◉</div>
-          <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Wisdom Eye</h3>
-          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 authorized assets · exposure services</p>
+        <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('posture')}>
+          <div className="kpi-icon red" style={{ marginBottom: '10px' }}>◈</div>
+          <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Estate Posture</h3>
+          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>Cross-tenant governance & compliance posture</p>
         </div>
 
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('tool-marketplace')}>

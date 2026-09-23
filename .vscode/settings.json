@@ -19,5 +19,6 @@
   "[caddyfile]": {
     "editor.insertSpaces": false,
     "editor.tabSize": 4
-  }
+  },
+  "kiroAgent.configureMCP": "Disabled"
 }
