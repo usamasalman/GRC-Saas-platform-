@@ -342,6 +342,29 @@ const AppShell = () => {
       .filter((group: any) => group[1].length > 0);
   }, [account]);
 
+  /**
+   * The keys this account can actually reach, and every key any portal defines.
+   *
+   * The user guide offered a Jump button on all 60-odd features regardless of
+   * who was signed in, and the handler called setCurrentPage with no check. A
+   * finance user reading the guide pressed the risk entry and landed on the
+   * Organization Risk Register — a screen not in their menu, in a portal that
+   * is not theirs, with no way back except the sidebar. The requests it fires
+   * are refused server-side, so the leak is a confusing screen rather than
+   * exposed data, but a product that renders a page it will not serve is the
+   * "hallucination" this codebase has been removing everywhere else.
+   */
+  const reachableKeys = useMemo(
+    () => new Set<string>(navGroups.flatMap((g: any) => g[1].map((i: any) => i[0]))),
+    [navGroups],
+  );
+  const allNavKeys = useMemo(
+    () => new Set<string>(
+      Object.values(NAV).flatMap((groups: any[]) => groups.flatMap((g) => g[1].map((i: any) => i[0]))),
+    ),
+    [],
+  );
+
   if (!account) return null;
 
 
@@ -727,8 +750,15 @@ const AppShell = () => {
         onClose={() => setShowUserGuide(false)}
         activeTabId={currentPage}
         onNavigateTab={(tabId) => {
+          // Unknown keys pass. A guide id that names no nav entry anywhere is
+          // not a portal leak, and failing closed on unrecognised data is how
+          // one bad release turns into a product nobody can navigate — the same
+          // rule navVisible and Can already follow.
+          if (allNavKeys.has(tabId) && !reachableKeys.has(tabId)) return;
           setCurrentPage(tabId);
         }}
+        reachableKeys={reachableKeys}
+        allNavKeys={allNavKeys}
         account={account}
       />
     </div>

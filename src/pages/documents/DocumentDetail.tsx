@@ -8,6 +8,38 @@ interface DocumentDetailProps {
   onClose: () => void;
 }
 
+/**
+ * What a browser frame can actually display.
+ *
+ * The reader pane put every attachment into an <iframe> under the heading
+ * "LIVE IN-APP PDF READER". A frame renders PDFs, images and plain text; it
+ * renders nothing for XLSX, DOCX, PPTX or ZIP — the box comes up empty, or the
+ * browser quietly offers a download instead. The library's own spreadsheet is
+ * that case, which is why the reader looked broken: it was being asked to show
+ * a format no browser shows, and then claiming to be showing it.
+ *
+ * Decided on the served content type, falling back to the extension, because a
+ * server that sends application/octet-stream tells us nothing and the filename
+ * usually does.
+ */
+const RENDERABLE_MIME = /^(application\/pdf|image\/(png|jpeg|jpg|gif|webp|svg\+xml|bmp)|text\/(plain|html|csv))/i;
+const RENDERABLE_EXT = /\.(pdf|png|jpe?g|gif|webp|svg|bmp|txt|csv|html?)$/i;
+
+function browserCanRender(mime: string | null, fileName?: string): boolean {
+  if (mime && RENDERABLE_MIME.test(mime)) return true;
+  // octet-stream is the server saying "bytes"; ask the name instead.
+  if (mime && !/octet-stream/i.test(mime)) return false;
+  return !!fileName && RENDERABLE_EXT.test(fileName);
+}
+
+/** The format in the words on the file card, for a message a person can act on. */
+function describeFormat(mime: string | null, fileName?: string): string {
+  const ext = (fileName?.match(/\.([a-z0-9]+)$/i)?.[1] || '').toUpperCase();
+  if (ext) return `A ${ext} file`;
+  if (mime) return `This file (${mime.split(';')[0]})`;
+  return 'This file';
+}
+
 export default function DocumentDetail({ documentId, onClose }: DocumentDetailProps) {
   const [document, setDocument] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -122,6 +154,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const [downloading, setDownloading] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  /** Why the file could not be served, when it could not. Never swallowed. */
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  /** What the server actually sent, which decides whether a frame can show it. */
+  const [previewMime, setPreviewMime] = useState<string | null>(null);
 
   const fetchDocumentDetail = async () => {
     setLoading(true);
@@ -145,6 +181,8 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
 
   const loadPdfBlob = async (id: string, fileType?: string) => {
     setPdfLoading(true);
+    setPreviewError(null);
+    setPreviewMime(null);
     try {
       // Declared, because the reader pane and the Download button reach the
       // same endpoint. Both are recorded either way; this is what separates
@@ -152,12 +190,38 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
       const response = await apiClient.get(`/api/documents/${id}/download?disposition=preview`, {
         responseType: 'blob',
       });
-      const mime = (response.headers['content-type'] as string) || fileType || 'application/pdf';
+      const mime = (response.headers['content-type'] as string) || fileType || '';
       const blob = new Blob([response.data], { type: mime });
-      const blobUrl = window.URL.createObjectURL(blob);
-      setPdfBlobUrl(blobUrl);
-    } catch (err) {
-      console.warn('[PDF Blob Load Warning]:', err);
+      setPreviewMime(mime);
+      setPdfBlobUrl(window.URL.createObjectURL(blob));
+    } catch (err: any) {
+      // A refusal has to be visible. This was a console.warn, so the pane fell
+      // through to the formatted-document canvas below — a page laid out like a
+      // governance record, carrying the title, owner, version and
+      // classification. A reader refused the file on retention, legal hold or
+      // need-to-know was shown a document-shaped screen instead of the refusal,
+      // and no part of it said the file had not been served.
+      //
+      // The blob response type means the server's JSON message arrives as a
+      // Blob, so it has to be read back before it can be shown.
+      let message = 'The file could not be loaded.';
+      const status = err?.response?.status;
+      try {
+        const raw = err?.response?.data;
+        if (raw instanceof Blob) {
+          const parsed = JSON.parse(await raw.text());
+          if (parsed?.message) message = parsed.message;
+        } else if (raw?.message) {
+          message = raw.message;
+        }
+      } catch {
+        // Not JSON. The status still says something useful.
+      }
+      setPreviewError(
+        status === 403 || status === 423
+          ? message
+          : `${message}${status ? ` (HTTP ${status})` : ''}`,
+      );
     } finally {
       setPdfLoading(false);
     }
@@ -258,7 +322,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                   onClick={() => setReaderMode('pdf-embed')}
                   style={{ background: readerMode === 'pdf-embed' ? 'var(--info)' : 'transparent', color: readerMode === 'pdf-embed' ? '#fff' : 'var(--ink-muted)', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                 >
-                  <Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Interactive PDF Reader
+                  {/* Not "Interactive PDF Reader". It is the file, whatever the
+                      file is, and for most of them the honest answer is that a
+                      browser cannot show it. */}
+                  <Icon name="documents" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Attached File
                 </button>
                 <button
                   type="button"
@@ -307,7 +374,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
             onClick={() => setActiveTab('reader')}
             style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'reader' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'reader' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'reader' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
           >
-            <Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> In-App PDF & Document Reader
+            <Icon name="knowledge" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Attached File & Reader
           </button>
           <button
             onClick={() => setActiveTab('file')}
@@ -530,30 +597,65 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
             <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '16px', borderRadius: '8px' }}>{error}</div>
           ) : (
             <>
-              {/* TAB 1: In-App PDF & Document Reader */}
+              {/* TAB 1: Attached File & Reader */}
               {activeTab === 'reader' && (
                 <div>
                   {readerMode === 'pdf-embed' ? (
-                    pdfBlobUrl ? (
+                    previewError ? (
+                      /* The refusal, where the file would have been. */
+                      <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>
+                        <div style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
+                          This file was not served
+                        </div>
+                        <div style={{ color: 'var(--ink-body)', fontSize: '13px', lineHeight: 1.6, maxWidth: 560, margin: '0 auto' }}>
+                          {previewError}
+                        </div>
+                      </div>
+                    ) : pdfBlobUrl && browserCanRender(previewMime, document.fileName) ? (
                       <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '10px', padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--line)' }}>
-                          <span style={{ fontSize: '12px', color: 'var(--info)', fontWeight: 600 }}>LIVE IN-APP PDF READER ({document.fileName || document.code})</span>
+                          <span style={{ fontSize: '12px', color: 'var(--info)', fontWeight: 600 }}>IN-APP READER ({document.fileName || document.code})</span>
                           <button
                             onClick={handleDownload}
                             style={{ background: 'var(--brand)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
                           >
-                            ⇩ Download Original PDF
+                            ⇩ Download original
                           </button>
                         </div>
                         <iframe
                           src={pdfBlobUrl}
-                          title="PDF Reader Viewer"
+                          title="Document reader"
                           style={{ width: '100%', height: '580px', border: '1px solid var(--line)', borderRadius: '8px', background: 'var(--surface)' }}
                         />
                       </div>
+                    ) : pdfBlobUrl ? (
+                      /* A browser frame renders PDFs, images and plain text. It
+                         does not render XLSX, DOCX, PPTX or ZIP — it shows an
+                         empty box, or offers a download, under a heading that
+                         said "LIVE IN-APP PDF READER". The spreadsheet in the
+                         library is exactly that case, and it is why the reader
+                         looked broken: it was being asked to display a file
+                         format no browser displays. */
+                      <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>
+                        <div style={{ color: 'var(--ink)', fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
+                          {describeFormat(previewMime, document.fileName)} cannot be displayed in the browser
+                        </div>
+                        <div style={{ color: 'var(--ink-muted)', fontSize: '12.5px', lineHeight: 1.6, maxWidth: 520, margin: '0 auto 16px' }}>
+                          The file is here and you may take a copy. Only PDFs, images and plain
+                          text can be shown on screen; a spreadsheet or a Word file has to be
+                          opened in the application that owns it. The Formatted Document and
+                          Text View tabs above still show this record's own content.
+                        </div>
+                        <button
+                          onClick={handleDownload}
+                          style={{ background: 'var(--brand)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600 }}
+                        >
+                          ⇩ Download {document.fileName || 'the file'}
+                        </button>
+                      </div>
                     ) : pdfLoading ? (
                       <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '10px', padding: '48px', textAlign: 'center', color: 'var(--ink-muted)' }}>
-                        Rendering PDF stream...
+                        Loading the file…
                       </div>
                     ) : (
                       /* Fallback Formatted Document Canvas if Blob is loading/empty */

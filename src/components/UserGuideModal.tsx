@@ -13,6 +13,21 @@ interface UserGuideModalProps {
   onClose: () => void;
   activeTabId: string;
   onNavigateTab: (tabId: string) => void;
+  /**
+   * Nav keys this account can actually open, and every key any portal defines.
+   *
+   * The guide documents the whole platform on purpose — reading about a module
+   * you do not have is how somebody decides they want it — but it used to offer
+   * a working Jump button on every one. A finance user pressed the risk entry
+   * and was dropped on the Organization Risk Register. Features outside the
+   * account now read as documentation and say so instead of pretending to be a
+   * door.
+   *
+   * Optional, and absent means everything is offered: an older caller that
+   * predates these props should behave as it did rather than lose every button.
+   */
+  reachableKeys?: Set<string>;
+  allNavKeys?: Set<string>;
   account?: any;
 }
 
@@ -48,8 +63,22 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   onClose,
   activeTabId,
   onNavigateTab,
+  reachableKeys,
+  allNavKeys,
   account,
 }) => {
+  /**
+   * Whether pressing "Go to" on this feature would actually land somewhere.
+   *
+   * Unknown keys count as reachable, matching AppShell: a guide id naming no
+   * nav entry anywhere is not a portal leak, and hiding a button on data this
+   * component does not recognise is worse than showing one.
+   */
+  const canOpen = (tabId: string): boolean => {
+    if (!reachableKeys || !allNavKeys) return true;
+    if (!allNavKeys.has(tabId)) return true;
+    return reachableKeys.has(tabId);
+  };
   const [viewMode, setViewMode] = useState<GuideViewMode>('current');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -153,6 +182,12 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   };
 
   const handleJumpToTab = (tabId: string) => {
+    // Checked here as well as at the call sites and again in AppShell. The
+    // button is hidden where it would not work, but a jump can also arrive from
+    // a workflow step or a related-feature chip, and closing the guide before
+    // navigating nowhere would leave the reader staring at the page they were
+    // already on with no explanation.
+    if (!canOpen(tabId)) return;
     onNavigateTab(tabId);
     onClose();
   };
@@ -500,7 +535,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-                  {activeTabId !== currentTabGuide.id && (
+                  {activeTabId !== currentTabGuide.id && !canOpen(currentTabGuide.id) && (
+                    <span style={{
+                      fontSize: 11, color: 'var(--ink-muted)', textAlign: 'right',
+                      border: '1px solid var(--line)', borderRadius: 6, padding: '6px 10px',
+                    }}>
+                      Not in your portal — reference only
+                    </span>
+                  )}
+                  {activeTabId !== currentTabGuide.id && canOpen(currentTabGuide.id) && (
                     <button
                       onClick={() => handleJumpToTab(currentTabGuide.id)}
                       style={{
@@ -866,24 +909,30 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <span style={{ fontSize: 11, color: 'var(--brand)', fontWeight: 600 }}>
                         {feat.howToUse.length} Steps Guide →
                       </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleJumpToTab(feat.id);
-                        }}
-                        style={{
-                          background: 'var(--surface-sunk)',
-                          border: '1px solid var(--line)',
-                          color: 'var(--ink-body)',
-                          fontSize: 11,
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                        }}
-                      >
-                        Open Tab
-                      </button>
+                      {canOpen(feat.id) ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleJumpToTab(feat.id);
+                          }}
+                          style={{
+                            background: 'var(--surface-sunk)',
+                            border: '1px solid var(--line)',
+                            color: 'var(--ink-body)',
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                          }}
+                        >
+                          Open Tab
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontWeight: 600 }}>
+                          reference only
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1012,22 +1061,27 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                           </p>
                         </div>
 
+                        {/* A workflow crosses portals by design — the audit
+                            walkthrough names screens a finance user will never
+                            hold. The step stays readable; only the door goes. */}
                         <button
                           onClick={() => handleJumpToTab(st.tabId)}
+                          disabled={!canOpen(st.tabId)}
+                          title={canOpen(st.tabId) ? undefined : 'This step happens on a screen outside your portal'}
                           style={{
-                            background: 'var(--brand-tint)',
-                            border: '1px solid var(--brand-line)',
-                            color: 'var(--brand-strong)',
+                            background: canOpen(st.tabId) ? 'var(--brand-tint)' : 'var(--surface-sunk)',
+                            border: `1px solid ${canOpen(st.tabId) ? 'var(--brand-line)' : 'var(--line)'}`,
+                            color: canOpen(st.tabId) ? 'var(--brand-strong)' : 'var(--ink-faint)',
                             fontSize: 11,
                             fontWeight: 600,
                             padding: '4px 8px',
                             borderRadius: 4,
-                            cursor: 'pointer',
+                            cursor: canOpen(st.tabId) ? 'pointer' : 'default',
                             textAlign: 'center',
                             marginTop: 6,
                           }}
                         >
-                          Open {st.tabTitle} →
+                          {canOpen(st.tabId) ? `Open ${st.tabTitle} →` : `${st.tabTitle} — not yours`}
                         </button>
                       </div>
                     ))}
@@ -1073,21 +1127,23 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             >
               Close
             </button>
-            <button
-              onClick={() => handleJumpToTab(currentTabGuide.id)}
-              style={{
-                background: 'var(--brand)',
-                color: '#FFFFFF',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: 6,
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Open Current Tab ({currentTabGuide.title})
-            </button>
+            {canOpen(currentTabGuide.id) && (
+              <button
+                onClick={() => handleJumpToTab(currentTabGuide.id)}
+                style={{
+                  background: 'var(--brand)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Open Current Tab ({currentTabGuide.title})
+              </button>
+            )}
           </div>
         </div>
       </div>

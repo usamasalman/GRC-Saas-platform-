@@ -21,6 +21,12 @@ interface Session {
   subjectUser: { id: string; name: string; email: string; role: string };
   approvedBy: { id: string; name: string; email: string } | null;
   tenant: { id: string; name: string };
+  /**
+   * Who inside the customer's tenant can authorise this one. Null unless the
+   * session is PENDING, and empty when nobody there holds the capability —
+   * which is a finding, not a blank.
+   */
+  pendingApprovers: Array<{ name: string; email: string; role: string }> | null;
 }
 
 interface Identity { id: string; name: string; email: string; role: string; context: string | null; status: string }
@@ -248,8 +254,30 @@ const ImpersonationSessions: React.FC = () => {
                           <button disabled={busy !== null} onClick={() => setDialog({ kind: 'deny', s })} style={smBtn('var(--danger)')}>deny</button>
                         </>
                       )}
+                      {/* "awaiting customer" was the whole of this cell. It told
+                          the requester nothing about who to chase, and read
+                          identically whether twelve administrators had been
+                          notified or none existed. Both facts are now on the row. */}
                       {s.status === 'PENDING' && !iAmInTargetTenant && (
-                        <span style={{ color: 'var(--ink-body)', fontSize: 11 }}>awaiting customer</span>
+                        (s.pendingApprovers && s.pendingApprovers.length > 0) ? (
+                          <span
+                            style={{ color: 'var(--ink-body)', fontSize: 11 }}
+                            title={s.pendingApprovers.map((a) => `${a.name} (${a.role}) — ${a.email}`).join('\n')}
+                          >
+                            awaiting {s.pendingApprovers[0].name}
+                            {s.pendingApprovers.length > 1 && ` +${s.pendingApprovers.length - 1}`}
+                            <div style={{ color: 'var(--ink-faint)', fontSize: 10 }}>
+                              at {s.tenant.name} · notified
+                            </div>
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--danger)', fontSize: 11 }}>
+                            nobody at {s.tenant.name} can approve this
+                            <div style={{ color: 'var(--ink-faint)', fontSize: 10 }}>
+                              grant Maintain roles or Add a user there
+                            </div>
+                          </span>
+                        )
                       )}
                       {s.status === 'APPROVED' && iAmRequester && (
                         <button disabled={busy !== null} onClick={() => setDialog({ kind: 'start', s })} style={{ ...smBtn('var(--info)'), border: '1px solid var(--info-line)' }}>▸ start</button>

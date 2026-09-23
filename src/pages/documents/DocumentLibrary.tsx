@@ -541,6 +541,35 @@ export default function DocumentLibrary() {
                           )}
                         </>
                       )}
+
+                      {/* Why the buttons are not there.
+                          Edit, Checkout, Submit and Delete disappeared on any
+                          status outside DRAFT and RETURNED, with nothing said,
+                          and the row was read as a permission problem — "these
+                          options are only enabled for the Admin and the owner".
+                          They are not: updateDocument refuses on STATUS alone
+                          (documentController: `Cannot edit a document in "X"
+                          status`), plus legal hold and another user's checkout.
+                          Anybody who may edit a draft may edit this one once it
+                          comes back to them. Saying so costs one line and stops
+                          somebody chasing an access request that would not have
+                          helped. */}
+                      {!['DRAFT', 'RETURNED'].includes(doc.status) && (
+                        <span
+                          style={{ fontSize: '11px', color: 'var(--ink-faint)', alignSelf: 'center' }}
+                          title={
+                            doc.status === 'IN_REVIEW'
+                              ? 'It is with its approvers. Editing resumes if it is returned, or in the next version after it is published.'
+                              : doc.status === 'APPROVED'
+                                ? 'Approved and waiting to be published. Changing it now would change what was approved.'
+                                : doc.status === 'PUBLISHED'
+                                  ? 'Published records are not edited in place — raise the next version instead.'
+                                  : `Editing is closed while this document is ${doc.status}.`
+                          }
+                        >
+                          read-only while {doc.status.toLowerCase().replace('_', ' ')}
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>

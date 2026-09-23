@@ -5,6 +5,7 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { hasCapability, CAP } from '../services/capabilityEngine';
+import { notify } from '../services/notificationService';
 
 const SUBJECT = 'ImpersonationSession';
 const MAX_DURATION_MINS = 120;
@@ -31,6 +32,52 @@ async function canApprove(userId: string): Promise<boolean> {
       || (await hasCapability(userId, CAP.ADD_USER));
 }
 
+/**
+ * The acting user's display name.
+ *
+ * req.user carries id, tenantId and role — not the name — so a notification
+ * body built from it read "undefined approved your request". One lookup, and
+ * the fallback is a description rather than a blank.
+ */
+async function actorName(userId: string, fallback: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+  return u?.name?.trim() || fallback;
+}
+
+/**
+ * Who inside the customer's tenant may authorise this, by name.
+ *
+ * A request used to be written to the register and then wait for somebody to
+ * happen to look. Nothing was sent, nobody in the target tenant was told, and
+ * the requester's screen said only "awaiting customer" — so a session could sit
+ * PENDING forever with the platform administrator unable to say who to chase
+ * and the customer administrator with no reason to open the page.
+ *
+ * The same list serves both fixes: it is who gets the notification, and it is
+ * what the register shows beside a pending row instead of "awaiting customer".
+ * The subject of the session is excluded, because approveSession refuses them
+ * anyway and offering their name as the person to chase would be wrong.
+ */
+async function approversFor(
+  tenantId: string,
+  excludeUserId: string | null,
+): Promise<Array<{ id: string; name: string; email: string; role: string }>> {
+  const members = await prisma.user.findMany({
+    where: { tenantId, status: 'Active' },
+    select: { id: true, name: true, email: true, role: true },
+  });
+
+  const out: Array<{ id: string; name: string; email: string; role: string }> = [];
+  for (const m of members) {
+    if (m.id === excludeUserId) continue;
+    // Resolved through the capability engine, one at a time, exactly as
+    // approveSession will when the person actually presses approve. Matching
+    // role names here instead would let the two disagree.
+    if (await canApprove(m.id)) out.push(m);
+  }
+  return out;
+}
+
 // ─── LIST (scope-aware register) ───────────────────────────────────────────
 
 export const listSessions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -48,6 +95,24 @@ export const listSessions = async (req: AuthenticatedRequest, res: Response): Pr
       take: 200,
     });
 
+    // Who can act on each pending row, resolved once per tenant rather than
+    // once per session. The register used to say only "awaiting customer",
+    // which told the requester nothing about who to chase and gave no sign
+    // when the answer was "nobody here can".
+    const pendingTenants = [...new Set(
+      sessions.filter((s) => s.status === 'PENDING').map((s) => s.tenantId),
+    )];
+    const approverIndex = new Map<string, Array<{ name: string; email: string; role: string }>>();
+    for (const t of pendingTenants) {
+      const subjectsHere = sessions
+        .filter((s) => s.status === 'PENDING' && s.tenantId === t)
+        .map((s) => s.subjectUserId);
+      const list = await approversFor(t, null);
+      approverIndex.set(t, list
+        .filter((a) => !subjectsHere.includes(a.id))
+        .map((a) => ({ name: a.name, email: a.email, role: a.role })));
+    }
+
     const now = Date.now();
     res.json({
       status: 'success',
@@ -60,6 +125,7 @@ export const listSessions = async (req: AuthenticatedRequest, res: Response): Pr
         minutesRemaining: s.status === 'ACTIVE' && s.expiresAt
           ? Math.max(0, Math.round((s.expiresAt.getTime() - now) / 60000))
           : null,
+        pendingApprovers: s.status === 'PENDING' ? (approverIndex.get(s.tenantId) ?? []) : null,
       })),
     });
   } catch (error: any) {
@@ -122,6 +188,12 @@ export const requestSession = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
+    // Resolved before the transaction: it is a capability lookup per member of
+    // the tenant, and holding a write transaction open across it would lock the
+    // session table for as long as the customer has users.
+    const approvers = await approversFor(subject.tenantId, subject.id);
+    const requesterName = await actorName(req.user!.id, 'A support engineer');
+
     const session = await prisma.$transaction(async (tx) => {
       const created = await tx.impersonationSession.create({
         data: {
@@ -141,14 +213,47 @@ export const requestSession = async (req: AuthenticatedRequest, res: Response): 
         action: 'IMPERSONATION_REQUESTED',
         subjectType: SUBJECT,
         subjectId: created.id,
-        payload: { subjectEmail: subject.email, reason, ticketRef: ticketRef || null, durationMins: duration },
+        payload: {
+          subjectEmail: subject.email,
+          reason,
+          ticketRef: ticketRef || null,
+          durationMins: duration,
+          // Named in the trail as well. "Nobody approved it" and "nobody could
+          // have approved it" are different findings and the entry should say
+          // which one this was.
+          notifiedApprovers: approvers.map((a) => a.email),
+        },
       });
+
+      // The request has to REACH somebody. Without this it was written to a
+      // register and left to be noticed.
+      await notify(tx, approvers.map((a) => ({
+        tenantId: subject.tenantId,
+        recipientId: a.id,
+        actorId: req.user!.id,
+        event: 'IMPERSONATION_REQUESTED',
+        subjectType: SUBJECT,
+        subjectId: created.id,
+        title: `Support access requested for ${subject.name}`,
+        body: `${requesterName} is asking to view the platform as `
+          + `${subject.name} for ${duration} minutes. Reason: ${String(reason).trim()}`,
+        link: 'impersonation',
+      })));
+
       return created;
     });
 
     res.status(201).json({
       status: 'success',
-      message: `Request submitted. An administrator at ${subject.tenant.name} must approve it.`,
+      // Says who, not just that somebody must. A request nobody can approve is
+      // reported as such rather than sitting PENDING and looking normal.
+      message: approvers.length > 0
+        ? `Request submitted. ${approvers.length} administrator(s) at ${subject.tenant.name} `
+          + `have been notified: ${approvers.map((a) => a.name).join(', ')}.`
+        : `Request submitted, but NOBODY at ${subject.tenant.name} currently holds the `
+          + 'capability to approve it. It will stay pending until somebody there is granted '
+          + 'Maintain roles and permissions or Add a user.',
+      approvers: approvers.map((a) => ({ name: a.name, email: a.email, role: a.role })),
       session,
     });
   } catch (error: any) {
@@ -192,6 +297,8 @@ export const approveSession = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
+    const approverName = await actorName(req.user!.id, 'An administrator');
+
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.impersonationSession.update({
         where: { id },
@@ -209,6 +316,20 @@ export const approveSession = async (req: AuthenticatedRequest, res: Response): 
         subjectType: SUBJECT,
         subjectId: id,
         payload: { subjectEmail: session.subjectUser.email, note: note || null },
+      });
+      // The requester is in another tenancy and has no reason to keep the
+      // register open. Without this they learn they were approved by checking.
+      await notify(tx, {
+        tenantId: session.tenantId,
+        recipientId: session.requestedById,
+        actorId: req.user!.id,
+        event: 'IMPERSONATION_APPROVED',
+        subjectType: SUBJECT,
+        subjectId: id,
+        title: 'Support access approved',
+        body: `${approverName} approved your request to view the `
+          + `platform as ${session.subjectUser.email}. You may now start the session.`,
+        link: 'impersonation',
       });
       return u;
     });
@@ -242,6 +363,8 @@ export const denySession = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
+    const denierName = await actorName(req.user!.id, 'An administrator');
+
     await prisma.$transaction(async (tx) => {
       await tx.impersonationSession.update({
         where: { id },
@@ -254,6 +377,21 @@ export const denySession = async (req: AuthenticatedRequest, res: Response): Pro
         subjectType: SUBJECT,
         subjectId: id,
         payload: { note },
+      });
+      // A refusal is the answer most worth delivering. Left unsent, the
+      // requester reads a row that stopped saying PENDING and has to work out
+      // why on their own.
+      await notify(tx, {
+        tenantId: session.tenantId,
+        recipientId: session.requestedById,
+        actorId: req.user!.id,
+        event: 'IMPERSONATION_DENIED',
+        subjectType: SUBJECT,
+        subjectId: id,
+        title: 'Support access denied',
+        body: `${denierName} declined your request. `
+          + `Reason: ${String(note).trim()}`,
+        link: 'impersonation',
       });
     });
 
