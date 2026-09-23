@@ -110,6 +110,15 @@ assert.ok(Object.keys(byName).length >= 25, `expected the capability list; found
     if (f.endsWith('.ts')) routes += fs.readFileSync(path.join(dir, f), 'utf8');
   }
 
+  // app.ts too, because four endpoints are declared inline there rather than in
+  // a router: /api/audit-logs, /api/tickets, /api/asm/assets and
+  // /api/phish/campaigns. Reading only routes/ meant a guard attached to one of
+  // them was invisible here — this check reported CAP.READ_AUDIT_TRAIL as
+  // guarding nothing while it was guarding the audit trail. A blind spot in the
+  // rule that says capabilities must mean something is the one place it cannot
+  // afford one.
+  routes += fs.readFileSync(path.join(SRC, 'app.ts'), 'utf8');
+
   const used = new Set([...routes.matchAll(/CAP\.(\w+)/g)].map((m) => m[1]));
   const unused = Object.keys(byName).filter((n) => !used.has(n));
   const unexpected = unused.filter((n) => !(n in DEFINED_BUT_UNUSED));

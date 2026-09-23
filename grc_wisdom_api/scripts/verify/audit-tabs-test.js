@@ -287,6 +287,92 @@ function keys(label, obj, expected) {
     ? ok('a fourth, independent party can close it')
     : bad('close', JSON.stringify(close.json).slice(0, 140));
 
+  // ── Closure, and the coverage that closing proves ───────────────────────
+  //
+  // This walk stopped at a closed finding and never closed the engagement, so
+  // the loop that matters most to the plan was never exercised: closing is the
+  // event that proves coverage, and `lastAuditedAt` used to be settable only
+  // by hand on the entity form. A just-completed entity therefore still read
+  // as "never audited" and kept climbing next year's plan on a +0.75 uplift
+  // until somebody remembered to edit it.
+  //
+  // risk-lifecycle-loops.js used to carry this as "Loop 5". It asserted
+  // nothing — the branch printed four console lines describing where the stamp
+  // is applied and moved on, and on a fresh seed it did not even reach them.
+  // The fixture is here, at the right state, so the assertions are here.
+  console.log('\nClosure — coverage is stamped by closing, not by hand');
+
+  const beforeUni = await api('/api/grc/universe', { token: cae });
+  const beforeEnt = (beforeUni.json.entities || []).find((e) => e.id === entityId);
+  beforeEnt?.lastAuditedAt == null && beforeEnt?.neverAudited === true
+    ? ok('the entity reads as never audited before closure')
+    : bad('never-audited before closure', `lastAuditedAt=${beforeEnt?.lastAuditedAt}`);
+
+  const skipAhead = await api(`/api/grc/audits/${auditId}`, {
+    token: cae, method: 'PATCH', body: { status: 'Closed' },
+  });
+  skipAhead.json?.code === 'INVALID_TRANSITION'
+    ? ok('Fieldwork cannot jump straight to Closed', `allowed: ${(skipAhead.json.allowedNext || []).join(', ')}`)
+    : bad('transition ladder', `expected INVALID_TRANSITION, got ${skipAhead.status} ${skipAhead.json?.code || ''}`);
+
+  const noConclusion = await api(`/api/grc/audits/${auditId}`, {
+    token: cae, method: 'PATCH', body: { status: 'Reporting' },
+  });
+  noConclusion.json?.code === 'CONCLUSION_REQUIRED'
+    ? ok('reporting without judging the control environment is refused', noConclusion.json.code)
+    : bad('conclusion gate', `expected CONCLUSION_REQUIRED, got ${noConclusion.status} ${noConclusion.json?.code || ''}`);
+
+  const reporting = await api(`/api/grc/audits/${auditId}`, {
+    token: cae, method: 'PATCH',
+    body: {
+      status: 'Reporting',
+      conclusion: 'NeedsImprovement',
+      conclusionNarrative: 'Dual approval was absent on 3 of 25 payments tested; the control has since been enforced in the workflow.',
+    },
+  });
+  reporting.status === 200 && reporting.json?.audit?.status === 'Reporting'
+    ? ok('a reviewed file with a stated conclusion reaches Reporting')
+    : bad('reach Reporting', `${reporting.status} ${JSON.stringify(reporting.json).slice(0, 140)}`);
+
+  const closed = await api(`/api/grc/audits/${auditId}`, {
+    token: cae, method: 'PATCH', body: { status: 'Closed' },
+  });
+  closed.status === 200 && closed.json?.audit?.status === 'Closed'
+    ? ok('and closes once every finding is settled')
+    : bad('close the engagement', `${closed.status} ${JSON.stringify(closed.json).slice(0, 140)}`);
+  /marked as audited/.test(closed.json?.message || '')
+    ? ok('the response says whose coverage it just stamped')
+    : bad('coverage message', `${closed.json?.message}`);
+
+  // The assertion the old Loop 5 never made: the stamp is observable on the
+  // entity, through the same endpoint the universe screen reads.
+  const afterUni = await api('/api/grc/universe', { token: cae });
+  const afterEnt = (afterUni.json.entities || []).find((e) => e.id === entityId);
+  afterEnt?.lastAuditedAt
+    ? ok('THE LOOP: closing stamps lastAuditedAt on the auditable entity',
+         String(afterEnt.lastAuditedAt).slice(0, 10))
+    : bad('coverage stamp', `lastAuditedAt is still ${afterEnt?.lastAuditedAt}`);
+  afterEnt?.neverAudited === false
+    ? ok('so the entity stops climbing next year\'s plan on a never-audited uplift')
+    : bad('never-audited uplift cleared', `neverAudited=${afterEnt?.neverAudited}`);
+
+  const plansAfter = await api('/api/grc/plans', { token: cae });
+  const planAfter = (plansAfter.json.plans || []).find((p) => p.id === planId);
+  const itemAfter = (planAfter?.items || []).find((i) => i.id === itemId);
+  itemAfter?.status === 'Completed'
+    ? ok('and the plan item is marked Completed by the same event')
+    : bad('plan item completion', `status=${itemAfter?.status}`);
+  planAfter?.itemCounts?.completed >= 1
+    ? ok('which the plan\'s own counts reflect', `completed=${planAfter.itemCounts.completed}`)
+    : bad('plan itemCounts', JSON.stringify(planAfter?.itemCounts));
+
+  const reopen = await api(`/api/grc/audits/${auditId}`, {
+    token: cae, method: 'PATCH', body: { status: 'Fieldwork' },
+  });
+  reopen.json?.code === 'INVALID_TRANSITION'
+    ? ok('a closed engagement cannot be reopened — that is a new follow-up, not an edit')
+    : bad('closed is terminal', `expected INVALID_TRANSITION, got ${reopen.status} ${reopen.json?.code || ''}`);
+
   const register = await api('/api/grc/issues', { token: cae });
   keys('GET /issues payload', register.json, ['totals', 'bySource', 'issues']);
   keys('issue totals', register.json.totals, ['total', 'open', 'overdue', 'awaitingResponse', 'disputed', 'escalated', 'highOpen', 'closureRate']);

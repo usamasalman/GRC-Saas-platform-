@@ -22,6 +22,7 @@ import usageRoutes from './routes/usageRoutes';
 import systemRoutes from './routes/systemRoutes';
 import projectRoutes from './routes/projectRoutes';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
+import { requireCapability, CAP } from './services/capabilityEngine';
 import { SodViolation } from './services/sodEngine';
 import { resolveTenantScope, auditCrossTenantRead } from './services/scopeResolver';
 import { prisma } from './db';
@@ -218,7 +219,21 @@ app.use('/api/system', systemRoutes);
 app.use('/api/projects', projectRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
-app.get('/api/audit-logs', requireAuth, async (req: any, res: Response) => {
+//
+// requireAuth alone was not enough, and it was the only guard here. Tenant
+// scoping was correct — a member never saw another organisation's entries —
+// but inside their own tenancy every signed-in person could read the 200 most
+// recent entries with the raw `payload` on each. Those payloads carry the
+// substance: an offboarding entry names the leaver and their successor, a
+// document entry names the policy and its approver, an SLA entry carries the
+// old and new targets, an invoice entry the figures. A contributor on one
+// register could read who was let go last month.
+//
+// READ_AUDIT_TRAIL is held by assurance, platform security and the roles
+// accountable for a tenancy — 16 of 42. It is the one capability in this model
+// that gates a read, and capabilityEngine.ts says why that exception is right
+// here and nowhere else.
+app.get('/api/audit-logs', requireAuth, requireCapability(CAP.READ_AUDIT_TRAIL), async (req: any, res: Response) => {
   try {
     const scope = await resolveTenantScope(req.user);
     await auditCrossTenantRead(scope, req.user.id, 'audit-logs.list');

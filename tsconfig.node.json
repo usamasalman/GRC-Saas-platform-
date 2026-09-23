@@ -14,6 +14,8 @@
     "noEmit": true,
 
     /* Linting */
+    /* Same reason as tsconfig.app.json, and the same cost: nothing. */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

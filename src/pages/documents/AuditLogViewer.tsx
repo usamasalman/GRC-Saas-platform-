@@ -1,6 +1,15 @@
 import Icon from '../../components/Icon';
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
+import Can, { CAP } from '../../components/Can';
+
+interface VerifyResult {
+  tenantName: string;
+  logCount: number;
+  verifiedCount: number;
+  unverifiableCount: number;
+  status: 'VALID' | 'VALID_SINCE' | 'UNVERIFIABLE' | 'TAMPERED';
+}
 
 interface AuditItem {
   id: string;
@@ -18,6 +27,10 @@ export default function AuditLogViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
+  // Carried beside the message instead of sniffing it for the word INTACT,
+  // which is how "INTACT for 64 entries, 51 unverifiable" would have been
+  // painted the same green as a fully verified chain.
+  const [verifyTone, setVerifyTone] = useState<'good' | 'warn' | 'bad'>('warn');
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -38,15 +51,58 @@ export default function AuditLogViewer() {
     fetchLogs();
   }, []);
 
+  /**
+   * Report what the verifier said, including the parts that are neither
+   * "intact" nor "tampered".
+   *
+   * Two things were wrong here. The catch block answered "Verification check
+   * completed." — so a request that failed, including the 403 every non-platform
+   * role gets from this endpoint, read as a clean bill of health. And the
+   * success path collapsed the answer to INTACT or tampering, which stopped
+   * being true once the verifier learned to distinguish rows it cannot check
+   * from rows that were changed: a tenant can now be `integrityVerified: true`
+   * with fifty-one entries nobody can verify, and "INTACT (WORM Locked)" is the
+   * wrong sentence to put under that.
+   */
+  const say = (tone: 'good' | 'warn' | 'bad', message: string) => {
+    setVerifyTone(tone);
+    setVerifyStatus(message);
+  };
+
   const handleVerifyChain = async () => {
-    setVerifyStatus('Verifying cryptographic SHA-256 hash chain...');
+    say('warn', 'Verifying cryptographic SHA-256 hash chain…');
     try {
       const res = await apiClient.get('/api/admin/db/verify-audit');
-      if (res.data.status === 'success') {
-    setVerifyStatus(res.data.integrityVerified ? '✓ Cryptographic Hash Chain Verified: INTACT (WORM Locked)' : ' WARNING: Hash chain tampering detected!');
+      if (res.data?.status !== 'success') {
+        say('bad', 'The verifier answered, but not with a result. The chain is unverified.');
+        return;
       }
-    } catch {
-      setVerifyStatus('Verification check completed.');
+      const results: VerifyResult[] = res.data.results || [];
+      const tampered = results.filter((r) => r.status === 'TAMPERED');
+      const unverifiable = results.reduce((a, r) => a + (r.unverifiableCount || 0), 0);
+      const verified = results.reduce((a, r) => a + (r.verifiedCount || 0), 0);
+
+      if (tampered.length > 0) {
+        say('bad',
+          `TAMPERED — ${tampered.length} trail(s) do not reproduce their hash: `
+          + `${tampered.map((t) => t.tenantName).join(', ')}.`);
+        return;
+      }
+      if (unverifiable > 0) {
+        say('warn',
+          `${verified} entries verified. ${unverifiable} older entries cannot be verified: they `
+          + 'were written before the trail stored the instant its hash covers, so there is '
+          + 'nothing to check them against. Nothing indicates tampering.');
+        return;
+      }
+      say('good', `INTACT — all ${verified} entries reproduce their hash (WORM locked).`);
+    } catch (e: any) {
+      const code = e?.response?.status;
+      say('bad',
+        code === 403
+          ? 'The chain was NOT verified. Running the verifier is a platform-operator action '
+            + 'and your role does not hold it.'
+          : `The chain was NOT verified: ${e?.response?.data?.message || 'the verifier could not be reached'}.`);
     }
   };
 
@@ -59,16 +115,26 @@ export default function AuditLogViewer() {
             Cryptographically hash-chained Write-Once-Read-Many (WORM) system action record.
           </p>
         </div>
-        <button
-          onClick={handleVerifyChain}
-          style={{ background: 'var(--info)', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
-        >
-          <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Verify Hash Chain
-        </button>
+        {/* The verifier is a platform-operator route. Showing the button to a
+            tenant administrator only to answer 403 is the "hallucination" Can
+            exists to stop. */}
+        <Can do={CAP.MONITOR_SECURITY}>
+          <button
+            onClick={handleVerifyChain}
+            style={{ background: 'var(--info)', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+          >
+            <Icon name="link" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Verify Hash Chain
+          </button>
+        </Can>
       </header>
 
       {verifyStatus && (
-        <div style={{ background: verifyStatus.includes('INTACT') ? '#064e3b' : 'var(--ink)', border: '1px solid var(--line)', color: verifyStatus.includes('INTACT') ? 'var(--success)' : 'var(--info)', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
+        <div style={{
+          background: verifyTone === 'good' ? 'var(--success-bg)' : verifyTone === 'bad' ? 'var(--danger-bg)' : 'var(--warning-bg)',
+          border: `1px solid ${verifyTone === 'good' ? 'var(--success-line)' : verifyTone === 'bad' ? 'var(--danger-line)' : 'var(--warning-line)'}`,
+          color: verifyTone === 'good' ? 'var(--success)' : verifyTone === 'bad' ? 'var(--danger)' : 'var(--warning)',
+          padding: '12px', borderRadius: '6px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5,
+        }}>
           {verifyStatus}
         </div>
       )}

@@ -34,6 +34,24 @@ export const CAP = {
   // owned and then ends their access, which is not the same decision.
   OFFBOARD_USER: 'offboard-a-user-with-handover',
   MONITOR_SECURITY: 'monitor-security-and-handle-incidents',
+  /**
+   * Reading the tenant's WORM audit trail.
+   *
+   * GET /api/audit-logs carried requireAuth and nothing else, so every signed-in
+   * member of a tenant could read 200 of its most recent entries with the raw
+   * `payload` on each one. Those payloads are not metadata: an offboarding
+   * entry names the leaver and their successor, a document entry names the
+   * policy and who approved it, an SLA entry carries the old and new targets,
+   * an invoice entry carries the figures. A contributor reading the register
+   * they work in could read who was let go last month.
+   *
+   * This is the one place a read genuinely is a capability, which is why it is
+   * the exception to the rule stated in navCapabilities.ts. Everywhere else the
+   * grants describe acts because the registers are meant to be read by the
+   * people working in them. The audit trail is meant to be read by the people
+   * assuring them.
+   */
+  READ_AUDIT_TRAIL: 'read-the-tenant-audit-trail',
   GOVERN_FLAG: 'govern-a-feature-flag',
   PUBLISH_MODULE: 'publish-or-enable-a-module',
   MANAGE_SUBSCRIPTION: 'manage-a-subscription',

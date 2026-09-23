@@ -17,6 +17,23 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    /*
+     * strict was off, so the browser half of the product had no
+     * strictNullChecks while the API half was compiled with it. That gap is
+     * how three FormDialog select lists shipped passing {value,label} objects
+     * where a readonly string[] is required: the arrays arrived as `any` from
+     * an untyped response, nothing narrowed them, and the dropdowns would have
+     * rendered "[object Object]". It is also how two pickers came to filter on
+     * `tenantId`, a field the endpoint never sent — `undefined === undefined`
+     * is true, so one picker silently matched everything and the other
+     * silently matched nothing.
+     *
+     * Turning it on cost nothing: all 110 files under src/ already compiled
+     * clean under --strict. It was off by habit rather than by need, and
+     * leaving it off meant the next such bug would again be caught by a person
+     * reading the code rather than by the compiler.
+     */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

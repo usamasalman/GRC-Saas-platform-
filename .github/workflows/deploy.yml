@@ -136,6 +136,7 @@ jobs:
           node scripts/verify/audit-chain-test.js
           node scripts/verify/deploy-safety-test.js
           node scripts/verify/background-jobs-test.js
+          node scripts/verify/audit-trail-access-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
@@ -189,7 +190,7 @@ jobs:
           done
           curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
-          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops
           do
             echo "── $suite ──"
             npm run seed:demo > /dev/null

@@ -42,6 +42,7 @@ export const CAP = {
   TRANSFER_USER: 'transfer-a-user-between-branches-or-entities',
   OFFBOARD_USER: 'offboard-a-user-with-handover',
   MONITOR_SECURITY: 'monitor-security-and-handle-incidents',
+  READ_AUDIT_TRAIL: 'read-the-tenant-audit-trail',
   GOVERN_FLAG: 'govern-a-feature-flag',
   PUBLISH_MODULE: 'publish-or-enable-a-module',
   MANAGE_SUBSCRIPTION: 'manage-a-subscription',
@@ -108,6 +109,20 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   'branch-users': [CAP.ADD_USER],
   'user-admin': [CAP.ADD_USER, CAP.TRANSFER_USER],
   'feature-flags': [CAP.GOVERN_FLAG],
+
+  // The exception to the rule written at the top of this file.
+  //
+  // Every other entry here gates an administrative ACT, because a register
+  // anybody may read should stay visible and hiding it would be concealment
+  // rather than enforcement. GET /api/audit-logs is the one read the server
+  // now genuinely refuses: the trail carries the substance of what everybody
+  // did, in the raw payload of each entry, and a contributor on one register
+  // could read who was offboarded last month.
+  //
+  // So this pair is not concealment. Someone without the capability gets a 403
+  // from the API, and hiding the entry spares them clicking into it to find out.
+  logs: [CAP.READ_AUDIT_TRAIL],
+  'hash-check': [CAP.READ_AUDIT_TRAIL],
 
   // Commercial administration. Tracker issues 11 to 17 are seven reports of
   // one sentence -- "he has nothing to do with this" -- against exactly these

@@ -265,6 +265,13 @@
       "module": "IAM",
       "number": 34,
       "tenancySpecific": true
+    },
+    {
+      "key": "read-the-tenant-audit-trail",
+      "name": "Read the tenant audit trail",
+      "module": "Security",
+      "number": 35,
+      "tenancySpecific": true
     }
   ],
   "roles": [
@@ -290,7 +297,8 @@
         "publish-or-enable-a-module",
         "transfer-a-user-between-branches-or-entities",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -306,7 +314,8 @@
         "govern-a-feature-flag",
         "configure-an-integration",
         "create-an-approval-or-automation-workflow",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -346,7 +355,8 @@
         "manage-a-delivery-project",
         "execute-project-work",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -364,7 +374,8 @@
         "assess-and-treat-a-risk",
         "generate-and-distribute-a-report",
         "execute-project-work",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -386,7 +397,8 @@
         "manage-a-delivery-project",
         "execute-project-work",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -406,7 +418,8 @@
         "manage-a-delivery-project",
         "execute-project-work",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -425,7 +438,8 @@
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -441,7 +455,8 @@
         "acknowledge-or-monitor-a-policy",
         "generate-and-distribute-a-report",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -466,7 +481,8 @@
         "create-an-itsm-ticket",
         "plan-and-execute-an-audit",
         "review-approve-and-digitally-sign-a-document",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -484,7 +500,8 @@
         "onboard-or-purchase-an-open-source-tool",
         "generate-and-distribute-a-report",
         "create-or-manage-a-tenant",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -522,7 +539,8 @@
         "manage-a-delivery-project",
         "execute-project-work",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -598,7 +616,8 @@
         "operate-wisdom-eye-and-eye-phish",
         "monitor-security-and-handle-incidents",
         "manage-and-resolve-support-tickets",
-        "generate-and-distribute-a-report"
+        "generate-and-distribute-a-report",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -618,7 +637,8 @@
         "plan-and-execute-an-audit",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -684,7 +704,8 @@
         "generate-and-distribute-a-report",
         "manage-a-delivery-project",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -774,7 +795,8 @@
         "assess-and-treat-a-risk",
         "plan-and-execute-an-audit",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -862,7 +884,8 @@
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
         "execute-project-work",
-        "verify-project-delivery"
+        "verify-project-delivery",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -921,7 +944,8 @@
         "plan-and-execute-an-audit",
         "create-import-and-version-a-document",
         "generate-and-distribute-a-report",
-        "execute-project-work"
+        "execute-project-work",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
@@ -940,7 +964,8 @@
         "generate-and-distribute-a-report",
         "execute-project-work",
         "verify-project-delivery",
-        "offboard-a-user-with-handover"
+        "offboard-a-user-with-handover",
+        "read-the-tenant-audit-trail"
       ]
     },
     {
