@@ -134,6 +134,7 @@ jobs:
           node scripts/verify/document-editors-test.js
           node scripts/verify/no-invented-data-test.js
           node scripts/verify/audit-chain-test.js
+          node scripts/verify/deploy-safety-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
