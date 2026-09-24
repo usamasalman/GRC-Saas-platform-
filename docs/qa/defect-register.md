@@ -115,14 +115,16 @@ These need a decision or a look at the live server, not a code check.
 
 | ID | Severity | Item | What to do |
 |---|---|---|---|
-| OI-01 | High, if true | `SITE_ADDRESS` defaults to `http://:80`. If the server still uses it, passwords and session tokens travel as plain text. | Run the synthetic check against the live site. It fails on plain HTTP. Set `SITE_ADDRESS` to the domain, and Caddy issues the certificate. |
-| OI-02 | High, if true | The live database may still hold the demo accounts from an earlier seed, all with the published demo password. | On the server, count users with a `@globalbank.com`, `@omniops.me` or `@grcwisdom.com` address. Remove or disable them. |
+| OI-01 | **High, confirmed 2026-09-24** | The live site (http://161.97.120.202) is plain HTTP: port 443 does not answer, so passwords and session tokens cross the network readable. `synthetic-check.js` fails on it. | Point a domain's A record at the server, set `SITE_ADDRESS` to that domain (no `http://`) in the server's `deploy/.env`, open ports 80 and 443, and restart Caddy; it obtains the certificate itself. No rebuild: the app calls its API on its own origin. Then change every password that was used over plain HTTP. |
+| OI-02 | High, if present | The live database may still hold the demo seed's 66 accounts, which share one published password. | Run `grc_wisdom_api/scripts/ops/demo-accounts-find.sql` on the server (read only), then `demo-accounts-suspend.sql`: suspends, deletes nothing (168 relations cascade on a user delete), keeps any address you list, and refuses if it would leave no active platform account. Tested against a seeded database. |
 | OI-03 | Medium | The audit chain can fork under concurrent writes: two writers can read the same previous hash. | Serialise appends per tenant (an advisory lock or a sequence), and add a concurrency test. |
 | OI-04 | Medium | Impersonation approvers include HR roles, who should not grant support access to customer data. | Limit approvers to tenant administrators. |
 | OI-05 | Medium | Capacity: one API process tops out at 100 to 180 requests/s, limited by its single CPU core; each request makes about 14 queries one after another. | Fix QA-015 and QA-023, then run one process per core before expecting more than about 100 people active at the same moment. Keep the database on the same host until queries per request come down. |
 | OI-06 | Medium | ISO 27001 has no Statement of Applicability or management-review screen. | Product decision: both are mandatory ISO 27001 records. |
 | OI-07 | Low | OmniOps has no document approver, and the organisation portal has no acknowledgement screen. | Seed an approver; decide whether acknowledgements belong in the organisation portal. |
 | OI-08 | Low | Local development `.env` points `DATABASE_URL` at a SQLite file the Prisma 7 client cannot use, so the local API answers 503. | Point it at the local PostgreSQL. |
+| OI-09 | Medium | The live site runs `134e399`: none of the fixes committed since, including Phase 1, are deployed. | Push when ready; CI runs every suite, then deploys. |
+| OI-10 | Low | First visit to the live site downloads one 1.36 MB script (344 KB compressed) at 35–60 KB/s from the server, against 280–580 KB/s from a CDN on the same connection: about 7 s before the app appears. Later visits are cached. | Split the bundle (Vite warns it is over 500 KB), and check the server's bandwidth or put the static files behind a CDN. |
 
 ## Fixed
 
