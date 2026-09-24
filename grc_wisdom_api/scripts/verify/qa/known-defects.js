@@ -30,11 +30,6 @@ module.exports = {
     title: 'The customer sign-in form is off-screen on a phone',
     checks: ['browser:login-form-visible-on-phone'],
   },
-  'QA-008': {
-    severity: 'Medium',
-    title: 'The tenant screen reads plans through the database-admin console',
-    checks: ['crawl:403 /api/admin/db/table/Plan'],
-  },
   'QA-009': {
     severity: 'Medium',
     title: 'The web application can be framed by another site (no frame protection)',

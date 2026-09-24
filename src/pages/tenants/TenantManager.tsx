@@ -93,7 +93,10 @@ const TenantManager: React.FC = () => {
     try {
       const [tRes, pRes, rRes] = await Promise.all([
         apiClient.get('/api/tenants'),
-        apiClient.get('/api/admin/db/table/Plan').catch(() => null),
+        // The plan catalogue, through billing: the database-admin console is
+        // refused to everyone but its administrators, so for every other tenant
+        // manager this list came back empty (QA-008).
+        apiClient.get('/api/billing/plans').catch(() => null),
         // A tenant cannot be provisioned without naming its administrator's
         // role, so this list is load-bearing rather than decorative. Caught
         // individually: the tenant table is still worth showing without it.
@@ -101,7 +104,7 @@ const TenantManager: React.FC = () => {
       ]);
       setTenants(tRes.data?.tenants || []);
       setScope(tRes.data?.scope || '');
-      if (pRes) setPlans(pRes.data?.records || []);
+      if (pRes) setPlans(pRes.data?.plans || []);
       setRoles(rRes?.data?.roles || []);
     } catch (err: any) {
       const s = err?.response?.status;
