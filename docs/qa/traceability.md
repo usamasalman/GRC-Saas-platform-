@@ -1,6 +1,8 @@
 # Requirements traceability
 
-The twelve requirements on the BRD Traceability screen (`GET /api/system/brd`), the tests that exercise each, and what those tests found. The screen marks all twelve **Verified**. The last column is what the tests support.
+The twelve requirements on the BRD Traceability screen (`GET /api/system/brd`), the tests that exercise each, and what those tests found. The last column is what the tests support.
+
+The screen used to mark all twelve **Verified** by string, with a compliance figure of 100. It now takes each status from the defect register (`src/qa/known-defects.json`): a requirement is Verified only while no open defect names it, and the screen lists the defects that do. Today that is 9 of 12 (75%): REQ-07 (QA-011), REQ-08 (QA-017) and REQ-12 (QA-018) show Not verified. `qa-claims-test` keeps it that way.
 
 | ID | Requirement | Tests | Result | Tests support "Verified"? |
 |---|---|---|---|---|
@@ -20,7 +22,7 @@ The twelve requirements on the BRD Traceability screen (`GET /api/system/brd`), 
 ## Reading this table
 
 - **Tests** are the suites that would fail if the requirement broke. A suite named here runs in CI on every push, except the load test.
-- Three of the twelve requirements (REQ-07, 08, 12) are contradicted by a failing check today; REQ-01, 03 and 10 were, until the Phase 1 and 2 fixes. The BRD screen should not say Verified for them until the defects are closed. The simplest honest fix is for that screen to read its status from the build, not from a string in `systemController.ts`.
+- Three of the twelve requirements (REQ-07, 08, 12) are contradicted by a failing check today; REQ-01, 03 and 10 were, until the Phase 1 and 2 fixes. The BRD screen now shows them as Not verified, from the register.
 - REQ-11 needs a journey: run a scan and a phishing campaign against a test target, and check what the screen reports against what happened.
 
 ## Business processes (journeys)

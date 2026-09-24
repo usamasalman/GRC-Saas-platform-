@@ -51,7 +51,7 @@ The load test refuses non-private addresses. The synthetic check only reads, and
 
 ## Defects
 
-A defect found by any suite is pinned to the check that reproduces it in `grc_wisdom_api/scripts/verify/qa/known-defects.js`, and described in [defect-register.md](defect-register.md). The suites read the register:
+A defect found by any suite is pinned to the check that reproduces it in `grc_wisdom_api/src/qa/known-defects.json`, with the requirements it contradicts, and described in [defect-register.md](defect-register.md). The product reads the same file, so the BRD Traceability screen cannot call a requirement Verified while a defect against it is open. The suites read the register:
 
 - a failing check listed there is **known**: the build stays green, the defect is owned and prioritised;
 - a failing check not listed is **new**: the build fails;

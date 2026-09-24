@@ -1,6 +1,6 @@
 # Defect register
 
-Every open defect, the check that reproduces it, and what fixing it involves. The IDs match `grc_wisdom_api/scripts/verify/qa/known-defects.js`; keep the two in step. When a fix makes a check pass, the build fails with `FIXED?` until the entry is removed there and marked Fixed here.
+Every open defect, the check that reproduces it, and what fixing it involves. The IDs match `grc_wisdom_api/src/qa/known-defects.json`, which the build's QA suites read and the BRD Traceability screen reads too: a requirement shows as Verified only while no open defect lists it under `requirements`. Keep the two in step. When a fix makes a check pass, the build fails with `FIXED?` until the entry is removed there and marked Fixed here.
 
 Owner is **TBD** for every entry until someone takes it. Status is **Open** unless stated.
 
@@ -9,8 +9,8 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 | Severity | Open |
 |---|---|
 | High | 3 |
-| Medium | 5 |
-| Low | 1 |
+| Medium | 1 |
+| Low | 0 |
 
 ## Defects pinned to a check
 
@@ -33,43 +33,20 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 
 ### Medium
 
-**QA-024: The platform dashboard shows invented figures**
-- Where: `RealtimeDashboardPage.tsx` falls back to literal numbers when a count is missing (`|| 84` organisations, `|| 81` subscriptions) and writes trends into the markup ("+4 this quarter", "96.4% active", "+18.7% YoY"). They read as measurements.
-- Reproduce: `qa-claims-test` (`claims:dashboards show only figures they computed`).
-- Fix: show a dash where a figure is not computed, and compute the trends or remove them.
+Only QA-021, under Capacity below.
 
 ### Low
 
-None open outside the capacity findings below.
+None open.
 
 ### Capacity
 
 Found by measurement (see [monitoring-and-load.md](monitoring-and-load.md)), pinned by `qa-capacity-test`.
 
-**QA-019 (Medium): The request limit is per network address, so one office of about 25 busy people is refused**
-- Where: `apiLimiter` in `app.ts` has no `keyGenerator`, so it counts per address, 300 a minute. A customer's staff share their office's address.
-- Reproduce: `qa-capacity-test` (`capacity:the request limit is counted per person, not per office address`); `load-test.js` with `OFFICES=1`: 40 people, a screen every ~10 s, 29% refused.
-- Fix: key the limit on the signed-in user, falling back to the address for anonymous calls.
-
-**QA-020 (Medium): Failed sign-ins are counted per address; ten typos in one office lock everyone there out**
-- Where: `authLimiter` in `app.ts` counts failures per address for 15 minutes.
-- Reproduce: `qa-capacity-test` (`capacity:failed sign-ins lock an account, not an office`).
-- Fix: count failures per account (e-mail) and address together, with a much higher per-address ceiling.
-
 **QA-021 (Medium): Lists stop at a fixed number of rows with no paging; records past the cap vanish silently**
 - Where: 31 list handlers use `take: N` (50 to 2,000) and none accepts a page or cursor. The risk register returns 500, sorted by residual score, so the lowest-rated risks disappear without notice.
 - Reproduce: `qa-capacity-test` (`capacity:lists that cap their rows can page past the cap`).
 - Fix: cursor paging on the lists, and a total count so the screen can say "500 of 5,000".
-
-**QA-022 (Medium): Verifying the audit trail loads the whole history into memory**
-- Where: `verifyAuditTrail` (`dbAdminController.ts`) reads every audit row of every organisation in one query each. Measured: +225 MB for 200,000 rows, in one click.
-- Reproduce: `qa-capacity-test` (`capacity:verifying the audit trail reads in batches`).
-- Fix: walk the chain in batches (`take` + cursor), carrying the previous hash between batches.
-
-**QA-023 (Low): Background jobs start in every API process**
-- Where: `server.ts` starts the SLA escalation and risk-review scanners unconditionally, so a second process runs every job twice.
-- Reproduce: `qa-capacity-test` (`capacity:background jobs can be confined to one process`).
-- Fix: start them only where an environment flag says so, and set it on exactly one process.
 
 ## Open items not pinned to a check
 
@@ -94,6 +71,10 @@ Found by the QA work and fixed, kept here so the history is in one place.
 
 | Defect | Fixed in |
 |---|---|
+| QA-024 The platform dashboard showed invented figures (fallback counts, trends in the markup, a chart drawn from fixed points, a made-up plan mix, counts on the shortcut cards). Every figure is now computed from the organisations list, or shown as a dash | `97445e8` |
+| QA-023 Background jobs started in every API process. They run only where `RUN_BACKGROUND_JOBS` is not `false`; set it to `false` on every process but one | `47b804a` |
+| QA-022 Verifying the audit trail loaded the whole history into memory. It reads in batches of 1,000, carrying the chain between batches; a genuine 2,500-row chain verifies and an altered row in the second batch is named | `3090081` |
+| QA-019, QA-020 Limits counted per office address. Requests are counted per signed-in person; failed sign-ins per account and address (10), with a ceiling of 30 per address across accounts. 40 and 80 people behind one address: nothing refused | `ed95f83` |
 | QA-014 The user-management screen blanked the whole app. It takes the signed-in account from the shell; an error boundary now contains any screen that fails; the unused AuthContext is removed | `6986e7c` |
 | QA-005 Tool Review approve and reject called a route that does not exist. They call `/tools/:id/review` | `fae6feb` |
 | QA-010 Tool Review was on the menu of roles that cannot approve. Gated on ONBOARD_TOOL | `6f2d46e` |
