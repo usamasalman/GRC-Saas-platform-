@@ -1,7 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 import path from 'path';
 import authRoutes from './routes/authRoutes';
 import dbAdminRoutes from './routes/dbAdminRoutes';
@@ -94,16 +95,51 @@ app.use(cors({
 // A rateLimiter middleware existed in the tree but was imported by nothing, so
 // nothing was limited. Credential endpoints get a tight budget; the rest of the
 // API gets a ceiling that a real user will never reach but a scraper will.
+//
+// What a limit is counted against matters as much as its size. Everything was
+// counted per network address, and a customer's staff share one: forty people
+// working from one office had 29% of their requests refused on an idle server
+// (QA-019), and ten mistyped passwords anywhere in an office locked everybody
+// there out of signing in for fifteen minutes (QA-020).
+
+/** The caller's address, with IPv6 grouped by /56 as the library recommends. */
+const addressKey = (req: Request) => ipKeyGenerator(req.ip ?? '');
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: true, // only failed attempts count toward the budget
+  // A sign-in attempt counts against the account it names, from that address:
+  // one person's typos are theirs alone. MFA codes and token refreshes carry no
+  // account name and stay per address -- keying them per user would give an
+  // attacker holding a password a fresh budget of guesses at the second factor.
+  keyGenerator: (req) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    return email ? `account:${email}|${addressKey(req)}` : `address:${addressKey(req)}`;
+  },
   message: {
     status: 'error',
     code: 'RATE_LIMITED',
     message: 'Too many attempts. Try again in a few minutes.',
+  },
+});
+
+// And a ceiling per address across every account, so one machine cannot try a
+// common password against account after account. Thirty failed sign-ins in
+// fifteen minutes is far beyond an office's typos and far below spraying.
+const authAddressLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `address:${addressKey(req)}`,
+  message: {
+    status: 'error',
+    code: 'RATE_LIMITED',
+    message: 'Too many failed sign-ins from this network. Try again in a few minutes.',
   },
 });
 
@@ -112,6 +148,22 @@ const apiLimiter = rateLimit({
   limit: 300,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // Per person when the request carries a valid session, per address when it
+  // does not. The token is verified, not just read: an unverified claim would
+  // let anyone mint a new budget per request.
+  keyGenerator: (req) => {
+    const auth = req.headers.authorization;
+    const secret = process.env.JWT_SECRET;
+    if (auth?.startsWith('Bearer ') && secret) {
+      try {
+        const claims = jwt.verify(auth.slice(7), secret) as { id?: string };
+        if (claims?.id) return `user:${claims.id}`;
+      } catch {
+        // Expired or forged: counted by address, and requireAuth refuses it anyway.
+      }
+    }
+    return `address:${addressKey(req)}`;
+  },
   message: {
     status: 'error',
     code: 'RATE_LIMITED',
@@ -160,7 +212,7 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Phase 0 Authentication Routes
-app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/login', authLimiter, authAddressLimiter);
 app.use('/api/auth/mfa', authLimiter);
 app.use('/api/auth/refresh', authLimiter);
 app.use('/api/auth', authRoutes);

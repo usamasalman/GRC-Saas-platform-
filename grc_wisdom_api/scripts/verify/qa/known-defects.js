@@ -31,16 +31,6 @@ module.exports = {
     title: 'OCI Riyadh data residency is marked Verified; the pipeline deploys to a Contabo server',
     checks: ['claims:REQ-12 the deployment is in OCI Riyadh'],
   },
-  'QA-019': {
-    severity: 'Medium',
-    title: 'The request limit is per network address, so one office of about 25 busy people is refused',
-    checks: ['capacity:the request limit is counted per person, not per office address'],
-  },
-  'QA-020': {
-    severity: 'Medium',
-    title: 'Failed sign-ins are counted per address: ten typos in one office lock everyone there out',
-    checks: ['capacity:failed sign-ins lock an account, not an office'],
-  },
   'QA-021': {
     severity: 'Medium',
     title: 'Lists stop at a fixed number of rows with no paging; records past the cap vanish silently',

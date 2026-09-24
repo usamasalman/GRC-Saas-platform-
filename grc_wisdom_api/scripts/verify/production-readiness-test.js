@@ -196,18 +196,43 @@ async function main() {
   // ── 8. Login is rate limited ────────────────────────────────────────────
   console.log('\n8. Rate limiting');
 
-  let limited = false;
-  for (let i = 0; i < 15; i++) {
-    const r = await api('/api/auth/login', {
-      method: 'POST',
-      body: { email: `probe${i}@example.com`, password: 'wrong-password-here' },
-    });
-    if (r.status === 429) { limited = true; break; }
-  }
-  limited
-    ? ok('repeated failed logins are throttled')
-    : bad('repeated failed logins are throttled',
-        '15 failures went through — the rate limiter is not mounted');
+  // Two limits, and both are asserted (QA-020). Failures count against the
+  // account and address together, so one person's typos lock only them out,
+  // not their whole office; and a ceiling per address across all accounts
+  // stops one machine trying a password against account after account.
+  const failUntilLimited = async (attempts, emailFor) => {
+    for (let i = 0; i < attempts; i++) {
+      const r = await api('/api/auth/login', {
+        method: 'POST',
+        body: { email: emailFor(i), password: 'wrong-password-here' },
+      });
+      if (r.status === 429) return i + 1;
+    }
+    return 0;
+  };
+
+  const oneAccount = await failUntilLimited(15, () => 'probe-one@example.com');
+  oneAccount && oneAccount <= 11
+    ? ok(`one account's failed logins are throttled (at attempt ${oneAccount})`)
+    : bad('one account\'s failed logins are throttled',
+        oneAccount ? `only at attempt ${oneAccount}` : '15 failures went through — the rate limiter is not mounted');
+
+  // A different account from the same address is not locked by that one.
+  const neighbour = await api('/api/auth/login', {
+    method: 'POST',
+    body: { email: 'probe-neighbour@example.com', password: 'wrong-password-here' },
+  });
+  neighbour.status === 401
+    ? ok('another account at the same address can still try')
+    : bad('another account at the same address can still try', `HTTP ${neighbour.status}`);
+
+  // Spraying: the address ceiling (30 failures) stops it, 10 or 11 of which
+  // the two probes above have used.
+  const spread = await failUntilLimited(40, (i) => `probe-spray-${i}@example.com`);
+  spread && spread <= 30
+    ? ok(`failed logins spread over many accounts are throttled (at attempt ${spread})`)
+    : bad('failed logins spread over many accounts are throttled',
+        spread ? `only at attempt ${spread}` : '40 failures across accounts went through');
 
   // ── Result ──────────────────────────────────────────────────────────────
   console.log(`\n─── ${pass} passed, ${fail} failed ───\n`);
