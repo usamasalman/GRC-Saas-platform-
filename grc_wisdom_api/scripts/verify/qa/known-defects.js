@@ -56,4 +56,9 @@ module.exports = {
     title: 'Background jobs start in every API process, so a second process would run every job twice',
     checks: ['capacity:background jobs can be confined to one process'],
   },
+  'QA-024': {
+    severity: 'Medium',
+    title: 'The platform dashboard shows invented figures: fallback counts and trends written into the page',
+    checks: ['claims:dashboards show only figures they computed'],
+  },
 };

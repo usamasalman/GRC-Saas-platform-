@@ -64,4 +64,23 @@ const sources = [];
     `the screen says Verified for OCI Riyadh (me-riyadh-1), but the pipeline's deploy job is "${target}"`);
 }
 
+// ─── Dashboards show figures they computed ─────────────────────────────────
+// A number with a literal fallback (`|| 84`) or a trend written into the markup
+// ("+4 this quarter", "+18.7% YoY") reads as a measurement and is not one
+// (QA-024). A dashboard that cannot compute a figure shows a dash.
+{
+  const dir = path.join(q.WEB_SRC, 'pages', 'dashboard');
+  const invented = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.tsx'))) {
+    const lines = q.read(path.join(dir, f)).split('\n');
+    lines.forEach((line, n) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      const hit = line.match(/(\|\||\?\?)\s*\d{2,}\s*\}|[+-]\d+(\.\d+)?%?\s+(this|vs|from last)\s+(quarter|month|week|year)|\d+(\.\d+)?%\s+(active|YoY)|%\s*YoY/);
+      if (hit) invented.push(`${f}:${n + 1} "${hit[0].trim()}"`);
+    });
+  }
+  v.record('claims:dashboards show only figures they computed', invented.length === 0,
+    `${invented.length} invented figure(s): ${invented.join(', ')}`);
+}
+
 v.finish(`${['REQ-08', 'REQ-12'].filter((id) => claim(id).verified).length} of 2 claims checked are marked Verified`);
