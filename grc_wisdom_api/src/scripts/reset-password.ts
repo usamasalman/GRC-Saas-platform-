@@ -19,9 +19,10 @@ const BCRYPT_ROUNDS = 12;
 /**
  * There is deliberately no default password.
  *
- * This script used to fall back to 'Demo@2026' — a value published in the
- * platform guide — so running it with only an email address handed the account
- * a credential anyone could look up.
+ * This script used to fall back to the demo seed's shared password — a value
+ * published in the platform guide — so running it with only an email address
+ * handed the account a credential anyone could look up. (Not quoted here: this
+ * file is compiled into the production image, and comments survive compiling.)
  */
 function generatePassword(): string {
   // Avoids look-alike characters so it can be read off a terminal correctly.

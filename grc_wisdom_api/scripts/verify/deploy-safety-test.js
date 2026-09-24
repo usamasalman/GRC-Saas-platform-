@@ -163,6 +163,82 @@ for (const d of dirs) {
   );
 }
 
+// ─── 5. The production image carries no demo credential ─────────────────────
+//
+// The demo seed gives every account it creates one shared password, and tsc
+// compiled that seed — and the 35 demo accounts in utils/mockData.ts — into
+// dist/, which the Dockerfile copied into the image whole. Nothing the server
+// runs needed any of it. The image now drops them, and these checks keep it so.
+//
+// The password is read out of seed.ts rather than written here, so this file
+// is not one more place that publishes it.
+{
+  const SRC = path.join(API, 'src');
+  const seedSrc = read(API, 'src', 'seed.ts');
+  const mockSrc = read(API, 'src', 'utils', 'mockData.ts');
+
+  const demoPassword = (seedSrc.match(/const DEMO_PASSWORD = '([^']+)'/) || [])[1];
+  ok(Boolean(demoPassword), 'the seed still declares its shared password where this check can find it');
+
+  const secrets = new Set([demoPassword]);
+  for (const m of mockSrc.matchAll(/password:\s*'([^']+)'/g)) secrets.add(m[1]);
+  ok(secrets.size >= 1, 'and the demo accounts\' passwords are collected from the mock data');
+
+  // Every source file that is compiled into the image, except the two the
+  // image deletes.
+  const shipped = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|json)$/.test(e.name)) shipped.push(p);
+    }
+  };
+  walk(SRC);
+  const EXCLUDED = new Set([
+    path.join(SRC, 'seed.ts'),
+    path.join(SRC, 'utils', 'mockData.ts'),
+    path.join(SRC, 'utils', 'seedData.json'),
+  ]);
+
+  const leaks = shipped
+    .filter((p) => !EXCLUDED.has(p))
+    .filter((p) => [...secrets].some((s) => fs.readFileSync(p, 'utf8').includes(s)))
+    .map((p) => path.relative(API, p));
+  ok(
+    leaks.length === 0,
+    'THE PACKET: no file that ships in the image contains a demo password — not in '
+    + 'code, and not in a comment either, because comments survive compiling. '
+    + `Found in: ${leaks.join(', ')}`,
+  );
+
+  // Deleting them is only safe while the server never loads them.
+  const importers = shipped
+    .filter((p) => !EXCLUDED.has(p) && /\.ts$/.test(p))
+    .filter((p) => /utils\/mockData|seedData\.json|from '\.\/seed'|from "\.\/seed"/.test(fs.readFileSync(p, 'utf8')))
+    .map((p) => path.relative(API, p));
+  ok(
+    importers.length === 0,
+    'nothing the server runs imports the demo seed or its data, so the image can '
+    + `drop them without breaking a route. Imported by: ${importers.join(', ')}`,
+  );
+
+  const dockerfile = read(API, 'Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.indexOf('AS runner'));
+  const copyAt = runtime.indexOf('COPY --from=builder /app/dist ./dist');
+  const rmAt = runtime.indexOf('RUN rm -f dist/seed.js');
+  ok(copyAt >= 0, 'the runtime stage copies the compiled output');
+  ok(
+    rmAt > copyAt,
+    'THE PACKET: and then removes the demo seed from it. Removing it before the copy '
+    + 'would delete nothing',
+  );
+  const rmLine = runtime.slice(rmAt, runtime.indexOf('\n\n', rmAt) > 0 ? runtime.indexOf('\n\n', rmAt) : undefined);
+  for (const f of ['dist/seed.js', 'dist/utils/mockData.js', 'dist/utils/seedData.json']) {
+    ok(rmLine.includes(f), `the image drops ${f}`);
+  }
+}
+
 // ─── CI ─────────────────────────────────────────────────────────────────────
 {
   const deploy = read(ROOT, '.github', 'workflows', 'deploy.yml');

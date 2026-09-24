@@ -34,6 +34,22 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma gene
 
 COPY --from=builder /app/dist ./dist
 
+# The demo seed and its data do not ship.
+#
+# seed.js and utils/mockData.js carry the demo accounts and the one password
+# they all share, and utils/seedData.json carries the rest of the demo
+# directory. Nothing the server loads imports any of them — only seed.ts does,
+# and seed.ts refuses to run in production anyway — so they were in this image
+# for no reason except that tsc compiles everything under src/. A production
+# image should hold no credential at all, published or otherwise.
+#
+# Removing them also means `npm run seed:demo` inside this container fails with
+# "Cannot find module" instead of reaching the seed's own refusal. That is the
+# better failure: there is nothing here to run.
+RUN rm -f dist/seed.js dist/seed.js.map dist/seed.d.ts \
+          dist/utils/mockData.js dist/utils/mockData.js.map dist/utils/mockData.d.ts \
+          dist/utils/seedData.json
+
 # uploads/ is a mount point for a named volume. Creating it here with the right
 # ownership means the container does not need to be root to write to it.
 # evidence-store/ is the same arrangement for delivery evidence, and is
