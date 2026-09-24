@@ -2,19 +2,23 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
 
+interface OpenDefect { id: string; severity: string; title: string }
+
 interface SecurityGuard {
   id: string;
   name: string;
+  /** What the guard claims, less any open defect against its requirement. */
   status: string;
-  grade: string;
+  claimedStatus: string;
+  openDefects: OpenDefect[];
   detail: string;
 }
 
 interface SecurityData {
-  securityScore: number;
-  grade: string;
+  verifiedGuards: number;
+  totalGuards: number;
   totalAuditLogs: number;
-  activeSessions: number;
+  activeAccounts: number;
   securityGuards: SecurityGuard[];
 }
 
@@ -107,15 +111,19 @@ const PlatformSecurity: React.FC = () => {
   };
 
   const guards = data?.securityGuards || [];
-  const score = data?.securityScore ?? 98;
-  const logsCount = data?.totalAuditLogs ?? 1420;
+  // A dash where the server has not answered. These used to fall back to a
+  // score of 98, grade A+, 1,420 records and 14 sessions — the fabrication the
+  // note above says was removed, still in place for the case it described
+  // (QA-028).
+  const dash = '—';
+  const openDefects = guards.reduce((n, g) => n + g.openDefects.length, 0);
 
   return (
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Platform Security</h2>
-          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>WORM immutable logs, PDPL encryption, ZATCA e-invoice signatures & SoD security controls</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>The security controls the platform claims, and what the defect register says about each</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={primaryBtn(verifying)} onClick={handleVerifyWorm} disabled={verifying}>
@@ -134,10 +142,10 @@ const PlatformSecurity: React.FC = () => {
       {error && <div style={S.error}>{error}</div>}
 
       <StatStrip items={[
-        ['Security Score', <span style={{ color: 'var(--success)' }}>{score} / 100 ({data?.grade || 'A+'})</span>],
-        ['WORM Audit Records', logsCount.toLocaleString()],
-        ['Active User Sessions', data?.activeSessions ?? 14],
-        ['Encryption Standard', <span style={{ color: 'var(--info)' }}>Saudi PDPL AES-256</span>],
+        ['Guards verified', data ? `${data.verifiedGuards} of ${data.totalGuards}` : dash],
+        ['WORM Audit Records', data ? data.totalAuditLogs.toLocaleString() : dash],
+        ['Active accounts', data ? data.activeAccounts.toLocaleString() : dash],
+        ['Open defects against these guards', data ? openDefects : dash],
       ]} />
 
       {/* WORM Verification Result Banner if verified */}
@@ -177,7 +185,6 @@ const PlatformSecurity: React.FC = () => {
             <tr style={S.headRow}>
               <th style={S.th}>Security Control</th>
               <th style={S.th}>Enforcement State</th>
-              <th style={S.th}>Grade</th>
               <th style={S.th}>Technical Specifications</th>
             </tr>
           </thead>
@@ -189,10 +196,18 @@ const PlatformSecurity: React.FC = () => {
                   <div style={{ fontSize: 10, color: 'var(--ink-muted)' }}>{g.id}</div>
                 </td>
                 <td style={S.td}>
-                  <span style={pill('var(--success)', 'var(--success-line)')}>{g.status}</span>
-                </td>
-                <td style={S.td}>
-                  <span style={pill('var(--info)', 'var(--info-line)')}>{g.grade}</span>
+                  {g.openDefects.length === 0 ? (
+                    <span style={pill('var(--success)', 'var(--success-line)')}>{g.status}</span>
+                  ) : (
+                    <>
+                      <span style={pill('var(--warning)', 'var(--warning-line)')}>{g.status}</span>
+                      {g.openDefects.map((d) => (
+                        <div key={d.id} style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                          {d.id} ({d.severity}): {d.title}
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </td>
                 <td style={{ ...S.td, color: 'var(--ink-muted)' }}>{g.detail}</td>
               </tr>

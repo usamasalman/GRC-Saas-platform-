@@ -20,7 +20,6 @@ interface DashboardMetrics {
   /** Counts, revenue at list price, plan mix and growth, from the organisations list. */
   estate: EstateFigures;
   uptimePercent: number | null;
-  securityScore: number | null;
   tenants: any[];
   attentionItems: any[];
   readinessPhases: any[];
@@ -40,16 +39,14 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
       const platformOnly = (url: string) => (account?.portal === 'saas'
         ? apiClient.get(url)
         : Promise.reject(new Error('platform only')));
-      const [healthRes, secRes, tenantRes, brdRes, docRes] = await Promise.allSettled([
+      const [healthRes, tenantRes, brdRes, docRes] = await Promise.allSettled([
         platformOnly('/api/system/health'),
-        platformOnly('/api/system/security'),
         apiClient.get('/api/tenants'),
         platformOnly('/api/system/brd'),
         apiClient.get('/api/documents'),
       ]);
 
       const health = healthRes.status === 'fulfilled' ? healthRes.value.data : {};
-      const sec = secRes.status === 'fulfilled' ? secRes.value.data : {};
       const tenantsData = tenantRes.status === 'fulfilled' ? tenantRes.value.data : {};
       const brd = brdRes.status === 'fulfilled' ? brdRes.value.data : {};
       const docsData = docRes.status === 'fulfilled' ? docRes.value.data : {};
@@ -66,7 +63,6 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
       setMetrics({
         estate: estateFigures(liveTenants),
         uptimePercent: health.uptimePercent ?? null,
-        securityScore: sec.securityScore ?? null,
         tenants: liveTenants.slice(0, 4),
         // Derived from real signals or not shown at all.
         attentionItems: [],

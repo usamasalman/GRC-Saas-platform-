@@ -167,29 +167,68 @@ export const triggerSystemJob = async (req: AuthenticatedRequest, res: Response)
 
 // ── 2. PLATFORM SECURITY ─────────────────────────────────────────────────
 
+type OpenDefect = { id: string; severity: string; title: string };
+
+/**
+ * The open defects in the register that name any of these requirements.
+ *
+ * The register is the file the build's own QA suites read, so a screen that
+ * takes its status from here cannot disagree with the build about what is
+ * known to be broken. The BRD page, the security posture and the architecture
+ * page all ask it; none of them states a status of its own.
+ */
+function openDefectsFor(requirementIds: string[]): OpenDefect[] {
+  const register: Record<string, { severity: string; title: string; requirements?: string[] }> = knownDefects;
+  return Object.entries(register)
+    .filter(([, d]) => (d.requirements || []).some((r) => requirementIds.includes(r)))
+    .map(([id, d]) => ({ id, severity: d.severity, title: d.title }));
+}
+
+/**
+ * The security guards, each with the requirement that states it.
+ *
+ * This answered a fixed score of 98 and grade A+, and graded every guard A or
+ * A+, including PDPL field encryption and ZATCA signing while the register held
+ * open High defects saying neither is in use (QA-017, QA-011). Nothing computed
+ * any of those grades. A guard now reads as claimed only while no open defect
+ * names its requirement; otherwise it says Not verified and which defects.
+ */
+const SECURITY_GUARDS = [
+  { id: 'SEC-01', name: 'WORM Audit Log Integrity', claimed: 'Enforced', requirements: ['REQ-02'], detail: 'SHA-256 hash chain per organisation. Verify WORM Chain recomputes every entry.' },
+  { id: 'SEC-02', name: 'Saudi PDPL PII Encryption', claimed: 'Active', requirements: ['REQ-08'], detail: 'AES-256-GCM encryption of national ID and phone fields' },
+  { id: 'SEC-03', name: 'ZATCA Phase 2 Cryptographic Signing', claimed: 'Active', requirements: ['REQ-07'], detail: 'ECDSA secp256k1 signatures on UBL 2.1 e-invoices' },
+  { id: 'SEC-04', name: 'Segregation of Duties (SoD) Engine', claimed: 'Enforced', requirements: ['REQ-04'], detail: 'Refuses an author approving their own document or invoice' },
+  { id: 'SEC-05', name: 'JWT Secret Strength', claimed: 'Enforced', requirements: [] as string[], detail: 'The API refuses to start with a signing secret under 32 characters' },
+  { id: 'SEC-06', name: 'Customer-Authorized Support Impersonation', claimed: 'Enforced', requirements: ['REQ-09'], detail: 'Read-only scoped support access with a time limit and a banner' },
+];
+
 export const getSecurityPosture = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'system.security.get');
 
     const totalAuditLogs = await prisma.auditLog.count();
-    const activeSessions = await prisma.user.count({ where: { status: 'Active' } });
+    // Accounts, not sessions: this counts users whose status is Active, and
+    // was labelled "Active User Sessions", which nothing here tracks.
+    const activeAccounts = await prisma.user.count({ where: { status: 'Active' } });
 
-    const securityGuards = [
-      { id: 'SEC-01', name: 'WORM Audit Log Integrity', status: 'Enforced', grade: 'A+', detail: 'Cryptographic SHA-256 hash chaining on immutable SQLite/Postgres logs' },
-      { id: 'SEC-02', name: 'Saudi PDPL PII Encryption', status: 'Active', grade: 'A+', detail: 'AES-256 GCM envelope encryption for National ID and phone numbers' },
-      { id: 'SEC-03', name: 'ZATCA Phase 2 Cryptographic Signing', status: 'Active', grade: 'A+', detail: 'ECDSA secp256k1 signature validation on UBL 2.1 E-Invoices' },
-      { id: 'SEC-04', name: 'Segregation of Duties (SoD) Engine', status: 'Enforced', grade: 'A+', detail: 'Active policy enforcer preventing author-approver conflicts' },
-      { id: 'SEC-05', name: 'JWT & Refresh Token Rotation', status: 'Active', grade: 'A', detail: '32+ char secret enforced with short-lived access tokens & WORM refresh hashes' },
-      { id: 'SEC-06', name: 'Customer-Authorized Support Impersonation', status: 'Enforced', grade: 'A+', detail: 'Read-only scoped support access with mandatory time limit & banner' },
-    ];
+    const securityGuards = SECURITY_GUARDS.map((g) => {
+      const openDefects = openDefectsFor(g.requirements);
+      return {
+        id: g.id, name: g.name, detail: g.detail, requirements: g.requirements,
+        claimedStatus: g.claimed,
+        status: openDefects.length ? 'Not verified' : g.claimed,
+        openDefects,
+      };
+    });
 
     res.json({
       status: 'success',
-      securityScore: 98,
-      grade: 'A+',
+      // Counted, where a score of 98 and an A+ used to be written.
+      verifiedGuards: securityGuards.filter((g) => g.openDefects.length === 0).length,
+      totalGuards: securityGuards.length,
       totalAuditLogs,
-      activeSessions,
+      activeAccounts,
       securityGuards
     });
   } catch (error: any) {
@@ -241,33 +280,61 @@ export const verifyWormIntegrity = async (req: AuthenticatedRequest, res: Respon
 
 // ── 3. OCI RIYADH ARCHITECTURE ────────────────────────────────────────────
 
+/**
+ * The intended production architecture, said to be intended.
+ *
+ * This reported itself as the running deployment: two Riyadh availability
+ * domains ACTIVE, every layer Healthy, a hardware key store holding the ZATCA
+ * key, "100% Kingdom of Saudi Arabia Sovereign Data Residency", ZATCA and CITC
+ * Class 4 Certified, an RPO under a second — while the pipeline deploys to one
+ * Contabo server and the register holds open High defects against residency,
+ * ZATCA and PDPL (QA-018, QA-011, QA-017). Nothing here measures a data
+ * centre, a failover or a certificate, so nothing here says one is running or
+ * held (QA-028). Where a line has a requirement, the register's open defects
+ * against it are attached, as on the BRD page.
+ */
 export const getOciArchitecture = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const residencyDefects = openDefectsFor(['REQ-12']);
     const architecture = {
+      kind: 'target',
+      statement: 'The intended production architecture. It is not a report on the running '
+        + 'deployment: nothing here measures a data centre, a failover or a certificate.',
       region: 'me-riyadh-1 (Oracle Cloud Infrastructure, Riyadh, KSA)',
-      dataResidency: '100% Kingdom of Saudi Arabia Sovereign Data Residency',
+      dataResidency: 'All customer data held in the Kingdom of Saudi Arabia',
+      residency: {
+        status: residencyDefects.length ? 'Not verified' : 'Verified',
+        openDefects: residencyDefects,
+      },
       compliance: [
-        { cert: 'NCA ECC-1:2018', status: 'Compliant', authority: 'Saudi National Cybersecurity Authority' },
-        { cert: 'CITC / CST Cloud Class 4', status: 'Certified', authority: 'Communications, Space & Technology Commission' },
-        { cert: 'Saudi PDPL (Royal Decree No. M/19)', status: 'Enforced', authority: 'Saudi Data & AI Authority (SDAIA)' },
-        { cert: 'ZATCA Phase 2 (Resolution 211026)', status: 'Certified', authority: 'Zakat, Tax and Customs Authority' }
-      ],
+        { cert: 'NCA ECC-1:2018', authority: 'Saudi National Cybersecurity Authority', requirements: [] as string[] },
+        { cert: 'CITC / CST Cloud Class 4', authority: 'Communications, Space & Technology Commission', requirements: [] as string[] },
+        { cert: 'Saudi PDPL (Royal Decree No. M/19)', authority: 'Saudi Data & AI Authority (SDAIA)', requirements: ['REQ-08'] },
+        { cert: 'ZATCA Phase 2 (Resolution 211026)', authority: 'Zakat, Tax and Customs Authority', requirements: ['REQ-07'] },
+      ].map((c) => ({
+        ...c,
+        // A certificate is held or it is not, and this server holds no record
+        // of one. The absence of known defects is not a certificate either.
+        status: 'Target',
+        openDefects: openDefectsFor(c.requirements),
+      })),
       availabilityDomains: [
-        { ad: 'AD-1 (Riyadh Primary Data Center)', status: 'ACTIVE / ONLINE', role: 'Primary Compute & Autonomous Database RAC' },
-        { ad: 'AD-2 (Riyadh Secondary Data Center)', status: 'ACTIVE / STANDBY', role: 'Hot Standby Replication & Synchronous Block Storage' }
+        { ad: 'AD-1 (Riyadh Primary Data Center)', status: 'Target', role: 'Primary compute and database' },
+        { ad: 'AD-2 (Riyadh Secondary Data Center)', status: 'Target', role: 'Standby replication' },
       ],
       infrastructureLayers: [
-        { layer: 'Edge & Ingress', tech: 'OCI WAF + DDoS Shield + Flexible Load Balancer', status: 'Healthy', details: 'TLS 1.3, HSTS Enforced, Saudi POP' },
-        { layer: 'Compute Cluster', tech: 'OCI Container Engine for Kubernetes (OKE)', status: 'Healthy', details: 'Multi-AD node pools, auto-scaling' },
-        { layer: 'Database Tier', tech: 'OCI Autonomous Database (PostgreSQL / SQLite Dev)', status: 'Healthy', details: 'Automated WAL archiving, WORM retention' },
-        { layer: 'HSM & Crypto', tech: 'OCI Vault Dedicated Key Management (KMS)', status: 'Healthy', details: 'Hardware Security Module for ZATCA secp256k1' },
-        { layer: 'Storage & Backup', tech: 'OCI Object Storage (WORM Compliance Lock)', status: 'Healthy', details: 'Immutable document evidence store' }
+        { layer: 'Edge & Ingress', tech: 'OCI WAF + DDoS protection + load balancer', status: 'Target', details: 'TLS 1.3, HSTS' },
+        { layer: 'Compute Cluster', tech: 'OCI Container Engine for Kubernetes (OKE)', status: 'Target', details: 'Node pools across both domains' },
+        { layer: 'Database Tier', tech: 'PostgreSQL', status: 'Target', details: 'WAL archiving and point-in-time recovery' },
+        { layer: 'HSM & Crypto', tech: 'OCI Vault key management', status: 'Target', details: 'Keys for ZATCA signing and PDPL field encryption' },
+        { layer: 'Storage & Backup', tech: 'OCI Object Storage with retention lock', status: 'Target', details: 'Evidence and backups' },
       ],
+      // Objectives, not measurements: nothing here has timed a failover.
       metrics: {
-        rpoSeconds: '< 1 second (Synchronous Data Guard)',
-        rtoMinutes: '< 15 minutes (Automated AD Failover)',
-        latencyInternalMs: '0.4 ms inter-AD interconnect'
-      }
+        rpoSeconds: 'Objective: under 1 second',
+        rtoMinutes: 'Objective: under 15 minutes',
+        latencyInternalMs: 'Not measured',
+      },
     };
 
     res.json({ status: 'success', architecture });
@@ -302,11 +369,8 @@ export const getBrdTraceability = async (req: AuthenticatedRequest, res: Respons
     // figure of 100, while failing checks contradicted six of them. The
     // register is the file the build's own QA suites read, so the screen and
     // the build cannot disagree about what is known to be broken.
-    const register: Record<string, { severity: string; title: string; requirements?: string[] }> = knownDefects;
     const matrix = traceMatrix.map((m) => {
-      const openDefects = Object.entries(register)
-        .filter(([, d]) => (d.requirements || []).includes(m.id))
-        .map(([id, d]) => ({ id, severity: d.severity, title: d.title }));
+      const openDefects = openDefectsFor([m.id]);
       return { ...m, claimedStatus: m.status, status: openDefects.length ? 'Not verified' : m.status, openDefects };
     });
     const verifiedCount = matrix.filter((m) => m.status === 'Verified').length;

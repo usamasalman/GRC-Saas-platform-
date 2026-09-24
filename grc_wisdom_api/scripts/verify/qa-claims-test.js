@@ -113,7 +113,14 @@ const sources = [];
     lines.forEach((line, n) => {
       if (/^\s*(\/\/|\*)/.test(line)) return;
       const hit = line.match(new RegExp([
-        /(\|\||\?\?)\s*\d{2,}\s*\}/.source, // a literal fallback for a count
+        // A literal fallback for a count, in markup or out of it: `?? 98;` and
+        // `?? 14]` gave the security screen a score of 98 and 14 sessions
+        // whenever it could not read the real ones, and the `}`-only form of
+        // this pattern walked past both (QA-028).
+        /(\|\||\?\?)\s*\d{2,}\s*[}\];,)]/.source,
+        /(\|\||\?\?)\s*'[A-F][+-]?'/.source, // a fallback grade, "A+"
+        // A standing no screen can observe, written into the screen.
+        /status:\s*'(Certified|Compliant|Healthy|ACTIVE \/ (ONLINE|STANDBY))'/.source,
         /[+-]\d+(\.\d+)?%?\s+(this|vs|from last)\s+(quarter|month|week|year)/.source, // a trend
         /\d+(\.\d+)?%\s+(active|YoY)|%\s*YoY/.source,
         /\b\d+\s+(open\s+)?(tickets|users|tools|organi[sz]ations|expiries|subscriptions)\b/.source, // a count in prose
@@ -128,6 +135,33 @@ const sources = [];
   }
   v.record('claims:dashboards show only figures they computed', invented.length === 0,
     `${invented.length} invented figure(s): ${invented.join(', ')}`);
+}
+
+// ─── The security posture and the architecture state nothing unmeasured ────
+// Both answered fixed text: a security score of 98 and grade A+, PDPL
+// encryption and ZATCA signing "Active", ZATCA and CITC "Certified", two
+// Riyadh data centres ACTIVE and every layer Healthy — while the register held
+// open High defects against PDPL, ZATCA and residency, and the pipeline deploys
+// to one Contabo server (QA-028). A status now comes from the register, as it
+// does on the BRD page; a score nothing computes is not given.
+{
+  const src = q.strip(q.read(path.join(q.API_SRC, 'controllers', 'systemController.ts')));
+  const bodyOf = (name) => {
+    const at = src.indexOf(`export const ${name}`);
+    const next = src.indexOf('\nexport ', at + 1);
+    return at < 0 ? '' : src.slice(at, next > 0 ? next : src.length);
+  };
+  const fixed = /securityScore:\s*\d|grade:\s*'|'(Certified|Compliant|Healthy|Enforced|ACTIVE \/ (ONLINE|STANDBY))'/;
+  const stated = ['getSecurityPosture', 'getOciArchitecture'].filter((n) => fixed.test(bodyOf(n)) || !/openDefectsFor\(/.test(bodyOf(n)));
+  // The guards' claims live in one table; each is shown only after the
+  // register has been asked about its requirement.
+  const table = src.slice(src.indexOf('const SECURITY_GUARDS'), src.indexOf('export const getSecurityPosture'));
+  const unanchored = [...table.matchAll(/id:\s*'(SEC-\d+)'[^}]*?requirements:/g)].length !== [...table.matchAll(/id:\s*'SEC-\d+'/g)].length;
+  v.record('claims:the security and architecture pages state no status nothing measured',
+    stated.length === 0 && !unanchored && /grade:\s*'/.test(table) === false,
+    stated.length
+      ? `${stated.join(' and ')} answer(s) a fixed status or score instead of asking the defect register`
+      : 'a security guard has no requirement to be checked against');
 }
 
 v.finish(`${['REQ-08', 'REQ-12'].filter((id) => claim(id).verified).length} of 2 claims checked are marked Verified`);
