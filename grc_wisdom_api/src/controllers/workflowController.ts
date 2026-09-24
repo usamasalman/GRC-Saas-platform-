@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { resolveTenantScope } from '../services/scopeResolver';
 import {
   decide, cancelRun, pendingStepsFor, parseSteps, WorkflowError,
@@ -51,7 +52,8 @@ export const listRuns = async (req: AuthenticatedRequest, res: Response): Promis
     if (status) where.status = status;
     if (subjectType) where.subjectType = subjectType;
 
-    const runs = await prisma.workflowRun.findMany({
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [runs, total, byStatus] = await Promise.all([prisma.workflowRun.findMany({
       where,
       include: {
         definition: { select: { key: true, name: true } },
@@ -62,19 +64,25 @@ export const listRuns = async (req: AuthenticatedRequest, res: Response): Promis
           orderBy: { stepIndex: 'asc' },
         },
       },
-      orderBy: { startedAt: 'desc' },
-      take: 200,
-    });
+      orderBy: [{ startedAt: 'desc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    prisma.workflowRun.count({ where }),
+    // Counted in the database over every run, not over the page (QA-021).
+    prisma.workflowRun.groupBy({ by: ['status'], where, _count: { _all: true } })]);
+    const countOf = (s: string) => byStatus.find((g) => g.status === s)?._count._all ?? 0;
 
     res.json({
       status: 'success',
       scope: scope.kind,
       count: runs.length,
       totals: {
-        running: runs.filter((r) => r.status === 'RUNNING').length,
-        completed: runs.filter((r) => r.status === 'COMPLETED').length,
-        rejected: runs.filter((r) => r.status === 'REJECTED').length,
+        running: countOf('RUNNING'),
+        completed: countOf('COMPLETED'),
+        rejected: countOf('REJECTED'),
       },
+      paging: pageInfo(total, page),
       runs,
     });
   } catch (error: any) {

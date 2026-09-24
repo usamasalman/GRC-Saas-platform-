@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { PromptDialog } from '../../components/Dialog';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 
 interface SlaState { state: string; minutesRemaining: number | null }
@@ -47,6 +49,10 @@ const ServiceDesk: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [slaFilter, setSlaFilter] = useState('');
   const [search, setSearch] = useState('');
+  // Paged (QA-021); the filters and the search go to the server with the page.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const settledSearch = useDebounced(search);
 
   const [showRaise, setShowRaise] = useState(false);
   const [form, setForm] = useState({ catalogItemId: '', subject: '', description: '', impact: '', urgency: '' });
@@ -61,18 +67,26 @@ const ServiceDesk: React.FC = () => {
     setLoading(true); setError('');
     try {
       const [tRes, cRes, iRes] = await Promise.all([
-        apiClient.get('/api/itsm/tickets'),
+        apiClient.get('/api/itsm/tickets', {
+          params: {
+            page,
+            status: statusFilter || undefined,
+            slaState: slaFilter || undefined,
+            search: settledSearch.trim() || undefined,
+          },
+        }),
         apiClient.get('/api/itsm/catalog').catch(() => null),
         apiClient.get('/api/itsm/workflows/inbox').catch(() => null),
       ]);
       setTickets(tRes.data?.tickets || []);
       setTotals(tRes.data?.totals || {});
+      setPaging(tRes.data?.paging || null);
       setScope(tRes.data?.scope || '');
       setCatalog(cRes?.data?.items || []);
       setInbox(iRes?.data?.steps || []);
     } catch (err) { setError(apiError(err, 'Failed to load the service desk')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, statusFilter, slaFilter, settledSearch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -186,12 +200,12 @@ const ServiceDesk: React.FC = () => {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input placeholder="Search subject or service…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 260 }} />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...S.input, maxWidth: 180 }}>
+        <input placeholder="Search subject or service…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} style={{ ...S.input, maxWidth: 260 }} />
+        <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }} style={{ ...S.input, maxWidth: 180 }}>
           <option value="">All statuses</option>
           {['New', 'Pending Approval', 'In Progress', 'Pending Customer', 'Resolved', 'Closed', 'Cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value)} style={{ ...S.input, maxWidth: 170 }}>
+        <select value={slaFilter} onChange={(e) => { setPage(1); setSlaFilter(e.target.value); }} style={{ ...S.input, maxWidth: 170 }}>
           <option value="">All SLA states</option>
           {['breached', 'at-risk', 'on-track', 'met'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -254,6 +268,7 @@ const ServiceDesk: React.FC = () => {
               )}
             </tbody>
           </table>
+          <PagingBar paging={paging} onPage={setPage} noun="tickets" disabled={loading} />
         </div>
       )}
 

@@ -123,6 +123,13 @@ const TicketQueues: React.FC = () => {
                         ))}
                       </tbody>
                     </table>
+                    {/* A queue lists its 100 most urgent tickets; its count is
+                        every open ticket in it (QA-021). */}
+                    {q.total > q.tickets.length && (
+                      <div style={{ padding: '8px 2px', fontSize: 12, color: 'var(--ink-muted)' }}>
+                        Showing the {q.tickets.length} most urgent of {q.total} open tickets in this queue. The Service Desk lists them all.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

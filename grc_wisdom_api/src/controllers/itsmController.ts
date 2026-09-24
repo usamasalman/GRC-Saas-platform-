@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { computePriority, computeSlaTargets, slaStateOf, DEFAULT_SLA, runEscalationScan } from '../services/slaService';
@@ -29,15 +30,30 @@ export const listTickets = async (req: AuthenticatedRequest, res: Response): Pro
     if (assignedTeam) where.assignedTeam = assignedTeam;
     if (mine === 'true') where.assigneeId = req.user!.id;
     if (search) {
-      where.OR = [
-        { subject: { contains: search } },
-        { description: { contains: search } },
-        { service: { contains: search } },
-      ];
+      const has = { contains: search, mode: 'insensitive' as const };
+      where.OR = [{ subject: has }, { description: has }, { service: has }];
     }
 
-    const tickets = await prisma.ticket.findMany({
+    // Every matching ticket, only what the figures and the SLA filter need.
+    // SLA state is derived from dates, so it is judged here over the whole
+    // queue, the page is taken from the result, and only that page is fetched
+    // in full: pages, count and totals all describe the same tickets (QA-021).
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const whole = await prisma.ticket.findMany({
       where,
+      select: {
+        id: true, status: true, assigneeId: true, slaResolveAt: true, resolvedAt: true,
+        workflowRun: { select: { status: true } },
+      },
+      orderBy: [{ slaResolveAt: 'asc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+    });
+    const judged = whole.map((t) => ({ ...t, sla: slaStateOf(t) }));
+    const matching = slaState ? judged.filter((t) => t.sla.state === slaState) : judged;
+    const total = matching.length;
+    const pageIds = matching.slice(page.skip, page.skip + page.take).map((t) => t.id);
+
+    const fetched = await prisma.ticket.findMany({
+      where: { id: { in: pageIds } },
       include: {
         requester: { select: { id: true, name: true, email: true } },
         assignee: { select: { id: true, name: true, email: true } },
@@ -46,20 +62,18 @@ export const listTickets = async (req: AuthenticatedRequest, res: Response): Pro
         workflowRun: { select: { id: true, status: true, currentStep: true } },
         _count: { select: { comments: true, workNotes: true } },
       },
-      orderBy: [{ slaResolveAt: 'asc' }, { updatedAt: 'desc' }],
-      take: 500,
     });
+    const byId = new Map(fetched.map((t) => [t.id, t]));
+    const filtered = pageIds.map((id) => byId.get(id)!).filter(Boolean).map((t) => ({ ...t, sla: slaStateOf(t) }));
 
-    const enriched = tickets.map((t) => ({ ...t, sla: slaStateOf(t) }));
-    const filtered = slaState ? enriched.filter((t) => t.sla.state === slaState) : enriched;
-
-    const open = enriched.filter((t) => !CLOSED.includes(t.status));
+    const open = judged.filter((t) => !CLOSED.includes(t.status));
     res.json({
       status: 'success',
       scope: scope.kind,
       count: filtered.length,
+      paging: pageInfo(total, page),
       totals: {
-        total: enriched.length,
+        total: judged.length,
         open: open.length,
         breached: open.filter((t) => t.sla.state === 'breached').length,
         atRisk: open.filter((t) => t.sla.state === 'at-risk').length,
@@ -391,12 +405,18 @@ export const addComment = async (req: AuthenticatedRequest, res: Response): Prom
 export const listQueues = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
+    // Every open ticket, so each queue's counts are true; stopping at 500
+    // made a large queue look smaller than it is (QA-021). Each queue lists its
+    // most urgent tickets, and says how many it holds in all.
     const tickets = await prisma.ticket.findMany({
       where: { tenantId: { in: scope.tenantIds }, status: { notIn: CLOSED } },
-      include: { assignee: { select: { id: true, name: true } } },
-      orderBy: { slaResolveAt: 'asc' },
-      take: 500,
+      select: {
+        id: true, subject: true, priority: true, status: true, assigneeId: true, assignedTeam: true,
+        slaResolveAt: true, resolvedAt: true, assignee: { select: { id: true, name: true } },
+      },
+      orderBy: [{ slaResolveAt: 'asc' }, { id: 'asc' }],
     });
+    const LISTED_PER_QUEUE = 100;
 
     const groups = new Map<string, any>();
     for (const t of tickets) {
@@ -411,7 +431,7 @@ export const listQueues = async (req: AuthenticatedRequest, res: Response): Prom
       if (sla.state === 'at-risk') g.atRisk++;
       if (!t.assigneeId) g.unassigned++;
       g.byPriority[t.priority] = (g.byPriority[t.priority] || 0) + 1;
-      g.tickets.push({
+      if (g.tickets.length < LISTED_PER_QUEUE) g.tickets.push({
         id: t.id, subject: t.subject, priority: t.priority, status: t.status,
         assignee: t.assignee, sla, slaResolveAt: t.slaResolveAt,
       });
@@ -478,10 +498,11 @@ export const getSlaOverview = async (req: AuthenticatedRequest, res: Response): 
       orderBy: [{ priority: 'asc' }],
     });
 
+    // Every ticket in scope, only these columns: compliance figures computed
+    // from the first 1,000 tickets were not the organisation's figures (QA-021).
     const tickets = await prisma.ticket.findMany({
       where: { tenantId: { in: scope.tenantIds } },
       select: { id: true, subject: true, priority: true, status: true, slaResolveAt: true, resolvedAt: true, escalationLevel: true, assignedTeam: true },
-      take: 1000,
     });
 
     const byPriority: Record<string, any> = {};
@@ -515,7 +536,11 @@ export const getSlaOverview = async (req: AuthenticatedRequest, res: Response): 
         isPlatform: p.tenantId === null,
       })),
       summary: rows,
-      breached: breachedList.slice(0, 50),
+      // The 50 longest overdue, and how many there are in all.
+      breachedTotal: breachedList.length,
+      breached: breachedList
+        .sort((a, b) => (a.slaResolveAt?.getTime() ?? 0) - (b.slaResolveAt?.getTime() ?? 0))
+        .slice(0, 50),
     });
   } catch (error: any) {
     console.error('[SLA Overview Error]:', error);
@@ -548,20 +573,35 @@ export const listArticles = async (req: AuthenticatedRequest, res: Response): Pr
       where.authorId = req.user!.id;
     }
     if (search) {
-      where.AND = [{ OR: [{ title: { contains: search } }, { body: { contains: search } }] }];
+      const has = { contains: search, mode: 'insensitive' as const };
+      // Title, body and tags, as the screen searched them before the search moved here.
+      where.AND = [{ OR: [{ title: has }, { body: has }, { tags: has }] }];
     }
 
-    const articles = await prisma.knowledgeArticle.findMany({
-      where,
-      include: { author: { select: { name: true, email: true } } },
-      orderBy: [{ viewCount: 'desc' }, { updatedAt: 'desc' }],
-      take: 200,
-    });
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [articles, total, categoryRows] = await Promise.all([
+      prisma.knowledgeArticle.findMany({
+        where,
+        include: { author: { select: { name: true, email: true } } },
+        orderBy: [{ viewCount: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.knowledgeArticle.count({ where }),
+      // Every category with an article the caller can see, not only those on
+      // this page: the category filter would otherwise lose options (QA-021).
+      prisma.knowledgeArticle.findMany({
+        where: { ...where, category: undefined },
+        distinct: ['category'],
+        select: { category: true },
+      }),
+    ]);
 
     res.json({
       status: 'success',
       count: articles.length,
-      categories: [...new Set(articles.map((a) => a.category))].sort(),
+      paging: pageInfo(total, page),
+      categories: categoryRows.map((c) => c.category).sort(),
       articles: articles.map((a) => ({
         ...a,
         tags: (() => { try { return JSON.parse(a.tags); } catch { return []; } })(),

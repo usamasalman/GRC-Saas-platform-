@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 
 interface Article {
   id: string; title: string; body: string; category: string;
@@ -16,6 +18,10 @@ const KnowledgeBase: React.FC = () => {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  // Paged (QA-021); the category and the search go to the server with the page.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const settledSearch = useDebounced(search);
   const [reading, setReading] = useState<Article | null>(null);
 
   const [showNew, setShowNew] = useState(false);
@@ -26,12 +32,15 @@ const KnowledgeBase: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res = await apiClient.get('/api/itsm/knowledge');
+      const res = await apiClient.get('/api/itsm/knowledge', {
+        params: { page, category: categoryFilter || undefined, search: settledSearch.trim() || undefined },
+      });
       setArticles(res.data?.articles || []);
       setCategories(res.data?.categories || []);
+      setPaging(res.data?.paging || null);
     } catch (err) { setError(apiError(err, 'Failed to load the knowledge base')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, categoryFilter, settledSearch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -89,8 +98,8 @@ const KnowledgeBase: React.FC = () => {
       ]} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input placeholder="Search title, body or tag…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 320 }} />
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ ...S.input, maxWidth: 200 }}>
+        <input placeholder="Search title, body or tag…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} style={{ ...S.input, maxWidth: 320 }} />
+        <select value={categoryFilter} onChange={(e) => { setPage(1); setCategoryFilter(e.target.value); }} style={{ ...S.input, maxWidth: 200 }}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -131,6 +140,7 @@ const KnowledgeBase: React.FC = () => {
           ))}
         </div>
       )}
+      <PagingBar paging={paging} onPage={setPage} noun="articles" disabled={loading} />
 
       {reading && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: 20 }}>

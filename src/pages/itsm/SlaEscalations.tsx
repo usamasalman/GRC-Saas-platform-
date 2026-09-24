@@ -24,6 +24,8 @@ const SlaEscalations: React.FC = () => {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [breached, setBreached] = useState<any[]>([]);
+  // The list shows the 50 longest overdue; this is how many there are (QA-021).
+  const [breachedTotal, setBreachedTotal] = useState(0);
   const [scope, setScope] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -75,6 +77,7 @@ const SlaEscalations: React.FC = () => {
       setPolicies(res.data?.policies || []);
       setSummary(res.data?.summary || []);
       setBreached(res.data?.breached || []);
+      setBreachedTotal(res.data?.breachedTotal ?? (res.data?.breached || []).length);
       setScope(res.data?.scope || '');
     } catch (err) { setError(apiError(err, 'Failed to load SLA data')); }
     finally { setLoading(false); }
@@ -212,7 +215,11 @@ const SlaEscalations: React.FC = () => {
           </div>
 
           <h3 style={{ fontSize: 15, color: 'var(--ink)', margin: '0 0 10px' }}>
-            Breached tickets {breached.length > 0 && <span style={{ color: 'var(--danger)' }}>({breached.length})</span>}
+            Breached tickets {breachedTotal > 0 && (
+              <span style={{ color: 'var(--danger)' }}>
+                ({breachedTotal > breached.length ? `the ${breached.length} longest overdue of ${breachedTotal}` : breachedTotal})
+              </span>
+            )}
           </h3>
           {breached.length === 0 ? (
             <div style={{ ...S.card, padding: 30, textAlign: 'center', color: 'var(--success)', borderStyle: 'dashed', borderColor: 'var(--success-line)' }}>
