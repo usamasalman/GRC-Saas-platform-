@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import apiClient from '../../api/apiClient';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
 import { S, pill, ghostBtn, StatStrip, apiError } from '../iam/iamStyles';
 import { calendarDate } from '../../utils/calendarDate';
 
@@ -64,6 +65,10 @@ interface Coverage {
 export default function AcknowledgementTracker() {
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021); the two counts above the list cover every request.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const [waiting, setWaiting] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -81,15 +86,17 @@ export default function AcknowledgementTracker() {
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get('/api/documents/my-acknowledgements');
+      const res = await apiClient.get('/api/documents/my-acknowledgements', { params: { page } });
       setRows(res.data?.requests || []);
+      setPaging(res.data?.paging || null);
+      setWaiting(res.data?.outstanding ?? 0);
     } catch (e: any) {
       setError(apiError(e, 'Your acknowledgements could not be loaded.'));
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -126,7 +133,7 @@ export default function AcknowledgementTracker() {
     }
   };
 
-  const outstanding = rows.filter((r) => !r.acknowledgedByMe);
+  // Only a fallback for the count before the server's paging arrives.
   const signed = rows.filter((r) => r.acknowledgedByMe);
 
   if (loading && rows.length === 0) {
@@ -151,8 +158,8 @@ export default function AcknowledgementTracker() {
       )}
 
       <StatStrip items={[
-        ['Waiting on you', outstanding.length],
-        ['Acknowledged', signed.length],
+        ['Waiting on you', waiting],
+        ['Acknowledged', paging ? paging.total - waiting : signed.length],
       ]} />
 
       {rows.length === 0 ? (
@@ -222,6 +229,7 @@ export default function AcknowledgementTracker() {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="documents" disabled={loading} />
         </div>
       )}
 

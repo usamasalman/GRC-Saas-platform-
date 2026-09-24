@@ -3,6 +3,7 @@ import apiClient from '../../api/apiClient';
 import Can, { MAY } from '../../components/Can';
 import FormDialog from '../../components/FormDialog';
 import { ReasonDialog } from '../../components/Dialog';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
 import { S, primaryBtn, ghostBtn, pill, apiError, StatStrip } from '../iam/iamStyles';
 import { calendarDate } from '../../utils/calendarDate';
 
@@ -67,6 +68,9 @@ const RetentionSchedules: React.FC = () => {
   const [summary, setSummary] = useState<any>(null);
   const [queueReadable, setQueueReadable] = useState(true);
   const [loading, setLoading] = useState(true);
+  // The disposition queue is paged (QA-021); its summary covers every document.
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePaging, setQueuePaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
@@ -87,8 +91,9 @@ const RetentionSchedules: React.FC = () => {
     }
 
     try {
-      const q = await apiClient.get('/api/retention/queue');
+      const q = await apiClient.get('/api/retention/queue', { params: { page: queuePage } });
       setQueue(q.data?.queue || []);
+      setQueuePaging(q.data?.paging || null);
       setHeld(q.data?.held || []);
       setSummary(q.data?.summary || null);
       setQueueReadable(true);
@@ -99,7 +104,7 @@ const RetentionSchedules: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [queuePage]);
 
   const save = async (values: Record<string, string>) => {
     setBusy(true);
@@ -298,6 +303,7 @@ const RetentionSchedules: React.FC = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {queue.map((d) => row(d, true))}
+          <PagingBar paging={queuePaging} onPage={setQueuePage} noun="documents due" disabled={loading} />
         </div>
       )}
 

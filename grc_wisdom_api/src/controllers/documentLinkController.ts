@@ -106,36 +106,74 @@ export const listDocumentLinks = async (
  * endpoints, because the rule about which ones are reachable — own-tenant rows
  * plus platform library entries — belongs in one place, and the write path
  * enforces exactly the same rule.
+ *
+ * This feeds a picker, so it is searched rather than paged: `?q=` narrows every
+ * row the organisation can reach, and `?kind=` asks for one list only. Each list
+ * returns at most PICKER_LIMIT matches with the true total beside it, so the
+ * picker can say "showing 1,000 of 1,432 — search to narrow". The lists used to
+ * stop at 500 and 1,000 without a word, and whatever sorted after the cut-off
+ * could not be linked at all (QA-021).
  */
+const PICKER_LIMIT = 1000;
+const LINK_KINDS = ['control', 'risk', 'clause'] as const;
+
 export const linkOptions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const tenantId = req.user!.tenantId;
     const reach = { OR: [{ tenantId: null }, { tenantId }] };
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : '';
+    if (kind && !(LINK_KINDS as readonly string[]).includes(kind)) {
+      res.status(400).json({ status: 'error', message: `kind must be one of: ${LINK_KINDS.join(', ')}` });
+      return;
+    }
+    const wants = (k: typeof LINK_KINDS[number]) => !kind || kind === k;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const like = { contains: q, mode: 'insensitive' as const };
 
-    const [controls, risks, clauses] = await Promise.all([
-      prisma.control.findMany({
-        where: reach,
+    const controlWhere = q
+      ? { AND: [reach, { OR: [{ code: like }, { title: like }, { domain: like }] }] }
+      : reach;
+    const riskWhere = q
+      ? { tenantId, OR: [{ ref: like }, { title: like }, { category: like }] }
+      : { tenantId };
+    // Only clauses of frameworks this organisation has enabled. Offering
+    // every clause in the library would bury the ones that apply.
+    const enabled = { enablements: { some: { tenantId } } };
+    const clauseWhere = q
+      ? { standard: enabled, OR: [{ ref: like }, { title: like }, { standard: { code: like } }] }
+      : { standard: enabled };
+
+    const none = Promise.resolve([] as never[]);
+    const zero = Promise.resolve(0);
+    const [controls, risks, clauses, controlTotal, riskTotal, clauseTotal, enabledFrameworks] = await Promise.all([
+      wants('control') ? prisma.control.findMany({
+        where: controlWhere,
         select: { id: true, code: true, title: true, domain: true },
-        orderBy: { code: 'asc' },
-        take: 500,
-      }),
-      prisma.risk.findMany({
-        where: { tenantId },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+        take: PICKER_LIMIT,
+      }) : none,
+      wants('risk') ? prisma.risk.findMany({
+        where: riskWhere,
         select: { id: true, ref: true, title: true, category: true },
-        orderBy: { ref: 'asc' },
-        take: 500,
-      }),
-      // Only clauses of frameworks this organisation has enabled. Offering
-      // every clause in the library would bury the ones that apply.
-      prisma.standardClause.findMany({
-        where: { standard: { enablements: { some: { tenantId } } } },
+        orderBy: [{ ref: 'asc' }, { id: 'asc' }],
+        take: PICKER_LIMIT,
+      }) : none,
+      wants('clause') ? prisma.standardClause.findMany({
+        where: clauseWhere,
         select: {
           id: true, ref: true, title: true,
           standard: { select: { id: true, code: true } },
         },
-        orderBy: [{ standard: { code: 'asc' } }, { ref: 'asc' }],
-        take: 1000,
-      }),
+        orderBy: [{ standard: { code: 'asc' } }, { ref: 'asc' }, { id: 'asc' }],
+        take: PICKER_LIMIT,
+      }) : none,
+      wants('control') ? prisma.control.count({ where: controlWhere }) : zero,
+      wants('risk') ? prisma.risk.count({ where: riskWhere }) : zero,
+      wants('clause') ? prisma.standardClause.count({ where: clauseWhere }) : zero,
+      // An empty clause list means one of two different things and the screen
+      // has to say which: no framework enabled, or frameworks with no clauses.
+      // Counted from the enablements themselves, not from the clauses listed.
+      prisma.standard.count({ where: enabled }),
     ]);
 
     res.json({
@@ -149,9 +187,9 @@ export const linkOptions = async (req: AuthenticatedRequest, res: Response): Pro
         standardId: c.standard.id,
         standardCode: c.standard.code,
       })),
-      // An empty clause list means one of two different things and the screen
-      // has to say which: no framework enabled, or frameworks with no clauses.
-      enabledFrameworks: [...new Set(clauses.map((c) => c.standard.code))].length,
+      totals: { controls: controlTotal, risks: riskTotal, clauses: clauseTotal },
+      limit: PICKER_LIMIT,
+      enabledFrameworks,
     });
   } catch (error: any) {
     console.error('[Link Options Error]:', error);

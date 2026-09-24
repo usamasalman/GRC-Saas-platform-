@@ -2,6 +2,7 @@ import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { hasCapability, CAP } from '../services/capabilityEngine';
@@ -83,17 +84,21 @@ async function approversFor(
 export const listSessions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
-    const sessions = await prisma.impersonationSession.findMany({
-      where: { tenantId: { in: scope.tenantIds } },
+    const where = { tenantId: { in: scope.tenantIds } };
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [sessions, total] = await Promise.all([prisma.impersonationSession.findMany({
+      where,
       include: {
         requestedBy: { select: { id: true, name: true, email: true, role: true } },
         subjectUser: { select: { id: true, name: true, email: true, role: true } },
         approvedBy: { select: { id: true, name: true, email: true } },
         tenant: { select: { id: true, name: true } },
       },
-      orderBy: { requestedAt: 'desc' },
-      take: 200,
-    });
+      orderBy: [{ requestedAt: 'desc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    prisma.impersonationSession.count({ where })]);
 
     // Who can act on each pending row, resolved once per tenant rather than
     // once per session. The register used to say only "awaiting customer",
@@ -118,6 +123,7 @@ export const listSessions = async (req: AuthenticatedRequest, res: Response): Pr
       status: 'success',
       scope: scope.kind,
       count: sessions.length,
+      paging: pageInfo(total, page),
       sessions: sessions.map((s) => ({
         ...s,
         // Derived so the UI never has to recompute expiry logic.

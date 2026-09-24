@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { generateHash } from '../utils/cryptoUtils';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
@@ -660,7 +661,9 @@ export const documentAccessHistory = async (
       return;
     }
 
-    const PAGE = 500;
+    // A page at a time: the history stopped at 500 reading days, and what was
+    // read before those could not be reached at all (QA-021).
+    const page = readPage(req.query as Record<string, unknown>, 500);
 
     // The totals are computed over EVERY row, not over the page.
     //
@@ -672,8 +675,9 @@ export const documentAccessHistory = async (
       prisma.documentAccess.findMany({
         where: { documentId: id, tenantId },
         include: { user: { select: { id: true, name: true, email: true, role: true } } },
-        orderBy: { firstAt: 'desc' },
-        take: PAGE,
+        orderBy: [{ firstAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
       }),
       prisma.documentAccess.groupBy({
         by: ['userId'],
@@ -697,8 +701,9 @@ export const documentAccessHistory = async (
       count: rows.length,
       // Said, because a list of 500 that stops is indistinguishable from a
       // list of 500 that ends.
-      truncated: summary.windows > rows.length,
-      pageSize: PAGE,
+      truncated: page.skip + rows.length < summary.windows,
+      pageSize: page.pageSize,
+      paging: pageInfo(summary.windows, page),
       summary,
       access: rows.map((r) => ({
         id: r.id,
@@ -1380,8 +1385,10 @@ export const myAcknowledgements = async (
     const userId = req.user!.id;
     const tenantId = req.user!.tenantId;
 
-    const requests = await prisma.acknowledgementRequest.findMany({
-      where: { userId, document: { tenantId } },
+    const where = { userId, document: { tenantId } };
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [requests, all] = await Promise.all([prisma.acknowledgementRequest.findMany({
+      where,
       include: {
         document: {
           select: {
@@ -1391,12 +1398,15 @@ export const myAcknowledgements = async (
           },
         },
       },
-      orderBy: { requestedAt: 'desc' },
-      take: 200,
-    });
+      orderBy: [{ requestedAt: 'desc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    // Every request, so "outstanding" counts them all and not the page (QA-021).
+    prisma.acknowledgementRequest.findMany({ where, select: { documentId: true, version: true } })]);
 
     const signed = await prisma.acknowledgement.findMany({
-      where: { userId, documentId: { in: requests.map((r) => r.documentId) } },
+      where: { userId, documentId: { in: [...new Set(all.map((r) => r.documentId))] } },
       select: { documentId: true, version: true, completedAt: true },
     });
     const signedKey = new Set(signed.map((a) => `${a.documentId}@${a.version ?? ''}`));
@@ -1413,7 +1423,8 @@ export const myAcknowledgements = async (
 
     res.json({
       status: 'success',
-      outstanding: rows.filter((r) => !r.acknowledgedByMe).length,
+      outstanding: all.filter((r) => !signedKey.has(`${r.documentId}@${r.version}`)).length,
+      paging: pageInfo(all.length, page),
       requests: rows,
     });
   } catch (error: any) {

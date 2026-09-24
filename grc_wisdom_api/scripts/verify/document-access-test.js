@@ -565,8 +565,12 @@ const doc = (over) => Object.assign({
     + 'ever been asked to sign',
   );
   ok(
-    /truncated: summary\.windows > rows\.length/.test(hist),
-    'and a page that stops at 500 must say so, rather than presenting the page as the total',
+    // Paged since QA-021: "truncated" means rows remain after this page, and
+    // the paging says how many and how to reach them.
+    /truncated: page\.skip \+ rows\.length < summary\.windows/.test(hist)
+    && /paging: pageInfo\(summary\.windows, page\)/.test(hist),
+    'and a page that is not the whole history must say so and lead to the rest, rather '
+    + 'than presenting the page as the total',
   );
   ok(
     /groupBy\(\{[\s\S]{0,120}?by: \['userId'\]/.test(hist),

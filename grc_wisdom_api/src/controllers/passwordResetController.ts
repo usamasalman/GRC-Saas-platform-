@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
@@ -149,17 +150,23 @@ export const listRequests = async (req: AuthenticatedRequest, res: Response): Pr
     // requester's email, name and role — to a security admin in any tenant.
     const scope = await resolveTenantScope(req.user!);
 
-    const requests = await prisma.passwordResetRequest.findMany({
-      where: { user: { tenantId: { in: scope.tenantIds } } },
-      orderBy: [{ status: 'asc' }, { requestedAt: 'desc' }],
-      take: 200,
-      include: {
-        user: { select: { id: true, email: true, name: true, role: true, tenantId: true } },
-      },
-    });
+    const where = { user: { tenantId: { in: scope.tenantIds } } };
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [requests, total] = await Promise.all([
+      prisma.passwordResetRequest.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { requestedAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+        include: {
+          user: { select: { id: true, email: true, name: true, role: true, tenantId: true } },
+        },
+      }),
+      prisma.passwordResetRequest.count({ where }),
+    ]);
     // Never leak resetCodeHash.
     const safe = requests.map(({ resetCodeHash, ...r }) => r);
-    res.json({ status: 'success', count: safe.length, requests: safe });
+    res.json({ status: 'success', count: safe.length, paging: pageInfo(total, page), requests: safe });
   } catch (error: any) {
     console.error('[Password Reset List Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to list requests' });

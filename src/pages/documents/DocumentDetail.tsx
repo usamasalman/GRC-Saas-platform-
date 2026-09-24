@@ -1,7 +1,8 @@
 import Icon from '../../components/Icon';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import apiClient from '../../api/apiClient';
 import PickManyDialog from '../../components/PickManyDialog';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
 
 interface DocumentDetailProps {
   documentId: string;
@@ -63,11 +64,16 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const [maySeeAccess, setMaySeeAccess] = useState(false);
   const [accessNote, setAccessNote] = useState('');
   const [reach, setReach] = useState<any>(null);
+  // A page at a time. The history stopped at 500 reading days, and the screen
+  // never said so (QA-021).
+  const [accessPage, setAccessPage] = useState(1);
+  const [accessPaging, setAccessPaging] = useState<PageInfo | null>(null);
 
   const loadAccess = async () => {
     try {
-      const res = await apiClient.get(`/api/documents/${documentId}/access`);
+      const res = await apiClient.get(`/api/documents/${documentId}/access`, { params: { page: accessPage } });
       setAccess(res.data?.access || []);
+      setAccessPaging(res.data?.paging || null);
       setAccessSummary(res.data?.summary || null);
       setAccessNote(res.data?.recordedSince || '');
       setMaySeeAccess(true);
@@ -79,7 +85,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   useEffect(() => {
     loadAccess();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentId]);
+  }, [documentId, accessPage]);
 
   // What this policy governs.
   //
@@ -90,9 +96,13 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   // clauses" as phase one of the documented lifecycle, and neither had a field.
   const [links, setLinks] = useState<any[]>([]);
   const [linkSummary, setLinkSummary] = useState<any>(null);
+  // The one list the open picker is choosing from, fetched when it opens and
+  // searched on the server: a list sent whole to every document view stopped
+  // at 500 rows and could not reach the rest (QA-021).
   const [options, setOptions] = useState<{
-    controls: any[]; risks: any[]; clauses: any[]; enabledFrameworks: number;
-  }>({ controls: [], risks: [], clauses: [], enabledFrameworks: 0 });
+    rows: any[]; total: number; enabledFrameworks: number;
+  }>({ rows: [], total: 0, enabledFrameworks: 0 });
+  const optionsAsk = useRef(0);
   const [picking, setPicking] = useState<'control' | 'risk' | 'clause' | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkError, setLinkError] = useState('');
@@ -110,16 +120,31 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
 
   useEffect(() => {
     loadLinks();
-    apiClient.get('/api/documents/link-options')
-      .then((res) => setOptions({
-        controls: res.data?.controls || [],
-        risks: res.data?.risks || [],
-        clauses: res.data?.clauses || [],
-        enabledFrameworks: res.data?.enabledFrameworks || 0,
-      }))
-      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
+
+  /** Loads one list; an answer to an older search, arriving late, is dropped. */
+  const loadOptions = async (kind: 'control' | 'risk' | 'clause', q = ''): Promise<boolean> => {
+    const ask = ++optionsAsk.current;
+    const res = await apiClient.get('/api/documents/link-options', { params: { kind, q: q || undefined } });
+    if (ask !== optionsAsk.current) return false;
+    const key = kind === 'control' ? 'controls' : kind === 'risk' ? 'risks' : 'clauses';
+    setOptions({
+      rows: res.data?.[key] || [],
+      total: res.data?.totals?.[key] ?? 0,
+      enabledFrameworks: res.data?.enabledFrameworks || 0,
+    });
+    return true;
+  };
+
+  const openPicker = async (kind: 'control' | 'risk' | 'clause') => {
+    setLinkError('');
+    try {
+      if (await loadOptions(kind)) setPicking(kind);
+    } catch (e: any) {
+      setLinkError(e.response?.data?.message || 'The records to link could not be loaded.');
+    }
+  };
 
   const addLinks = async (target: string, ids: string[]) => {
     setLinkBusy(true);
@@ -474,6 +499,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                     </span>
                   </div>
                 ))}
+                <PagingBar paging={accessPaging} onPage={setAccessPage} noun="reading days" />
               </div>
             )}
 
@@ -503,7 +529,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
               {(['control', 'risk', 'clause'] as const).map((k) => (
                 <button
                   key={k}
-                  onClick={() => { setLinkError(''); setPicking(k); }}
+                  onClick={() => openPicker(k)}
                   disabled={linkBusy}
                   style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--info)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}
                 >
@@ -566,9 +592,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                     + 'requires it.'
                   : 'The risk this policy treats.'
             }
-            items={(picking === 'control' ? options.controls
-              : picking === 'risk' ? options.risks
-                : options.clauses).map((x: any) => ({
+            items={options.rows.map((x: any) => ({
               id: x.id,
               label: picking === 'clause' ? `${x.standardCode} ${x.ref}` : (x.code || x.ref),
               sublabel: x.title,
@@ -584,6 +608,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                   + 'Enable one under Organization Standards first.'
                 : `There is no ${picking} in this organisation to link to yet.`
             }
+            total={options.total}
+            // A failed search keeps the rows already shown rather than
+            // claiming nothing matched.
+            onSearch={(q) => { loadOptions(picking, q).catch(() => undefined); }}
             onSubmit={(ids) => addLinks(picking, ids)}
             onCancel={() => setPicking(null)}
           />

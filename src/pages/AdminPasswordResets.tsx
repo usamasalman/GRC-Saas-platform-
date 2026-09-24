@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 import { PromptDialog } from '../components/Dialog';
+import PagingBar, { type PageInfo } from '../components/PagingBar';
 
 interface ResetRequest {
   id: string;
@@ -25,6 +26,9 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string; border: string }> 
 const AdminPasswordResets: React.FC = () => {
   const [requests, setRequests] = useState<ResetRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021).
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
   const [issuedCode, setIssuedCode] = useState<{ id: string; code: string; expiresAt: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -33,8 +37,9 @@ const AdminPasswordResets: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get('/api/password-reset/admin');
+      const res = await apiClient.get('/api/password-reset/admin', { params: { page } });
       setRequests(res.data?.requests || []);
+      setPaging(res.data?.paging || null);
     } catch (err: any) {
       const status = err?.response?.status;
       const msg = err?.response?.data?.message;
@@ -44,7 +49,7 @@ const AdminPasswordResets: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -205,6 +210,7 @@ const AdminPasswordResets: React.FC = () => {
               </div>
             );
           })}
+          <PagingBar paging={paging} onPage={setPage} noun="requests" disabled={loading} />
         </div>
       )}
 

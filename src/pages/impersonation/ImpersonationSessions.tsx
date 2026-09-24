@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient, { asOperator } from '../../api/apiClient';
 import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
 
 interface Session {
   id: string;
@@ -46,6 +47,9 @@ const ImpersonationSessions: React.FC = () => {
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [me, setMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021): the register holds every session ever requested.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
   /**
    * The open dialog.
@@ -74,13 +78,14 @@ const ImpersonationSessions: React.FC = () => {
     setError('');
     try {
       const [sRes, iRes] = await Promise.all([
-        apiClient.get('/api/impersonation'),
+        apiClient.get('/api/impersonation', { params: { page } }),
         // The scope-resolved directory: returns exactly the users this
         // operator is entitled to see, which is the correct candidate set
         // for impersonation. The old endpoint was public and unscoped.
         apiClient.get('/api/iam/users').catch(() => null),
       ]);
       setSessions(sRes.data?.sessions || []);
+      setPaging(sRes.data?.paging || null);
       setIdentities(iRes?.data?.users || []);
       try { setMe(JSON.parse(localStorage.getItem('grc_user_json') || 'null')); } catch { /* ignore */ }
     } catch (err: any) {
@@ -91,7 +96,7 @@ const ImpersonationSessions: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -295,6 +300,7 @@ const ImpersonationSessions: React.FC = () => {
               })}
             </tbody>
           </table>
+          <PagingBar paging={paging} onPage={setPage} noun="sessions" disabled={loading} />
         </div>
       )}
 

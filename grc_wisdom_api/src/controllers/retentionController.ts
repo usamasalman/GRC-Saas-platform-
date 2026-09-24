@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { hasCapability, CAP } from '../services/capabilityEngine';
 import {
@@ -388,8 +389,10 @@ export const dispositionQueue = async (req: AuthenticatedRequest, res: Response)
           ...RETAINED_SELECT,
           retentionSchedule: { select: { id: true, code: true, name: true, reviewWindowDays: true } },
         },
-        orderBy: [{ disposalDueAt: 'asc' }],
-        take: 500,
+        // Every retained document, slim: the summary and the queue were
+        // computed from the first 500, so a larger estate under-reported
+        // what was due for disposal (QA-021). The queue is paged below.
+        orderBy: [{ disposalDueAt: 'asc' }, { id: 'asc' }],
       }),
       prisma.retentionSchedule.count({ where: { tenantId } }),
     ]);
@@ -413,6 +416,9 @@ export const dispositionQueue = async (req: AuthenticatedRequest, res: Response)
       };
     });
 
+    const due = withState.filter((d) => d.state === 'Due' || d.state === 'DueSoon');
+    const page = readPage(req.query as Record<string, unknown>, 500);
+
     res.json({
       status: 'success',
       count: withState.length,
@@ -424,7 +430,8 @@ export const dispositionQueue = async (req: AuthenticatedRequest, res: Response)
       // Only what a person is being asked to act on. Held rows are carried
       // separately so the reason disposal cannot proceed is visible rather
       // than the document simply being absent.
-      queue: withState.filter((d) => d.state === 'Due' || d.state === 'DueSoon'),
+      queue: due.slice(page.skip, page.skip + page.take),
+      paging: pageInfo(due.length, page),
       held: withState.filter((d) => d.state === 'Held'),
     });
   } catch (error: any) {

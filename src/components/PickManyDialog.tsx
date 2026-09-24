@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DialogShell from './Dialog';
+import useDebounced from './useDebounced';
 import { S, primaryBtn, ghostBtn, linkBtn } from '../pages/iam/iamStyles';
 
 /**
@@ -37,22 +38,47 @@ const PickManyDialog: React.FC<{
   /** Shown when the list is empty — always more useful than an empty box. */
   emptyMessage?: React.ReactNode;
   busy?: boolean;
+  /**
+   * For a list too long to send whole: the search goes to the server, which
+   * answers with `items` (the first matches) and `total` (how many match in
+   * all). Without it, the dialog searches the items it was given.
+   */
+  onSearch?: (query: string) => void;
+  /** How many exist in all, when `items` is only the first of them. */
+  total?: number;
   onSubmit: (ids: string[]) => void;
   onCancel: () => void;
 }> = ({
   title, intro, items, initiallySelected = [], confirmLabel = 'Save',
-  emptyMessage, busy, onSubmit, onCancel,
+  emptyMessage, busy, onSearch, total, onSubmit, onCancel,
 }) => {
   const [picked, setPicked] = useState<Set<string>>(new Set(initiallySelected));
   const [query, setQuery] = useState('');
 
+  // Asked once typing pauses, not on every keystroke. The first run is the
+  // empty query the caller has already loaded, so it is skipped.
+  const settled = useDebounced(query.trim());
+  const asked = useRef(settled);
+  useEffect(() => {
+    if (!onSearch || settled === asked.current) return;
+    asked.current = settled;
+    onSearch(settled);
+  }, [settled, onSearch]);
+
+  // "Nothing to choose from" is a fact about the whole list. A search that
+  // matches nothing is not that, and must not hide the search box it came from.
+  const nothingToChoose = items.length === 0 && !query.trim();
+  const more = total !== undefined && total > items.length ? total : 0;
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
+    // A server search has already chosen the rows, on fields the label may
+    // not show (a control's domain, a clause's framework).
+    if (!q || onSearch) return items;
     return items.filter(
       (i) => i.label.toLowerCase().includes(q) || (i.sublabel || '').toLowerCase().includes(q),
     );
-  }, [items, query]);
+  }, [items, query, onSearch]);
 
   const toggle = (id: string) => setPicked((prev) => {
     const next = new Set(prev);
@@ -75,7 +101,7 @@ const PickManyDialog: React.FC<{
         </div>
       )}
 
-      {items.length === 0 ? (
+      {nothingToChoose ? (
         <div style={{
           padding: '14px 16px', borderRadius: 6, fontSize: 13,
           background: 'var(--surface-sunk)', border: '1px solid var(--line)',
@@ -85,7 +111,7 @@ const PickManyDialog: React.FC<{
         </div>
       ) : (
         <>
-          {items.length > 8 && (
+          {(items.length > 8 || onSearch) && (
             <input
               style={{ ...S.input, width: '100%', marginBottom: 10 }}
               value={query}
@@ -93,6 +119,15 @@ const PickManyDialog: React.FC<{
               placeholder="Search…"
               onChange={(e) => setQuery(e.target.value)}
             />
+          )}
+
+          {/* Said plainly, because a list that stops without saying so is how
+              records past the cut-off became impossible to pick (QA-021). */}
+          {more > 0 && (
+            <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginBottom: 8, lineHeight: 1.5 }}>
+              Showing the first {items.length.toLocaleString()} of {more.toLocaleString()}
+              {query.trim() ? ' matches' : ''}. Search to narrow the list.
+            </div>
           )}
 
           {/* Choosing everything was one click per row.
@@ -121,9 +156,11 @@ const PickManyDialog: React.FC<{
                 })}
                 style={linkBtn('var(--info)')}
               >
-                {query.trim()
-                  ? `Select all ${shown.length} matching`
-                  : `Select all ${items.length}`}
+                {more > 0
+                  ? `Select the ${shown.length} shown`
+                  : query.trim()
+                    ? `Select all ${shown.length} matching`
+                    : `Select all ${items.length}`}
               </button>
               <button
                 type="button"
@@ -188,9 +225,9 @@ const PickManyDialog: React.FC<{
       <div style={{ marginTop: 18, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button style={ghostBtn} onClick={onCancel} disabled={busy}>Cancel</button>
         <button
-          style={primaryBtn(busy || items.length === 0)}
+          style={primaryBtn(busy || nothingToChoose)}
           onClick={() => onSubmit([...picked])}
-          disabled={busy || items.length === 0}
+          disabled={busy || nothingToChoose}
         >
           {busy ? 'Saving…' : confirmLabel}
         </button>
