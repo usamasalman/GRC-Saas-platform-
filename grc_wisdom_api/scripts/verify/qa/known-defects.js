@@ -51,9 +51,4 @@ module.exports = {
     title: 'Verifying the audit trail loads the whole history into memory; at scale one click can exhaust it',
     checks: ['capacity:verifying the audit trail reads in batches'],
   },
-  'QA-023': {
-    severity: 'Low',
-    title: 'Background jobs start in every API process, so a second process would run every job twice',
-    checks: ['capacity:background jobs can be confined to one process'],
-  },
 };
