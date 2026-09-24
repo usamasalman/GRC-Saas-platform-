@@ -146,7 +146,9 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
   // But a row that DID store what it hashed and still fails has been changed.
   const afterLegacy = fn.slice(fn.indexOf('if (!log.hashedAt)'));
   ok(
-    /chainValid = false;[\s\S]{0,200}?overallIntegrity = false;[\s\S]{0,200}?tamperedLogId = log\.id;[\s\S]{0,80}?break;/.test(afterLegacy),
+    // `break batches;` since the chain is read in batches (QA-022): it leaves
+    // the batch loop as well as the row loop, so nothing after it is read.
+    /chainValid = false;[\s\S]{0,200}?overallIntegrity = false;[\s\S]{0,200}?tamperedLogId = log\.id;\s*break( batches)?;/.test(afterLegacy),
     'and a sealed row that does not reproduce still stops the chain and names '
     + 'itself. Without this the endpoint reports nothing but good news',
   );

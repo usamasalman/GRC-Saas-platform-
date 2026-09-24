@@ -198,6 +198,9 @@ export const resetDatabase = async (req: Request, res: Response): Promise<void> 
  * them on their stored hash, so one legacy row at the start of a tenant's
  * history no longer hides everything written since.
  */
+/** Rows read per query when verifying the audit chain; memory stays flat as the trail grows. */
+const AUDIT_VERIFY_BATCH = 1000;
+
 export const verifyAuditTrail = async (req: Request, res: Response): Promise<void> => {
   try {
     const tenants = await prisma.tenant.findMany();
@@ -205,54 +208,69 @@ export const verifyAuditTrail = async (req: Request, res: Response): Promise<voi
     let overallIntegrity = true;
 
     for (const t of tenants) {
-      const logs = await prisma.auditLog.findMany({
-        where: { tenantId: t.id },
-        orderBy: { timestamp: 'asc' }
-      });
-
       let chainValid = true;
       let tamperedLogId: string | null = null;
       let unverifiable = 0;
       let verified = 0;
       let verifiableFrom: Date | null = null;
       let expectedHash = GENESIS_HASH;
+      const logCount = await prisma.auditLog.count({ where: { tenantId: t.id } });
 
-      for (const log of logs) {
-        // hashedAt when the row has one. `timestamp` otherwise, because a few
-        // legacy rows were written by a path that stored the value it hashed
-        // and those do verify — reporting them as unverifiable would throw
-        // away a real check to keep the code shorter.
-        const sealed = log.hashedAt ?? log.timestamp;
-        const computed = generateHash(
-          `${expectedHash}:${log.action}:${log.payload}:${new Date(sealed).toISOString()}`
-        );
+      // In batches, carrying the chain's last hash from one batch to the next.
+      // This read the whole history of every organisation into memory at once:
+      // +225 MB for 200,000 rows in one click, and an audit trail only grows
+      // (QA-022). Same order as the writer (timestamp), with the id to keep
+      // ties stable across batch boundaries; only the columns the check needs.
+      let cursor: string | undefined;
+      batches: for (;;) {
+        const logs = await prisma.auditLog.findMany({
+          where: { tenantId: t.id },
+          orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+          take: AUDIT_VERIFY_BATCH,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: { id: true, action: true, payload: true, currentHash: true, hashedAt: true, timestamp: true },
+        });
+        if (logs.length === 0) break;
+        cursor = logs[logs.length - 1].id;
 
-        if (computed === log.currentHash) {
-          verified += 1;
-          if (!verifiableFrom) verifiableFrom = sealed;
-          expectedHash = log.currentHash;
-          continue;
+        for (const log of logs) {
+          // hashedAt when the row has one. `timestamp` otherwise, because a few
+          // legacy rows were written by a path that stored the value it hashed
+          // and those do verify — reporting them as unverifiable would throw
+          // away a real check to keep the code shorter.
+          const sealed = log.hashedAt ?? log.timestamp;
+          const computed = generateHash(
+            `${expectedHash}:${log.action}:${log.payload}:${new Date(sealed).toISOString()}`
+          );
+
+          if (computed === log.currentHash) {
+            verified += 1;
+            if (!verifiableFrom) verifiableFrom = sealed;
+            expectedHash = log.currentHash;
+            continue;
+          }
+
+          if (!log.hashedAt) {
+            // A mismatch on a row that never stored what it hashed proves
+            // nothing either way. Carry the chain forward on what the row
+            // recorded, and count it, rather than accusing it.
+            unverifiable += 1;
+            expectedHash = log.currentHash;
+            continue;
+          }
+
+          chainValid = false;
+          overallIntegrity = false;
+          tamperedLogId = log.id;
+          break batches;
         }
-
-        if (!log.hashedAt) {
-          // A mismatch on a row that never stored what it hashed proves
-          // nothing either way. Carry the chain forward on what the row
-          // recorded, and count it, rather than accusing it.
-          unverifiable += 1;
-          expectedHash = log.currentHash;
-          continue;
-        }
-
-        chainValid = false;
-        overallIntegrity = false;
-        tamperedLogId = log.id;
-        break;
+        if (logs.length < AUDIT_VERIFY_BATCH) break;
       }
 
       verificationResults.push({
         tenantId: t.id,
         tenantName: t.name,
-        logCount: logs.length,
+        logCount,
         verifiedCount: verified,
         // Named rather than folded into the count, because "142 rows, 3 of
         // them unverifiable" is a finding somebody may need to explain to an

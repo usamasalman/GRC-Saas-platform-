@@ -46,9 +46,4 @@ module.exports = {
     title: 'Lists stop at a fixed number of rows with no paging; records past the cap vanish silently',
     checks: ['capacity:lists that cap their rows can page past the cap'],
   },
-  'QA-022': {
-    severity: 'Medium',
-    title: 'Verifying the audit trail loads the whole history into memory; at scale one click can exhaust it',
-    checks: ['capacity:verifying the audit trail reads in batches'],
-  },
 };
