@@ -50,20 +50,43 @@ function limiter(name) {
 
 // ─── QA-021: no list silently drops records ────────────────────────────────
 {
+  // Caps that are not lists. Each says why nothing past the cap is lost; a
+  // new entry needs the same, or the list should page.
+  const NOT_A_LIST = {
+    'standardsAuthoringController.deleteStandard':
+      'names up to 50 organisations in a refusal message and counts every one',
+    'documentLinkController.linkOptions':
+      'a searchable picker: it returns the first matches with the true total, the screen says so, and the search reaches every row',
+  };
   const dir = path.join(q.API_SRC, 'controllers');
   const capped = [];
+  const seen = new Set();
   for (const f of fs.readdirSync(dir)) {
     const src = q.strip(q.read(path.join(dir, f)));
+    // A cap written as a named constant is still a cap.
+    const constants = Object.fromEntries(
+      [...src.matchAll(/\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*([\d_]+)\s*;/g)].map((m) => [m[1], Number(m[2].replace(/_/g, ''))]),
+    );
     const starts = [...src.matchAll(/export\s+const\s+(\w+)\s*=\s*async/g)].map((m) => ({ name: m[1], at: m.index }));
     starts.forEach((s, i) => {
       const body = src.slice(s.at, i + 1 < starts.length ? starts[i + 1].at : src.length);
+      const key = `${f.replace(/\.ts$/, '')}.${s.name}`;
       // A cap large enough to be a list, not a lookup of "the latest one".
-      const caps = [...body.matchAll(/findMany\(\{[\s\S]*?take:\s*(\d+)/g)].map((m) => Number(m[1])).filter((n) => n >= 50);
-      if (caps.length && !/\bskip\s*:|\bcursor\s*:/.test(body)) capped.push(`${f.replace(/\.ts$/, '')}.${s.name} (${Math.max(...caps)})`);
+      const caps = [...body.matchAll(/findMany\(\{[\s\S]*?take:\s*([\d_]+|[A-Z][A-Z0-9_]*)\b/g)]
+        .map((m) => (/^[\d_]+$/.test(m[1]) ? Number(m[1].replace(/_/g, '')) : constants[m[1]] ?? 0))
+        .filter((n) => n >= 50);
+      if (!caps.length || /\bskip\s*:|\bcursor\s*:/.test(body)) return;
+      seen.add(key);
+      if (!NOT_A_LIST[key]) capped.push(`${key} (${Math.max(...caps)})`);
     });
   }
   v.record('capacity:lists that cap their rows can page past the cap', capped.length === 0,
     `${capped.length} list(s) stop at a fixed number of rows and cannot page: ${capped.slice(0, 6).join(', ')}${capped.length > 6 ? ', …' : ''}`);
+  // An exemption for a function that no longer caps anything is a stale
+  // excuse waiting to cover the next one.
+  const stale = Object.keys(NOT_A_LIST).filter((k) => !seen.has(k));
+  v.record('capacity:every capped-list exemption still names a capped list', stale.length === 0,
+    `exemptions with nothing to exempt: ${stale.join(', ')}`);
 }
 
 // ─── QA-022: verifying the audit trail reads in batches ────────────────────
