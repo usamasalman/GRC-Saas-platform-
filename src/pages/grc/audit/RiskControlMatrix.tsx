@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import fetchAllPages from '../../../api/fetchAllPages';
 import FormDialog from '../../../components/FormDialog';
 import { S, StatStrip, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 
@@ -65,14 +66,16 @@ const RiskControlMatrix: React.FC<{ auditId: string | null }> = ({ auditId }) =>
     try {
       const [m, i, iss] = await Promise.all([
         apiClient.get(`/api/grc/audits/${auditId}/matrix`),
-        apiClient.get('/api/grc/implementations'),
-        apiClient.get('/api/grc/issues'),
+        // Whole lists, not first pages: a matrix missing rows is wrong, not
+        // short (QA-021). The findings are asked for by engagement.
+        fetchAllPages<any>('/api/grc/implementations', 'implementations'),
+        fetchAllPages<any>('/api/grc/issues', 'issues', { auditId }),
       ]);
       setMatrix(m.data?.matrix || []);
       setAudit(m.data?.audit || null);
       setTotals(m.data?.totals || {});
-      setImpls(i.data?.implementations || []);
-      setIssues((iss.data?.issues || []).filter((x: any) => x.audit?.id === auditId));
+      setImpls(i);
+      setIssues(iss);
     } catch (err) { setError(apiError(err, 'Failed to load the matrix')); }
     finally { setLoading(false); }
   }, [auditId]);

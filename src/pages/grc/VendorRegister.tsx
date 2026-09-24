@@ -5,6 +5,8 @@ import Icon from '../../components/Icon';
 import DeleteRecordButton from '../../components/DeleteRecordButton';
 import FormDialog from '../../components/FormDialog';
 import Can, { MAY, can } from '../../components/Can';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 import VendorImport from './vendor/VendorImport';
 
 /**
@@ -65,6 +67,10 @@ const VendorRegister: React.FC = () => {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('');
   const [postureFilter, setPostureFilter] = useState('');
+  // Paged (QA-021); the filters and the search go to the server with the page.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const settledSearch = useDebounced(search);
 
   const [detail, setDetail] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
@@ -91,11 +97,19 @@ const VendorRegister: React.FC = () => {
     setLoading(true); setError('');
     try {
       const [v, a] = await Promise.all([
-        apiClient.get('/api/grc/vendors'),
+        apiClient.get('/api/grc/vendors', {
+          params: {
+            page,
+            tier: tierFilter || undefined,
+            posture: postureFilter || undefined,
+            search: settledSearch.trim() || undefined,
+          },
+        }),
         apiClient.get('/api/grc/vendor-analytics').catch(() => null),
       ]);
       setVendors(v.data?.vendors || []);
       setTotals(v.data?.totals || {});
+      setPaging(v.data?.paging || null);
       setMeta({
         categories: v.data?.categories || [], statuses: v.data?.statuses || [],
         dataAccessLevels: v.data?.dataAccessLevels || [],
@@ -106,7 +120,7 @@ const VendorRegister: React.FC = () => {
       setAnalytics(a?.data || null);
     } catch (err) { setError(apiError(err, 'Failed to load the vendor register')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, tierFilter, postureFilter, settledSearch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -294,12 +308,12 @@ const VendorRegister: React.FC = () => {
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
             <input placeholder="Search name or reference…" value={search}
-              onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 250 }} />
-            <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} style={{ ...S.input, maxWidth: 160 }}>
+              onChange={(e) => { setPage(1); setSearch(e.target.value); }} style={{ ...S.input, maxWidth: 250 }} />
+            <select value={tierFilter} onChange={(e) => { setPage(1); setTierFilter(e.target.value); }} style={{ ...S.input, maxWidth: 160 }}>
               <option value="">All tiers</option>
               {['Critical', 'High', 'Medium', 'Low'].map((t) => <option key={t}>{t}</option>)}
             </select>
-            <select value={postureFilter} onChange={(e) => setPostureFilter(e.target.value)} style={{ ...S.input, maxWidth: 190 }}>
+            <select value={postureFilter} onChange={(e) => { setPage(1); setPostureFilter(e.target.value); }} style={{ ...S.input, maxWidth: 190 }}>
               <option value="">All diligence states</option>
               {Object.keys(POSTURE).map((p) => (
                 <option key={p} value={p}>{p.replace(/([a-z])([A-Z])/g, '$1 $2')}</option>
@@ -404,6 +418,7 @@ const VendorRegister: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="suppliers" disabled={loading} />
         </>
       )}
 

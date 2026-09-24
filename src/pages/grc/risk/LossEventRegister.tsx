@@ -3,6 +3,7 @@ import apiClient from '../../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import FormDialog from '../../../components/FormDialog';
 import DeleteRecordButton from '../../../components/DeleteRecordButton';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * Operational loss events.
@@ -70,6 +71,9 @@ const LossEventRegister: React.FC = () => {
   const [events, setEvents] = useState<LossEvent[]>([]);
   const [totals, setTotals] = useState<any>({});
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021); the totals above cover every event.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState<Dlg>(null);
@@ -80,16 +84,17 @@ const LossEventRegister: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get('/api/grc/loss-events');
+      const res = await apiClient.get('/api/grc/loss-events', { params: { page } });
       setEvents(res.data?.events || []);
       setTotals(res.data?.totals || {});
+      setPaging(res.data?.paging || null);
     } catch (err) {
       setError(apiError(err, 'Could not load the loss register.'));
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -247,6 +252,7 @@ const LossEventRegister: React.FC = () => {
               ))}
             </tbody>
           </table>
+          <PagingBar paging={paging} onPage={setPage} noun="loss events" disabled={loading} />
         </div>
       )}
 

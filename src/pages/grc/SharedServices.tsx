@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import fetchAllPages from '../../api/fetchAllPages';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
@@ -74,7 +75,7 @@ const SharedServices: React.FC = () => {
     try {
       const [s, i] = await Promise.all([
         apiClient.get('/api/grc/shared-services'),
-        apiClient.get('/api/grc/implementations').catch(() => null),
+        fetchAllPages<any>('/api/grc/implementations', 'implementations').catch(() => null),
       ]);
       setServices(s.data?.services || []);
       setTotals(s.data?.totals || {});
@@ -83,7 +84,7 @@ const SharedServices: React.FC = () => {
         functions: s.data?.functions || [], cadences: s.data?.cadences || [],
       });
       setScope(s.data?.scope || '');
-      setImpls(i?.data?.implementations || []);
+      setImpls(i || []);
     } catch (err) { setError(apiError(err, 'Failed to load shared services')); }
     finally { setLoading(false); }
   }, []);

@@ -3,6 +3,7 @@ import apiClient from '../../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import { PromptDialog, ReasonDialog } from '../../../components/Dialog';
 import FormDialog from '../../../components/FormDialog';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * Engagements — the list of audits and their findings.
@@ -49,6 +50,9 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // Paged (QA-021); the status filter goes to the server, the totals cover every audit.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
 
   const [detail, setDetail] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
@@ -86,11 +90,12 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
     setLoading(true); setError('');
     try {
       const [a, p] = await Promise.all([
-        apiClient.get('/api/grc/audits'),
+        apiClient.get('/api/grc/audits', { params: { page, status: statusFilter || undefined } }),
         apiClient.get('/api/grc/plans'),
       ]);
       setAudits(a.data?.audits || []);
       setTotals(a.data?.totals || {});
+      setPaging(a.data?.paging || null);
       // Plan items on an approved plan that have not yet become engagements.
       setPending(
         (p.data?.plans || [])
@@ -101,7 +106,7 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
       );
     } catch (err) { setError(apiError(err, 'Failed to load the audit programme')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -360,7 +365,7 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...S.input, maxWidth: 200 }}>
+        <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }} style={{ ...S.input, maxWidth: 200 }}>
           <option value="">All statuses</option>
           {['Planned', 'Fieldwork', 'Reporting', 'Closed', 'Cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -441,6 +446,7 @@ const Engagements: React.FC<Props> = ({ selectedId, onSelect }) => {
               No engagements yet. Approve an annual plan on the Universe &amp; Plan tab, then start one from a plan item.
             </div>
           )}
+          <PagingBar paging={paging} onPage={setPage} noun="engagements" disabled={loading} />
         </div>
       )}
 

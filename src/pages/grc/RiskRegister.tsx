@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import fetchAllPages from '../../api/fetchAllPages';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import RiskHeatmaps, { Matrix, Legend } from './risk/RiskHeatmaps';
 import RiskCriteriaPanel from './risk/RiskCriteriaPanel';
@@ -9,6 +10,8 @@ import RiskImport from './risk/RiskImport';
 import { ConfirmDialog } from '../../components/Dialog';
 import FormDialog from '../../components/FormDialog';
 import Can, { MAY, can } from '../../components/Can';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 
 // ── Color & Styling Tokens ──────────────────────────────────────────────────
 const RATING_COLOR: Record<string, string> = {
@@ -48,6 +51,16 @@ const RiskRegister: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>('cockpit');
   const [risks, setRisks] = useState<any[]>([]);
   const [totals, setTotals] = useState<any>({});
+  // The register is paged (QA-021); the totals above it cover every risk.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  // The server's heatmaps cover the whole register (under the filters, not the
+  // selected cell); drawing them from the loaded rows would show one page.
+  const [heatmaps, setHeatmaps] = useState<{
+    inherent: Grid; residual: Grid; inherentExposure: number; residualExposure: number;
+  } | null>(null);
+  // Per category over the register, for the appetite view.
+  const [byCategory, setByCategory] = useState<Record<string, { total: number; beyondTolerance: number; maxResidual: number }>>({});
   const [categories, setCategories] = useState<string[]>([]);
   const [appetites, setAppetites] = useState<any[]>([]);
   const [impls, setImpls] = useState<any[]>([]);
@@ -64,6 +77,7 @@ const RiskRegister: React.FC = () => {
   const [ratingFilter, setRatingFilter] = useState('');
   const [directionFilter, setDirectionFilter] = useState('');
   const [selectedHeatmapFilter, setSelectedHeatmapFilter] = useState<{ type: 'inherent' | 'residual'; lik: number; imp: number } | null>(null);
+  const settledSearch = useDebounced(search);
 
   // Modals & Drawers
   const [detail, setDetail] = useState<any>(null);
@@ -124,18 +138,31 @@ const RiskRegister: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [rRes, iRes, aRes] = await Promise.all([
-        apiClient.get('/api/grc/risks'),
-        apiClient.get('/api/grc/implementations').catch(() => null),
+      const [rRes, aRes] = await Promise.all([
+        apiClient.get('/api/grc/risks', {
+          params: {
+            page,
+            status: statusFilter || undefined,
+            category: categoryFilter || undefined,
+            rating: ratingFilter || undefined,
+            direction: directionFilter || undefined,
+            cell: selectedHeatmapFilter
+              ? `${selectedHeatmapFilter.type}:${selectedHeatmapFilter.lik}:${selectedHeatmapFilter.imp}`
+              : undefined,
+            search: settledSearch.trim() || undefined,
+          },
+        }),
         // Analytics drives the appetite overlay, coverage and network views.
         // A failure here must not blank the register.
         apiClient.get('/api/grc/risk-analytics').catch(() => null),
       ]);
       setRisks(rRes.data?.risks || []);
       setTotals(rRes.data?.totals || {});
+      setPaging(rRes.data?.paging || null);
+      setHeatmaps(rRes.data?.heatmaps || null);
+      setByCategory(rRes.data?.byCategory || {});
       setCategories(rRes.data?.categories || []);
       setAppetites(rRes.data?.appetites || []);
-      setImpls(iRes?.data?.implementations || []);
       setAnalytics(aRes?.data || null);
       setScope(rRes.data?.scope || '');
     } catch (err) {
@@ -143,11 +170,20 @@ const RiskRegister: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, statusFilter, categoryFilter, ratingFilter, directionFilter, selectedHeatmapFilter, settledSearch]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // The controls a risk can be mitigated by: every one, loaded once rather
+  // than with each page of risks. Their first page left the rest impossible to
+  // link (QA-021).
+  useEffect(() => {
+    fetchAllPages<any>('/api/grc/implementations', 'implementations')
+      .then(setImpls)
+      .catch(() => setImpls([]));
+  }, []);
 
   // Keep active detail in sync with risks list
   useEffect(() => {
@@ -424,9 +460,9 @@ const RiskRegister: React.FC = () => {
     return g;
   };
   const inherentGrid = useMemo(
-    () => buildGrid((r) => ({ l: r.inherentLikelihood, i: r.inherentImpact })), [risks]);
+    () => heatmaps?.inherent ?? buildGrid((r) => ({ l: r.inherentLikelihood, i: r.inherentImpact })), [heatmaps, risks]);
   const residualGrid = useMemo(
-    () => buildGrid((r) => ({ l: r.residualLikelihood, i: r.residualImpact })), [risks]);
+    () => heatmaps?.residual ?? buildGrid((r) => ({ l: r.residualLikelihood, i: r.residualImpact })), [heatmaps, risks]);
 
   // All Treatment actions extracted across all risks
   const allTreatmentActions = useMemo(() => {
@@ -453,8 +489,9 @@ const RiskRegister: React.FC = () => {
     });
   }, [risks]);
 
-  const totalInherentExposure = useMemo(() => risks.reduce((acc, r) => acc + (r.inherentScore || 0), 0), [risks]);
-  const totalResidualExposure = useMemo(() => risks.reduce((acc, r) => acc + (r.residualScore || 0), 0), [risks]);
+  // The server's sums over the register, like the heatmaps they sit under.
+  const totalInherentExposure = heatmaps?.inherentExposure ?? 0;
+  const totalResidualExposure = heatmaps?.residualExposure ?? 0;
 
   return (
     <div style={{ ...S.page, background: 'var(--surface-sunk)', minHeight: '100vh', padding: '24px 32px' }}>
@@ -778,7 +815,7 @@ const RiskRegister: React.FC = () => {
                 if (refs.length === 0) return;
                 const same = selectedHeatmapFilter?.type === 'inherent'
                   && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === imp;
-                setSelectedHeatmapFilter(same ? null : { type: 'inherent', lik, imp });
+                setPage(1); setSelectedHeatmapFilter(same ? null : { type: 'inherent', lik, imp });
                 if (!same) setActiveTab('register');
               }}
             />
@@ -792,7 +829,7 @@ const RiskRegister: React.FC = () => {
                 if (refs.length === 0) return;
                 const same = selectedHeatmapFilter?.type === 'residual'
                   && selectedHeatmapFilter.lik === lik && selectedHeatmapFilter.imp === imp;
-                setSelectedHeatmapFilter(same ? null : { type: 'residual', lik, imp });
+                setPage(1); setSelectedHeatmapFilter(same ? null : { type: 'residual', lik, imp });
                 if (!same) setActiveTab('register');
               }}
             />
@@ -882,7 +919,7 @@ const RiskRegister: React.FC = () => {
                 {selectedHeatmapFilter.lik} × Impact: {selectedHeatmapFilter.imp} (Score: {selectedHeatmapFilter.lik * selectedHeatmapFilter.imp})
               </span>
               <button
-                onClick={() => setSelectedHeatmapFilter(null)}
+                onClick={() => { setPage(1); setSelectedHeatmapFilter(null); }}
                 style={{
                   background: 'var(--surface)',
                   border: '1px solid var(--info-line)',
@@ -916,13 +953,13 @@ const RiskRegister: React.FC = () => {
               <input
                 placeholder="Search risk ref, title, narrative, or owner…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setPage(1); setSearch(e.target.value); }}
                 style={{ ...S.input, maxWidth: 300, padding: '7px 12px' }}
               />
 
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}
                 style={{ ...S.input, maxWidth: 150, padding: '7px 10px' }}
               >
                 <option value="">All Statuses</option>
@@ -934,7 +971,7 @@ const RiskRegister: React.FC = () => {
 
               <select
                 value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                onChange={(e) => { setPage(1); setCategoryFilter(e.target.value); }}
                 style={{ ...S.input, maxWidth: 150, padding: '7px 10px' }}
               >
                 <option value="">All Categories</option>
@@ -947,7 +984,7 @@ const RiskRegister: React.FC = () => {
 
               <select
                 value={ratingFilter}
-                onChange={(e) => setRatingFilter(e.target.value)}
+                onChange={(e) => { setPage(1); setRatingFilter(e.target.value); }}
                 style={{ ...S.input, maxWidth: 140, padding: '7px 10px' }}
               >
                 <option value="">All Ratings</option>
@@ -958,7 +995,7 @@ const RiskRegister: React.FC = () => {
 
               <select
                 value={directionFilter}
-                onChange={(e) => setDirectionFilter(e.target.value)}
+                onChange={(e) => { setPage(1); setDirectionFilter(e.target.value); }}
                 style={{ ...S.input, maxWidth: 150, padding: '7px 10px' }}
               >
                 <option value="">All Directions</option>
@@ -968,7 +1005,7 @@ const RiskRegister: React.FC = () => {
             </div>
 
             <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 500 }}>
-              Showing <strong>{filteredRisks.length}</strong> of {risks.length} risks
+              Showing <strong>{filteredRisks.length}</strong> of {paging?.total ?? risks.length} risks
             </span>
           </div>
 
@@ -978,6 +1015,7 @@ const RiskRegister: React.FC = () => {
               Loading enterprise risk register...
             </div>
           ) : (
+            <>
             <div style={{ ...S.card, overflowX: 'auto', border: '1px solid var(--line)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
@@ -1284,6 +1322,8 @@ const RiskRegister: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            <PagingBar paging={paging} onPage={setPage} noun="risks" disabled={loading} />
+            </>
           )}
         </div>
       )}
@@ -1452,9 +1492,10 @@ const RiskRegister: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             {categories.map((cat) => {
               const statement = appetites.find((a) => a.category === cat);
-              const catRisks = risks.filter((r) => r.category === cat);
-              const beyondCount = catRisks.filter((r) => r.appetiteBand === 'BeyondTolerance').length;
-              const maxResidual = catRisks.length > 0 ? Math.max(...catRisks.map((r) => r.residualScore)) : 0;
+              // The whole register's figures for the category, not the page's.
+              const figures = byCategory[cat];
+              const beyondCount = figures?.beyondTolerance ?? 0;
+              const maxResidual = figures?.maxResidual ?? 0;
 
               return (
                 <div key={cat} style={{ ...S.card, padding: '18px', border: beyondCount > 0 ? '1px solid var(--danger-line)' : '1px solid var(--line)' }}>

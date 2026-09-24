@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { judgeDeletion } from '../services/recordDeletion';
@@ -81,30 +82,48 @@ export const listVendors = async (req: AuthenticatedRequest, res: Response): Pro
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.vendors.list');
 
-    const { tier, status, category, search, overdue } = req.query as Record<string, string | undefined>;
+    const { tier, status, category, search, overdue, posture } = req.query as Record<string, string | undefined>;
     const where: any = { tenantId: { in: scope.tenantIds } };
     if (tier) where.tier = tier;
     if (status) where.status = status;
     if (category) where.category = category;
     if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { ref: { contains: search } },
-        { legalName: { contains: search } },
-      ];
+      const has = { contains: search, mode: 'insensitive' as const };
+      where.OR = [{ name: has }, { ref: has }, { legalName: has }];
     }
+    // enrich()'s assessmentOverdue, as a query condition, so the pages and the
+    // count agree (QA-021).
+    if (overdue === 'true') where.nextAssessmentDue = { lt: new Date() };
 
-    const rows = await prisma.vendor.findMany({
-      where, include: INCLUDE,
-      orderBy: [{ tierScore: 'desc' }, { name: 'asc' }],
-      take: 500,
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const ORDER = [{ tierScore: 'desc' as const }, { name: 'asc' as const }, { id: 'asc' as const }];
+
+    // Every matching vendor with only what the figures need (the posture from
+    // its assessments, the concentration from its assets), put through the
+    // same enrich() as the rows: the totals describe the register, not the page.
+    const whole = await prisma.vendor.findMany({
+      where,
+      include: {
+        assessments: { orderBy: { createdAt: 'desc' } },
+        assets: { select: { id: true, criticality: true, criticalityTier: true, replacementValue: true } },
+      },
+      orderBy: ORDER,
     });
-    let vendors: any[] = rows.map((v: any) => enrich(v));
-    if (overdue === 'true') vendors = vendors.filter((v) => v.assessmentOverdue);
+    let all: any[] = whole.map((v: any) => enrich(v));
+    // Posture is derived from the assessments, so it is filtered here, over
+    // the whole register, before the page is taken; the page is then fetched
+    // by id in the same order. Filtering the loaded page instead would say
+    // "no match" while matches sat on other pages (QA-021).
+    if (posture) all = all.filter((v) => v.assessmentPosture === posture);
+    const total = all.length;
+    const pageIds = all.slice(page.skip, page.skip + page.take).map((v) => v.id);
+    const fetched = await prisma.vendor.findMany({ where: { id: { in: pageIds } }, include: INCLUDE });
+    const byId = new Map(fetched.map((v) => [v.id, v]));
+    const vendors: any[] = pageIds.map((id) => byId.get(id)).filter(Boolean).map((v: any) => enrich(v));
 
     const byTier: Record<string, number> = {};
     const byCategory: Record<string, number> = {};
-    for (const v of vendors) {
+    for (const v of all) {
       byTier[v.tier] = (byTier[v.tier] ?? 0) + 1;
       byCategory[v.category] = (byCategory[v.category] ?? 0) + 1;
     }
@@ -121,20 +140,21 @@ export const listVendors = async (req: AuthenticatedRequest, res: Response): Pro
       formulas: VENDOR_FORMULAS,
       byTier, byCategory,
       totals: {
-        total: vendors.length,
-        active: vendors.filter((v) => v.status === 'Active').length,
-        critical: vendors.filter((v) => v.tier === 'Critical').length,
-        high: vendors.filter((v) => v.tier === 'High').length,
-        neverAssessed: vendors.filter((v) => v.assessmentPosture === 'NeverAssessed').length,
-        assessmentOverdue: vendors.filter((v) => v.assessmentOverdue).length,
-        failing: vendors.filter((v) => v.assessmentPosture === 'Failing').length,
-        withPersonalData: vendors.filter((v) => ['PersonalData', 'SensitivePersonalData'].includes(v.dataAccess)).length,
-        withSystemAccess: vendors.filter((v) => v.hasSystemAccess).length,
-        contractExpiring: vendors.filter((v) => v.contractExpiring).length,
-        exitWindowPassed: vendors.filter((v) => v.exitWindowPassed).length,
-        annualSpend: vendors.reduce((s, v) => s + (v.annualSpend ?? 0), 0),
-        valueAtRisk: vendors.reduce((s, v) => s + v.concentration.valueAtRisk, 0),
+        total,
+        active: all.filter((v) => v.status === 'Active').length,
+        critical: all.filter((v) => v.tier === 'Critical').length,
+        high: all.filter((v) => v.tier === 'High').length,
+        neverAssessed: all.filter((v) => v.assessmentPosture === 'NeverAssessed').length,
+        assessmentOverdue: all.filter((v) => v.assessmentOverdue).length,
+        failing: all.filter((v) => v.assessmentPosture === 'Failing').length,
+        withPersonalData: all.filter((v) => ['PersonalData', 'SensitivePersonalData'].includes(v.dataAccess)).length,
+        withSystemAccess: all.filter((v) => v.hasSystemAccess).length,
+        contractExpiring: all.filter((v) => v.contractExpiring).length,
+        exitWindowPassed: all.filter((v) => v.exitWindowPassed).length,
+        annualSpend: all.reduce((s, v) => s + (v.annualSpend ?? 0), 0),
+        valueAtRisk: all.reduce((s, v) => s + v.concentration.valueAtRisk, 0),
       },
+      paging: pageInfo(total, page),
       vendors,
     });
   } catch (error: any) {

@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import {
   resolveTenantScope, auditCrossTenantRead, canWriteToTenant, StaleTenantError,
@@ -344,31 +345,46 @@ export const listImplementations = async (req: AuthenticatedRequest, res: Respon
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.implementations.list');
 
-    const { status, effectiveness, mine, overdue } = req.query as Record<string, string | undefined>;
+    const { status, effectiveness, mine, overdue, search } = req.query as Record<string, string | undefined>;
     const where: any = { tenantId: { in: scope.tenantIds } };
     if (status) where.status = status;
     if (effectiveness) where.effectiveness = effectiveness;
     if (mine === 'true') where.ownerId = req.user!.id;
     if (overdue === 'true') where.nextDueDate = { lt: new Date() };
+    // The screen's search, here so it covers every page (QA-021).
+    if (search) {
+      const has = { contains: search, mode: 'insensitive' as const };
+      where.OR = [{ title: has }, { control: { code: has } }];
+    }
 
-    const impls = await prisma.controlImplementation.findMany({
-      where,
-      include: {
-        control: {
-          select: {
-            code: true, title: true, domain: true,
-            clauseLinks: { include: { clause: { include: { standard: { select: { code: true } } } } } },
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const [impls, total, whole] = await Promise.all([
+      prisma.controlImplementation.findMany({
+        where,
+        include: {
+          control: {
+            select: {
+              code: true, title: true, domain: true,
+              clauseLinks: { include: { clause: { include: { standard: { select: { code: true } } } } } },
+            },
           },
+          owner: { select: { id: true, name: true, email: true } },
+          operator: { select: { id: true, name: true, email: true } },
+          validatedBy: { select: { id: true, name: true, email: true } },
+          tenant: { select: { id: true, name: true } },
+          _count: { select: { evidence: true } },
         },
-        owner: { select: { id: true, name: true, email: true } },
-        operator: { select: { id: true, name: true, email: true } },
-        validatedBy: { select: { id: true, name: true, email: true } },
-        tenant: { select: { id: true, name: true } },
-        _count: { select: { evidence: true } },
-      },
-      orderBy: [{ nextDueDate: 'asc' }, { updatedAt: 'desc' }],
-      take: 500,
-    });
+        orderBy: [{ nextDueDate: 'asc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.controlImplementation.count({ where }),
+      // Every matching implementation, only what the totals need (QA-021).
+      prisma.controlImplementation.findMany({
+        where,
+        select: { status: true, effectiveness: true, nextDueDate: true, submittedAt: true, validatedAt: true },
+      }),
+    ]);
 
     const now = Date.now();
     const enriched = impls.map((i) => ({
@@ -388,15 +404,16 @@ export const listImplementations = async (req: AuthenticatedRequest, res: Respon
       scope: scope.kind,
       count: enriched.length,
       totals: {
-        total: enriched.length,
-        verified: enriched.filter((i) => i.status === 'Verified').length,
-        implemented: enriched.filter((i) => i.status === 'Implemented').length,
-        inProgress: enriched.filter((i) => i.status === 'InProgress').length,
-        notStarted: enriched.filter((i) => i.status === 'NotStarted').length,
-        overdue: enriched.filter((i) => i.isOverdue).length,
-        awaitingValidation: enriched.filter((i) => i.awaitingValidation).length,
-        effective: enriched.filter((i) => i.effectiveness === 'Effective').length,
+        total,
+        verified: whole.filter((i) => i.status === 'Verified').length,
+        implemented: whole.filter((i) => i.status === 'Implemented').length,
+        inProgress: whole.filter((i) => i.status === 'InProgress').length,
+        notStarted: whole.filter((i) => i.status === 'NotStarted').length,
+        overdue: whole.filter((i) => !!i.nextDueDate && i.nextDueDate.getTime() < now && i.status !== 'Verified').length,
+        awaitingValidation: whole.filter((i) => i.status === 'Implemented' && !!i.submittedAt && !i.validatedAt).length,
+        effective: whole.filter((i) => i.effectiveness === 'Effective').length,
       },
+      paging: pageInfo(total, page),
       implementations: enriched,
     });
   } catch (error: any) {

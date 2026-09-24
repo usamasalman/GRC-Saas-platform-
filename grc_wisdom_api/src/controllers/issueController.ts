@@ -8,6 +8,7 @@ import { checkSod, SodViolation } from '../services/sodEngine';
 import { createIssueRecord } from '../services/issueFactory';
 import { notify } from '../services/notificationService';
 import { hasAnyCapability, CAP } from '../services/capabilityEngine';
+import { readPage, pageInfo } from '../utils/paging';
 
 const SUBJ_ISSUE = 'Issue';
 
@@ -50,6 +51,27 @@ export function computeAging(issue: AgingIssue, now = new Date()) {
   };
 }
 
+/**
+ * computeAging's "overdue" as a database condition, so the filter can run in
+ * the query and a paged register stays correct (QA-021). Overdue means at least
+ * one whole day past the target: the agreed close date, or the rating's default
+ * window from identification.
+ */
+export function overdueWhere(now = new Date()) {
+  const dayAgo = now.getTime() - DAY_MS;
+  const rated = Object.keys(TARGET_DAYS);
+  return {
+    status: { not: 'Closed' },
+    OR: [
+      { targetCloseDate: { lte: new Date(dayAgo) } },
+      ...Object.entries(TARGET_DAYS).map(([rating, days]) => ({
+        targetCloseDate: null, riskRating: rating, identifiedDate: { lte: new Date(dayAgo - days * DAY_MS) },
+      })),
+      { targetCloseDate: null, riskRating: { notIn: rated }, identifiedDate: { lte: new Date(dayAgo - 60 * DAY_MS) } },
+    ],
+  };
+}
+
 /** Issues awaiting a management response have not started remediation yet. */
 const AWAITING_RESPONSE = ['Open', 'Reopened'];
 
@@ -65,13 +87,19 @@ export const listIssues = async (req: AuthenticatedRequest, res: Response): Prom
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.issues.list');
 
-    const { source, status, riskRating, overdue } = req.query as Record<string, string | undefined>;
+    const { source, status, riskRating, overdue, auditId } = req.query as Record<string, string | undefined>;
     const where: any = { tenantId: { in: scope.tenantIds } };
     if (source) where.source = source;
     if (status) where.status = status;
     if (riskRating) where.riskRating = riskRating;
+    // One engagement's findings, for its control matrix, rather than every
+    // issue in the organisation filtered in the browser.
+    if (typeof auditId === 'string' && auditId) where.auditId = auditId;
+    // In the query, not after it, so the pages and the count agree.
+    if (overdue === 'true') where.AND = [overdueWhere()];
 
-    const rows = await prisma.issue.findMany({
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const [rows, total, whole] = await Promise.all([prisma.issue.findMany({
       where,
       include: {
         raisedBy: { select: { id: true, name: true, email: true } },
@@ -81,34 +109,43 @@ export const listIssues = async (req: AuthenticatedRequest, res: Response): Prom
         tenant: { select: { id: true, name: true } },
         audit: { select: { id: true, ref: true, title: true } },
       },
-      orderBy: [{ status: 'asc' }, { identifiedDate: 'asc' }],
-      take: 500,
-    });
+      orderBy: [{ status: 'asc' }, { identifiedDate: 'asc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    prisma.issue.count({ where }),
+    // Every issue matching the filters, only what the figures need, so the
+    // totals describe the register rather than the page on screen (QA-021).
+    prisma.issue.findMany({
+      where,
+      select: { status: true, source: true, riskRating: true, escalationLevel: true, identifiedDate: true, targetCloseDate: true },
+    })]);
 
-    let issues = rows.map((i) => ({ ...i, aging: computeAging(i) }));
-    if (overdue === 'true') issues = issues.filter((i) => i.aging.isOverdue);
+    const issues = rows.map((i) => ({ ...i, aging: computeAging(i) }));
 
-    const open = issues.filter((i) => i.status !== 'Closed');
+    const all = whole.map((i) => ({ ...i, overdue: computeAging(i).isOverdue }));
+    const open = all.filter((i) => i.status !== 'Closed');
     const bySource: Record<string, number> = {};
-    for (const i of issues) bySource[i.source] = (bySource[i.source] ?? 0) + 1;
+    for (const i of all) bySource[i.source] = (bySource[i.source] ?? 0) + 1;
 
     res.json({
       status: 'success',
       scope: scope.kind,
       count: issues.length,
       totals: {
-        total: issues.length,
+        total,
         open: open.length,
-        overdue: open.filter((i) => i.aging.isOverdue).length,
+        overdue: open.filter((i) => i.overdue).length,
         awaitingResponse: open.filter((i) => AWAITING_RESPONSE.includes(i.status)).length,
         disputed: open.filter((i) => i.status === 'Disputed').length,
         escalated: open.filter((i) => i.escalationLevel > 0).length,
         highOpen: open.filter((i) => i.riskRating === 'High').length,
-        closureRate: issues.length > 0
-          ? Math.round(((issues.length - open.length) / issues.length) * 100)
+        closureRate: all.length > 0
+          ? Math.round(((all.length - open.length) / all.length) * 100)
           : 100,
       },
       bySource,
+      paging: pageInfo(total, page),
       issues,
     });
   } catch (error: any) {

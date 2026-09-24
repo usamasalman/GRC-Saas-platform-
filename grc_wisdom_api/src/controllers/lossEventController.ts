@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { judgeDeletion } from '../services/recordDeletion';
@@ -32,50 +33,65 @@ export const listLossEvents = async (req: AuthenticatedRequest, res: Response): 
     if (category) where.category = category;
     if (status) where.status = status;
 
-    const events = await prisma.lossEvent.findMany({
-      where,
-      include: {
-        reportedBy: { select: { id: true, name: true } },
-        risk: { select: { id: true, ref: true, title: true, residualScore: true } },
-        issue: { select: { id: true, ref: true, status: true } },
-        tenant: { select: { id: true, name: true } },
-      },
-      orderBy: { occurredAt: 'desc' },
-      take: 300,
-    });
+    const page = readPage(req.query as Record<string, unknown>, 300);
+    const [events, total, whole] = await Promise.all([
+      prisma.lossEvent.findMany({
+        where,
+        include: {
+          reportedBy: { select: { id: true, name: true } },
+          risk: { select: { id: true, ref: true, title: true, residualScore: true } },
+          issue: { select: { id: true, ref: true, status: true } },
+          tenant: { select: { id: true, name: true } },
+        },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.lossEvent.count({ where }),
+      // Every matching event, only what the figures need: a loss total that
+      // covers the first 300 events is not the organisation's loss (QA-021).
+      prisma.lossEvent.findMany({
+        where,
+        select: { category: true, status: true, grossAmount: true, recoveredAmount: true, occurredAt: true, discoveredAt: true },
+      }),
+    ]);
 
+    const lag = (e: { occurredAt: Date; discoveredAt: Date }) =>
+      Math.max(0, Math.round((e.discoveredAt.getTime() - e.occurredAt.getTime()) / 86_400_000));
     const enriched = events.map((e) => ({
       ...e,
       netAmount: e.grossAmount - e.recoveredAmount,
       // The lag between an event happening and anyone noticing is itself a
       // control-effectiveness signal.
-      detectionLagDays: Math.max(0, Math.round((e.discoveredAt.getTime() - e.occurredAt.getTime()) / 86_400_000)),
+      detectionLagDays: lag(e),
     }));
+    const all = whole.map((e) => ({ ...e, netAmount: e.grossAmount - e.recoveredAmount, detectionLagDays: lag(e) }));
 
     const byCategory: Record<string, { count: number; net: number }> = {};
-    for (const e of enriched) {
+    for (const e of all) {
       const row = byCategory[e.category] ?? { count: 0, net: 0 };
       row.count++; row.net += e.netAmount;
       byCategory[e.category] = row;
     }
 
-    const totalNet = enriched.reduce((n, e) => n + e.netAmount, 0);
+    const totalNet = all.reduce((n, e) => n + e.netAmount, 0);
     res.json({
       status: 'success',
       scope: scope.kind,
       count: enriched.length,
       totals: {
-        events: enriched.length,
-        open: enriched.filter((e) => e.status !== 'Closed').length,
-        grossAmount: enriched.reduce((n, e) => n + e.grossAmount, 0),
-        recoveredAmount: enriched.reduce((n, e) => n + e.recoveredAmount, 0),
+        events: total,
+        open: all.filter((e) => e.status !== 'Closed').length,
+        grossAmount: all.reduce((n, e) => n + e.grossAmount, 0),
+        recoveredAmount: all.reduce((n, e) => n + e.recoveredAmount, 0),
         netAmount: totalNet,
-        largestNet: enriched.reduce((n, e) => Math.max(n, e.netAmount), 0),
-        avgDetectionLagDays: enriched.length > 0
-          ? Math.round(enriched.reduce((n, e) => n + e.detectionLagDays, 0) / enriched.length)
+        largestNet: all.reduce((n, e) => Math.max(n, e.netAmount), 0),
+        avgDetectionLagDays: all.length > 0
+          ? Math.round(all.reduce((n, e) => n + e.detectionLagDays, 0) / all.length)
           : 0,
       },
       byCategory,
+      paging: pageInfo(total, page),
       events: enriched,
     });
   } catch (error: any) {

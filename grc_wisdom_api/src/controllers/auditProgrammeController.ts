@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { checkSod, SodViolation } from '../services/sodEngine';
@@ -28,16 +29,26 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
     const where: any = { tenantId: { in: scope.tenantIds } };
     if (status) where.status = status;
 
-    const audits = await prisma.audit.findMany({
-      where,
-      include: {
-        leadAuditor: { select: { id: true, name: true, email: true } },
-        tenant: { select: { id: true, name: true } },
-        issues: { select: { id: true, status: true, riskRating: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [audits, total, whole] = await Promise.all([
+      prisma.audit.findMany({
+        where,
+        include: {
+          leadAuditor: { select: { id: true, name: true, email: true } },
+          tenant: { select: { id: true, name: true } },
+          issues: { select: { id: true, status: true, riskRating: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.audit.count({ where }),
+      // Every matching audit and its findings, only what the totals need (QA-021).
+      prisma.audit.findMany({
+        where,
+        select: { status: true, issues: { select: { status: true, riskRating: true } } },
+      }),
+    ]);
 
     const enriched = audits.map((a) => ({
       ...a,
@@ -49,15 +60,15 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
       },
     }));
 
-    const allFindings = audits.flatMap((a) => a.issues);
+    const allFindings = whole.flatMap((a) => a.issues);
     res.json({
       status: 'success',
       scope: scope.kind,
       count: enriched.length,
       totals: {
-        audits: enriched.length,
-        inFieldwork: enriched.filter((a) => a.status === 'Fieldwork').length,
-        closed: enriched.filter((a) => a.status === 'Closed').length,
+        audits: total,
+        inFieldwork: whole.filter((a) => a.status === 'Fieldwork').length,
+        closed: whole.filter((a) => a.status === 'Closed').length,
         findings: allFindings.length,
         openFindings: allFindings.filter((f) => f.status !== 'Closed').length,
         highFindings: allFindings.filter((f) => f.riskRating === 'High' && f.status !== 'Closed').length,
@@ -65,6 +76,7 @@ export const listAudits = async (req: AuthenticatedRequest, res: Response): Prom
           ? Math.round((allFindings.filter((f) => f.status === 'Closed').length / allFindings.length) * 100)
           : 100,
       },
+      paging: pageInfo(total, page),
       audits: enriched,
     });
   } catch (error: any) {

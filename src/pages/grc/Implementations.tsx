@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import FormDialog from '../../components/FormDialog';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 
 const STATUS_PILL: Record<string, React.CSSProperties> = {
   Verified: pill('var(--success)', 'var(--success-line)'),
@@ -33,6 +35,10 @@ const Implementations: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
+  // Paged (QA-021); the status filter and the search go to the server.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const settledSearch = useDebounced(search);
 
   const [detail, setDetail] = useState<any>(null);
   const [evTitle, setEvTitle] = useState('');
@@ -66,16 +72,19 @@ const Implementations: React.FC = () => {
     setLoading(true); setError('');
     try {
       const [iRes, cRes] = await Promise.all([
-        apiClient.get('/api/grc/implementations'),
+        apiClient.get('/api/grc/implementations', {
+          params: { page, status: statusFilter || undefined, search: settledSearch.trim() || undefined },
+        }),
         apiClient.get('/api/grc/controls').catch(() => null),
       ]);
       setImpls(iRes.data?.implementations || []);
       setTotals(iRes.data?.totals || {});
+      setPaging(iRes.data?.paging || null);
       setScope(iRes.data?.scope || '');
       setControls(cRes?.data?.controls || []);
     } catch (err) { setError(apiError(err, 'Failed to load implementations')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, statusFilter, settledSearch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -180,8 +189,8 @@ const Implementations: React.FC = () => {
       ]} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input placeholder="Search control code or title…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 280 }} />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...S.input, maxWidth: 190 }}>
+        <input placeholder="Search control code or title…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} style={{ ...S.input, maxWidth: 280 }} />
+        <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }} style={{ ...S.input, maxWidth: 190 }}>
           <option value="">All statuses</option>
           {['NotStarted', 'InProgress', 'Implemented', 'Verified'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -239,6 +248,7 @@ const Implementations: React.FC = () => {
               )}
             </tbody>
           </table>
+          <PagingBar paging={paging} onPage={setPage} noun="implementations" disabled={loading} />
         </div>
       )}
 

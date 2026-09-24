@@ -5,6 +5,7 @@ import DeleteRecordButton from '../../../components/DeleteRecordButton';
 import { PromptDialog } from '../../../components/Dialog';
 import FormDialog from '../../../components/FormDialog';
 import Can, { MAY, can } from '../../../components/Can';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * One register for every issue, whatever raised it.
@@ -44,6 +45,9 @@ const SOURCE_LABEL: Record<string, string> = {
 const IssueRegister: React.FC = () => {
   const [issues, setIssues] = useState<any[]>([]);
   const [totals, setTotals] = useState<any>({});
+  // Paged (QA-021); the totals cover every issue that matches the filter.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [bySource, setBySource] = useState<Record<string, number>>({});
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,13 +96,17 @@ const IssueRegister: React.FC = () => {
       if (filter.source) qs.set('source', filter.source);
       if (filter.status) qs.set('status', filter.status);
       if (filter.overdue) qs.set('overdue', 'true');
+      qs.set('page', String(page));
       const res = await apiClient.get(`/api/grc/issues?${qs.toString()}`);
       setIssues(res.data?.issues || []);
       setTotals(res.data?.totals || {});
+      setPaging(res.data?.paging || null);
       setBySource(res.data?.bySource || {});
     } catch (err) { setError(apiError(err, 'Failed to load the issue register')); }
     finally { setLoading(false); }
-  }, [filter]);
+  }, [filter, page]);
+  // A new filter starts at the first page; one render, so one load.
+  const changeFilter = (next: typeof filter) => { setPage(1); setFilter(next); };
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -259,18 +267,18 @@ const IssueRegister: React.FC = () => {
       ]} />
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <select value={filter.source} onChange={(e) => setFilter({ ...filter, source: e.target.value })} style={{ ...S.input, width: 200 }}>
+        <select value={filter.source} onChange={(e) => changeFilter({ ...filter, source: e.target.value })} style={{ ...S.input, width: 200 }}>
           <option value="">All sources</option>
           {Object.keys(SOURCE_LABEL).map((s) => (
             <option key={s} value={s}>{SOURCE_LABEL[s]}{bySource[s] ? ` (${bySource[s]})` : ''}</option>
           ))}
         </select>
-        <select value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })} style={{ ...S.input, width: 200 }}>
+        <select value={filter.status} onChange={(e) => changeFilter({ ...filter, status: e.target.value })} style={{ ...S.input, width: 200 }}>
           <option value="">All statuses</option>
           {Object.keys(STATUS_PILL).map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <label style={{ fontSize: 13, color: 'var(--ink-body)', display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input type="checkbox" checked={filter.overdue} onChange={(e) => setFilter({ ...filter, overdue: e.target.checked })} />
+          <input type="checkbox" checked={filter.overdue} onChange={(e) => changeFilter({ ...filter, overdue: e.target.checked })} />
           Overdue only
         </label>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -346,6 +354,8 @@ const IssueRegister: React.FC = () => {
           </div>
         </form>
       )}
+
+      <PagingBar paging={paging} onPage={setPage} noun="issues" disabled={loading} />
 
       {filtered.length === 0 && (
         <div style={{ ...S.card, padding: 26, color: 'var(--ink-muted)', fontSize: 13 }}>

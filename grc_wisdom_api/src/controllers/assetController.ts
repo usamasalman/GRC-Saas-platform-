@@ -11,6 +11,7 @@ import {
   nextAssetReview, FORMULAS,
 } from '../services/assetRiskScoring';
 import { scoreOf, nextReviewFrom } from '../services/riskScoring';
+import { readPage, pageInfo } from '../utils/paging';
 
 const SUBJ_ASSET = 'Asset';
 
@@ -103,24 +104,70 @@ export const listAssets = async (req: AuthenticatedRequest, res: Response): Prom
     if (tier) where.criticalityTier = tier;
     if (status) where.status = status;
     if (search) {
+      // Case-insensitive, as the screen's own filter was before it moved here.
       where.OR = [
-        { name: { contains: search } },
-        { ref: { contains: search } },
-        { vendorName: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { ref: { contains: search, mode: 'insensitive' } },
+        { vendorName: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    const rows = await prisma.asset.findMany({
-      where, include: INCLUDE,
-      orderBy: [{ criticality: 'desc' }, { name: 'asc' }],
-      take: 500,
+    // "Unprotected" is no linked control at all (controlPosture's total), so
+    // it is a query condition and the pages and the count agree (QA-021).
+    if (unprotected === 'true') where.controlLinks = { none: {} };
+
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const now = Date.now();
+    const [rows, total, whole] = await Promise.all([
+      prisma.asset.findMany({
+        where, include: INCLUDE,
+        orderBy: [{ criticality: 'desc' }, { name: 'asc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.asset.count({ where }),
+      // Every matching asset, only what the figures need: the totals describe
+      // the register, not the page on screen.
+      prisma.asset.findMany({
+        where,
+        select: {
+          type: true, ownership: true, criticalityTier: true, status: true,
+          nextReviewDate: true, replacementValue: true,
+          _count: { select: { controlLinks: true } },
+          riskLinks: { select: { exposureFactor: true, risk: { select: { status: true, residualLikelihood: true } } } },
+        },
+      }),
+    ]);
+    const assets: any[] = rows.map(enrich);
+
+    // The same derivations enrich() makes for a row, for every asset.
+    const figures = whole.map((a) => {
+      const risks = a.riskLinks.filter((l) => l.risk);
+      const openRisks = risks.filter((l) => l.risk!.status !== 'Closed');
+      let ale = 0;
+      for (const l of a.riskLinks) {
+        const le = lossExpectancy({
+          replacementValue: a.replacementValue,
+          exposureFactor: l.exposureFactor,
+          residualLikelihood: l.risk?.residualLikelihood,
+        });
+        if (le && le.ale > ale) ale = le.ale;
+      }
+      const unprotectedAsset = a._count.controlLinks === 0;
+      return {
+        ...a,
+        tangibility: tangibilityOf(a.type),
+        unprotected: unprotectedAsset,
+        unprotectedButExposed: unprotectedAsset && openRisks.length > 0,
+        riskCount: risks.length,
+        reviewOverdue: !!a.nextReviewDate && a.nextReviewDate.getTime() < now && a.status !== 'Retired',
+        ale,
+      };
     });
-    let assets: any[] = rows.map(enrich);
-    if (unprotected === 'true') assets = assets.filter((a) => a.controlPosture.total === 0);
 
     const byType: Record<string, number> = {};
     const byOwnership: Record<string, number> = {};
-    for (const a of assets) {
+    for (const a of figures) {
       byType[a.type] = (byType[a.type] ?? 0) + 1;
       byOwnership[a.ownership] = (byOwnership[a.ownership] ?? 0) + 1;
     }
@@ -138,19 +185,20 @@ export const listAssets = async (req: AuthenticatedRequest, res: Response): Prom
       byType,
       byOwnership,
       totals: {
-        total: assets.length,
-        critical: assets.filter((a) => a.criticalityTier === 'Critical').length,
-        high: assets.filter((a) => a.criticalityTier === 'High').length,
-        thirdParty: assets.filter((a) => a.ownership !== 'Internal').length,
-        physical: assets.filter((a) => a.tangibility === 'Physical').length,
-        nonPhysical: assets.filter((a) => a.tangibility === 'NonPhysical').length,
-        unprotected: assets.filter((a) => a.controlPosture.total === 0).length,
-        unprotectedButExposed: assets.filter((a) => a.unprotectedButExposed).length,
-        withoutRisk: assets.filter((a) => a.riskCount === 0).length,
-        reviewOverdue: assets.filter((a) => a.reviewOverdue).length,
-        totalValue: assets.reduce((s, a) => s + (a.replacementValue ?? 0), 0),
-        annualisedLoss: assets.reduce((s, a) => s + (a.lossExpectancy?.ale ?? 0), 0),
+        total,
+        critical: figures.filter((a) => a.criticalityTier === 'Critical').length,
+        high: figures.filter((a) => a.criticalityTier === 'High').length,
+        thirdParty: figures.filter((a) => a.ownership !== 'Internal').length,
+        physical: figures.filter((a) => a.tangibility === 'Physical').length,
+        nonPhysical: figures.filter((a) => a.tangibility === 'NonPhysical').length,
+        unprotected: figures.filter((a) => a.unprotected).length,
+        unprotectedButExposed: figures.filter((a) => a.unprotectedButExposed).length,
+        withoutRisk: figures.filter((a) => a.riskCount === 0).length,
+        reviewOverdue: figures.filter((a) => a.reviewOverdue).length,
+        totalValue: figures.reduce((s, a) => s + (a.replacementValue ?? 0), 0),
+        annualisedLoss: figures.reduce((s, a) => s + a.ale, 0),
       },
+      paging: pageInfo(total, page),
       assets,
     });
   } catch (error: any) {

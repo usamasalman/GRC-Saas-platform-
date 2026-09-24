@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { evaluateAppetite } from '../services/riskThresholds';
@@ -32,21 +33,60 @@ async function nextRef(tenantId: string): Promise<string> {
 
 // ─── List ──────────────────────────────────────────────────────────────────
 
+/** A 5×5 count grid, [likelihood-1][impact-1], with up to 25 references per cell. */
+function heatGrid<T extends { ref: string }>(rows: T[], pick: (r: T) => [number, number]) {
+  const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ count: 0, refs: [] as string[] })));
+  for (const r of rows) {
+    const [l, i] = pick(r);
+    const cell = grid[Math.min(5, Math.max(1, l || 1)) - 1][Math.min(5, Math.max(1, i || 1)) - 1];
+    cell.count++;
+    if (cell.refs.length < 25) cell.refs.push(r.ref);
+  }
+  return grid;
+}
+
 export const listRisks = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.risks.list');
 
-    const { status, category, search, mine } = req.query as Record<string, string | undefined>;
+    const { status, category, search, mine, rating, direction, cell } = req.query as Record<string, string | undefined>;
+
+    // The tenant's own approved criteria band the register where it has set
+    // them; otherwise the platform default applies and says so. Needed before
+    // the query now, because the rating filter is a score range under them.
+    const criteria = await activeCriteria(prisma, req.user!.tenantId);
+
+    // Every filter the register screen offers runs here, in the query, so a
+    // paged register finds matches on every page (QA-021). They used to run in
+    // the browser over the rows it had, which with paging would be one page.
     const where: any = { tenantId: { in: scope.tenantIds } };
     if (status) where.status = status;
     if (category) where.category = category;
+    if (direction) where.direction = direction;
     if (mine === 'true') where.ownerId = req.user!.id;
+    if (rating === 'High') where.residualScore = { gte: criteria.highThreshold };
+    else if (rating === 'Medium') where.residualScore = { gte: criteria.mediumThreshold, lt: criteria.highThreshold };
+    else if (rating === 'Low') where.residualScore = { lt: criteria.mediumThreshold };
     if (search) {
-      where.OR = [{ title: { contains: search } }, { ref: { contains: search } }, { description: { contains: search } }];
+      const has = { contains: search, mode: 'insensitive' as const };
+      where.OR = [
+        { title: has }, { ref: has }, { category: has }, { description: has }, { owner: { name: has } },
+      ];
+    }
+    // A heatmap cell, "inherent:3:4": likelihood 3, impact 4 on that axis.
+    // Kept out of the heatmap's own query, or selecting a cell would empty
+    // every other cell.
+    const heatmapWhere = { ...where };
+    const [axis, lik, imp] = String(cell || '').split(':');
+    if ((axis === 'inherent' || axis === 'residual') && Number(lik) >= 1 && Number(imp) >= 1) {
+      where[`${axis}Likelihood`] = Number(lik);
+      where[`${axis}Impact`] = Number(imp);
     }
 
-    const risks = await prisma.risk.findMany({
+    const page = readPage(req.query as Record<string, unknown>, 500);
+    const now = Date.now();
+    const [risks, total, whole] = await Promise.all([prisma.risk.findMany({
       where,
       include: {
         owner: { select: { id: true, name: true, email: true } },
@@ -66,13 +106,27 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
         effects: { select: { causeId: true, nature: true } },
         _count: { select: { kris: true, lossEvents: true } },
       },
-      orderBy: [{ residualScore: 'desc' }],
-      take: 500,
-    });
-
-    // The tenant's own approved criteria band the register where it has set
-    // them; otherwise the platform default applies and says so.
-    const criteria = await activeCriteria(prisma, req.user!.tenantId);
+      // The id makes the order total, so a risk cannot appear on two pages.
+      orderBy: [{ residualScore: 'desc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    prisma.risk.count({ where }),
+    // The whole register under the filters, only the fields the figures need:
+    // a total on this screen describes the register, not the page on screen.
+    // They were computed from the first 500 rows, so past 500 risks they were
+    // quietly wrong as well as incomplete (QA-021). Without the selected
+    // heatmap cell, so choosing one narrows the table and not the figures.
+    prisma.risk.findMany({
+      where: heatmapWhere,
+      select: {
+        ref: true, inherentLikelihood: true, inherentImpact: true, residualLikelihood: true, residualImpact: true,
+        status: true, residualScore: true, inherentScore: true, category: true, direction: true,
+        acceptedUntil: true, nextReviewDate: true,
+        _count: { select: { controlLinks: true } },
+        treatments: { where: { status: 'Open', dueDate: { lt: new Date(now) } }, select: { id: true } },
+      },
+    })]);
 
     // Board-set appetite is per category, so one lookup covers the whole page
     // and every risk can be banded without an N+1.
@@ -82,7 +136,6 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
     });
     const appetiteByCategory = new Map(appetites.map((a) => [a.category, a]));
 
-    const now = Date.now();
     const enriched = risks.map((r) => {
       const appetite = appetiteByCategory.get(r.category);
       const openIssues = r.issues.filter((i) => i.status !== 'Closed');
@@ -127,12 +180,23 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
       };
     });
 
-    const byCategory: Record<string, { total: number; high: number; beyondTolerance: number }> = {};
-    for (const r of enriched) {
-      const c = (byCategory[r.category] ||= { total: 0, high: 0, beyondTolerance: 0 });
+    // The same judgements as each row above, made for every risk in the register.
+    const judged = whole.map((r) => {
+      const appetite = appetiteByCategory.get(r.category);
+      return {
+        ...r,
+        high: bandFor(r.residualScore, criteria) === 'High',
+        beyondTolerance: appetite ? evaluateAppetite(r.residualScore, appetite) === 'BeyondTolerance' : false,
+      };
+    });
+
+    const byCategory: Record<string, { total: number; high: number; beyondTolerance: number; maxResidual: number }> = {};
+    for (const r of judged) {
+      const c = (byCategory[r.category] ||= { total: 0, high: 0, beyondTolerance: 0, maxResidual: 0 });
       c.total++;
-      if (r.residualRating === 'High') c.high++;
-      if (r.appetiteBand === 'BeyondTolerance') c.beyondTolerance++;
+      if (r.high) c.high++;
+      if (r.beyondTolerance) c.beyondTolerance++;
+      c.maxResidual = Math.max(c.maxResidual, r.residualScore);
     }
 
     res.json({
@@ -149,25 +213,35 @@ export const listRisks = async (req: AuthenticatedRequest, res: Response): Promi
         Opportunity: OPPORTUNITY_TREATMENTS,
       },
       totals: {
-        total: enriched.length,
-        open: enriched.filter((r) => r.status === 'Open').length,
-        underTreatment: enriched.filter((r) => r.status === 'UnderTreatment').length,
-        accepted: enriched.filter((r) => r.status === 'Accepted').length,
-        highResidual: enriched.filter((r) => r.residualRating === 'High').length,
-        overdueTreatments: enriched.reduce((a, r) => a + r.overdueTreatments, 0),
-        expiredAcceptances: enriched.filter((r) => r.acceptanceExpired).length,
-        beyondTolerance: enriched.filter((r) => r.appetiteBand === 'BeyondTolerance').length,
-        reviewOverdue: enriched.filter((r) => r.reviewOverdue).length,
-        opportunities: enriched.filter((r) => r.direction === 'Opportunity').length,
-        unmitigated: enriched.filter((r) => r.linkedControls.length === 0).length,
+        total: judged.length,
+        open: judged.filter((r) => r.status === 'Open').length,
+        underTreatment: judged.filter((r) => r.status === 'UnderTreatment').length,
+        accepted: judged.filter((r) => r.status === 'Accepted').length,
+        highResidual: judged.filter((r) => r.high).length,
+        overdueTreatments: judged.reduce((a, r) => a + r.treatments.length, 0),
+        expiredAcceptances: judged.filter((r) => r.status === 'Accepted' && !!r.acceptedUntil && r.acceptedUntil.getTime() < now).length,
+        beyondTolerance: judged.filter((r) => r.beyondTolerance).length,
+        reviewOverdue: judged.filter((r) => !!r.nextReviewDate && r.nextReviewDate.getTime() < now && r.status !== 'Closed').length,
+        opportunities: judged.filter((r) => r.direction === 'Opportunity').length,
+        unmitigated: judged.filter((r) => r._count.controlLinks === 0).length,
         // How much of the register's inherent exposure the control environment
         // is actually removing. The single number a board asks for.
-        mitigationRate: enriched.length > 0
+        mitigationRate: judged.length > 0
           ? Math.round(
-            (1 - enriched.reduce((a, r) => a + r.residualScore, 0)
-              / Math.max(1, enriched.reduce((a, r) => a + r.inherentScore, 0))) * 100,
+            (1 - judged.reduce((a, r) => a + r.residualScore, 0)
+              / Math.max(1, judged.reduce((a, r) => a + r.inherentScore, 0))) * 100,
           )
           : 0,
+      },
+      paging: pageInfo(total, page),
+      // 5×5, [likelihood-1][impact-1], over the register under the current
+      // filters but not the selected cell. References are for the tooltip, so
+      // a crowded cell names its first 25.
+      heatmaps: {
+        inherent: heatGrid(whole, (r) => [r.inherentLikelihood, r.inherentImpact]),
+        residual: heatGrid(whole, (r) => [r.residualLikelihood, r.residualImpact]),
+        inherentExposure: whole.reduce((a, r) => a + (r.inherentScore || 0), 0),
+        residualExposure: whole.reduce((a, r) => a + (r.residualScore || 0), 0),
       },
       byCategory,
       appetites: appetites.map((a) => ({

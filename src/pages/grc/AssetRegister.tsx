@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import fetchAllPages from '../../api/fetchAllPages';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import Icon from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
@@ -8,6 +9,8 @@ import DeleteRecordButton from '../../components/DeleteRecordButton';
 import PickManyDialog from '../../components/PickManyDialog';
 import { PromptDialog } from '../../components/Dialog';
 import Can, { MAY, can } from '../../components/Can';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import useDebounced from '../../components/useDebounced';
 
 /**
  * The asset register — ISO/IEC 27001 A.5.9 inventory, valued the ISO 27005 way.
@@ -72,6 +75,11 @@ const AssetRegister: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [ownershipFilter, setOwnershipFilter] = useState('');
   const [tierFilter, setTierFilter] = useState('');
+  // Paged (QA-021). The filters and the search go to the server with the page,
+  // so they find matches on every page, not just the one on screen.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
+  const settledSearch = useDebounced(search);
 
   const [detail, setDetail] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
@@ -102,14 +110,22 @@ const AssetRegister: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [a, an, i, u] = await Promise.all([
-        apiClient.get('/api/grc/assets'),
+      const [a, an, u] = await Promise.all([
+        apiClient.get('/api/grc/assets', {
+          params: {
+            page,
+            type: typeFilter || undefined,
+            ownership: ownershipFilter || undefined,
+            tier: tierFilter || undefined,
+            search: settledSearch.trim() || undefined,
+          },
+        }),
         apiClient.get('/api/grc/asset-analytics').catch(() => null),
-        apiClient.get('/api/grc/implementations').catch(() => null),
         apiClient.get('/api/grc/universe').catch(() => null),
       ]);
       setAssets(a.data?.assets || []);
       setTotals(a.data?.totals || {});
+      setPaging(a.data?.paging || null);
       setMeta({
         types: a.data?.types || [], typeHelp: a.data?.typeHelp || {},
         ownerships: a.data?.ownerships || [], classifications: a.data?.classifications || [],
@@ -117,13 +133,21 @@ const AssetRegister: React.FC = () => {
       });
       setScope(a.data?.scope || '');
       setAnalytics(an?.data || null);
-      setImpls(i?.data?.implementations || []);
       setEntities(u?.data?.entities || []);
     } catch (err) { setError(apiError(err, 'Failed to load the asset register')); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, typeFilter, ownershipFilter, tierFilter, settledSearch]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The controls an asset can be protected by: every one, loaded once rather
+  // than with each page of assets. The register's first page of them left the
+  // rest impossible to pick (QA-021).
+  useEffect(() => {
+    fetchAllPages<any>('/api/grc/implementations', 'implementations')
+      .then(setImpls)
+      .catch(() => setImpls([]));
+  }, []);
 
   /** Criticality is derived here exactly as the server derives it, so the form
    *  can show the consequence of a rating before it is saved. */
@@ -340,16 +364,16 @@ const AssetRegister: React.FC = () => {
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
             <input placeholder="Search name, ref or supplier…" value={search}
-              onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 260 }} />
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ ...S.input, maxWidth: 170 }}>
+              onChange={(e) => { setPage(1); setSearch(e.target.value); }} style={{ ...S.input, maxWidth: 260 }} />
+            <select value={typeFilter} onChange={(e) => { setPage(1); setTypeFilter(e.target.value); }} style={{ ...S.input, maxWidth: 170 }}>
               <option value="">All types</option>
               {(meta.types || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={ownershipFilter} onChange={(e) => setOwnershipFilter(e.target.value)} style={{ ...S.input, maxWidth: 170 }}>
+            <select value={ownershipFilter} onChange={(e) => { setPage(1); setOwnershipFilter(e.target.value); }} style={{ ...S.input, maxWidth: 170 }}>
               <option value="">Internal and third-party</option>
               {(meta.ownerships || []).map((o: string) => <option key={o} value={o}>{o === 'ThirdParty' ? 'Third party' : o}</option>)}
             </select>
-            <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} style={{ ...S.input, maxWidth: 150 }}>
+            <select value={tierFilter} onChange={(e) => { setPage(1); setTierFilter(e.target.value); }} style={{ ...S.input, maxWidth: 150 }}>
               <option value="">All criticality</option>
               {['Critical', 'High', 'Medium', 'Low'].map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -472,6 +496,7 @@ const AssetRegister: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="assets" disabled={loading} />
         </>
       )}
 

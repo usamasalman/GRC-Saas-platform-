@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import fetchAllPages from '../../../api/fetchAllPages';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import FormDialog from '../../../components/FormDialog';
 import DeleteRecordButton from '../../../components/DeleteRecordButton';
@@ -77,12 +78,14 @@ const KriRegister: React.FC = () => {
     try {
       const [k, r, u] = await Promise.all([
         apiClient.get('/api/grc/kris'),
-        apiClient.get('/api/grc/risks').catch(() => null),
+        // Every risk, not the register's first page: this is the picker a KRI
+        // is linked from (QA-021).
+        fetchAllPages<any>('/api/grc/risks', 'risks').catch(() => null),
         apiClient.get('/api/auth/tenant-users').catch(() => null),
       ]);
       setKris(k.data?.kris || []);
       setTotals(k.data?.totals || {});
-      setRisks(r?.data?.risks || []);
+      setRisks(r || []);
       setUsers(u?.data?.users || []);
     } catch (err) {
       setError(apiError(err, 'Could not load the indicators.'));
