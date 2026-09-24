@@ -12,6 +12,15 @@ const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 const SUBJ_IMPORT = 'FrameworkImport';
 const KINDS: CandidateKind[] = ['Clause', 'Control'];
 
+/**
+ * The imports this module owns. Asset, risk and vendor imports are staged in
+ * the same table, each behind its own module's permission and review rules;
+ * without this, the framework routes listed them and would accept, commit or
+ * discard them — committing a risk register as controls, and passing over the
+ * duplicate check the risk import holds its rows to (QA-026).
+ */
+const OWN_KINDS = { in: KINDS };
+
 /** Mirrors the base64 upload the document module already uses. */
 function persistUpload(fileData: string, fileName: string): { fileUrl: string; buffer: Buffer } {
   const matches = fileData.match(/^data:(.+);base64,(.+)$/);
@@ -184,7 +193,7 @@ export const listImports = async (req: AuthenticatedRequest, res: Response): Pro
   try {
     const scope = await resolveTenantScope(req.user!);
     const imports = await prisma.frameworkImport.findMany({
-      where: { tenantId: { in: scope.tenantIds } },
+      where: { tenantId: { in: scope.tenantIds }, kind: OWN_KINDS },
       include: {
         uploadedBy: { select: { id: true, name: true } },
         targetStandard: { select: { id: true, code: true } },
@@ -206,7 +215,7 @@ export const getImport = async (req: AuthenticatedRequest, res: Response): Promi
     const id = req.params.id as string;
     const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
-      where: { id, tenantId: { in: scope.tenantIds } },
+      where: { id, tenantId: { in: scope.tenantIds }, kind: OWN_KINDS },
       include: {
         uploadedBy: { select: { id: true, name: true } },
         targetStandard: { select: { id: true, code: true, title: true } },
@@ -246,7 +255,7 @@ export const reviewCandidate = async (req: AuthenticatedRequest, res: Response):
 
     const scope = await resolveTenantScope(req.user!);
     const cand = await prisma.importCandidate.findFirst({
-      where: { id: candidateId, import: { tenantId: { in: scope.tenantIds } } },
+      where: { id: candidateId, import: { tenantId: { in: scope.tenantIds }, kind: OWN_KINDS } },
       include: { import: { select: { id: true, status: true } } },
     });
     if (!cand) { res.status(404).json({ status: 'error', message: 'Row not found' }); return; }
@@ -303,7 +312,7 @@ export const acceptClean = async (req: AuthenticatedRequest, res: Response): Pro
   try {
     const id = req.params.id as string;
     const scope = await resolveTenantScope(req.user!);
-    const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds }, kind: OWN_KINDS } });
     if (!imp) { res.status(404).json({ status: 'error', message: 'Import not found' }); return; }
     if (imp.status !== 'Extracted') {
       res.status(409).json({ status: 'error', message: `This import is already ${imp.status.toLowerCase()}` });
@@ -334,7 +343,7 @@ export const commitImport = async (req: AuthenticatedRequest, res: Response): Pr
     const id = req.params.id as string;
     const scope = await resolveTenantScope(req.user!);
     const imp = await prisma.frameworkImport.findFirst({
-      where: { id, tenantId: { in: scope.tenantIds } },
+      where: { id, tenantId: { in: scope.tenantIds }, kind: OWN_KINDS },
       include: { candidates: { where: { status: 'Accepted' } } },
     });
     if (!imp) { res.status(404).json({ status: 'error', message: 'Import not found' }); return; }
@@ -434,7 +443,7 @@ export const discardImport = async (req: AuthenticatedRequest, res: Response): P
   try {
     const id = req.params.id as string;
     const scope = await resolveTenantScope(req.user!);
-    const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
+    const imp = await prisma.frameworkImport.findFirst({ where: { id, tenantId: { in: scope.tenantIds }, kind: OWN_KINDS } });
     if (!imp) { res.status(404).json({ status: 'error', message: 'Import not found' }); return; }
     if (imp.status === 'Committed') {
       res.status(409).json({

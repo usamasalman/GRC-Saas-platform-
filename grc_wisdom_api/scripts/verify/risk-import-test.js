@@ -318,6 +318,54 @@ async function buildMessyRegister() {
       : bad('capability gate', `expected 403, got ${denied.status}`);
   }
 
+  // ── J. A risk import answers only on the risk routes ─────────────────────
+  // Asset, risk and vendor imports are staged in the same table as framework
+  // imports, and the framework routes did not ask which kind they were given:
+  // they listed a risk import in the framework history and would accept its
+  // rows (passing over the duplicate hold above), commit it as controls, or
+  // discard it — behind the framework permission, not the risk one (QA-026).
+  // risk.manager holds that framework permission, so these reach the handler.
+  console.log('\nJ. The framework import routes leave a risk import alone');
+  const probe = await api('/api/grc/risks/import', {
+    token: risk, method: 'POST',
+    body: {
+      fileName: 'probe.csv', fileType: 'csv',
+      contentBase64: Buffer.from('Risk title,Category,Likelihood,Impact\nProbe risk for route scoping,Operational,3,3\n').toString('base64'),
+    },
+  });
+  const probeId = probe.json.import?.id;
+  if (!probeId) {
+    bad('probe upload failed', JSON.stringify(probe.json).slice(0, 160));
+  } else {
+    const listed = await api('/api/grc/imports', { token: risk });
+    !(listed.json.imports || []).some((i) => i.id === probeId)
+      ? ok('the framework import history does not list a risk import')
+      : bad('a risk import is listed in the framework import history');
+
+    const probeDetail = await api(`/api/grc/risks/imports/${probeId}`, { token: risk });
+    const candidateId = (probeDetail.json.candidates || [])[0]?.id;
+    const attempts = [
+      ['read', `/api/grc/imports/${probeId}`, 'GET'],
+      ['a row edit', `/api/grc/import-candidates/${candidateId}`, 'PATCH', { status: 'Accepted' }],
+      ['accept-clean', `/api/grc/imports/${probeId}/accept-clean`, 'POST'],
+      ['commit', `/api/grc/imports/${probeId}/commit`, 'POST'],
+      ['discard', `/api/grc/imports/${probeId}/discard`, 'POST'],
+    ];
+    for (const [what, url, method, body] of attempts) {
+      const r = await api(url, { token: risk, method, body });
+      r.status === 404
+        ? ok(`the framework route refuses ${what} of a risk import`, 'HTTP 404')
+        : bad(`the framework route allowed ${what} of a risk import`, `HTTP ${r.status}`);
+    }
+
+    const after = await api(`/api/grc/risks/imports/${probeId}`, { token: risk });
+    after.status === 200 && after.json.import?.status === 'Extracted'
+      && (after.json.candidates || []).every((c) => c.status === 'Pending')
+      ? ok('and the risk import is untouched on its own route', 'Extracted, every row Pending')
+      : bad('the risk import was changed through the framework routes',
+        `${after.json.import?.status}, ${(after.json.candidates || []).map((c) => c.status).join('/')}`);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   console.log('(Reseed afterwards: npx tsx src/seed.ts)\n');
   process.exit(fail === 0 ? 0 : 1);
