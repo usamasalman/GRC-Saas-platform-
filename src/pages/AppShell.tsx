@@ -83,6 +83,7 @@ import { navVisible } from './navCapabilities';
 // User Guide Components
 import { UserGuideModal } from '../components/UserGuideModal';
 import { UserGuideToast } from '../components/UserGuideToast';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 
 /**
  * Persistent warning bar shown whenever a read-only impersonation session is
@@ -419,7 +420,7 @@ const AppShell = () => {
       return <TeamDirectory key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'user-admin') {
-      return <UserLifecycle key={`${account.id}-${currentPage}`} />;
+      return <UserLifecycle key={`${account.id}-${currentPage}`} currentUserId={account.id} />;
     }
     // Service Management — present in every portal's nav.
     if (currentPage === 'itsm') {
@@ -733,12 +734,14 @@ const AppShell = () => {
       </header>
 
       <main className="main">
-        {realComp || (
-          <div className="content" style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
-            <h3 style={{ margin: '0 0 8px', color: 'var(--ink)' }}>Screen not available</h3>
-            <p style={{ fontSize: 13, margin: 0 }}>This feature has not been enabled or is under scheduled development.</p>
-          </div>
-        )}
+        <ScreenErrorBoundary key={currentPage} screen={currentPage}>
+          {realComp || (
+            <div className="content" style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+              <h3 style={{ margin: '0 0 8px', color: 'var(--ink)' }}>Screen not available</h3>
+              <p style={{ fontSize: 13, margin: 0 }}>This feature has not been enabled or is under scheduled development.</p>
+            </div>
+          )}
+        </ScreenErrorBoundary>
       </main>
 
       {/* Floating Context Notification / Toast on Every Tab */}

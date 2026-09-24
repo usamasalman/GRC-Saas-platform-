@@ -55,11 +55,6 @@ module.exports = {
     title: 'Tool Review is on the menu of a role that cannot approve tools',
     checks: ['menu:tool-review-gated'],
   },
-  'QA-014': {
-    severity: 'High',
-    title: 'The user-management screen crashes the whole app on open (useAuth without an AuthProvider)',
-    checks: ['browser:screen:User Lifecycle & Transfers', 'browser:screen:Users & Branch Transfers'],
-  },
   'QA-015': {
     severity: 'High',
     title: 'Usage screens invent quotas, rules and imports on read, and are the slowest calls under load',

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, STATUS_PILL, apiError } from './iamStyles';
-import { useAuth } from '../../context/AuthContext';
 import Can, { MAY } from '../../components/Can';
 
 interface UserRow {
@@ -20,8 +19,12 @@ interface OffboardPreview {
   note: string;
 }
 
-const UserLifecycle: React.FC = () => {
-  const { user: currentUser } = useAuth();
+/**
+ * `currentUserId` comes from the shell, which already holds the signed-in
+ * account. This read it from useAuth(), whose provider is mounted nowhere, so
+ * the screen threw on open for everyone who manages users (QA-014).
+ */
+const UserLifecycle: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
@@ -215,7 +218,7 @@ const UserLifecycle: React.FC = () => {
                   <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                     <button onClick={() => { setTransferErr(''); setTransfer({ targetTenantId: '', reason: '', newDepartment: '' }); setTransferFor(u); }}
                       style={linkBtn('var(--info)')}>transfer</button>
-                    {u.status !== 'Inactive' && u.id !== currentUser?.id && (
+                    {u.status !== 'Inactive' && u.id !== currentUserId && (
                       <Can do={MAY.OFFBOARD_USER}>
                         <button onClick={() => startOffboard(u)}
                           style={{ ...linkBtn('var(--danger)'), marginLeft: 10 }}>offboard</button>
