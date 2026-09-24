@@ -781,13 +781,24 @@ export const payInvoice = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    const updated = await prisma.invoice.update({
-      where: { id: str(id) },
-      data: {
-        status: 'PAID',
-        isCleared: true
-      }
+    // The state is a condition of the write, not a check before it: two clicks
+    // that both read UNPAID would otherwise both record a payment (QA-013).
+    const { count } = await prisma.invoice.updateMany({
+      where: { id: invoice.id, status: 'UNPAID' },
+      data: { status: 'PAID', isCleared: true },
     });
+    if (count === 0) {
+      // Report the state that stopped it, not the one read before the write:
+      // under a double click that first read still said UNPAID.
+      const now = await prisma.invoice.findUnique({ where: { id: invoice.id }, select: { status: true } });
+      res.status(409).json({
+        status: 'error',
+        code: 'INVOICE_NOT_PAYABLE',
+        message: `Only an unpaid invoice can be paid; this one is ${now?.status ?? 'no longer there'}.`,
+      });
+      return;
+    }
+    const updated = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
 
     await writeAudit(prisma, {
       tenantId: invoice.tenantId,

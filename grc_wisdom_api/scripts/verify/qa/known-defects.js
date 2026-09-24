@@ -72,11 +72,6 @@ module.exports = {
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',
     checks: ['journey:billing:the invoice hash is a real SHA-256', 'journey:billing:the QR is ZATCA TLV'],
   },
-  'QA-013': {
-    severity: 'Medium',
-    title: 'A PAID invoice can be paid again; payInvoice checks no state',
-    checks: ['journey:billing:a paid invoice cannot be paid again'],
-  },
   'QA-010': {
     severity: 'Low',
     title: 'Tool Review is on the menu of a role that cannot approve tools',
