@@ -201,7 +201,7 @@ jobs:
           done
           curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
-          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test             audit-concurrency-test
           do
             echo "── $suite ──"
             npm run seed:demo > /dev/null

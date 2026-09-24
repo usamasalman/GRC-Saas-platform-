@@ -38,5 +38,15 @@
     "checks": [
       "capacity:lists that cap their rows can page past the cap"
     ]
+  },
+  "QA-029": {
+    "severity": "High",
+    "title": "The audit chain forks when audited requests arrive together, and every verifier then reports the trail as tampered",
+    "requirements": [
+      "REQ-02"
+    ],
+    "checks": [
+      "audit-concurrency:the chain stays verifiable when requests arrive together"
+    ]
   }
 }
