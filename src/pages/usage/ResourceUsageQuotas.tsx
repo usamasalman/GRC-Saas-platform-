@@ -186,7 +186,11 @@ const ResourceUsageQuotas: React.FC = () => {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: 'var(--ink-muted)', padding: 32 }}>No quotas match the selected filter.</td></tr>
+                <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: 'var(--ink-muted)', padding: 32 }}>
+                  {/* Nothing is invented to fill this any more (QA-015): an
+                      organisation with no quota says so. */}
+                  {quotas.length === 0 ? 'No quota has been set for any organisation yet.' : 'No quotas match the selected filter.'}
+                </td></tr>
               )}
             </tbody>
           </table>

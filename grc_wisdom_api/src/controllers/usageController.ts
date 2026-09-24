@@ -19,61 +19,12 @@ function computeQuotaStatus(used: number, limit: number): string {
   return 'Under';
 }
 
-// Seed default quotas for a tenant if none exist
-async function ensureDefaultQuotas(tenantId: string) {
-  const count = await prisma.resourceQuota.count({ where: { tenantId } });
-  if (count === 0) {
-    const defaults = [
-      { resourceType: 'Users', used: 34, limitValue: 75 },
-      { resourceType: 'Storage', used: 42, limitValue: 200 },
-      { resourceType: 'Documents', used: 187, limitValue: 500 },
-      { resourceType: 'ApiCalls', used: 8400, limitValue: 10000 },
-      { resourceType: 'Workflows', used: 12, limitValue: 50 },
-      { resourceType: 'Integrations', used: 3, limitValue: 10 },
-    ];
-    for (const d of defaults) {
-      await prisma.resourceQuota.create({
-        data: { tenantId, ...d, status: computeQuotaStatus(d.used, d.limitValue) }
-      });
-    }
-  }
-}
-
-// Seed default automation rules for a tenant if none exist
-async function ensureDefaultRules(tenantId: string) {
-  const count = await prisma.automationRule.count({ where: { tenantId } });
-  if (count === 0) {
-    const now = new Date();
-    const rules = [
-      { name: 'Daily Compliance Sync', description: 'Pull NCA ECC updates and sync control mappings to tenant standards library.', triggerType: 'Scheduled', triggerConfig: '0 2 * * *', actionConfig: '{"action":"sync_standards","source":"nca_ecc"}', status: 'Active', lastRunAt: new Date(now.getTime() - 86400000), nextRunAt: new Date(now.getTime() + 86400000), runCount: 142, failCount: 2 },
-      { name: 'SLA Breach Escalation', description: 'Monitor open tickets approaching SLA breach and escalate to manager.', triggerType: 'Event', triggerConfig: 'ticket.sla_warning', actionConfig: '{"action":"escalate","target":"manager","channel":"notification"}', status: 'Active', lastRunAt: new Date(now.getTime() - 3600000), nextRunAt: null, runCount: 87, failCount: 0 },
-      { name: 'Weekly Risk Report', description: 'Generate consolidated risk report PDF and email to risk committee.', triggerType: 'Scheduled', triggerConfig: '0 8 * * 1', actionConfig: '{"action":"generate_report","type":"risk_consolidated","recipients":"risk_committee"}', status: 'Active', lastRunAt: new Date(now.getTime() - 604800000), nextRunAt: new Date(now.getTime() + 604800000), runCount: 26, failCount: 1 },
-      { name: 'User Deprovisioning', description: 'Auto-disable users 90 days after last login and revoke API keys.', triggerType: 'Scheduled', triggerConfig: '0 0 * * *', actionConfig: '{"action":"deprovision","inactiveDays":90,"revokeApiKeys":true}', status: 'Paused', lastRunAt: new Date(now.getTime() - 172800000), nextRunAt: null, runCount: 8, failCount: 0 },
-      { name: 'Evidence Collection Reminder', description: 'Send reminder notifications for controls with evidence due within 7 days.', triggerType: 'Scheduled', triggerConfig: '0 9 * * *', actionConfig: '{"action":"notify","filter":"evidence_due_7d","channel":"email"}', status: 'Active', lastRunAt: new Date(now.getTime() - 86400000), nextRunAt: new Date(now.getTime() + 86400000), runCount: 54, failCount: 3 },
-    ];
-    for (const r of rules) {
-      await prisma.automationRule.create({ data: { tenantId, ...r } });
-    }
-  }
-}
-
-// Seed default import jobs for a tenant if none exist
-async function ensureDefaultImports(tenantId: string) {
-  const count = await prisma.importJob.count({ where: { tenantId } });
-  if (count === 0) {
-    const now = new Date();
-    const jobs = [
-      { importType: 'CsvUpload', source: 'users_export_2026.csv', targetDesc: 'User Directory', totalRecords: 245, processedRecords: 245, failedRecords: 0, status: 'Completed', startedAt: new Date(now.getTime() - 7200000), completedAt: new Date(now.getTime() - 6800000) },
-      { importType: 'ApiSync', source: 'SAP GRC API /risks', targetDesc: 'Risk Register', totalRecords: 128, processedRecords: 128, failedRecords: 3, status: 'Partial', startedAt: new Date(now.getTime() - 86400000), completedAt: new Date(now.getTime() - 85000000), errorLog: '3 records skipped: duplicate ref IDs (RSK-045, RSK-112, RSK-089)' },
-      { importType: 'TenantMigration', source: 'Legacy GRC v2.1 Export', targetDesc: 'Al-Rajhi Holding Group → New Tenant', totalRecords: 1420, processedRecords: 890, failedRecords: 0, status: 'Processing', startedAt: new Date(now.getTime() - 3600000) },
-      { importType: 'CsvUpload', source: 'controls_iso27001_baseline.csv', targetDesc: 'Control Library', totalRecords: 114, processedRecords: 0, failedRecords: 0, status: 'Queued', startedAt: new Date(now.getTime() - 600000) },
-      { importType: 'ApiSync', source: 'Qualys VMDR API', targetDesc: 'ASM Asset Inventory', totalRecords: 342, processedRecords: 342, failedRecords: 18, status: 'Failed', startedAt: new Date(now.getTime() - 172800000), completedAt: new Date(now.getTime() - 172000000), errorLog: 'API authentication failed after 342 records — token expired mid-sync. 18 records had schema validation errors.' },
-    ];
-    for (const j of jobs) {
-      await prisma.importJob.create({ data: { tenantId, ...j } });
-    }
-  }
-}
+// The reads below used to fill any organisation without quotas, rules or
+// import jobs with invented ones -- "API calls 8,400 of 10,000", rules that had
+// "run 142 times", imports that never happened -- which then showed as that
+// organisation's real usage, and cost one query per organisation on every
+// read (QA-015). They read what exists. Rows invented before this change are
+// removed by scripts/ops/invented-usage-*.sql.
 
 // ══════════════════════════════════════════════════════════════════════════
 // 1. RESOURCE USAGE & QUOTAS
@@ -84,10 +35,6 @@ export const listQuotas = async (req: AuthenticatedRequest, res: Response): Prom
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.quotas.list');
 
-    // Seed per-tenant defaults for every visible tenant
-    for (const tid of scope.tenantIds) {
-      await ensureDefaultQuotas(tid);
-    }
 
     const where: any = {};
     if (scope.kind !== 'PLATFORM') {
@@ -153,9 +100,6 @@ export const listRules = async (req: AuthenticatedRequest, res: Response): Promi
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.rules.list');
 
-    for (const tid of scope.tenantIds) {
-      await ensureDefaultRules(tid);
-    }
 
     const where: any = {};
     if (scope.kind !== 'PLATFORM') {
@@ -314,9 +258,6 @@ export const listImports = async (req: AuthenticatedRequest, res: Response): Pro
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'usage.imports.list');
 
-    for (const tid of scope.tenantIds) {
-      await ensureDefaultImports(tid);
-    }
 
     const where: any = {};
     if (scope.kind !== 'PLATFORM') {

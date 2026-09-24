@@ -21,11 +21,6 @@ module.exports = {
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',
     checks: ['journey:billing:the invoice hash is a real SHA-256', 'journey:billing:the QR is ZATCA TLV'],
   },
-  'QA-015': {
-    severity: 'High',
-    title: 'Usage screens invent quotas, rules and imports on read, and are the slowest calls under load',
-    checks: ['reads-write:GET /api/usage/quotas', 'reads-write:GET /api/usage/rules', 'reads-write:GET /api/usage/imports'],
-  },
   'QA-017': {
     severity: 'High',
     title: 'PDPL field encryption is marked Verified but never used, and its key is written in the source',
