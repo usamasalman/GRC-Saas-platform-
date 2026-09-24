@@ -30,13 +30,6 @@ module.exports = {
     title: 'Tool Review approve/reject calls a route that does not exist',
     checks: ['contract:PATCH /api/marketplace/tools/${tool.id}'],
   },
-  'QA-006': {
-    severity: 'Medium',
-    title: 'Editing another organisation\'s branding writes the caller\'s own',
-    // The GET shows the same fault from the read side: another organisation's
-    // id returns the caller's own branding with a 200.
-    checks: ['isolation:branding-write-lands-on-target', 'isolation:GET /api/tenants/:id/branding'],
-  },
   'QA-007': {
     severity: 'Medium',
     title: 'The customer sign-in form is off-screen on a phone',

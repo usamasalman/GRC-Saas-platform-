@@ -36,10 +36,13 @@ router.patch('/branding', requireCapability(CAP.MANAGE_TENANT), updateBranding);
 router.post('/branding/logo', requireCapability(CAP.MANAGE_TENANT), uploadLogo);
 router.get('/branding/logo', getLogo);
 
-router.get('/:id/branding', getBranding);
-router.patch('/:id/branding', requireCapability(CAP.MANAGE_TENANT), updateBranding);
-router.post('/:id/branding/logo', requireCapability(CAP.MANAGE_TENANT), uploadLogo);
-router.get('/:id/branding/logo', getLogo);
+// ':tenantId', not ':id': the handlers read req.params.tenantId and fall back
+// to the caller's own organisation, so under ':id' every one of these quietly
+// read and rewrote the caller's branding instead of the target's (QA-006).
+router.get('/:tenantId/branding', getBranding);
+router.patch('/:tenantId/branding', requireCapability(CAP.MANAGE_TENANT), updateBranding);
+router.post('/:tenantId/branding/logo', requireCapability(CAP.MANAGE_TENANT), uploadLogo);
+router.get('/:tenantId/branding/logo', getLogo);
 
 router.get('/', listTenants);
 router.get('/tree', getEntityTree);

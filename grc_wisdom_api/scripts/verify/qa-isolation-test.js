@@ -29,7 +29,7 @@ const iso = (d) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 
 const RECORD_OF = [
   [/^\/api\/(documents|legal\/documents)\/:id/, (out) => prisma.document.findFirst({ where: out, select: { id: true } })],
   [/^\/api\/legal\/matters\/:id/, (out) => prisma.legalMatter.findFirst({ where: out, select: { id: true } })],
-  [/^\/api\/tenants\/:id/, (out) => prisma.tenant.findFirst({ where: { id: out.tenantId, type: { notIn: ['SAAS', 'SAAS_UNIT'] } }, select: { id: true } })],
+  [/^\/api\/tenants\/:(id|tenantId)\b/, (out) => prisma.tenant.findFirst({ where: { id: out.tenantId, type: { notIn: ['SAAS', 'SAAS_UNIT'] } }, select: { id: true } })],
   [/^\/api\/iam\/roles\/:id/, (out) => prisma.role.findFirst({ where: out, select: { id: true } })],
   [/^\/api\/iam\/users\/:id/, (out) => prisma.user.findFirst({ where: out, select: { id: true } })],
   [/^\/api\/itsm\/workflows\/runs\/:id/, (out) => prisma.workflowRun.findFirst({ where: out, select: { id: true } })],
@@ -150,6 +150,21 @@ const NOT_A_RECORD = {
     const landed = await prisma.tenantBranding.findFirst({ where: { displayName: marker }, select: { tenantId: true } });
     v.record('isolation:branding-write-lands-on-target', landed?.tenantId === child.id,
       landed ? `the write landed on ${landed.tenantId === alnoorAdmin.user.tenantId ? 'the caller\'s own organisation' : landed.tenantId}` : 'nothing was written');
+  }
+
+  // And an organisation outside the caller's tree, by its id: refused, with
+  // nothing written anywhere — neither there nor, as QA-006 did, on the
+  // caller's own organisation.
+  const foreignId = omniRisk.user.tenantId;
+  if (!alScope.some((t) => t.id === foreignId)) {
+    const marker = `QA-FOREIGN-${Date.now()}`;
+    const r = await q.call('PATCH', `/api/tenants/${foreignId}/branding`, { token: alnoorAdmin.token, body: { displayName: marker } });
+    await q.pace();
+    const wrote = await prisma.tenantBranding.findFirst({ where: { displayName: marker }, select: { tenantId: true } });
+    v.record('isolation:branding-write-to-foreign-organisation-refused', [403, 404].includes(r.status) && !wrote,
+      `HTTP ${r.status}; ${wrote ? `written to ${wrote.tenantId === alnoorAdmin.user.tenantId ? 'the caller\'s own organisation' : wrote.tenantId}` : 'nothing written'}`);
+  } else {
+    v.record('isolation:branding-write-to-foreign-organisation-refused setup', false, 'OmniOps is inside Al Noor\'s tree; pick another foreign organisation');
   }
 
   // ── Confidentiality inside one organisation ──────────────────────────────
