@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { prisma } from '../db';
 import { capabilitiesOfRole } from '../services/capabilityEngine';
 import { suspensionMessage } from '../services/tenantSuspension';
-import { checkEntrance } from '../services/loginEntrance';
+import { checkEntrance, PLATFORM_TENANT_TYPES } from '../services/loginEntrance';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { generateMfaSecret, generateQrCodeUrl, verifyMfaToken } from '../utils/mfaUtils';
 
@@ -103,10 +103,16 @@ function resolvePortal(user: {
   tenant?: { type?: string | null } | null;
   roleRef?: { portal?: string | null } | null;
 }): string {
-  const declared = PORTAL_BY_ROLE_PORTAL[String(user.roleRef?.portal || '').trim().toLowerCase()];
-  if (declared) return declared;
-
   const type = String(user.tenant?.type || '').toUpperCase();
+  const declared = PORTAL_BY_ROLE_PORTAL[String(user.roleRef?.portal || '').trim().toLowerCase()];
+  // The one exception to "the role first": the control plane belongs to the
+  // platform operator. A customer organisation's user holding a platform role
+  // (a Customer Success Manager at Al Noor, in the seed) was handed the whole
+  // control-plane menu, whose System screens the API now refuses to customers
+  // (QA-004). Outside the platform organisation, the organisation decides (QA-025).
+  const platformTenant = (PLATFORM_TENANT_TYPES as readonly string[]).includes(type);
+  if (declared && (declared !== 'saas' || platformTenant)) return declared;
+
   // An unrecognised tenant type gets the ordinary organisation workspace, not
   // the control plane. The safe default is the least-privileged menu.
   return PORTAL_BY_TENANT_TYPE[type] || 'multibranch';
