@@ -25,11 +25,6 @@ module.exports = {
       'confidentiality:customer-reads-/api/system/brd',
     ],
   },
-  'QA-005': {
-    severity: 'Medium',
-    title: 'Tool Review approve/reject calls a route that does not exist',
-    checks: ['contract:PATCH /api/marketplace/tools/${tool.id}'],
-  },
   'QA-007': {
     severity: 'Medium',
     title: 'The customer sign-in form is off-screen on a phone',

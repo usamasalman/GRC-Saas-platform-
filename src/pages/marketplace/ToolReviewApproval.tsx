@@ -62,7 +62,7 @@ const ToolReviewApproval: React.FC = () => {
     setUpdating(true);
     setError('');
     try {
-      await apiClient.patch(`/api/marketplace/tools/${tool.id}`, {
+      await apiClient.patch(`/api/marketplace/tools/${tool.id}/review`, {
         maturity: maturityStatus,
         review: reviewStage,
         annualPrice: price,
