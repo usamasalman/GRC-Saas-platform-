@@ -16,11 +16,6 @@
  * root cause and owner for each. Keep the two in step.
  */
 module.exports = {
-  'QA-007': {
-    severity: 'Medium',
-    title: 'The customer sign-in form is off-screen on a phone',
-    checks: ['browser:login-form-visible-on-phone'],
-  },
   'QA-011': {
     severity: 'High',
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',

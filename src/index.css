@@ -192,6 +192,19 @@ a {
 .login-panel { width: min(650px, 100%); }
 .login-panel h2 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.8px; color: var(--ink); }
 .login-panel > p { color: var(--ink-muted); margin: 0 0 22px; }
+
+/* Phones and narrow tablets. The two columns above have minimums of 460px and
+   520px, so below 980px the form was pushed off the right edge and a phone
+   showed the picture with no way to sign in (QA-007). One column instead, the
+   form first: signing in is what someone opening this page on a phone came to
+   do, and the brand panel follows it. */
+@media (max-width: 900px) {
+  .login-page { grid-template-columns: minmax(0, 1fr); }
+  .login-main { order: -1; padding: 28px 16px; }
+  .login-visual { padding: 28px 20px; }
+  .login-visual h1 { font-size: 28px; letter-spacing: -0.8px; margin: 24px 0 12px; }
+  .login-capabilities { grid-template-columns: minmax(0, 1fr); }
+}
 .login-form { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: var(--shadow); }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-muted); font-weight: 800; margin-bottom: 6px; }
