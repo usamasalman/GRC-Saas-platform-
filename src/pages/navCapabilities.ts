@@ -109,6 +109,9 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   'branch-users': [CAP.ADD_USER],
   'user-admin': [CAP.ADD_USER, CAP.TRANSFER_USER],
   'feature-flags': [CAP.GOVERN_FLAG],
+  // The screen exists to approve or reject a tool, and the API refuses that
+  // without the onboarding duty; it was on the menu for everyone (QA-010).
+  'tool-review': [CAP.ONBOARD_TOOL],
 
   // The exception to the rule written at the top of this file.
   //

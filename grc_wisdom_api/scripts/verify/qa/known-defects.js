@@ -45,11 +45,6 @@ module.exports = {
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',
     checks: ['journey:billing:the invoice hash is a real SHA-256', 'journey:billing:the QR is ZATCA TLV'],
   },
-  'QA-010': {
-    severity: 'Low',
-    title: 'Tool Review is on the menu of a role that cannot approve tools',
-    checks: ['menu:tool-review-gated'],
-  },
   'QA-015': {
     severity: 'High',
     title: 'Usage screens invent quotas, rules and imports on read, and are the slowest calls under load',
