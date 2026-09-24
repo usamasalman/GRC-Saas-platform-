@@ -75,7 +75,15 @@ const sources = [];
     const lines = q.read(path.join(dir, f)).split('\n');
     lines.forEach((line, n) => {
       if (/^\s*(\/\/|\*)/.test(line)) return;
-      const hit = line.match(/(\|\||\?\?)\s*\d{2,}\s*\}|[+-]\d+(\.\d+)?%?\s+(this|vs|from last)\s+(quarter|month|week|year)|\d+(\.\d+)?%\s+(active|YoY)|%\s*YoY/);
+      const hit = line.match(new RegExp([
+        /(\|\||\?\?)\s*\d{2,}\s*\}/.source, // a literal fallback for a count
+        /[+-]\d+(\.\d+)?%?\s+(this|vs|from last)\s+(quarter|month|week|year)/.source, // a trend
+        /\d+(\.\d+)?%\s+(active|YoY)|%\s*YoY/.source,
+        /\b\d+\s+(open\s+)?(tickets|users|tools|organi[sz]ations|expiries|subscriptions)\b/.source, // a count in prose
+        /points="\d/.source, // a chart drawn from fixed points
+        />\s*\d+(\.\d+)?%\s*</.source, // a percentage written into the markup
+        /\[\s*'[A-Z][\w &]+',\s*\d+\s*\]/.source, // a fixed label/number series
+      ].join('|')));
       if (hit) invented.push(`${f}:${n + 1} "${hit[0].trim()}"`);
     });
   }

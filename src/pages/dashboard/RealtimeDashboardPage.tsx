@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { apiError } from '../iam/iamStyles';
+import { estateFigures, type EstateFigures } from './estateFigures';
 
 interface RealtimeDashboardProps {
   account: any;
@@ -16,12 +17,8 @@ interface RealtimeDashboardProps {
 }
 
 interface DashboardMetrics {
-  totalTenants: number;
-  activeSubscriptions: number;
-  // Null where the platform does not compute the figure. Showing a number
-  // it cannot derive is how this page carried a literal ARR for months.
-  arrAmount: string | null;
-  tenantChurnPct: string | null;
+  /** Counts, revenue at list price, plan mix and growth, from the organisations list. */
+  estate: EstateFigures;
   uptimePercent: number | null;
   securityScore: number | null;
   tenants: any[];
@@ -67,12 +64,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
       const liveDocs = docsData.documents || docsData.data || [];
 
       setMetrics({
-        totalTenants: liveTenants.length,
-        activeSubscriptions: liveTenants.filter((t: any) => t.status !== 'Trial').length,
-        // Commercial figures are not computed anywhere in this platform. Showing
-        // a number here would be inventing one.
-        arrAmount: null,
-        tenantChurnPct: null,
+        estate: estateFigures(liveTenants),
         uptimePercent: health.uptimePercent ?? null,
         securityScore: sec.securityScore ?? null,
         tenants: liveTenants.slice(0, 4),
@@ -94,6 +86,28 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
   useEffect(() => {
     fetchLiveDashboardData();
   }, [fetchLiveDashboardData]);
+
+  const estate = metrics?.estate ?? null;
+  const dash = '—';
+  const sar = (n: number) => `SAR ${new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format(n)}`;
+  // One colour per plan, then grey for organisations without one.
+  const PLAN_COLOURS = ['#2563eb', '#d97706', '#10b981', '#7c3aed', '#0891b2', '#db2777'];
+  const planSlices = estate && estate.organisations
+    ? [
+      ...estate.byPlan.map((p, i) => ({ name: p.name, count: p.count, colour: PLAN_COLOURS[i % PLAN_COLOURS.length] })),
+      ...(estate.organisations - estate.withActivePlan > 0
+        ? [{ name: 'No active plan', count: estate.organisations - estate.withActivePlan, colour: 'var(--line)' }]
+        : []),
+    ]
+    : [];
+  let angle = 0;
+  const donut = planSlices.map((sl) => {
+    const from = angle;
+    angle += (sl.count / (estate?.organisations || 1)) * 100;
+    return `${sl.colour} ${from}% ${angle}%`;
+  }).join(', ');
+  const growthMax = Math.max(1, ...(estate?.growth || []).map((g) => g.total));
+  const growthPoints = (estate?.growth || []).map((g, i) => [32 + i * ((630 - 32) / 5), 180 - (g.total / growthMax) * 150]);
 
   const portalTitle = account?.portal === 'saas' ? 'SaaS Control Plane Dashboard' :
                       account?.portal === 'holding' ? 'Group Executive Control Dashboard' :
@@ -156,12 +170,12 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon blue">▥</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.totalTenants || 84}</div>
+          <div className="kpi-value">{estate ? estate.organisations : dash}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             TOTAL ORGANIZATIONS
           </div>
           <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--success)' }}>
-            +4 this quarter
+            {estate ? `+${estate.newLast90Days} in the last 90 days` : ''}
           </div>
         </div>
 
@@ -170,12 +184,12 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon green">✓</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.activeSubscriptions || 81}</div>
+          <div className="kpi-value">{estate ? estate.withActivePlan : dash}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             ACTIVE SUBSCRIPTIONS
           </div>
           <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--success)' }}>
-            96.4% active
+            {estate?.activeShare != null ? `${estate.activeShare}% of organisations` : ''}
           </div>
         </div>
 
@@ -184,12 +198,12 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon violet">¤</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.arrAmount ?? '—'}</div>
+          <div className="kpi-value">{estate?.annualListRevenue != null ? sar(estate.annualListRevenue) : dash}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             ANNUAL RECURRING REVENUE
           </div>
-          <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--success)' }}>
-            +18.7% YoY
+          <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--ink-muted)' }}>
+            At list price, from active plans
           </div>
         </div>
 
@@ -198,12 +212,12 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
             <div className="kpi-icon amber">↘</div>
             <span className="kpi-label">KPI</span>
           </div>
-          <div className="kpi-value">{metrics?.tenantChurnPct ?? '—'}</div>
+          <div className="kpi-value">{dash}</div>
           <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--ink-muted)', letterSpacing: '0.07em' }}>
             TENANT CHURN
           </div>
-          <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--warning)' }}>
-            2 expiries in 90 days
+          <div className="kpi-note" style={{ fontSize: '10px', marginTop: '4px', color: 'var(--ink-muted)' }}>
+            Not recorded yet
           </div>
         </div>
       </div>
@@ -214,40 +228,36 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
           <div className="card-head" style={{ padding: '0 0 14px', borderBottom: '1px solid var(--line)' }}>
             <div>
               <h3 style={{ fontSize: '12px', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800, color: 'var(--ink)' }}>
-                REVENUE & ORGANIZATION GROWTH
+                ORGANIZATION GROWTH
               </h3>
               <p style={{ fontSize: '10px', color: 'var(--ink-muted)', margin: '4px 0 0' }}>
-                Monthly recurring revenue and active tenant trend
+                Organizations on the platform at the end of each month
               </p>
             </div>
-            <span className="pill green">Live metrics</span>
           </div>
           <div style={{ marginTop: '16px', height: '200px', width: '100%' }}>
-            <svg className="chart" viewBox="0 0 660 200" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-              <g>
-                {[25, 50, 75, 100].map((v) => (
-                  <React.Fragment key={v}>
-                    <line x1="32" y1={180 - (v * 1.5)} x2="630" y2={180 - (v * 1.5)} stroke="var(--ink-body)" strokeWidth="1" />
-                    <text x="4" y={184 - (v * 1.5)} fill="var(--ink-muted)" fontSize="9">{v}</text>
-                  </React.Fragment>
+            {estate && estate.organisations > 0 ? (
+              <svg className="chart" viewBox="0 0 660 200" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }} role="img"
+                aria-label={`Organizations by month: ${estate.growth.map((g) => `${g.label} ${g.total}`).join(', ')}`}>
+                <g>
+                  {[0, 0.5, 1].map((f) => (
+                    <React.Fragment key={f}>
+                      <line x1="32" y1={180 - f * 150} x2="630" y2={180 - f * 150} stroke="var(--line)" strokeWidth="1" />
+                      <text x="4" y={184 - f * 150} fill="var(--ink-muted)" fontSize="9">{Math.round(growthMax * f)}</text>
+                    </React.Fragment>
+                  ))}
+                  {estate.growth.map((g, i) => (
+                    <text key={g.label + i} x={growthPoints[i][0]} y="197" fill="var(--ink-muted)" fontSize="9" textAnchor="middle">{g.label}</text>
+                  ))}
+                </g>
+                <polyline points={growthPoints.map(([x, y]) => `${x},${y}`).join(' ')} fill="none" stroke="var(--success)" strokeWidth="3" />
+                {growthPoints.map(([x, y], i) => (
+                  <circle key={i} cx={x} cy={y} r="3.5" fill="var(--surface)" stroke="var(--success)" strokeWidth="2.5" />
                 ))}
-              </g>
-              <polyline
-                points="32,150 131,138 231,124 331,105 431,82 531,52 630,30"
-                fill="none"
-                stroke="var(--success)"
-                strokeWidth="3"
-              />
-              <polyline
-                points="32,165 131,154 231,142 331,128 431,108 531,84 630,62"
-                fill="none"
-                stroke="var(--info)"
-                strokeWidth="2.5"
-              />
-              {[[32,150],[131,138],[231,124],[331,105],[431,82],[531,52],[630,30]].map(([x,y], i) => (
-                <circle key={i} cx={x} cy={y} r="3.5" fill="#ffffff" stroke="var(--success)" strokeWidth="2.5" />
-              ))}
-            </svg>
+              </svg>
+            ) : (
+              <p style={{ fontSize: 12, color: 'var(--ink-muted)', margin: '70px 0 0', textAlign: 'center' }}>No organizations yet.</p>
+            )}
           </div>
         </div>
 
@@ -258,54 +268,53 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
                 PACKAGE DISTRIBUTION
               </h3>
               <p style={{ fontSize: '10px', color: 'var(--ink-muted)', margin: '4px 0 0' }}>
-                84 organizations by active plan
+                {estate ? `${estate.withActivePlan} of ${estate.organisations} organizations on an active plan` : dash}
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginTop: '16px' }}>
-            <div style={{
-              width: '140px',
-              height: '140px',
-              borderRadius: '50%',
-              background: 'conic-gradient(#2563eb 0 25%, #d97706 25% 75%, #10b981 75% 100%)',
-              position: 'relative',
-              display: 'grid',
-              placeItems: 'center',
-              flexShrink: 0
-            }}>
+          {estate && estate.organisations > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginTop: '16px', flexWrap: 'wrap' }}>
               <div style={{
-                position: 'absolute',
-                inset: '24px',
-                background: 'var(--surface)',
+                width: '140px',
+                height: '140px',
                 borderRadius: '50%',
+                background: `conic-gradient(${donut})`,
+                position: 'relative',
                 display: 'grid',
                 placeItems: 'center',
-                textAlign: 'center'
+                flexShrink: 0
               }}>
-                <div>
-                  <strong style={{ fontSize: '22px', display: 'block', color: 'var(--ink)', fontWeight: 900 }}>63%</strong>
-                  <span style={{ fontSize: '9px', color: 'var(--ink-muted)' }}>paid plans</span>
+                <div style={{
+                  position: 'absolute',
+                  inset: '24px',
+                  background: 'var(--surface)',
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  textAlign: 'center'
+                }}>
+                  <div>
+                    <strong style={{ fontSize: '22px', display: 'block', color: 'var(--ink)', fontWeight: 900 }}>{estate.activeShare ?? 0}%</strong>
+                    <span style={{ fontSize: '9px', color: 'var(--ink-muted)' }}>on a plan</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="score-list" style={{ flex: 1 }}>
-              {[
-                ['Essentials', 18],
-                ['Professional', 34],
-                ['Assurance', 21],
-                ['Enterprise Intelligence', 11],
-              ].map(([name, val], i) => (
-                <div key={i} className="score-row">
-                  <span style={{ fontSize: '11px', color: 'var(--ink-body)' }}>{name as string}</span>
-                  <div className="progress">
-                    <span style={{ width: `${(val as number) * 2.5}%` }} />
+              <div className="score-list" style={{ flex: 1, minWidth: 180 }}>
+                {planSlices.map((sl) => (
+                  <div key={sl.name} className="score-row">
+                    <span style={{ fontSize: '11px', color: 'var(--ink-body)' }}>{sl.name}</span>
+                    <div className="progress">
+                      <span style={{ width: `${(sl.count / estate.organisations) * 100}%`, background: sl.colour }} />
+                    </div>
+                    <strong style={{ fontSize: '11px', color: 'var(--ink)' }}>{sl.count}</strong>
                   </div>
-                  <strong style={{ fontSize: '11px', color: 'var(--ink)' }}>{val as number}</strong>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--ink-muted)', margin: '40px 0', textAlign: 'center' }}>No organizations yet.</p>
+          )}
         </div>
       </div>
 
@@ -332,8 +341,8 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
                   <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>{t.name}</strong>
                   <small style={{ fontSize: '10px', color: 'var(--ink-muted)' }}>{t.plan}</small>
                 </div>
-                <span className={`pill ${t.status === 'Active' ? 'green' : 'blue'}`}>
-                  {t.status}
+                <span className={`pill ${t.suspendedAt ? 'red' : 'green'}`}>
+                  {t.suspendedAt ? 'Suspended' : 'Active'}
                 </span>
               </div>
             ))}
@@ -408,13 +417,13 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('itsm')}>
           <div className="kpi-icon blue" style={{ marginBottom: '10px' }}>?</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>ITSM Support</h3>
-          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 open tickets · create and track support</p>
+          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>{estate ? `${estate.tickets} tickets · create and track support` : 'Create and track support'}</p>
         </div>
 
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('team-directory')}>
           <div className="kpi-icon violet" style={{ marginBottom: '10px' }}>♣</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Teams & Access</h3>
-          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>66 users across operational departments</p>
+          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>{estate ? `${estate.users} users across your organizations` : 'Users across your organizations'}</p>
         </div>
 
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('posture')}>
@@ -426,7 +435,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
         <div className="card pad" style={{ cursor: 'pointer' }} onClick={() => onNavigate?.('tool-marketplace')}>
           <div className="kpi-icon green" style={{ marginBottom: '10px' }}>⬢</div>
           <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: 'var(--ink)', fontWeight: 800 }}>Tool Marketplace</h3>
-          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>6 tested tools available</p>
+          <p style={{ fontSize: '11px', color: 'var(--ink-muted)', margin: 0 }}>Tested open-source tools</p>
         </div>
       </div>
     </div>
