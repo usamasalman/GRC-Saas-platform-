@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
@@ -160,14 +161,17 @@ export const listProjects = async (req: AuthenticatedRequest, res: Response): Pr
       });
     }
 
+    // Every matching project: the headline counts use each project's derived
+    // status, which only the whole list can give (QA-021). Paged afterwards.
     const projects = await prisma.project.findMany({
       where,
       select: LIST_SELECT,
-      orderBy: [{ status: 'asc' }, { targetEndDate: 'asc' }],
-      take: 200,
+      orderBy: [{ status: 'asc' }, { targetEndDate: 'asc' }, { id: 'asc' }],
     });
 
-    const decorated = projects.map((p) => decorate(p, scope));
+    const all = projects.map((p) => decorate(p, scope));
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const decorated = all.slice(page.skip, page.skip + page.take);
 
     res.json({
       status: 'success',
@@ -176,11 +180,12 @@ export const listProjects = async (req: AuthenticatedRequest, res: Response): Pr
       // The dashboard headline from section 4, counted once here rather than in
       // the browser, so every client agrees on the numbers.
       totals: {
-        active: decorated.filter((p) => p.status === 'Active').length,
-        atRisk: decorated.filter((p) => p.derivedStatus === 'AtRisk').length,
-        delayed: decorated.filter((p) => p.derivedStatus === 'Delayed').length,
-        completed: decorated.filter((p) => p.derivedStatus === 'Completed').length,
+        active: all.filter((p) => p.status === 'Active').length,
+        atRisk: all.filter((p) => p.derivedStatus === 'AtRisk').length,
+        delayed: all.filter((p) => p.derivedStatus === 'Delayed').length,
+        completed: all.filter((p) => p.derivedStatus === 'Completed').length,
       },
+      paging: pageInfo(all.length, page),
       projects: decorated,
     });
   } catch (error: any) {
@@ -255,15 +260,25 @@ export const engageableProviders = async (
       ],
     };
 
-    const tenants = await prisma.tenant.findMany({
-      where,
-      select: { id: true, name: true, type: true },
-      orderBy: { name: 'asc' },
-      take: 200,
-    });
+    // A picker: searchable by name and paged, so an organisation beyond the
+    // first 200 can still be found (QA-021).
+    const search = str(req.query.search || '').trim();
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [tenants, total] = await Promise.all([
+      prisma.tenant.findMany({
+        where,
+        select: { id: true, name: true, type: true },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.tenant.count({ where }),
+    ]);
 
     res.json({
       status: 'success',
+      paging: pageInfo(total, page),
       providers: tenants.map((x) => ({
         id: x.id,
         name: x.name,

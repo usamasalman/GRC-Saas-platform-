@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
@@ -503,7 +504,10 @@ export const getVerificationQueue = async (
       phase: { select: { id: true, name: true, sequence: true } },
     };
 
-    const [awaiting, rejected, history] = await Promise.all([
+    // The decision history is the one list here that grows without end, so it
+    // is the one that is paged; the count covers all of it (QA-021).
+    const page = readPage(req.query as Record<string, unknown>, 100);
+    const [awaiting, rejected, history, decisions] = await Promise.all([
       prisma.projectTask.findMany({
         where: { projectId: project.id, status: 'SubmittedForVerification' },
         orderBy: { submittedAt: 'asc' },
@@ -516,8 +520,9 @@ export const getVerificationQueue = async (
       }),
       prisma.projectVerification.findMany({
         where: { projectId: project.id },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
         select: {
           id: true, round: true, outcome: true, actorSide: true, note: true,
           reportedPercent: true, createdAt: true,
@@ -525,6 +530,7 @@ export const getVerificationQueue = async (
           task: { select: { id: true, ref: true, name: true } },
         },
       }),
+      prisma.projectVerification.count({ where: { projectId: project.id } }),
     ]);
 
     // Oldest first, so "who is holding this up" is the top row.
@@ -552,12 +558,13 @@ export const getVerificationQueue = async (
       queue,
       rejected: rejected.map((t) => ({ ...t, timing: taskTiming(t, now) })),
       history,
+      historyPaging: pageInfo(decisions, page),
       summary: {
         awaiting: awaiting.length,
         rejected: rejected.length,
         overdueReview: queue.filter((t) => t.timing.verificationOverdue).length,
         verifiableByYou: queue.filter((t) => t.canVerify).length,
-        decisions: history.length,
+        decisions,
       },
     });
   } catch (error: any) {

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
@@ -270,8 +271,10 @@ export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<
           select: { id: true, ref: true, title: true, owingSide: true },
         },
       },
-      orderBy: [{ dueDate: 'asc' }],
-      take: 300,
+      // Every task of theirs: the list is ordered by bucket, which is derived,
+      // so a cap before that ordering dropped work from the wrong end. It was
+      // the 300 earliest-due, sorted afterwards (QA-021). Paged after sorting.
+      orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
     });
 
     const rows = tasks.map((tk) => {
@@ -314,11 +317,13 @@ export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
 
+    const page = readPage(req.query as Record<string, unknown>, 300);
     res.json({
       status: 'success',
       buckets: WORK_BUCKETS,
       summary: summarise(rows.map((r) => r.bucket)),
-      tasks: rows,
+      paging: pageInfo(rows.length, page),
+      tasks: rows.slice(page.skip, page.skip + page.take),
     });
   } catch (error: any) {
     console.error('[My Work Error]:', error);

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, pill, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * The five delivery reports, and the register of what has already left.
@@ -84,6 +85,9 @@ const ProjectReports: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // The register is paged (QA-021); its summary covers every entry.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [format, setFormat] = useState('pdf');
@@ -95,10 +99,13 @@ const ProjectReports: React.FC<{ projectId: string }> = ({ projectId }) => {
     setError('');
     try {
       const [reg, plan] = await Promise.all([
-        apiClient.get(`/api/projects/${projectId}/reports${issuedOnly ? '?issued=true' : ''}`),
+        apiClient.get(`/api/projects/${projectId}/reports`, {
+          params: { page, issued: issuedOnly ? 'true' : undefined },
+        }),
         apiClient.get(`/api/projects/${projectId}/plan`),
       ]);
       setRegister(reg.data?.register || []);
+      setPaging(reg.data?.paging || null);
       setSummary(reg.data?.summary || null);
       const ph = (plan.data?.phases || []).map((p: any) => ({
         id: p.id, sequence: p.sequence, name: p.name,
@@ -110,7 +117,7 @@ const ProjectReports: React.FC<{ projectId: string }> = ({ projectId }) => {
     } finally {
       setLoading(false);
     }
-  }, [projectId, issuedOnly, phaseId]);
+  }, [projectId, issuedOnly, phaseId, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -252,7 +259,7 @@ const ProjectReports: React.FC<{ projectId: string }> = ({ projectId }) => {
           <input
             type="checkbox"
             checked={issuedOnly}
-            onChange={(e) => setIssuedOnly(e.target.checked)}
+            onChange={(e) => { setPage(1); setIssuedOnly(e.target.checked); }}
             style={{ marginRight: 6 }}
           />
           Issued only
@@ -311,6 +318,7 @@ const ProjectReports: React.FC<{ projectId: string }> = ({ projectId }) => {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="reports" disabled={loading} />
         </div>
       )}
 

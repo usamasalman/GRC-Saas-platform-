@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import fetchAllPages from '../../../api/fetchAllPages';
 import { S, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
 import PickManyDialog from '../../../components/PickManyDialog';
 
@@ -146,8 +147,9 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
   const [providerTenantId, setProviderTenantId] = useState('');
 
   useEffect(() => {
-    apiClient.get('/api/projects/engageable-providers')
-      .then((res) => setProviders(res.data?.providers || []))
+    // Every provider, not the first page: this is the choice itself (QA-021).
+    fetchAllPages<{ id: string; name: string; type: string; reason: string }>('/api/projects/engageable-providers', 'providers')
+      .then(setProviders)
       .catch(() => setProviders([]));
   }, []);
   const [picking, setPicking] = useState(false);

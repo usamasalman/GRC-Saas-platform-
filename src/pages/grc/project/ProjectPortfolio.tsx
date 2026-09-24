@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, primaryBtn, ghostBtn, pill, StatStrip } from '../../iam/iamStyles';
 import { calendarDate } from '../../../utils/calendarDate';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * The delivery portfolio — every engagement this organisation can see, with the
@@ -103,6 +104,9 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [totals, setTotals] = useState({ active: 0, atRisk: 0, delayed: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021); the headline counts cover every project.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -114,8 +118,10 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
       const params = new URLSearchParams();
       if (statusFilter) params.set('status', statusFilter);
       if (search.trim()) params.set('search', search.trim());
+      params.set('page', String(page));
       const res = await apiClient.get(`/api/projects?${params.toString()}`);
       setProjects(res.data?.projects || []);
+      setPaging(res.data?.paging || null);
       setTotals(res.data?.totals || { active: 0, atRisk: 0, delayed: 0, completed: 0 });
     } catch (err: any) {
       setError(apiError(err));
@@ -123,7 +129,7 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, search]);
+  }, [statusFilter, search, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -145,13 +151,13 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
           style={{ ...S.input, maxWidth: 260 }}
           placeholder="Search by name or reference"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setPage(1); setSearch(e.target.value); }}
           aria-label="Search projects"
         />
         <select
           style={{ ...S.input, maxWidth: 170 }}
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => { setPage(1); setStatusFilter(e.target.value); }}
           aria-label="Filter by status"
         >
           <option value="">All statuses</option>
@@ -301,6 +307,7 @@ const ProjectPortfolio: React.FC<Props> = ({ onOpen, onCreate }) => {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="projects" disabled={loading} />
         </div>
       )}
     </div>

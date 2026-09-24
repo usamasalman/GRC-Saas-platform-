@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import fetchAllPages from '../../../api/fetchAllPages';
 import FormDialog from '../../../components/FormDialog';
 import { ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY } from '../../../components/Can';
@@ -105,8 +106,9 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
   useEffect(() => { loadProvider(); }, [loadProvider]);
 
   useEffect(() => {
-    apiClient.get('/api/projects/engageable-providers')
-      .then((res) => setProviders(res.data?.providers || []))
+    // Every provider, not the first page: this is the choice itself (QA-021).
+    fetchAllPages<{ id: string; name: string; type: string; reason: string }>('/api/projects/engageable-providers', 'providers')
+      .then(setProviders)
       .catch(() => setProviders([]));
   }, []);
 

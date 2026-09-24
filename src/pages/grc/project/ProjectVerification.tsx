@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
 import { ReasonDialog } from '../../../components/Dialog';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 import { S, pill, ghostBtn, apiError } from '../../iam/iamStyles';
 
 /**
@@ -57,6 +58,8 @@ interface Payload {
   queue: QueueTask[];
   rejected: QueueTask[];
   history: Decision[];
+  /** The history is paged; this describes the page shown. */
+  historyPaging?: PageInfo;
   summary: {
     awaiting: number; rejected: number; overdueReview: number;
     verifiableByYou: number; decisions: number;
@@ -85,6 +88,8 @@ const fmtDateTime = (iso: string | null): string =>
 const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+  // The decision history is paged (QA-021); its count covers every decision.
+  const [historyPage, setHistoryPage] = useState(1);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -92,7 +97,7 @@ const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => 
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get(`/api/projects/${projectId}/verification`);
+      const res = await apiClient.get(`/api/projects/${projectId}/verification`, { params: { page: historyPage } });
       setData(res.data);
     } catch (err: any) {
       setError(apiError(err));
@@ -100,7 +105,7 @@ const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => 
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, historyPage]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -316,6 +321,7 @@ const ProjectVerification: React.FC<{ projectId: string }> = ({ projectId }) => 
                 </div>
               );
             })}
+            <PagingBar paging={data.historyPaging} onPage={setHistoryPage} noun="decisions" disabled={loading} />
           </div>
         )}
       </div>

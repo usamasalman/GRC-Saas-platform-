@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound } from '../services/projectGuard';
@@ -1470,10 +1471,12 @@ export const getReportRegister = async (
     const where: any = { projectId: project.id };
     if (str(req.query.issued) === 'true') where.issued = true;
 
-    const rows = await prisma.reportIssue.findMany({
+    const page = readPage(req.query as Record<string, unknown>, 200);
+    const [rows, total, issuedCount] = await Promise.all([prisma.reportIssue.findMany({
       where,
-      orderBy: { issuedAt: 'desc' },
-      take: 200,
+      orderBy: [{ issuedAt: 'desc' }, { id: 'asc' }],
+      skip: page.skip,
+      take: page.take,
       select: {
         id: true, reportKey: true, reportName: true, documentRef: true,
         issueNumber: true, format: true, marking: true, fileName: true,
@@ -1481,17 +1484,21 @@ export const getReportRegister = async (
         issuedAt: true,
         issuedBy: { select: { id: true, name: true, email: true } },
       },
-    });
+    }),
+    // Counted in the database, over every entry, not the page (QA-021).
+    prisma.reportIssue.count({ where }),
+    prisma.reportIssue.count({ where: { ...where, issued: true } })]);
 
     res.json({
       status: 'success',
       projectId: project.id,
       reports: Object.entries(REPORTS).map(([k, v]) => ({ kind: k, name: v.name })),
       register: rows,
+      paging: pageInfo(total, page),
       summary: {
-        total: rows.length,
-        issued: rows.filter((r) => r.issued).length,
-        exports: rows.filter((r) => !r.issued).length,
+        total,
+        issued: issuedCount,
+        exports: total - issuedCount,
       },
     });
   } catch (error: any) {

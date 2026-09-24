@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { S, pill, ghostBtn, StatStrip, apiError } from '../../iam/iamStyles';
 import { calendarDate } from '../../../utils/calendarDate';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 
 /**
  * Everything assigned to one person, across every engagement.
@@ -120,17 +121,21 @@ const MyWork: React.FC<{ onOpenProject?: (projectId: string) => void }> = ({ onO
   const [summary, setSummary] = useState<Summary | null>(null);
   const [includeDone, setIncludeDone] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Paged (QA-021); the counts above the list cover all of your work.
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get(
-        `/api/projects/my-work${includeDone ? '?includeDone=true' : ''}`,
-      );
+      const res = await apiClient.get('/api/projects/my-work', {
+        params: { page, includeDone: includeDone ? 'true' : undefined },
+      });
       setRows(res.data?.tasks || []);
       setSummary(res.data?.summary || null);
+      setPaging(res.data?.paging || null);
     } catch (err: any) {
       setError(apiError(err));
       setRows([]);
@@ -138,7 +143,7 @@ const MyWork: React.FC<{ onOpenProject?: (projectId: string) => void }> = ({ onO
     } finally {
       setLoading(false);
     }
-  }, [includeDone]);
+  }, [includeDone, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -158,7 +163,7 @@ const MyWork: React.FC<{ onOpenProject?: (projectId: string) => void }> = ({ onO
           </p>
         </div>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button style={ghostBtn} onClick={() => setIncludeDone((v) => !v)}>
+          <button style={ghostBtn} onClick={() => { setPage(1); setIncludeDone((v) => !v); }}>
             {includeDone ? 'Hide finished' : 'Show finished'}
           </button>
           <button style={ghostBtn} onClick={load}>Refresh</button>
@@ -266,6 +271,7 @@ const MyWork: React.FC<{ onOpenProject?: (projectId: string) => void }> = ({ onO
           );
         })
       )}
+      <PagingBar paging={paging} onPage={setPage} noun="tasks" disabled={loading} />
     </div>
   );
 };
