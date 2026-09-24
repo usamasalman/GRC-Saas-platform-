@@ -3,7 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { judgeDeletion } from '../services/recordDeletion';
-import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { resolveTenantScope, auditCrossTenantRead, canWriteToTenant } from '../services/scopeResolver';
 import {
   DEFAULT_VAT_RATE,
   PERIOD_KINDS,
@@ -771,8 +771,12 @@ export const createInvoice = async (req: AuthenticatedRequest, res: Response): P
 export const payInvoice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const scope = await resolveTenantScope(req.user!);
     const invoice = await prisma.invoice.findUnique({ where: { id: str(id) } });
-    if (!invoice) {
+    // An invoice outside the caller's organisations answers exactly as a
+    // missing one does: "not yours" would confirm that the id exists. Holding
+    // the payment capability says what someone may do, not to whom (QA-012).
+    if (!invoice || !canWriteToTenant(scope, invoice.tenantId)) {
       res.status(404).json({ status: 'error', message: 'Invoice not found' });
       return;
     }

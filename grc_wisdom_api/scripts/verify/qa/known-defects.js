@@ -72,11 +72,6 @@ module.exports = {
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',
     checks: ['journey:billing:the invoice hash is a real SHA-256', 'journey:billing:the QR is ZATCA TLV'],
   },
-  'QA-012': {
-    severity: 'High',
-    title: 'Any payment role in any organisation can mark any organisation\'s invoice PAID',
-    checks: ['isolation-write:POST /api/billing/invoices/:id/pay', 'journey:billing:a customer cannot mark another organisation\'s invoice paid'],
-  },
   'QA-013': {
     severity: 'Medium',
     title: 'A PAID invoice can be paid again; payInvoice checks no state',
