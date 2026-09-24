@@ -9,7 +9,12 @@ interface TraceItem {
   title: string;
   requirement: string;
   implementation: string;
+  /** Verified only while no open defect names this requirement. */
   status: string;
+  /** What the requirement was declared as, before the checks were applied. */
+  claimedStatus?: string;
+  /** Open defects the build's checks hold against this requirement. */
+  openDefects?: { id: string; severity: string; title: string }[];
 }
 
 interface BrdData {
@@ -56,6 +61,9 @@ const BrdTraceability: React.FC = () => {
   useEffect(() => { loadBrd(); }, [loadBrd]);
 
   const matrix = data?.matrix || [];
+  const openDefectIds = new Set(matrix.flatMap((m) => (m.openDefects || []).map((d) => d.id)));
+  const saudiRows = matrix.filter((m) => m.section === 'Saudi Compliance');
+  const saudi = { total: saudiRows.length, verified: saudiRows.filter((m) => m.status === 'Verified').length };
   const sections = ['All', ...new Set(matrix.map(m => m.section))];
 
   const filtered = matrix.filter(m => {
@@ -79,11 +87,22 @@ const BrdTraceability: React.FC = () => {
 
       {error && <div style={S.error}>{error}</div>}
 
+      {/* Every card from the server's matrix. These read "100% (42/42)" and
+          "PASSED & AUDITED" as fixed text, above rows the checks marked Not
+          verified -- the headline contradicting the table under it. */}
       <StatStrip items={[
-        ['TRD Compliance', <span style={{ color: 'var(--success)' }}>100% (42/42)</span>],
+        ['Requirements verified', data
+          ? <span style={{ color: data.verifiedCount === data.totalRequirements ? 'var(--success)' : 'var(--danger)' }}>
+              {data.compliancePercentage}% ({data.verifiedCount}/{data.totalRequirements})
+            </span>
+          : '—'],
         ['Core Requirements', matrix.length],
-        ['Verification Status', <span style={{ color: 'var(--success)' }}>PASSED & AUDITED</span>],
-        ['Saudi Regulatory Mandates', <span style={{ color: 'var(--info)' }}>ZATCA + PDPL + NCA</span>],
+        ['Open defects against them', data
+          ? <span style={{ color: openDefectIds.size ? 'var(--danger)' : 'var(--success)' }}>{openDefectIds.size}</span>
+          : '—'],
+        ['Saudi compliance verified', data
+          ? <span style={{ color: saudi.verified === saudi.total ? 'var(--success)' : 'var(--danger)' }}>{saudi.verified} of {saudi.total}</span>
+          : '—'],
       ]} />
 
       {/* Filter and Search Bar */}
@@ -138,7 +157,16 @@ const BrdTraceability: React.FC = () => {
                   <div style={{ fontSize: 11, color: 'var(--ink-muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.requirement}</div>
                 </td>
                 <td style={{ ...S.td, fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: 'var(--success)' }}>{m.implementation}</td>
-                <td style={S.td}><span style={pill('var(--success)', 'var(--success-line)')}>{m.status}</span></td>
+                <td style={S.td}>
+                  {/* Green only when the checks agree: the server withholds
+                      Verified while an open defect names the requirement. */}
+                  <span style={m.status === 'Verified' ? pill('var(--success)', 'var(--success-line)') : pill('var(--danger)', 'var(--danger-line)')}>{m.status}</span>
+                  {!!m.openDefects?.length && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                      Open: {m.openDefects.map((d) => d.id).join(', ')}
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...S.td, textAlign: 'right' }}>
                   <button style={{ ...ghostBtn, padding: '4px 10px', fontSize: 11 }} onClick={() => setDetailItem(m)}>
                     View Clause
@@ -169,6 +197,18 @@ const BrdTraceability: React.FC = () => {
                 {detailItem.implementation}
               </div>
             </div>
+            {!!detailItem.openDefects?.length && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--danger)', marginBottom: 6 }}>
+                  Not verified: {detailItem.openDefects.length === 1 ? 'an open defect contradicts' : `${detailItem.openDefects.length} open defects contradict`} this requirement
+                </div>
+                {detailItem.openDefects.map((d) => (
+                  <div key={d.id} style={{ fontSize: 12.5, color: 'var(--ink-body)', lineHeight: 1.5 }}>
+                    <strong>{d.id}</strong> ({d.severity}): {d.title}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button style={ghostBtn} onClick={() => setDetailItem(null)}>Close</button>
             </div>

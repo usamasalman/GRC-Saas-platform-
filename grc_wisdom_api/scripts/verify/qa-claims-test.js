@@ -64,15 +64,52 @@ const sources = [];
     `the screen says Verified for OCI Riyadh (me-riyadh-1), but the pipeline's deploy job is "${target}"`);
 }
 
+// ─── The BRD screen's status comes from the checks ─────────────────────────
+// Every requirement was Verified by string, with a compliance figure of 100,
+// while failing checks contradicted six of them. The endpoint now takes a
+// requirement's status from the register the build reads; these keep it so.
+{
+  const register = require('../../src/qa/known-defects.json');
+  const reqIds = new Set([...system.matchAll(/id: '(REQ-\d+)'/g)].map((m) => m[1]));
+  const brd = system.slice(system.indexOf('export const getBrdTraceability'));
+  const brdBody = brd.slice(0, brd.indexOf('\nexport ') > 0 ? brd.indexOf('\nexport ') : brd.length);
+  v.record('claims:the BRD screen takes its status from the register',
+    /from '\.\.\/qa\/known-defects\.json'/.test(system) && !/compliancePercentage:\s*100\b/.test(brdBody)
+      && !/verifiedCount:\s*traceMatrix\.length/.test(brdBody),
+    'getBrdTraceability does not read src/qa/known-defects.json, or returns a fixed compliance figure');
+  const unknown = [];
+  const unlinked = [];
+  for (const [id, d] of Object.entries(register)) {
+    for (const r of d.requirements || []) if (!reqIds.has(r)) unknown.push(`${id} → ${r}`);
+    for (const key of d.checks) {
+      for (const [r] of key.matchAll(/REQ-\d+/g)) if (!(d.requirements || []).includes(r)) unlinked.push(`${id} (${key})`);
+    }
+  }
+  v.record('claims:register links name requirements that exist', unknown.length === 0,
+    `links to requirements the BRD does not have: ${unknown.join(', ')}`);
+  v.record('claims:a defect whose check names a requirement is linked to it', unlinked.length === 0,
+    `not linked, so the BRD would still show the requirement Verified: ${unlinked.join(', ')}`);
+}
+
 // ─── Dashboards show figures they computed ─────────────────────────────────
 // A number with a literal fallback (`|| 84`) or a trend written into the markup
 // ("+4 this quarter", "+18.7% YoY") reads as a measurement and is not one
 // (QA-024). A dashboard that cannot compute a figure shows a dash.
 {
-  const dir = path.join(q.WEB_SRC, 'pages', 'dashboard');
+  // The dashboards, and the System screens that report the platform's own
+  // standing: the BRD page headlined "100% (42/42)" and "PASSED & AUDITED" in
+  // fixed text above rows the checks had marked Not verified.
+  const files = ['dashboard', 'system'].flatMap((d) => {
+    const dir = path.join(q.WEB_SRC, 'pages', d);
+    return fs.readdirSync(dir).filter((n) => n.endsWith('.tsx')).map((n) => path.join(dir, n));
+  });
   const invented = [];
-  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.tsx'))) {
-    const lines = q.read(path.join(dir, f)).split('\n');
+  for (const file of files) {
+    const f = path.basename(file);
+    // Comments out, JSX ones included, with their newlines kept so the line
+    // numbers reported still point at the right place.
+    const code = q.read(file).replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+    const lines = code.split('\n');
     lines.forEach((line, n) => {
       if (/^\s*(\/\/|\*)/.test(line)) return;
       const hit = line.match(new RegExp([
@@ -83,6 +120,8 @@ const sources = [];
         /points="\d/.source, // a chart drawn from fixed points
         />\s*\d+(\.\d+)?%\s*</.source, // a percentage written into the markup
         /\[\s*'[A-Z][\w &]+',\s*\d+\s*\]/.source, // a fixed label/number series
+        /\d+%\s*\(\d+\/\d+\)/.source, // a score with its fraction, "100% (42/42)"
+        /PASSED\s*&(amp;)?\s*AUDITED/.source,
       ].join('|')));
       if (hit) invented.push(`${f}:${n + 1} "${hit[0].trim()}"`);
     });

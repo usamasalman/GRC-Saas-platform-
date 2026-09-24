@@ -6,6 +6,7 @@ import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResol
 import { reportAllJobs, planTrigger, observe } from '../services/jobReporting';
 import { runEscalationScan, SLA_ESCALATION_JOB } from '../services/slaService';
 import { runRiskReviewScan, RISK_REVIEW_JOB } from '../services/riskLifecycle';
+import knownDefects from '../qa/known-defects.json';
 
 function str(val: unknown): string {
   if (typeof val === 'string') return val;
@@ -288,12 +289,28 @@ export const getBrdTraceability = async (req: AuthenticatedRequest, res: Respons
       { id: 'REQ-12', trdRef: 'TRD §12.3', section: 'Infrastructure', title: 'OCI Riyadh Sovereign Cloud', requirement: 'Data residency guaranteed in Kingdom of Saudi Arabia OCI Riyadh Region (me-riyadh-1).', implementation: 'systemController.ts + OciRiyadhArchitecture.tsx', status: 'Verified' },
     ];
 
+    // The status on each row above is what the requirement claims. What this
+    // returns is that claim less anything the checks have found against it:
+    // a requirement is Verified only while no open defect in the register
+    // names it. All twelve used to be Verified by string, with a compliance
+    // figure of 100, while failing checks contradicted six of them. The
+    // register is the file the build's own QA suites read, so the screen and
+    // the build cannot disagree about what is known to be broken.
+    const register: Record<string, { severity: string; title: string; requirements?: string[] }> = knownDefects;
+    const matrix = traceMatrix.map((m) => {
+      const openDefects = Object.entries(register)
+        .filter(([, d]) => (d.requirements || []).includes(m.id))
+        .map(([id, d]) => ({ id, severity: d.severity, title: d.title }));
+      return { ...m, claimedStatus: m.status, status: openDefects.length ? 'Not verified' : m.status, openDefects };
+    });
+    const verifiedCount = matrix.filter((m) => m.status === 'Verified').length;
+
     res.json({
       status: 'success',
-      totalRequirements: traceMatrix.length,
-      verifiedCount: traceMatrix.length,
-      compliancePercentage: 100,
-      matrix: traceMatrix
+      totalRequirements: matrix.length,
+      verifiedCount,
+      compliancePercentage: matrix.length ? Math.round((verifiedCount / matrix.length) * 100) : 0,
+      matrix,
     });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to fetch BRD traceability matrix' });
