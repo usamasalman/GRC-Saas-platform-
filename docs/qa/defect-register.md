@@ -8,38 +8,18 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 
 | Severity | Open |
 |---|---|
-| High | 9 |
-| Medium | 7 |
-| Low | 2 |
+| High | 5 |
+| Medium | 9 |
+| Low | 3 |
 
 ## Defects pinned to a check
 
 ### High
 
-**QA-001: Any member of an organisation can cancel anyone's running approval workflow**
-- Where: `POST /api/itsm/workflows/runs/:id/cancel` (`itsmRoutes.ts`) has no capability guard, and the handler does not check that the caller started the run or administers workflows.
-- Reproduce: `qa-write-guards-test` (`write-guards:POST /api/itsm/workflows/runs/:id/cancel`), `qa-isolation-test` (`isolation:cancel-others-workflow`).
-- Fix: guard the route with the workflow-administration capability, and in the handler allow the initiator as well.
-
-**QA-002: Knowledge articles can be opened by id from another organisation, drafts included**
-- Where: `GET /api/itsm/knowledge/:id` → `viewArticle` looks the article up by id without the caller's tenant scope, or its publication state.
-- Reproduce: `qa-isolation-test` (`isolation:GET /api/itsm/knowledge/:id`).
-- Fix: filter by the caller's tenant scope, and return drafts only to their authors and editors.
-
-**QA-003: Privileged legal matters are readable by every member of the organisation**
-- Where: `GET /api/legal/matters` and `/matters/:id` (`legalHoldRoutes.ts`) sit behind tenant isolation only, with no capability.
-- Reproduce: `qa-isolation-test` (`confidentiality:staff-reads-legal-matters`, `…-matter-detail`).
-- Fix: require the legal-hold capability (the one the write routes already require).
-
 **QA-011: Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called**
 - Where: invoice issue. `zatcaCrypto.ts`, `zatcaXmlBuilder.ts` and `zatcaQrUtils.ts` exist but the issue path does not use them; the BRD screen marks REQ-07 Verified.
 - Reproduce: `journey-billing-test` (`the invoice hash is a real SHA-256`, `the QR is ZATCA TLV`).
 - Fix: build the UBL XML, hash and sign it, and encode the TLV QR on issue. Until then, show REQ-07 as not implemented.
-
-**QA-012: Any payment role in any organisation can mark any organisation's invoice PAID**
-- Where: `payInvoice` (`billingController.ts`) finds the invoice by id and updates it, and never compares the invoice's tenant with the caller's scope.
-- Reproduce: `qa-isolation-test` (`isolation-write:POST /api/billing/invoices/:id/pay`), `journey-billing-test`.
-- Fix: resolve the caller's tenant scope and refuse an invoice outside it.
 
 **QA-014: The user-management screen crashes the whole app on open**
 - Where: `src/pages/iam/UserLifecycle.tsx` calls `useAuth()`, but `AuthProvider` is not mounted anywhere in the app, so the hook throws. There is no error boundary, so the page goes white. This hits everyone who manages users: *User Lifecycle & Transfers* for the platform, *Users & Branch Transfers* for organisations.
@@ -73,11 +53,6 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 - Reproduce: `qa-api-contract-test` (`contract:PATCH /api/marketplace/tools/${tool.id}`).
 - Fix: call `/review` from the screen.
 
-**QA-006: Branding by organisation id reads and writes the caller's own organisation instead**
-- Where: the routes are `/:id/branding`, but `getBranding`/`updateBranding` read `req.params.tenantId`, which does not exist, and fall back to the caller's tenant. An administrator editing a customer's branding rewrites their own.
-- Reproduce: `qa-isolation-test` (`isolation:branding-write-lands-on-target`, `isolation:GET /api/tenants/:id/branding`).
-- Fix: read `req.params.id`. The scope checks after it are already right.
-
 **QA-007: The customer sign-in form is off-screen on a phone**
 - Where: the `/login` layout is a two-column grid of fixed widths totalling 980px. On a 375px phone the e-mail field starts beyond the right edge.
 - Reproduce: `e2e/public.spec.ts` on the phone profiles (`browser:login-form-visible-on-phone`).
@@ -93,11 +68,6 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 - Reproduce: `qa-headers-test` (`headers:web-frame-protection`). The synthetic check warns about it in production.
 - Fix: `frame-ancestors 'self'` on the app pages. The document viewer, which needs embedding, can be allowed by path.
 
-**QA-013: A PAID invoice can be paid again**
-- Where: `payInvoice` checks no state; it sets PAID whatever the invoice was, and writes another audit entry.
-- Reproduce: `journey-billing-test` (`a paid invoice cannot be paid again`).
-- Fix: refuse unless the invoice is ISSUED/UNPAID, inside the same update (`where: { id, status: … }`), so two clicks cannot both succeed.
-
 ### Low
 
 **QA-010: Tool Review is on the menu of a role that cannot approve tools**
@@ -110,6 +80,35 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 - Reproduce: `qa-write-guards-test` (`reads-write:GET /api/billing/plans`, `/subscriptions`).
 - Fix: create the catalogue in `provision` (which already creates reference data), not on read.
 
+### Capacity
+
+Found by measurement (see [monitoring-and-load.md](monitoring-and-load.md)), pinned by `qa-capacity-test`.
+
+**QA-019 (Medium): The request limit is per network address, so one office of about 25 busy people is refused**
+- Where: `apiLimiter` in `app.ts` has no `keyGenerator`, so it counts per address, 300 a minute. A customer's staff share their office's address.
+- Reproduce: `qa-capacity-test` (`capacity:the request limit is counted per person, not per office address`); `load-test.js` with `OFFICES=1`: 40 people, a screen every ~10 s, 29% refused.
+- Fix: key the limit on the signed-in user, falling back to the address for anonymous calls.
+
+**QA-020 (Medium): Failed sign-ins are counted per address; ten typos in one office lock everyone there out**
+- Where: `authLimiter` in `app.ts` counts failures per address for 15 minutes.
+- Reproduce: `qa-capacity-test` (`capacity:failed sign-ins lock an account, not an office`).
+- Fix: count failures per account (e-mail) and address together, with a much higher per-address ceiling.
+
+**QA-021 (Medium): Lists stop at a fixed number of rows with no paging; records past the cap vanish silently**
+- Where: 31 list handlers use `take: N` (50 to 2,000) and none accepts a page or cursor. The risk register returns 500, sorted by residual score, so the lowest-rated risks disappear without notice.
+- Reproduce: `qa-capacity-test` (`capacity:lists that cap their rows can page past the cap`).
+- Fix: cursor paging on the lists, and a total count so the screen can say "500 of 5,000".
+
+**QA-022 (Medium): Verifying the audit trail loads the whole history into memory**
+- Where: `verifyAuditTrail` (`dbAdminController.ts`) reads every audit row of every organisation in one query each. Measured: +225 MB for 200,000 rows, in one click.
+- Reproduce: `qa-capacity-test` (`capacity:verifying the audit trail reads in batches`).
+- Fix: walk the chain in batches (`take` + cursor), carrying the previous hash between batches.
+
+**QA-023 (Low): Background jobs start in every API process**
+- Where: `server.ts` starts the SLA escalation and risk-review scanners unconditionally, so a second process runs every job twice.
+- Reproduce: `qa-capacity-test` (`capacity:background jobs can be confined to one process`).
+- Fix: start them only where an environment flag says so, and set it on exactly one process.
+
 ## Open items not pinned to a check
 
 These need a decision or a look at the live server, not a code check.
@@ -120,7 +119,7 @@ These need a decision or a look at the live server, not a code check.
 | OI-02 | High, if true | The live database may still hold the demo accounts from an earlier seed, all with the published demo password. | On the server, count users with a `@globalbank.com`, `@omniops.me` or `@grcwisdom.com` address. Remove or disable them. |
 | OI-03 | Medium | The audit chain can fork under concurrent writes: two writers can read the same previous hash. | Serialise appends per tenant (an advisory lock or a sequence), and add a concurrency test. |
 | OI-04 | Medium | Impersonation approvers include HR roles, who should not grant support access to customer data. | Limit approvers to tenant administrators. |
-| OI-05 | Medium | Capacity: one API process tops out near 180 requests/s. At 150 people working at once, p95 is 1.8 s. | Run more than one API process (Node cluster or replicas) before expecting more than about 100 people active at the same moment. Fix QA-015 first. |
+| OI-05 | Medium | Capacity: one API process tops out at 100 to 180 requests/s, limited by its single CPU core; each request makes about 14 queries one after another. | Fix QA-015 and QA-023, then run one process per core before expecting more than about 100 people active at the same moment. Keep the database on the same host until queries per request come down. |
 | OI-06 | Medium | ISO 27001 has no Statement of Applicability or management-review screen. | Product decision: both are mandatory ISO 27001 records. |
 | OI-07 | Low | OmniOps has no document approver, and the organisation portal has no acknowledgement screen. | Seed an approver; decide whether acknowledgements belong in the organisation portal. |
 | OI-08 | Low | Local development `.env` points `DATABASE_URL` at a SQLite file the Prisma 7 client cannot use, so the local API answers 503. | Point it at the local PostgreSQL. |
@@ -131,6 +130,12 @@ Found by the QA work and fixed, kept here so the history is in one place.
 
 | Defect | Fixed in |
 |---|---|
+| QA-012 Any payment role could mark any organisation's invoice paid. The invoice is now checked against the caller's organisations, and one outside them reads as not found | `1e34744` |
+| QA-013 A paid invoice could be paid again. The payment is now conditional on UNPAID inside the update, so a double click cannot pay twice (409) | `6c33423` |
+| QA-002 Knowledge articles opened by id across organisations, drafts included. Now scoped to the caller's organisations; drafts only for the author and article writers, in the list too | `fe1fb5c` |
+| QA-001 Any member could cancel anyone's running approval. Now only whoever started it, or a workflow administrator (403 otherwise) | `630c594` |
+| QA-003 Privileged legal matters were readable by every member. Reading matters now needs the legal-hold capability, and the menu entry follows | `5c8ca33` |
+| QA-006 Branding by organisation id read and wrote the caller's own organisation. The route parameter now matches what the handlers read; a write to a foreign organisation is refused | `533180a` |
 | Audit chain reported TAMPERED on valid logs (clock skew between hash and row time) | `1d8884c` |
 | Background-job and service status on the health screen was invented | `0ef36fe` |
 | The tenant audit trail was readable by any signed-in user | `74ae86e` |
