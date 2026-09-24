@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { pinCurrentIdentity } from '../api/sessionIdentity';
 
 /**
  * First-run setup — creates the very first administrator on a fresh install.
@@ -61,6 +62,7 @@ const Setup: React.FC = () => {
         if (data.refreshToken) localStorage.setItem('grc_refresh_token', data.refreshToken);
         localStorage.setItem('grc_user_json', JSON.stringify(data.user));
         if (data.user?.id) localStorage.setItem('authPersonaId', data.user.id);
+        pinCurrentIdentity();
         navigate('/app');
       } else {
         setError(data?.message || 'Setup failed.');

@@ -3,6 +3,7 @@ import type { IconName } from '../components/Icon';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { clearPinnedIdentity } from '../api/sessionIdentity';
 
 // Real Document Components
 import DocumentLibrary from './documents/DocumentLibrary';
@@ -373,6 +374,8 @@ const AppShell = () => {
     localStorage.removeItem('grc_jwt_token');
     localStorage.removeItem('grc_user_json');
     localStorage.removeItem('grc_refresh_token');
+    // This tab signed out on purpose; it is nobody until it signs in again.
+    clearPinnedIdentity();
     navigate('/login');
   };
 

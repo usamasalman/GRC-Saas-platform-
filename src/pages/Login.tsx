@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { pinCurrentIdentity } from '../api/sessionIdentity';
 
 /**
  * The sign-in screen.
@@ -52,6 +53,9 @@ const Login: React.FC = () => {
     if (data.refreshToken) localStorage.setItem('grc_refresh_token', data.refreshToken);
     localStorage.setItem('grc_user_json', JSON.stringify(data.user));
     if (data.user?.id) localStorage.setItem('authPersonaId', data.user.id);
+    // This tab signed in, so this tab is now that person. Another tab's sign-in
+    // never reaches this line, which is what lets the other tab notice.
+    pinCurrentIdentity();
     navigate(data.user?.mustChangePassword ? '/change-password' : '/app');
   }
 

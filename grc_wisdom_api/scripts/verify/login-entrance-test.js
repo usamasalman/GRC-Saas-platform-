@@ -117,7 +117,13 @@ const walk = (dir) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) { walk(full); continue; }
     if (!/\.tsx?$/.test(entry.name)) continue;
-    if (entry.name === 'PlatformLogin.tsx' || entry.name === 'App.tsx') continue;
+    // App.tsx declares the route and PlatformLogin.tsx is the page.
+    // sessionIdentity.ts names the path to RECOGNISE it — a tab opened on a
+    // sign-in page is nobody yet and must not be interrupted when another tab
+    // signs in. Recognising a page is not linking to it; the check below holds
+    // that file to exactly that.
+    if (entry.name === 'PlatformLogin.tsx' || entry.name === 'App.tsx'
+        || entry.name === 'sessionIdentity.ts') continue;
     if (fs.readFileSync(full, 'utf8').includes('control-plane')) {
       linked.push(path.relative(WEB, full));
     }
@@ -130,5 +136,19 @@ assert.deepStrictEqual(
   `The platform entrance is linked from:\n${linked.map((l) => `  ${l}`).join('\n')}\n`
   + 'It is reached by typing the address; a link from inside the product undoes the point of it.',
 );
+
+// The exemption above is for recognising the path, so it is held to that: the
+// module may list it, and may not send anybody to it.
+{
+  const identity = fs.readFileSync(path.join(WEB, 'api', 'sessionIdentity.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  checks += 1;
+  assert.ok(
+    !/(href|location\s*=|location\.href|location\.assign|navigate\(|\bto=)[^\n]*control-plane/.test(identity),
+    'sessionIdentity.ts names the operator entrance only to recognise it. It must not link, '
+    + 'redirect or navigate to it.',
+  );
+}
 
 console.log(`login-entrance: ${checks} assertions passed`);

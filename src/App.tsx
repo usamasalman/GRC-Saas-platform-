@@ -9,6 +9,7 @@ import ResetPassword from './pages/ResetPassword';
 import ChangePassword from './pages/ChangePassword';
 import AdminPasswordResets from './pages/AdminPasswordResets';
 import RequireAuth from './components/RequireAuth';
+import SessionSwitchedGuard from './components/SessionSwitchedGuard';
 
 /**
  * The former landing page was a directory of eight demo portals ("35 demo
@@ -18,6 +19,9 @@ import RequireAuth from './components/RequireAuth';
 function App() {
   return (
     <BrowserRouter>
+      {/* Above every route: a tab re-identified by another tab must stop,
+          wherever it happens to be. */}
+      <SessionSwitchedGuard />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />

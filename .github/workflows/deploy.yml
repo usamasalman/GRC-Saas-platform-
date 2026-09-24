@@ -138,6 +138,7 @@ jobs:
           node scripts/verify/background-jobs-test.js
           node scripts/verify/audit-trail-access-test.js
           node scripts/verify/reported-defects-test.js
+          node scripts/verify/session-per-tab-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 

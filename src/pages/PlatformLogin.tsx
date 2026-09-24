@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { pinCurrentIdentity } from '../api/sessionIdentity';
 
 /**
  * The platform operator's entrance.
@@ -39,6 +40,7 @@ const PlatformLogin: React.FC = () => {
     if (data.refreshToken) localStorage.setItem('grc_refresh_token', data.refreshToken);
     localStorage.setItem('grc_user_json', JSON.stringify(data.user));
     if (data.user?.id) localStorage.setItem('authPersonaId', data.user.id);
+    pinCurrentIdentity();
     navigate(data.user?.mustChangePassword ? '/change-password' : '/app');
   }
 

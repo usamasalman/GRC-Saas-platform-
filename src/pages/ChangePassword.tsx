@@ -2,6 +2,7 @@ import Icon from '../components/Icon';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/apiClient';
+import { clearPinnedIdentity } from '../api/sessionIdentity';
 
 const ChangePassword: React.FC = () => {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ const ChangePassword: React.FC = () => {
         // Change-password revokes existing refresh tokens — force a fresh login.
         localStorage.removeItem('grc_jwt_token');
         localStorage.removeItem('grc_refresh_token');
+        clearPinnedIdentity();
         setTimeout(() => navigate('/'), 2500);
       } else {
         setError(res.data?.message || 'Change failed.');

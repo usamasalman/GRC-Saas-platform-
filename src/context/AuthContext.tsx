@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { pinCurrentIdentity, clearPinnedIdentity } from '../api/sessionIdentity';
 
 export interface UserContext {
   id: string;
@@ -114,6 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('grc_user_role', user.role);
     localStorage.setItem('grc_tenant_id', user.tenantId);
     localStorage.setItem('grc_user_json', JSON.stringify(user));
+    pinCurrentIdentity();
     
     setAuthState({
       isAuthenticated: true,
@@ -130,6 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('grc_user_role');
     localStorage.removeItem('grc_tenant_id');
     localStorage.removeItem('grc_user_json');
+    clearPinnedIdentity();
     
     setAuthState({
       isAuthenticated: false,

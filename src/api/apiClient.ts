@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { blocksRequest, SESSION_SWITCHED_CODE, SESSION_SWITCHED_MESSAGE } from './sessionIdentity';
 
 const getBaseURL = () => {
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
@@ -21,6 +22,15 @@ const apiClient = axios.create({
 // customer's view; callers that must act as the real operator (e.g. ending a
 // session) pass an explicit Authorization header, which is respected.
 apiClient.interceptors.request.use((config) => {
+  // First, before the explicit-header shortcut below. asOperator() and the
+  // post-refresh retry both bring their own Authorization, and both read the
+  // token out of the shared storage — so a check placed after that early
+  // return would let exactly those requests through as somebody else.
+  if (blocksRequest()) {
+    return Promise.reject(Object.assign(new Error(SESSION_SWITCHED_MESSAGE), {
+      code: SESSION_SWITCHED_CODE,
+    }));
+  }
   if (config.headers.Authorization) return config;
   const token = localStorage.getItem('grc_imp_token') || localStorage.getItem('grc_jwt_token');
   if (token) {
@@ -118,6 +128,11 @@ apiClient.interceptors.response.use(
       endSession();
       return Promise.reject(error);
     }
+
+    // The refresh token is shared too. If another tab has signed in as someone
+    // else, renewing here would mint a token for THEM and replay this tab's
+    // request under it. Stop instead; the tab is already telling the user why.
+    if (blocksRequest()) return Promise.reject(error);
 
     const renewed = await renewAccessToken();
     if (!renewed) {
