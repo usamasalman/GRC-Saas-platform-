@@ -147,6 +147,7 @@ jobs:
           node scripts/verify/qa-menu-test.js
           node scripts/verify/qa-headers-test.js
           node scripts/verify/qa-claims-test.js
+          node scripts/verify/qa-capacity-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
