@@ -58,6 +58,12 @@ API=http://127.0.0.1:3100 node grc_wisdom_api/scripts/load/load-test.js
 API=http://127.0.0.1:3100 USERS=150 DURATION=60 THINK_MS=500 LOGIN_BURST=30 OUT=load.json node grc_wisdom_api/scripts/load/load-test.js
 ```
 
+A customer's staff usually reach the internet through one office address, and the rate limit is per address. `OFFICES=n` puts the simulated people behind `n` shared addresses to show where that starts refusing them:
+
+```bash
+API=http://127.0.0.1:3100 USERS=40 OFFICES=1 THINK_MS=10000 DURATION=90 node grc_wisdom_api/scripts/load/load-test.js
+```
+
 Thresholds (exit 1 when crossed): `P95_MS=1000`, `P99_MS=2500`, `MAX_ERROR_RATE=0.01` (server errors and dropped connections), `LOGIN_P95_MS=3000`. Any 429 also fails, because each simulated person stays under the limit. `OUT` writes the full result to compare between releases.
 
 ### Baseline (2026-09-24, one API process, laptop, PostgreSQL 18 local)
@@ -68,5 +74,11 @@ Thresholds (exit 1 when crossed): `P95_MS=1000`, `P99_MS=2500`, `MAX_ERROR_RATE=
 | 25 people, 1 s between screens, 60 s | 52 req/s | 30 ms | 67 ms | 87 ms | 0 | pass |
 | 30 sign in at once | — | 387 ms | 684 ms | — | 0 | pass |
 | 150 people, 0.5 s between screens, 60 s | 181 req/s | 1,154 ms | 1,772 ms | 2,056 ms | 0 | fail (p95) |
+| The same, with Docker's VM also running on the laptop | 99 req/s | 2,367 ms | 4,326 ms | 5,139 ms | 0 | fail (p95) |
+| The same, database in Docker (1.5 ms per query instead of 0.24) | 44 req/s | 5,790 ms | 11,120 ms | 14,615 ms | 0 | fail (p95) |
+| 20 people behind one office address, 10 s between screens | 4 req/s | 49 ms | 171 ms | 423 ms | 0 | pass |
+| 40 people behind one office address, 10 s between screens | 8 req/s | 39 ms | 186 ms | 414 ms | 29% refused (429) | fail |
+
+What these say: one API process is limited by its single CPU core (0.90 cores busy, PostgreSQL 0.44). Each request makes about 14 database queries one after another, so throughput falls steeply as the database gets further away. The per-address limit refuses an office of about 25 or more busy people, whatever the server's size.
 
 No errors at any load, so it degrades by queueing, not by failing. One process tops out near 180 requests/s. The slowest calls under load are the three usage reads (about 5 s), which is QA-015. Fix that, then run more than one API process before expecting more than about 100 people active at once (OI-05).

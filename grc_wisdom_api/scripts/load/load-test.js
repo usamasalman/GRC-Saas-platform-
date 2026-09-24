@@ -23,6 +23,13 @@
  * only works when talking to the API directly; Caddy replaces the header, so
  * the trick cannot be used against a deployed site.
  *
+ * OFFICES=n puts the people behind n shared addresses instead, the way a
+ * customer's staff reach the internet through one office connection. The
+ * limit is per address, so this shows how many people one office can have
+ * working before they start being refused:
+ *
+ *   API=... USERS=40 OFFICES=1 THINK_MS=5000 node scripts/load/load-test.js
+ *
  * Pass/fail thresholds (exit 1 when crossed):
  *   P95_MS (1000)  P99_MS (2500)  MAX_ERROR_RATE (0.01, server errors + dropped
  *   connections)  LOGIN_P95_MS (3000)
@@ -42,6 +49,7 @@ const P95_MS = Number(process.env.P95_MS || 1000);
 const P99_MS = Number(process.env.P99_MS || 2500);
 const MAX_ERROR_RATE = Number(process.env.MAX_ERROR_RATE || 0.01);
 const LOGIN_P95_MS = Number(process.env.LOGIN_P95_MS || 3000);
+const OFFICES = Number(process.env.OFFICES || 0); // 0: every person has their own address
 
 // A load test is a denial of service with a reason. Refuse anything that is
 // not obviously a machine of ours.
@@ -159,8 +167,7 @@ async function loginBurst() {
 
 // ─── stage 2: steady use ────────────────────────────────────────────────────
 
-async function virtualUser(person, until) {
-  const address = nextAddress();
+async function virtualUser(person, until, address) {
   let screens = 0;
   await sleep(Math.random() * THINK_MS); // don't all start on the same tick
   while (Date.now() < until) {
@@ -182,7 +189,10 @@ async function main() {
   const login = stats(samples.filter((s) => s.key === 'POST /api/auth/login (burst)'));
   console.log(`  ${burst.ok}/${LOGIN_BURST} signed in; p50 ${login.p50.toFixed(0)} ms, p95 ${login.p95.toFixed(0)} ms, all done in ${burst.wallMs.toFixed(0)} ms`);
 
-  console.log(`\nStage 2: ${USERS} people for ${DURATION}s, ~${THINK_MS} ms between screens`);
+  console.log(`\nStage 2: ${USERS} people for ${DURATION}s, ~${THINK_MS} ms between screens`
+    + (OFFICES ? `, behind ${OFFICES} shared office address(es)` : ''));
+  const offices = Array.from({ length: OFFICES }, nextAddress);
+  const addressOf = (i) => (OFFICES ? offices[i % OFFICES] : nextAddress());
   const steadyFrom = samples.length;
   const t0 = Date.now();
   const until = t0 + DURATION * 1000;
@@ -190,7 +200,7 @@ async function main() {
     const done = samples.length - steadyFrom;
     process.stdout.write(`\r  ${Math.round((Date.now() - t0) / 1000)}s  ${done} requests`);
   }, 2000);
-  const screensOpened = await Promise.all(Array.from({ length: USERS }, (_, i) => virtualUser(people[i % people.length], until)));
+  const screensOpened = await Promise.all(Array.from({ length: USERS }, (_, i) => virtualUser(people[i % people.length], until, addressOf(i))));
   clearInterval(ticker);
   const wall = (Date.now() - t0) / 1000;
 
@@ -224,7 +234,11 @@ async function main() {
   if (burst.ok < LOGIN_BURST) breaches.push(`${LOGIN_BURST - burst.ok} of ${LOGIN_BURST} burst sign-ins failed`);
   // Each virtual user stays far below the per-address limit, so a 429 here
   // means the limiter is keying on something other than the caller.
-  if (limited) breaches.push(`${limited} requests rate-limited although every virtual user is under the limit`);
+  if (limited) {
+    breaches.push(OFFICES
+      ? `${limited} requests (${((limited / steady.length) * 100).toFixed(1)}%) refused by the per-address limit: ${Math.round(USERS / OFFICES)} people per office address is too many at this pace`
+      : `${limited} requests rate-limited although every virtual user is under the limit`);
+  }
 
   if (process.env.OUT) {
     fs.writeFileSync(path.resolve(process.env.OUT), JSON.stringify({
