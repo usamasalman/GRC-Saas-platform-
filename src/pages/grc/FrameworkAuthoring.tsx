@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
+import fetchAllPages from '../../api/fetchAllPages';
+import PagingBar, { type PageInfo } from '../../components/PagingBar';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
 import { ConfirmDialog, PromptDialog } from '../../components/Dialog';
 import ClauseMapDialog from './ClauseMapDialog';
@@ -82,6 +84,8 @@ const FrameworkAuthoring: React.FC = () => {
   const [tab, setTab] = useState<'standards' | 'controls' | 'import'>('standards');
 
   const [imports, setImports] = useState<any[]>([]);
+  const [importPage, setImportPage] = useState(1);
+  const [importPaging, setImportPaging] = useState<PageInfo | null>(null);
   const [openImport, setOpenImport] = useState<any | null>(null);
   const [uploading, setUploading] = useState(false);
   const [impForm, setImpForm] = useState({
@@ -105,11 +109,13 @@ const FrameworkAuthoring: React.FC = () => {
       const [s, c, cl] = await Promise.all([
         apiClient.get('/api/grc/standards'),
         apiClient.get('/api/grc/controls'),
-        apiClient.get('/api/grc/clauses'),
+        // Every clause, not the first page: this list is the mapping picker,
+        // and a clause missing from it cannot be mapped (QA-021).
+        fetchAllPages<Clause>('/api/grc/clauses', 'clauses'),
       ]);
       setStandards(s.data?.standards || []);
       setControls(c.data?.controls || []);
-      setClauses(cl.data?.clauses || []);
+      setClauses(cl);
     } catch (err) { setError(apiError(err, 'Failed to load the framework library')); }
     finally { setLoading(false); }
   }, []);
@@ -122,10 +128,11 @@ const FrameworkAuthoring: React.FC = () => {
    */
   const loadImports = useCallback(async () => {
     try {
-      const res = await apiClient.get('/api/grc/imports');
+      const res = await apiClient.get('/api/grc/imports', { params: { page: importPage } });
       setImports(res.data?.imports || []);
+      setImportPaging(res.data?.paging || null);
     } catch { /* the panel simply stays empty */ }
-  }, []);
+  }, [importPage]);
 
   useEffect(() => { if (tab === 'import') loadImports(); }, [tab, loadImports]);
 
@@ -953,6 +960,7 @@ const FrameworkAuthoring: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <PagingBar paging={importPaging} onPage={setImportPage} noun="imports" />
         </>
       )}
 

@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { readPage, pageInfo } from '../utils/paging';
 
 /**
  * Authoring controls.
@@ -245,19 +246,25 @@ export const listClauses = async (req: AuthenticatedRequest, res: Response): Pro
     // ignored and returned every clause on the platform.
     if (standardCode) where.standard.code = standardCode.toUpperCase();
 
-    const clauses = await prisma.standardClause.findMany({
-      where,
-      include: {
-        standard: { select: { id: true, code: true, title: true } },
-        _count: { select: { links: true } },
-      },
-      orderBy: [{ standardId: 'asc' }, { ref: 'asc' }],
-      take: 2000,
-    });
+    const page = readPage(req.query as Record<string, unknown>, 2000);
+    const [clauses, total] = await Promise.all([
+      prisma.standardClause.findMany({
+        where,
+        include: {
+          standard: { select: { id: true, code: true, title: true } },
+          _count: { select: { links: true } },
+        },
+        orderBy: [{ standardId: 'asc' }, { ref: 'asc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.standardClause.count({ where }),
+    ]);
 
     res.json({
       status: 'success',
       count: clauses.length,
+      paging: pageInfo(total, page),
       clauses: clauses.map((c) => ({
         id: c.id, ref: c.ref, title: c.title, text: c.text,
         standardId: c.standard.id, standardCode: c.standard.code,

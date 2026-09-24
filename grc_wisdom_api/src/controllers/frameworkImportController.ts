@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { readPage, pageInfo } from '../utils/paging';
 import { extractFromSpreadsheet, CandidateKind } from '../services/spreadsheetExtractor';
 import { extractFromDocument } from '../services/documentExtractor';
 
@@ -192,17 +193,23 @@ export const uploadImport = async (req: AuthenticatedRequest, res: Response): Pr
 export const listImports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
-    const imports = await prisma.frameworkImport.findMany({
-      where: { tenantId: { in: scope.tenantIds }, kind: OWN_KINDS },
-      include: {
-        uploadedBy: { select: { id: true, name: true } },
-        targetStandard: { select: { id: true, code: true } },
-        _count: { select: { candidates: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    res.json({ status: 'success', count: imports.length, imports });
+    const where = { tenantId: { in: scope.tenantIds }, kind: OWN_KINDS };
+    const page = readPage(req.query as Record<string, unknown>, 100);
+    const [imports, total] = await Promise.all([
+      prisma.frameworkImport.findMany({
+        where,
+        include: {
+          uploadedBy: { select: { id: true, name: true } },
+          targetStandard: { select: { id: true, code: true } },
+          _count: { select: { candidates: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.frameworkImport.count({ where }),
+    ]);
+    res.json({ status: 'success', count: imports.length, paging: pageInfo(total, page), imports });
   } catch (error: any) {
     console.error('[Import List Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to list imports' });

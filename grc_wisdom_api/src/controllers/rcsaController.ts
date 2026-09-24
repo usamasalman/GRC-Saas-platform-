@@ -5,6 +5,7 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { createIssueRecord } from '../services/issueFactory';
+import { readPage, pageInfo } from '../utils/paging';
 import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
 const SUBJ_CAMPAIGN = 'RcsaCampaign';
@@ -40,16 +41,27 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response): P
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.rcsa.list');
 
-    const campaigns = await prisma.rcsaCampaign.findMany({
-      where: { tenantId: { in: scope.tenantIds } },
-      include: {
-        launchedBy: { select: { id: true, name: true } },
-        tenant: { select: { id: true, name: true } },
-        assessments: { select: { status: true, operatingRating: true, designRating: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+    const where = { tenantId: { in: scope.tenantIds } };
+    const page = readPage(req.query as Record<string, unknown>, 100);
+    const now = new Date();
+    const [campaigns, total, byStatus, overdue] = await Promise.all([
+      prisma.rcsaCampaign.findMany({
+        where,
+        include: {
+          launchedBy: { select: { id: true, name: true } },
+          tenant: { select: { id: true, name: true } },
+          assessments: { select: { status: true, operatingRating: true, designRating: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.rcsaCampaign.count({ where }),
+      // The totals describe every campaign, not the page on screen (QA-021).
+      prisma.rcsaCampaign.groupBy({ by: ['status'], where, _count: { _all: true } }),
+      prisma.rcsaCampaign.count({ where: { ...where, status: 'Launched', dueDate: { lt: now } } }),
+    ]);
+    const countOf = (s: string) => byStatus.find((g) => g.status === s)?._count._all ?? 0;
 
     const enriched = campaigns.map((c) => ({
       ...c,
@@ -58,7 +70,7 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response): P
       ineffective: c.assessments.filter(
         (a) => a.operatingRating === 'Ineffective' || a.designRating === 'Ineffective',
       ).length,
-      isOverdue: c.status === 'Launched' && c.dueDate.getTime() < Date.now(),
+      isOverdue: c.status === 'Launched' && c.dueDate.getTime() < now.getTime(),
     }));
 
     res.json({
@@ -66,11 +78,12 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response): P
       scope: scope.kind,
       count: enriched.length,
       totals: {
-        campaigns: enriched.length,
-        launched: enriched.filter((c) => c.status === 'Launched').length,
-        overdue: enriched.filter((c) => c.isOverdue).length,
-        closed: enriched.filter((c) => c.status === 'Closed').length,
+        campaigns: total,
+        launched: countOf('Launched'),
+        overdue,
+        closed: countOf('Closed'),
       },
+      paging: pageInfo(total, page),
       campaigns: enriched,
     });
   } catch (error: any) {

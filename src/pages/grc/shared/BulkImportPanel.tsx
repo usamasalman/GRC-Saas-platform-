@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import PagingBar, { type PageInfo } from '../../../components/PagingBar';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import { ConfirmDialog } from '../../../components/Dialog';
 import Icon from '../../../components/Icon';
@@ -64,6 +65,8 @@ const label: React.CSSProperties = {
 
 const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void }> = ({ config, onCommitted }) => {
   const [imports, setImports] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [uploadInfo, setUploadInfo] = useState<any>(null);
@@ -81,10 +84,11 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
 
   const loadList = useCallback(async () => {
     try {
-      const r = await apiClient.get(`${base}/imports`);
+      const r = await apiClient.get(`${base}/imports`, { params: { page } });
       setImports(r.data?.imports || []);
+      setPaging(r.data?.paging || null);
     } catch (err) { setError(apiError(err, 'Failed to load imports')); }
-  }, [base]);
+  }, [base, page]);
 
   const loadDetail = useCallback(async (id: string) => {
     try {
@@ -398,6 +402,7 @@ const BulkImportPanel: React.FC<{ config: ImportConfig; onCommitted?: () => void
               </tbody>
             </table>
           </div>
+          <PagingBar paging={paging} onPage={setPage} noun="imports" />
         </>
       )}
 

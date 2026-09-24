@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/apiClient';
 import { S, linkBtn } from '../pages/iam/iamStyles';
+import PagingBar, { type PageInfo } from './PagingBar';
 
 /**
  * The inbox the bell never opened.
@@ -17,8 +18,8 @@ import { S, linkBtn } from '../pages/iam/iamStyles';
  * Every project notification was therefore written to a table nothing read.
  *
  * The count is fetched on its own cheap endpoint rather than by counting the
- * list, because the list is capped at a hundred rows and a count taken from a
- * truncated page under-reports.
+ * list, because the list arrives a hundred at a time and a count taken from
+ * one page under-reports.
  */
 
 interface Note {
@@ -50,6 +51,8 @@ const NotificationBell: React.FC<{ onNavigate?: (pageKey: string) => void }> = (
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<PageInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,15 +74,17 @@ const NotificationBell: React.FC<{ onNavigate?: (pageKey: string) => void }> = (
     return () => clearInterval(timer);
   }, [loadCount]);
 
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(async (p: number) => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.get('/api/notifications');
+      const res = await apiClient.get('/api/notifications', { params: { page: p } });
       setNotes(res.data?.notifications || []);
+      setPaging(res.data?.paging || null);
     } catch {
       setError('Your notifications could not be loaded.');
       setNotes([]);
+      setPaging(null);
     } finally {
       setLoading(false);
     }
@@ -88,8 +93,11 @@ const NotificationBell: React.FC<{ onNavigate?: (pageKey: string) => void }> = (
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    if (next) loadList();
+    // Opens on the first page, where the unread ones are.
+    if (next) { setPage(1); loadList(1); }
   };
+
+  const goTo = (p: number) => { setPage(p); loadList(p); };
 
   const markRead = async (n: Note) => {
     if (n.readAt) return;
@@ -110,7 +118,7 @@ const NotificationBell: React.FC<{ onNavigate?: (pageKey: string) => void }> = (
   const markAllRead = async () => {
     try {
       await apiClient.post('/api/notifications/read-all');
-      await Promise.all([loadList(), loadCount()]);
+      await Promise.all([loadList(page), loadCount()]);
     } catch {
       setError('They could not be marked read.');
     }
@@ -222,6 +230,10 @@ const NotificationBell: React.FC<{ onNavigate?: (pageKey: string) => void }> = (
                 </div>
               </button>
             ))}
+
+            <div style={{ padding: '0 12px' }}>
+              <PagingBar paging={paging} onPage={goTo} noun="notifications" disabled={loading} />
+            </div>
           </div>
         </>
       )}

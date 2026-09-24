@@ -15,6 +15,8 @@ import { judgeDeletion } from '../services/recordDeletion';
  */
 
 const SUBJ_STANDARD = 'Standard';
+/** How many organisations a refusal to delete a standard names before "and N more". */
+const NAMED_IN_REFUSAL = 50;
 
 /** A framework nobody can test against is a document, not a standard. */
 function cleanClauses(raw: any): { rows: { ref: string; title: string; text: string | null }[]; error: string | null } {
@@ -238,15 +240,24 @@ export const deleteStandard = async (req: AuthenticatedRequest, res: Response): 
       // What changes is that the message distinguishes the entities the caller
       // can act on from the ones only a platform operator can.
       const scope = await resolveTenantScope(req.user!);
-      const enablements = await prisma.tenantStandardEnablement.findMany({
-        where: { standardId: id },
-        select: { tenantId: true, tenant: { select: { name: true } } },
-        take: 50,
-      });
-      const visible = enablements.filter((e) => scope.tenantIds.includes(e.tenantId));
-      const hidden = enablements.length - visible.length;
+      // Up to NAMED_IN_REFUSAL are named; every one is counted. The names were
+      // taken from the first 50 enablements on the platform, so past 50 the
+      // count of those outside your scope came out short (QA-021).
+      const mine = { standardId: id, tenantId: { in: scope.tenantIds } };
+      const [visible, visibleTotal] = await Promise.all([
+        prisma.tenantStandardEnablement.findMany({
+          where: mine,
+          select: { tenantId: true, tenant: { select: { name: true } } },
+          orderBy: { tenantId: 'asc' },
+          take: NAMED_IN_REFUSAL,
+        }),
+        prisma.tenantStandardEnablement.count({ where: mine }),
+      ]);
+      const hidden = std._count.enablements - visibleTotal;
 
-      const named = visible.map((e) => e.tenant?.name || e.tenantId).join(', ');
+      const unnamed = visibleTotal - visible.length;
+      const named = visible.map((e) => e.tenant?.name || e.tenantId).join(', ')
+        + (unnamed > 0 ? ` and ${unnamed} more` : '');
       const parts = [
         visible.length > 0 ? `enabled for ${named}` : null,
         hidden > 0

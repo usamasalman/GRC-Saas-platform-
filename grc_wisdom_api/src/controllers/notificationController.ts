@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
+import { readPage, pageInfo } from '../utils/paging';
 
 /**
  * A user's own inbox. Deliberately not tenant-scoped through the resolver —
@@ -13,22 +14,28 @@ export const listNotifications = async (req: AuthenticatedRequest, res: Response
     const where: any = { recipientId: req.user!.id };
     if (unread === 'true') where.readAt = null;
 
-    const notifications = await prisma.notification.findMany({
-      where,
-      // nulls: 'first' is load-bearing. This is Postgres, where ASC sorts NULLs
-      // LAST -- and readAt is null exactly on the unread ones. So the intended
-      // "unread at the top" ordering did the opposite, and with take: 100 a
-      // person holding a hundred read notifications would have seen none of
-      // their unread ones at all. The `unread` figure below is counted from the
-      // same page, so it under-reported too.
-      orderBy: [{ readAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }],
-      take: 100,
-    });
+    const page = readPage(req.query as Record<string, unknown>, 100);
+    const [notifications, total, unreadTotal] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        // nulls: 'first' is load-bearing. This is Postgres, where ASC sorts NULLs
+        // LAST -- and readAt is null exactly on the unread ones. So the intended
+        // "unread at the top" ordering did the opposite, and a person holding a
+        // hundred read notifications would have seen none of their unread ones.
+        orderBy: [{ readAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.notification.count({ where }),
+      // Counted over the whole inbox, not the page on screen (QA-021).
+      prisma.notification.count({ where: { recipientId: req.user!.id, readAt: null } }),
+    ]);
 
     res.json({
       status: 'success',
       count: notifications.length,
-      unread: notifications.filter((n) => n.readAt === null).length,
+      unread: unreadTotal,
+      paging: pageInfo(total, page),
       notifications,
     });
   } catch (error: any) {

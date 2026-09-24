@@ -31,14 +31,6 @@
       "claims:REQ-12 the deployment is in OCI Riyadh"
     ]
   },
-  "QA-021": {
-    "severity": "Medium",
-    "title": "Lists stop at a fixed number of rows with no paging; records past the cap vanish silently",
-    "requirements": [],
-    "checks": [
-      "capacity:lists that cap their rows can page past the cap"
-    ]
-  },
   "QA-029": {
     "severity": "High",
     "title": "The audit chain forks when audited requests arrive together, and every verifier then reports the trail as tampered",

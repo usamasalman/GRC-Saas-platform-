@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { readPage, pageInfo } from '../utils/paging';
 import {
   extractVendorsFromSpreadsheet, VENDOR_TEMPLATE_COLUMNS, VendorRow,
 } from '../services/vendorImportExtractor';
@@ -195,19 +196,26 @@ export const listVendorImports = async (
 ): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
-    const imports = await prisma.frameworkImport.findMany({
-      where: { tenantId: { in: scope.tenantIds }, kind: KIND },
-      include: {
-        uploadedBy: { select: { id: true, name: true } },
-        _count: { select: { candidates: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+    const where = { tenantId: { in: scope.tenantIds }, kind: KIND };
+    const page = readPage(req.query as Record<string, unknown>, 50);
+    const [imports, total] = await Promise.all([
+      prisma.frameworkImport.findMany({
+        where,
+        include: {
+          uploadedBy: { select: { id: true, name: true } },
+          _count: { select: { candidates: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.frameworkImport.count({ where }),
+    ]);
 
     res.json({
       status: 'success',
       count: imports.length,
+      paging: pageInfo(total, page),
       imports: imports.map((i) => ({
         id: i.id,
         fileName: i.fileName,

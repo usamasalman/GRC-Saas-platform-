@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope } from '../services/scopeResolver';
+import { readPage, pageInfo } from '../utils/paging';
 import {
   extractRisksFromSpreadsheet, RISK_TEMPLATE_COLUMNS, RiskRow,
 } from '../services/riskImportExtractor';
@@ -193,16 +194,22 @@ export const uploadRiskImport = async (req: AuthenticatedRequest, res: Response)
 export const listRiskImports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const scope = await resolveTenantScope(req.user!);
-    const imports = await prisma.frameworkImport.findMany({
-      where: { tenantId: { in: scope.tenantIds }, kind: 'Risk' },
-      include: {
-        uploadedBy: { select: { id: true, name: true, email: true } },
-        _count: { select: { candidates: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    res.json({ status: 'success', count: imports.length, imports });
+    const where = { tenantId: { in: scope.tenantIds }, kind: 'Risk' };
+    const page = readPage(req.query as Record<string, unknown>, 50);
+    const [imports, total] = await Promise.all([
+      prisma.frameworkImport.findMany({
+        where,
+        include: {
+          uploadedBy: { select: { id: true, name: true, email: true } },
+          _count: { select: { candidates: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: page.skip,
+        take: page.take,
+      }),
+      prisma.frameworkImport.count({ where }),
+    ]);
+    res.json({ status: 'success', count: imports.length, paging: pageInfo(total, page), imports });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to list imports' });
   }
