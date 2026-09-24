@@ -8,9 +8,9 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 
 | Severity | Open |
 |---|---|
-| High | 5 |
-| Medium | 9 |
-| Low | 3 |
+| High | 3 |
+| Medium | 5 |
+| Low | 1 |
 
 ## Defects pinned to a check
 
@@ -20,16 +20,6 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 - Where: invoice issue. `zatcaCrypto.ts`, `zatcaXmlBuilder.ts` and `zatcaQrUtils.ts` exist but the issue path does not use them; the BRD screen marks REQ-07 Verified.
 - Reproduce: `journey-billing-test` (`the invoice hash is a real SHA-256`, `the QR is ZATCA TLV`).
 - Fix: build the UBL XML, hash and sign it, and encode the TLV QR on issue. Until then, show REQ-07 as not implemented.
-
-**QA-014: The user-management screen crashes the whole app on open**
-- Where: `src/pages/iam/UserLifecycle.tsx` calls `useAuth()`, but `AuthProvider` is not mounted anywhere in the app, so the hook throws. There is no error boundary, so the page goes white. This hits everyone who manages users: *User Lifecycle & Transfers* for the platform, *Users & Branch Transfers* for organisations.
-- Reproduce: `e2e/signed-in.spec.ts` (`browser:screen:User Lifecycle & Transfers`, `browser:screen:Users & Branch Transfers`).
-- Fix: read the signed-in user the way the other screens do (no provider is needed), and add an error boundary around the screen area, so one broken screen cannot take the shell down.
-
-**QA-015: The usage screens invent quotas, rules and imports on read, and are the slowest calls under load**
-- Where: `listQuotas`, `listRules` and `listImports` (`usageController.ts`) call `ensureDefault*()` for every tenant in scope, one at a time. For a tenant with no rows, a GET inserts made-up figures ("Users 34 of 75", "API calls 8,400 of 10,000", rules that "ran 142 times"), which then show as that organisation's real usage. A platform user's request runs one count per organisation in sequence: about 5 s at 150 concurrent users, 2.5× any other call.
-- Reproduce: `qa-write-guards-test` (`reads-write:GET /api/usage/quotas`, `/rules`, `/imports`); `scripts/load/load-test.js` shows the latency.
-- Fix: remove the `ensureDefault*` calls from the reads. Show "no quota set" when there is none, and compute usage from real counts. Delete the rows already invented.
 
 **QA-017: PDPL field encryption is marked Verified but never used, and its key is in the source**
 - Where: `utils/pdplUtils.ts` defines `encryptPii`/`decryptPii`, which nothing calls. `encryptedNationalId` and `encryptedPhone` are never written. The key is `scryptSync('grc-wisdom-pdpl-secret-2026', 'salt')`. REQ-08 is shown as Verified.
@@ -43,42 +33,14 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 
 ### Medium
 
-**QA-004: Platform internals and platform-wide counts are served to customer users**
-- Where: `/api/system/health`, `/security` and `/brd` (`systemRoutes.ts`) need a signed-in user, but no platform capability.
-- Reproduce: `qa-isolation-test` (`confidentiality:customer-reads-/api/system/…`).
-- Fix: require a platform-tenant capability on the router.
-
-**QA-005: Tool Review cannot approve or reject a tool**
-- Where: `ToolReviewApproval.tsx` calls `PATCH /api/marketplace/tools/:id`. The API has only `PATCH /tools/:id/review`, so the button gets a 404.
-- Reproduce: `qa-api-contract-test` (`contract:PATCH /api/marketplace/tools/${tool.id}`).
-- Fix: call `/review` from the screen.
-
-**QA-007: The customer sign-in form is off-screen on a phone**
-- Where: the `/login` layout is a two-column grid of fixed widths totalling 980px. On a 375px phone the e-mail field starts beyond the right edge.
-- Reproduce: `e2e/public.spec.ts` on the phone profiles (`browser:login-form-visible-on-phone`).
-- Fix: stack the columns under a mobile breakpoint.
-
-**QA-008: The tenant screen reads plans through the database-admin console**
-- Where: `TenantManager.tsx` calls `/api/admin/db/table/Plan`, which is 403 for anyone who is not a database administrator, so the plan list is empty for them.
-- Reproduce: `qa-role-crawl-test` (`crawl:403 /api/admin/db/table/Plan`).
-- Fix: use `/api/billing/plans`.
-
-**QA-009: The web application can be framed by another site**
-- Where: helmet runs with `frameguard: false`, and neither nginx nor Caddy sets `X-Frame-Options` or a CSP `frame-ancestors` for the app pages. The sign-in page and every approve and publish button can be clickjacked.
-- Reproduce: `qa-headers-test` (`headers:web-frame-protection`). The synthetic check warns about it in production.
-- Fix: `frame-ancestors 'self'` on the app pages. The document viewer, which needs embedding, can be allowed by path.
+**QA-024: The platform dashboard shows invented figures**
+- Where: `RealtimeDashboardPage.tsx` falls back to literal numbers when a count is missing (`|| 84` organisations, `|| 81` subscriptions) and writes trends into the markup ("+4 this quarter", "96.4% active", "+18.7% YoY"). They read as measurements.
+- Reproduce: `qa-claims-test` (`claims:dashboards show only figures they computed`).
+- Fix: show a dash where a figure is not computed, and compute the trends or remove them.
 
 ### Low
 
-**QA-010: Tool Review is on the menu of a role that cannot approve tools**
-- Where: the `tool-review` menu entry's capability mapping is wider than the capability its action needs.
-- Reproduce: `qa-menu-test` (`menu:tool-review-gated`).
-- Fix: map the entry to the tool-approval capability.
-
-**QA-016: Reading plans or subscriptions creates the plan catalogue**
-- Where: `ensureDefaultPlans()` in `listPlans` and `listSubscriptions` (`billingController.ts`). Two first reads at the same moment can both insert the catalogue.
-- Reproduce: `qa-write-guards-test` (`reads-write:GET /api/billing/plans`, `/subscriptions`).
-- Fix: create the catalogue in `provision` (which already creates reference data), not on read.
+None open outside the capacity findings below.
 
 ### Capacity
 
@@ -132,6 +94,16 @@ Found by the QA work and fixed, kept here so the history is in one place.
 
 | Defect | Fixed in |
 |---|---|
+| QA-014 The user-management screen blanked the whole app. It takes the signed-in account from the shell; an error boundary now contains any screen that fails; the unused AuthContext is removed | `6986e7c` |
+| QA-005 Tool Review approve and reject called a route that does not exist. They call `/tools/:id/review` | `fae6feb` |
+| QA-010 Tool Review was on the menu of roles that cannot approve. Gated on ONBOARD_TOOL | `6f2d46e` |
+| QA-008 The tenant screen read plans through the database console. It reads `/api/billing/plans` | `9546c83` |
+| QA-016 Reading plans created the plan catalogue. `provision` creates it, only into an empty table | `7e07883` |
+| QA-004 Platform internals were served to customer users. `/api/system` is platform-only; customer dashboards no longer ask | `0f8a157` |
+| QA-025 A customer's user holding a platform role was given the platform control plane. Found by the role crawl once QA-004 was fixed; the platform portal now goes only to platform-organisation users | `d72c7da` |
+| QA-009 The app could be framed by another site. X-Frame-Options and frame-ancestors on the app pages at the edge | `9025b13` |
+| QA-007 The customer sign-in form was off-screen on a phone. One column, form first, below 900px | `c86c84e` |
+| QA-015 The usage screens invented quotas, rules and imports. The reads only read; `scripts/ops/invented-usage-*.sql` clears rows already invented | `1d866c4` |
 | QA-012 Any payment role could mark any organisation's invoice paid. The invoice is now checked against the caller's organisations, and one outside them reads as not found | `1e34744` |
 | QA-013 A paid invoice could be paid again. The payment is now conditional on UNPAID inside the update, so a double click cannot pay twice (409) | `6c33423` |
 | QA-002 Knowledge articles opened by id across organisations, drafts included. Now scoped to the caller's organisations; drafts only for the author and article writers, in the list too | `fe1fb5c` |
