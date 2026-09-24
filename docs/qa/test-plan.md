@@ -36,7 +36,7 @@ Each layer catches what the one before it cannot. They run in this order because
 |---|---|---|---|
 | Source invariants | Rules that can be read from the code: every write route is guarded, every read route only reads, every menu entry maps to a screen and a capability, headers are configured, claims have code behind them, capacity limits | 48 suites | CI, every push, seconds |
 | Pure logic | Schedule arithmetic, report rendering read back | 3 suites | CI, every push |
-| HTTP suites | The API against a real PostgreSQL: isolation, lifecycles, imports, reports, the role crawl, fuzzed input | 17 suites, reseeded between each | CI, every push |
+| HTTP suites | The API against a real PostgreSQL: isolation, lifecycles, imports, reports, the role crawl, fuzzed input, the audit chain under simultaneous requests | 18 suites, reseeded between each | CI, every push |
 | Journeys | A business process end to end as the people who do it — document approval, support impersonation, billing, ISO 27001 controls | 4 of the HTTP suites | CI, every push |
 | Browser | Every menu entry clicked, as four people, in Chromium, Firefox and WebKit, at desktop and phone size; the two-tab session rule in real browsers | 3 spec files × 5 browser profiles | CI, every push |
 | Load | Latency and errors with many people signed in at once | 1 script | On demand, before a release |
