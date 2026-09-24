@@ -28,7 +28,10 @@ const CHANNEL = process.env.E2E_CHROMIUM_CHANNEL ? { channel: process.env.E2E_CH
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+  // E2E_EXPECT_MS raises how long a check waits for the page, for a remote site
+  // on a slow link: the live server sends the app bundle at ~50 KB/s, so the
+  // first field can take longer than 10 s to appear on a cold cache.
+  expect: { timeout: Number(process.env.E2E_EXPECT_MS || 10_000) },
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e-report' }]],
