@@ -33,7 +33,8 @@ const code = (src) => src
 
 const writerSrc = read(API, 'middlewares', 'auditMiddleware.ts');
 const writer = code(writerSrc);
-const verifierSrc = read(API, 'controllers', 'dbAdminController.ts');
+// The one verifier, shared by the database console and the security screen.
+const verifierSrc = read(API, 'services', 'auditChain.ts');
 const verifier = code(verifierSrc);
 const schema = read(API, '..', 'prisma', 'schema.prisma');
 const deploy = read(API, '..', '..', '.github', 'workflows', 'deploy.yml');
@@ -112,7 +113,7 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
 
 // ─── The verifier checks against the sealed instant ─────────────────────────
 {
-  const fn = verifier.slice(verifier.indexOf('export const verifyAuditTrail'));
+  const fn = verifier.slice(verifier.indexOf('export async function verifyTenantChain'));
 
   ok(
     /const sealed = log\.hashedAt \?\? log\.timestamp;/.test(fn),
@@ -148,7 +149,7 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
   ok(
     // `break batches;` since the chain is read in batches (QA-022): it leaves
     // the batch loop as well as the row loop, so nothing after it is read.
-    /chainValid = false;[\s\S]{0,200}?overallIntegrity = false;[\s\S]{0,200}?tamperedLogId = log\.id;\s*break( batches)?;/.test(afterLegacy),
+    /chainValid = false;[\s\S]{0,200}?tamperedLogId = log\.id;\s*break( batches)?;/.test(afterLegacy),
     'and a sealed row that does not reproduce still stops the chain and names '
     + 'itself. Without this the endpoint reports nothing but good news',
   );
@@ -162,6 +163,33 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
     /'VALID_SINCE'/.test(fn) && /'UNVERIFIABLE'/.test(fn) && /'TAMPERED'/.test(fn),
     'and the three outcomes are distinguishable: intact, unverifiable, changed',
   );
+}
+
+// ─── One verifier (QA-027) ──────────────────────────────────────────────────
+//
+// The platform security screen had its own check: the oldest 100 rows on the
+// platform, organisations interleaved, each row's link compared with whatever
+// row preceded it and no digest recomputed. Measured on a freshly seeded
+// database it reported TAMPERING after 8 rows, while this verifier found all
+// 18 organisations' chains VALID. Two verifiers disagreed; one had to go.
+{
+  const bodyOf = (file, fnName) => {
+    const src = code(read(API, 'controllers', file));
+    const at = src.indexOf(`export const ${fnName}`);
+    const next = src.indexOf('\nexport ', at + 1);
+    return at < 0 ? '' : src.slice(at, next > 0 ? next : src.length);
+  };
+  for (const [file, fnName] of [['dbAdminController.ts', 'verifyAuditTrail'], ['systemController.ts', 'verifyWormIntegrity']]) {
+    const body = bodyOf(file, fnName);
+    ok(/verifyTenantChain\(/.test(body), `${fnName} verifies through the shared verifyTenantChain`);
+    ok(!/previousHash|generateHash|auditLog\.findMany/.test(body),
+      `and ${fnName} walks no chain of its own, so the two cannot disagree about one trail`);
+  }
+  const worm = bodyOf('systemController.ts', 'verifyWormIntegrity');
+  ok(/scope\.tenantIds/.test(worm.slice(0, worm.indexOf('verifyTenantChain('))),
+    'the security screen verifies the organisations in the caller\'s scope, each chain on its own');
+  ok(!/take:\s*\d+/.test(worm),
+    'and reads every row rather than a sample of the oldest hundred');
 }
 
 // ─── CI ─────────────────────────────────────────────────────────────────────

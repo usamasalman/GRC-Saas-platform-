@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
-import { writeAudit } from '../middlewares/auditMiddleware';
+import { writeAudit, GENESIS_HASH } from '../middlewares/auditMiddleware';
+import { verifyTenantChain, ChainResult } from '../services/auditChain';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { reportAllJobs, planTrigger, observe } from '../services/jobReporting';
 import { runEscalationScan, SLA_ESCALATION_JOB } from '../services/slaService';
@@ -201,32 +202,37 @@ export const verifyWormIntegrity = async (req: AuthenticatedRequest, res: Respon
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, str(req.user!.id), 'system.security.verifyWorm');
 
-    const logs = await prisma.auditLog.findMany({
-      orderBy: { timestamp: 'asc' },
-      take: 100
+    // Every organisation's chain, every row, each digest recomputed — the same
+    // check the database console runs (QA-027). This read the oldest 100 rows
+    // on the platform with organisations interleaved, so it reported tampering
+    // on a clean trail and never looked past row 100.
+    const tenants = await prisma.tenant.findMany({
+      where: { id: { in: scope.tenantIds } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
     });
+    const results: ChainResult[] = [];
+    for (const t of tenants) results.push(await verifyTenantChain(t));
 
-    let isChainValid = true;
-    let verifiedCount = 0;
-
-    for (let i = 1; i < logs.length; i++) {
-      const prev = logs[i - 1];
-      const current = logs[i];
-      if (current.previousHash !== prev.currentHash && current.previousHash !== 'GENESIS_HASH_0000000000000000000000000000000000000000000000000000000000000000') {
-        isChainValid = false;
-        break;
-      }
-      verifiedCount++;
-    }
+    const sum = (pick: (r: ChainResult) => number) => results.reduce((n, r) => n + pick(r), 0);
+    const tampered = results.filter((r) => r.status === 'TAMPERED');
 
     res.json({
       status: 'success',
-      isChainValid,
-      totalLogsChecked: logs.length,
-      verifiedCount: logs.length > 0 ? logs.length : 0,
-      tamperingDetected: !isChainValid,
+      isChainValid: tampered.length === 0,
+      tamperingDetected: tampered.length > 0,
+      organisations: results.length,
+      totalLogs: sum((r) => r.logCount),
+      // Rows actually examined: all of them, unless a chain broke, where the
+      // check stops at the first changed row.
+      totalLogsChecked: sum((r) => r.verifiedCount + r.unverifiableCount) + tampered.length,
+      verifiedCount: sum((r) => r.verifiedCount),
+      unverifiableCount: sum((r) => r.unverifiableCount),
+      tampered: tampered.map((r) => ({
+        tenantId: r.tenantId, tenantName: r.tenantName, firstTamperedLogId: r.firstTamperedLogId,
+      })),
       verifiedAt: new Date().toISOString(),
-      genesisHash: 'GENESIS_HASH_0000000000000000000000000000000000000000000000000000000000000000'
+      genesisHash: GENESIS_HASH,
     });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: 'Failed to verify WORM integrity' });

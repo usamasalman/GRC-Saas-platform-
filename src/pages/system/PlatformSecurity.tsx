@@ -20,9 +20,17 @@ interface SecurityData {
 
 interface WormVerificationResult {
   isChainValid: boolean;
-  totalLogsChecked: number;
-  verifiedCount: number;
   tamperingDetected: boolean;
+  organisations: number;
+  /** Entries in the trail. */
+  totalLogs: number;
+  /** Entries examined: all of them, unless a chain broke and the check stopped there. */
+  totalLogsChecked: number;
+  /** Entries whose digest was recomputed and matched. */
+  verifiedCount: number;
+  /** Entries written before the sealing time was stored, which cannot be recomputed. */
+  unverifiableCount: number;
+  tampered: { tenantId: string; tenantName: string; firstTamperedLogId: string | null }[];
   verifiedAt: string;
   genesisHash: string;
 }
@@ -83,7 +91,7 @@ const PlatformSecurity: React.FC = () => {
         // Report the verdict the server returned, including a bad one.
         setNotice(res.data.tamperingDetected
           ? 'Verification finished and found a break in the chain.'
-          : `Chain verified: ${res.data.verifiedCount ?? 0} of ${res.data.totalLogsChecked ?? 0} entries.`);
+          : `Chain verified: ${res.data.verifiedCount ?? 0} of ${res.data.totalLogs ?? 0} entries recomputed.`);
       } else {
         setWormResult(null);
         setError('The verification did not complete. The chain has not been verified.');
@@ -143,7 +151,20 @@ const PlatformSecurity: React.FC = () => {
           </div>
           <div style={{ fontSize: 12, color: 'var(--ink-body)', fontFamily: "'JetBrains Mono',monospace" }}>
             Genesis Hash: {wormResult.genesisHash.slice(0, 32)}…<br />
-            Verified {wormResult.verifiedCount} consecutive block hashes up to current tip. Chain state locked under Write-Once-Read-Many policy.
+            {/* What was checked, as counted by the server. This used to say
+                "consecutive block hashes up to current tip" about a sample of
+                the oldest 100 rows, whose links it compared across
+                organisations without recomputing one digest (QA-027). */}
+            Recomputed {wormResult.verifiedCount.toLocaleString()} of {wormResult.totalLogs.toLocaleString()} entries
+            across {wormResult.organisations} organisation{wormResult.organisations === 1 ? '' : 's'}.
+            {wormResult.unverifiableCount > 0 && (
+              <> {wormResult.unverifiableCount.toLocaleString()} could not be checked: they were written before the sealing time was stored.</>
+            )}
+            {wormResult.tampered.length > 0 && (
+              <><br />Changed after writing: {wormResult.tampered
+                .map((t) => `${t.tenantName} (first changed entry ${t.firstTamperedLogId})`)
+                .join('; ')}</>
+            )}
           </div>
         </div>
       )}

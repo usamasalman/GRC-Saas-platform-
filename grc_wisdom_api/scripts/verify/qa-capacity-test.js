@@ -68,8 +68,9 @@ function limiter(name) {
 
 // ─── QA-022: verifying the audit trail reads in batches ────────────────────
 {
-  const src = q.strip(q.read(path.join(q.API_SRC, 'controllers', 'dbAdminController.ts')));
-  const at = src.indexOf('export const verifyAuditTrail');
+  // The one verifier, shared by the database console and the security screen (QA-027).
+  const src = q.strip(q.read(path.join(q.API_SRC, 'services', 'auditChain.ts')));
+  const at = src.indexOf('export async function verifyTenantChain');
   const body = at < 0 ? '' : src.slice(at, src.indexOf('\nexport ', at + 1) > 0 ? src.indexOf('\nexport ', at + 1) : src.length);
   const reads = [...body.matchAll(/auditLog\.findMany\(\{([\s\S]*?)\}\s*\)/g)].map((m) => m[1]);
   v.record('capacity:verifying the audit trail reads in batches',
