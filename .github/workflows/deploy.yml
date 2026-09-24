@@ -139,6 +139,13 @@ jobs:
           node scripts/verify/audit-trail-access-test.js
           node scripts/verify/reported-defects-test.js
           node scripts/verify/session-per-tab-test.js
+          # QA: whole-platform checks. Each open defect they find is listed in
+          # scripts/verify/qa/known-defects.js; a new one, or a known one that
+          # starts passing, fails the build. See docs/qa/test-plan.md.
+          node scripts/verify/qa-write-guards-test.js
+          node scripts/verify/qa-api-contract-test.js
+          node scripts/verify/qa-menu-test.js
+          node scripts/verify/qa-headers-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
@@ -192,7 +199,7 @@ jobs:
           done
           curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
-          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test
           do
             echo "── $suite ──"
             npm run seed:demo > /dev/null
