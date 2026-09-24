@@ -68,7 +68,7 @@ const NOT_A_RECORD = {
     return r.json;
   };
 
-  await seedCall(gbManager, 'POST', '/api/legal/matters', {
+  const legalMatter = await seedCall(gbManager, 'POST', '/api/legal/matters', {
     reference: `QA-LIT-${Date.now()}`, title: 'Regulator inquiry — privileged',
     description: 'Privileged. Counsel: external. Do not discuss with staff.',
   }, 'a legal matter');
@@ -161,12 +161,11 @@ const NOT_A_RECORD = {
   const matters = await staffGet('/api/legal/matters');
   v.record('confidentiality:staff-reads-legal-matters', matters.status === 403,
     `a Staff Employee listed ${(matters.json?.matters || []).length} legal matter(s): HTTP ${matters.status}`);
-  const first = (matters.json?.matters || [])[0];
-  if (first) {
-    const d = await staffGet(`/api/legal/matters/${first.id}`);
-    v.record('confidentiality:staff-reads-legal-matter-detail', d.status === 403,
-      `a Staff Employee read the matter's description: HTTP ${d.status}`);
-  }
+  // The matter created above, by id: taking it from the staff member's own
+  // list would stop checking the moment the list is refused.
+  const d = await staffGet(`/api/legal/matters/${legalMatter.matter.id}`);
+  v.record('confidentiality:staff-reads-legal-matter-detail', d.status === 403,
+    `a Staff Employee read the matter's description: HTTP ${d.status}`);
   for (const url of ['/api/system/health', '/api/system/security', '/api/system/brd']) {
     const r = await staffGet(url);
     v.record(`confidentiality:customer-reads-${url}`, r.status === 403,

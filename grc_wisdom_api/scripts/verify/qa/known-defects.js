@@ -16,11 +16,6 @@
  * root cause and owner for each. Keep the two in step.
  */
 module.exports = {
-  'QA-003': {
-    severity: 'High',
-    title: 'Privileged legal matters are readable by every member of the organisation',
-    checks: ['confidentiality:staff-reads-legal-matters', 'confidentiality:staff-reads-legal-matter-detail'],
-  },
   'QA-004': {
     severity: 'Medium',
     title: 'Platform internals and platform-wide counts are served to customer users',

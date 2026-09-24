@@ -22,14 +22,15 @@ router.use(enforceTenantIsolation);
 //
 // Reading what holds a document is open: somebody wondering why they cannot
 // edit a policy should be told it is held and for what matter, rather than
-// left with a 423 and no explanation. Opening, placing and releasing carry
-// the retention capability.
+// left with a 423 and no explanation. Everything about the matters themselves
+// — reading them included — carries the retention capability: a matter's title
+// and description are privileged, and were readable by every member (QA-003).
 router.get('/documents/:id/holds', documentHolds);
 router.post('/holds/:holdId/release', requireCapability(CAP.RETENTION_HOLD), releaseHold);
 
-router.get('/matters', listMatters);
+router.get('/matters', requireCapability(CAP.RETENTION_HOLD), listMatters);
 router.post('/matters', requireCapability(CAP.RETENTION_HOLD), createMatter);
-router.get('/matters/:id', getMatter);
+router.get('/matters/:id', requireCapability(CAP.RETENTION_HOLD), getMatter);
 router.post('/matters/:id/holds', requireCapability(CAP.RETENTION_HOLD), placeHolds);
 router.post('/matters/:id/release', requireCapability(CAP.RETENTION_HOLD), releaseMatter);
 

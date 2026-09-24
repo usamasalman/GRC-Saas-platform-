@@ -123,6 +123,11 @@ export const NAV_CAPABILITY: Record<string, readonly string[]> = {
   // from the API, and hiding the entry spares them clicking into it to find out.
   logs: [CAP.READ_AUDIT_TRAIL],
   'hash-check': [CAP.READ_AUDIT_TRAIL],
+  // The second such read. A legal matter's title and description are counsel's
+  // privileged work, and the API now refuses them without the legal-hold duty
+  // (QA-003). Why a single document is held stays readable to everyone, from
+  // the document itself.
+  'legal-hold': [CAP.RETENTION_HOLD],
 
   // Commercial administration. Tracker issues 11 to 17 are seven reports of
   // one sentence -- "he has nothing to do with this" -- against exactly these
