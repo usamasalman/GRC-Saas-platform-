@@ -44,3 +44,7 @@ deploy/.env
 # network diagrams, board minutes — must never reach a git remote.
 grc_wisdom_api/uploads/
 grc_wisdom_api/evidence-store/
+
+# Browser test output (Playwright)
+e2e-report/
+test-results/

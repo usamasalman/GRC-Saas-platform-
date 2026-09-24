@@ -146,6 +146,7 @@ jobs:
           node scripts/verify/qa-api-contract-test.js
           node scripts/verify/qa-menu-test.js
           node scripts/verify/qa-headers-test.js
+          node scripts/verify/qa-claims-test.js
           node scripts/verify/login-entrance-test.js
           node scripts/verify/grc-summary-test.js
 
@@ -281,6 +282,43 @@ jobs:
           kill "$PID" || true
           wait "$PID" 2>/dev/null || true
           rm -f /tmp/server.pid
+
+      # The screens themselves, in Chromium, Firefox and WebKit (Safari's
+      # engine, and every browser on an iPhone), at desktop and phone size.
+      # The HTTP suites prove each screen's data loads; these prove the screen
+      # survives it. Known defects come from the same register as every other
+      # QA suite, so this step fails on a NEW one, or on a fixed one still
+      # listed. Its own server process, reseeded: the steps above changed data.
+      - name: Web — browser tests on three engines
+        env:
+          E2E_API_URL: http://127.0.0.1:3000
+          ADMIN_EMAIL: ci@example.com
+          ADMIN_PASSWORD: ci-only-password-not-a-secret
+          BOOTSTRAP_ADMIN_EMAIL: ci@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-only-password-not-a-secret
+        run: |
+          npx playwright install --with-deps chromium firefox webkit
+
+          cd grc_wisdom_api
+          npm run seed:demo > /dev/null
+          npm run provision > /dev/null
+          # The web app is served by vite preview on 4173 and calls this API
+          # from there, so that origin is the one CORS must allow.
+          NODE_ENV=production CORS_ORIGINS=http://localhost:4173,http://127.0.0.1:4173 node dist/server.js &
+          echo $! > /tmp/e2e.pid
+          for i in $(seq 1 30); do
+            curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
+          cd ..
+
+          npx playwright test
+
+          PID=$(cat /tmp/e2e.pid)
+          kill "$PID" || true
+          wait "$PID" 2>/dev/null || true
+          rm -f /tmp/e2e.pid
 
   build:
     name: Build and push images

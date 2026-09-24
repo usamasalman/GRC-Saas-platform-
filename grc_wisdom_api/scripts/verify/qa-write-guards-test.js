@@ -11,6 +11,14 @@
  * Found this way: POST /api/itsm/workflows/runs/:id/cancel, which lets any
  * member of an organisation cancel anyone's running approval (QA-001).
  *
+ * And the other half: a READ must not write. A GET that inserts rows turns
+ * "look at the screen" into "change the data", races with itself, and is how
+ * the usage screens came to show invented numbers as a tenant's real usage
+ * (QA-015). Every GET handler is followed into its controller, and into the
+ * helpers it awaits in the same file; a database write there fails the check
+ * unless it is listed below with a reason. Audit rows are exempt — recording
+ * that someone looked is the point of them.
+ *
  *   node scripts/verify/qa-write-guards-test.js
  */
 const q = require('./qa/lib');
@@ -40,6 +48,11 @@ const SELF_SERVICE = {
   'POST /api/notifications/read-all': 'Scoped to the caller\'s own notifications (recipientId).',
 };
 
+/** GET routes whose write is the purpose of the call. */
+const READ_SIDE_EFFECTS = {
+  'GET /api/itsm/knowledge/:id': 'Counts a view on the article; the view count is what the call is for.',
+};
+
 const v = q.verdicts('qa-write-guards');
 const writes = q.routeTable().filter((r) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method));
 const unguarded = writes.filter((r) => !q.isGuarded(r));
@@ -57,4 +70,56 @@ for (const key of Object.keys(SELF_SERVICE)) {
     'listed as self-service but it is guarded now, or gone — remove it from SELF_SERVICE');
 }
 
-v.finish(`${writes.length} write routes, ${unguarded.length} unguarded`);
+// ─── reads do not write ─────────────────────────────────────────────────────
+
+const path = require('path');
+const fs = require('fs');
+const WRITE = /prisma\.(\w+)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/g;
+const controllerCache = {};
+/** name -> body, for every async function in a controller file. */
+function functionsIn(file) {
+  if (controllerCache[file]) return controllerCache[file];
+  const src = q.strip(fs.readFileSync(file, 'utf8'));
+  const starts = [...src.matchAll(/(?:export\s+)?(?:const\s+(\w+)\s*=\s*async|async\s+function\s+(\w+))/g)]
+    .map((m) => ({ name: m[1] || m[2], at: m.index }));
+  const out = {};
+  starts.forEach((f, i) => { out[f.name] = src.slice(f.at, i + 1 < starts.length ? starts[i + 1].at : src.length); });
+  return (controllerCache[file] = out);
+}
+function writesIn(fns, name, seen = new Set()) {
+  if (!fns[name] || seen.has(name)) return [];
+  seen.add(name);
+  const found = [...fns[name].matchAll(WRITE)].map((m) => `${m[1]}.${m[2]}`).filter((w) => !w.startsWith('auditLog.'));
+  for (const m of fns[name].matchAll(/await\s+(\w+)\(/g)) {
+    found.push(...writesIn(fns, m[1], seen).map((w) => `${m[1]}() → ${w}`));
+  }
+  return found;
+}
+
+const reads = q.routeTable().filter((r) => r.method === 'GET' && r.file !== 'app.ts');
+let followed = 0;
+for (const r of reads) {
+  const routeSrc = q.read(path.join(q.API_SRC, 'routes', r.file));
+  // Which controller file each imported handler comes from, in THIS route file:
+  // three controllers have a listRules/listImports/listPlans of their own.
+  const from = {};
+  for (const m of routeSrc.matchAll(/import\s*\{([^}]+)\}\s*from\s*'\.\.\/controllers\/(\w+)'/g)) {
+    for (const n of m[1].split(',')) {
+      const [orig, alias] = n.trim().split(/\s+as\s+/);
+      if (orig) from[(alias || orig).trim()] = { file: path.join(q.API_SRC, 'controllers', `${m[2]}.ts`), name: orig.trim() };
+    }
+  }
+  const handler = (r.guards.match(/\w+/g) || []).reverse().find((t) => from[t]);
+  if (!handler) continue;
+  followed += 1;
+  const key = `${r.method} ${r.path}`;
+  const w = [...new Set(writesIn(functionsIn(from[handler].file), from[handler].name))];
+  v.record(`reads-write:${key}`, w.length === 0 || Boolean(READ_SIDE_EFFECTS[key]),
+    `a GET that writes: ${w.join(', ')}`);
+}
+for (const key of Object.keys(READ_SIDE_EFFECTS)) {
+  v.record(`reads-write:listed ${key}`, reads.some((r) => `${r.method} ${r.path}` === key),
+    'listed in READ_SIDE_EFFECTS but the route is gone — remove it');
+}
+
+v.finish(`${writes.length} write routes, ${unguarded.length} unguarded; ${followed} of ${reads.length} read routes followed into their controllers`);

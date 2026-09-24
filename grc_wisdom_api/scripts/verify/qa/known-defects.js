@@ -87,4 +87,29 @@ module.exports = {
     title: 'Tool Review is on the menu of a role that cannot approve tools',
     checks: ['menu:tool-review-gated'],
   },
+  'QA-014': {
+    severity: 'High',
+    title: 'The user-management screen crashes the whole app on open (useAuth without an AuthProvider)',
+    checks: ['browser:screen:User Lifecycle & Transfers', 'browser:screen:Users & Branch Transfers'],
+  },
+  'QA-015': {
+    severity: 'High',
+    title: 'Usage screens invent quotas, rules and imports on read, and are the slowest calls under load',
+    checks: ['reads-write:GET /api/usage/quotas', 'reads-write:GET /api/usage/rules', 'reads-write:GET /api/usage/imports'],
+  },
+  'QA-016': {
+    severity: 'Low',
+    title: 'Reading plans or subscriptions creates the plan catalogue; two first reads at once can duplicate it',
+    checks: ['reads-write:GET /api/billing/plans', 'reads-write:GET /api/billing/subscriptions'],
+  },
+  'QA-017': {
+    severity: 'High',
+    title: 'PDPL field encryption is marked Verified but never used, and its key is written in the source',
+    checks: ['claims:REQ-08 PII is encrypted when it is stored', 'claims:REQ-08 the encryption key comes from configuration'],
+  },
+  'QA-018': {
+    severity: 'High',
+    title: 'OCI Riyadh data residency is marked Verified; the pipeline deploys to a Contabo server',
+    checks: ['claims:REQ-12 the deployment is in OCI Riyadh'],
+  },
 };
