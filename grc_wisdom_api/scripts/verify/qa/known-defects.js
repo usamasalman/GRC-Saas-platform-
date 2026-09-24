@@ -16,15 +16,6 @@
  * root cause and owner for each. Keep the two in step.
  */
 module.exports = {
-  'QA-004': {
-    severity: 'Medium',
-    title: 'Platform internals and platform-wide counts are served to customer users',
-    checks: [
-      'confidentiality:customer-reads-/api/system/health',
-      'confidentiality:customer-reads-/api/system/security',
-      'confidentiality:customer-reads-/api/system/brd',
-    ],
-  },
   'QA-007': {
     severity: 'Medium',
     title: 'The customer sign-in form is off-screen on a phone',

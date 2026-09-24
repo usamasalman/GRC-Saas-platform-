@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
+import { requireAuth, rejectIfMustChangePassword, requirePlatformTenant } from '../middlewares/authMiddleware';
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   getSystemHealth, triggerSystemJob,
@@ -11,6 +11,10 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(rejectIfMustChangePassword);
+// Platform internals: service health, the security posture, the architecture
+// and the requirement status of the platform itself. None of it belongs to a
+// customer, and all of it was served to any signed-in customer user (QA-004).
+router.use(requirePlatformTenant);
 
 // Health, Jobs & API Status
 router.get('/health', getSystemHealth);

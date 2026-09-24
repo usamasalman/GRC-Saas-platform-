@@ -38,11 +38,16 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
   const fetchLiveDashboardData = useCallback(async () => {
     setRefreshing(true);
     try {
+      // Platform internals are the platform's own business: /api/system answers
+      // only platform accounts (QA-004), so a customer's dashboard does not ask.
+      const platformOnly = (url: string) => (account?.portal === 'saas'
+        ? apiClient.get(url)
+        : Promise.reject(new Error('platform only')));
       const [healthRes, secRes, tenantRes, brdRes, docRes] = await Promise.allSettled([
-        apiClient.get('/api/system/health'),
-        apiClient.get('/api/system/security'),
+        platformOnly('/api/system/health'),
+        platformOnly('/api/system/security'),
         apiClient.get('/api/tenants'),
-        apiClient.get('/api/system/brd'),
+        platformOnly('/api/system/brd'),
         apiClient.get('/api/documents'),
       ]);
 
@@ -84,7 +89,7 @@ const RealtimeDashboardPage: React.FC<RealtimeDashboardProps> = ({ account, onNa
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [account?.portal]);
 
   useEffect(() => {
     fetchLiveDashboardData();
