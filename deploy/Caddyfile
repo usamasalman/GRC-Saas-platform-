@@ -68,6 +68,18 @@
 
 	# Everything else is the single-page app.
 	handle {
+		# No other site may put the application in a frame: framed, the sign-in
+		# form and every approve and publish button can be clickjacked (QA-009).
+		# Here, not in the site-wide header block, because that one also covers
+		# /api/*, where helmet already sends a full CSP this would replace. The
+		# document reader frames blob: URLs the app creates itself, which
+		# 'self' allows. `defer` applies these as the response is written, so
+		# nothing upstream can override them.
+		header {
+			X-Frame-Options "SAMEORIGIN"
+			Content-Security-Policy "frame-ancestors 'self'"
+			defer
+		}
 		reverse_proxy {
 			dynamic a {
 				name grcwisdom-web-svc

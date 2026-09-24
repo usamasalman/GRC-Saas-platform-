@@ -21,11 +21,6 @@ module.exports = {
     title: 'The customer sign-in form is off-screen on a phone',
     checks: ['browser:login-form-visible-on-phone'],
   },
-  'QA-009': {
-    severity: 'Medium',
-    title: 'The web application can be framed by another site (no frame protection)',
-    checks: ['headers:web-frame-protection'],
-  },
   'QA-011': {
     severity: 'High',
     title: 'Invoices carry a placeholder ZATCA hash and QR; the real ZATCA code is never called',
