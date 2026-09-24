@@ -40,6 +40,7 @@ const SELF_SERVICE = {
   'POST /api/impersonation/:id/approve': 'Handler requires the target tenant and MAINTAIN_ROLES or ADD_USER (canApprove).',
   'POST /api/impersonation/:id/deny': 'Handler requires the target tenant and canApprove.',
   'POST /api/impersonation/:id/start': 'Handler requires the requester and an APPROVED session.',
+  'POST /api/itsm/workflows/runs/:id/cancel': 'Handler allows only the run\'s starter, or AUTHOR_WORKFLOW, within the caller\'s organisations (QA-001).',
   'POST /api/impersonation/:id/end': 'Handler requires the requester or the customer\'s approver.',
   'POST /api/itsm/workflows/runs/:id/decide': 'workflowEngine checks the step\'s requiredCapability and SoD rules.',
   'POST /api/grc/rcsa-assessments/:assessmentId/submit': 'Handler requires the assessment\'s own respondent.',

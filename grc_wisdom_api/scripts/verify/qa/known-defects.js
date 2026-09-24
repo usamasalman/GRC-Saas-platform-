@@ -16,11 +16,6 @@
  * root cause and owner for each. Keep the two in step.
  */
 module.exports = {
-  'QA-001': {
-    severity: 'High',
-    title: 'Any member of an organisation can cancel anyone\'s running approval workflow',
-    checks: ['write-guards:POST /api/itsm/workflows/runs/:id/cancel', 'isolation:cancel-others-workflow'],
-  },
   'QA-003': {
     severity: 'High',
     title: 'Privileged legal matters are readable by every member of the organisation',

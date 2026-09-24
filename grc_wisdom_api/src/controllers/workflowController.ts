@@ -6,6 +6,7 @@ import {
   decide, cancelRun, pendingStepsFor, parseSteps, WorkflowError,
 } from '../services/workflowEngine';
 import { SodViolation } from '../services/sodEngine';
+import { hasCapability, CAP } from '../services/capabilityEngine';
 
 // ─── Definitions ───────────────────────────────────────────────────────────
 
@@ -175,6 +176,20 @@ export const cancel = async (req: AuthenticatedRequest, res: Response): Promise<
     const scope = await resolveTenantScope(req.user!);
     const run = await prisma.workflowRun.findFirst({ where: { id, tenantId: { in: scope.tenantIds } } });
     if (!run) { res.status(404).json({ status: 'error', message: 'Workflow run not found' }); return; }
+
+    // Cancelling stops someone else's approval in its tracks, so it belongs to
+    // whoever started it and to those who administer workflows — not to every
+    // member of the organisation, which is what it was (QA-001).
+    const mayCancel = run.startedById === req.user!.id
+      || (await hasCapability(req.user!.id, CAP.AUTHOR_WORKFLOW));
+    if (!mayCancel) {
+      res.status(403).json({
+        status: 'error',
+        code: 'NOT_YOURS_TO_CANCEL',
+        message: 'Only the person who started this approval, or a workflow administrator, can cancel it.',
+      });
+      return;
+    }
 
     await prisma.$transaction(async (tx) => {
       await cancelRun(tx, { runId: id, userId: req.user!.id, tenantId: run.tenantId, reason });
