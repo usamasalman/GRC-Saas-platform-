@@ -21,11 +21,6 @@ module.exports = {
     title: 'Any member of an organisation can cancel anyone\'s running approval workflow',
     checks: ['write-guards:POST /api/itsm/workflows/runs/:id/cancel', 'isolation:cancel-others-workflow'],
   },
-  'QA-002': {
-    severity: 'High',
-    title: 'Knowledge articles can be opened by id from another organisation, drafts included',
-    checks: ['isolation:GET /api/itsm/knowledge/:id'],
-  },
   'QA-003': {
     severity: 'High',
     title: 'Privileged legal matters are readable by every member of the organisation',

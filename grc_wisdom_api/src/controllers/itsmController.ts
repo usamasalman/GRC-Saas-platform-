@@ -542,6 +542,11 @@ export const listArticles = async (req: AuthenticatedRequest, res: Response): Pr
     const where: any = { OR: [{ tenantId: null }, { tenantId: { in: scope.tenantIds } }] };
     if (category) where.category = category;
     where.status = status || 'PUBLISHED';
+    // Drafts are for those who write articles; anyone else asking for them
+    // gets their own drafts only — the same rule as a single article (QA-002).
+    if (where.status !== 'PUBLISHED' && !(await hasCapability(req.user!.id, CAP.RESOLVE_TICKETS))) {
+      where.authorId = req.user!.id;
+    }
     if (search) {
       where.AND = [{ OR: [{ title: { contains: search } }, { body: { contains: search } }] }];
     }
@@ -606,9 +611,36 @@ export const createArticle = async (req: AuthenticatedRequest, res: Response): P
   }
 };
 
+/**
+ * Who may read an article: it must be platform-wide (no tenant) or belong to
+ * one of the caller's organisations, and a draft only to its author and to
+ * those who write articles. The lookup was by id alone, so any signed-in user
+ * could read any organisation's articles, drafts included, by id (QA-002).
+ */
+async function mayReadArticle(
+  req: AuthenticatedRequest,
+  article: { tenantId: string | null; status: string; authorId: string | null },
+): Promise<boolean> {
+  if (article.tenantId !== null) {
+    const scope = await resolveTenantScope(req.user!);
+    if (!scope.tenantIds.includes(article.tenantId)) return false;
+  }
+  if (article.status === 'PUBLISHED') return true;
+  return article.authorId === req.user!.id || (await hasCapability(req.user!.id, CAP.RESOLVE_TICKETS));
+}
+
 export const viewArticle = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+    const found = await prisma.knowledgeArticle.findUnique({
+      where: { id },
+      select: { tenantId: true, status: true, authorId: true },
+    });
+    // Not yours reads exactly like not there.
+    if (!found || !(await mayReadArticle(req, found))) {
+      res.status(404).json({ status: 'error', message: 'Article not found' });
+      return;
+    }
     const article = await prisma.knowledgeArticle.update({
       where: { id },
       data: { viewCount: { increment: 1 } },
