@@ -45,11 +45,6 @@ module.exports = {
     title: 'Usage screens invent quotas, rules and imports on read, and are the slowest calls under load',
     checks: ['reads-write:GET /api/usage/quotas', 'reads-write:GET /api/usage/rules', 'reads-write:GET /api/usage/imports'],
   },
-  'QA-016': {
-    severity: 'Low',
-    title: 'Reading plans or subscriptions creates the plan catalogue; two first reads at once can duplicate it',
-    checks: ['reads-write:GET /api/billing/plans', 'reads-write:GET /api/billing/subscriptions'],
-  },
   'QA-017': {
     severity: 'High',
     title: 'PDPL field encryption is marked Verified but never used, and its key is written in the source',

@@ -34,21 +34,7 @@ let gatewayConfigStore = {
   status: 'Healthy'
 };
 
-// Seed default plans if DB empty
-async function ensureDefaultPlans() {
-  const count = await prisma.plan.count();
-  if (count === 0) {
-    const defaultPlans = [
-      { name: 'Essentials', priceMonthly: 2500, maxUsers: 25, features: JSON.stringify({ frameworks: 1, storageGb: 10, aiCredits: 1000 }) },
-      { name: 'Professional', priceMonthly: 5000, maxUsers: 75, features: JSON.stringify({ frameworks: 3, storageGb: 50, aiCredits: 5000 }) },
-      { name: 'Assurance', priceMonthly: 9166, maxUsers: 150, features: JSON.stringify({ frameworks: 5, storageGb: 200, aiCredits: 20000 }) },
-      { name: 'Enterprise Intelligence', priceMonthly: 18750, maxUsers: 500, features: JSON.stringify({ frameworks: 15, storageGb: 1000, aiCredits: 100000 }) }
-    ];
-    for (const p of defaultPlans) {
-      await prisma.plan.create({ data: p });
-    }
-  }
-}
+// The plan catalogue is created by `npm run provision`, not on first read (QA-016).
 
 // ── 1. SUBSCRIPTIONS ───────────────────────────────────────────────────────
 
@@ -56,7 +42,6 @@ export const listSubscriptions = async (req: AuthenticatedRequest, res: Response
   try {
     const scope = await resolveTenantScope(req.user!);
     await auditCrossTenantRead(scope, req.user!.id, 'billing.subscriptions.list');
-    await ensureDefaultPlans();
 
     const where: any = {};
     if (scope.kind !== 'PLATFORM') {
@@ -136,7 +121,6 @@ export const createSubscription = async (req: AuthenticatedRequest, res: Respons
 
 export const listPlans = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    await ensureDefaultPlans();
     const plans = await prisma.plan.findMany({
       orderBy: { priceMonthly: 'asc' }
     });

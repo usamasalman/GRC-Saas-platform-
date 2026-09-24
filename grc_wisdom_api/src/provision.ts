@@ -247,6 +247,30 @@ async function provisionFeatureFlags(): Promise<number> {
   return FEATURE_FLAG_CATALOGUE.length;
 }
 
+/**
+ * The commercial plan catalogue, created here rather than on the first read of
+ * /api/billing/plans: two first reads at once both saw an empty table and both
+ * inserted it (QA-016), and a read has no business writing.
+ *
+ * Only an EMPTY catalogue is filled. Plans an operator has renamed, repriced or
+ * retired stay as they are: a deploy must not undo a deliberate decision.
+ */
+const PLAN_CATALOGUE = [
+  { name: 'Essentials', priceMonthly: 2500, maxUsers: 25, features: { frameworks: 1, storageGb: 10, aiCredits: 1000 } },
+  { name: 'Professional', priceMonthly: 5000, maxUsers: 75, features: { frameworks: 3, storageGb: 50, aiCredits: 5000 } },
+  { name: 'Assurance', priceMonthly: 9166, maxUsers: 150, features: { frameworks: 5, storageGb: 200, aiCredits: 20000 } },
+  { name: 'Enterprise Intelligence', priceMonthly: 18750, maxUsers: 500, features: { frameworks: 15, storageGb: 1000, aiCredits: 100000 } },
+];
+
+async function provisionPlanCatalogue(): Promise<string> {
+  const existing = await prisma.plan.count();
+  if (existing > 0) return `${existing} (left as they are)`;
+  await prisma.plan.createMany({
+    data: PLAN_CATALOGUE.map((p) => ({ ...p, features: JSON.stringify(p.features) })),
+  });
+  return `${PLAN_CATALOGUE.length} created`;
+}
+
 async function provisionControlPlaneTenant(): Promise<{ id: string; name: string }> {
   // requirePlatformTenant tests tenant.type, not the name, so an existing
   // control plane under any name is honoured rather than duplicated.
@@ -362,6 +386,9 @@ async function main(): Promise<void> {
 
   const flags = await provisionFeatureFlags();
   console.log(`  feature flags:  ${flags}`);
+
+  const plans = await provisionPlanCatalogue();
+  console.log(`  plans:          ${plans}`);
 
   const tenant = await provisionControlPlaneTenant();
   console.log(`  control plane:  ${tenant.name}`);
