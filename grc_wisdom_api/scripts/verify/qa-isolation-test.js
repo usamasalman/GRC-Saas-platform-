@@ -208,6 +208,21 @@ const NOT_A_RECORD = {
   // Last in this file because a leaking write can change what other checks see.
   const omniFinance = await q.login('finance.manager@omniops.me');
   const WRITE_OF = [
+    // Tenant writes aim at an EMPTY foreign organisation where there is one.
+    // Deleting refuses an organisation with contents, so a probe at a full one
+    // never reached the write — and which one the probe got depended on the
+    // order rows happened to sit in. Deleting had no scope check at all; this
+    // suite found it only on the runs that happened to pick an empty one
+    // (QA-030). Ordered, so every run probes the same organisation.
+    [/^\/api\/tenants\/:(id|tenantId)\b/, async (out) => {
+      const foreign = { id: out.tenantId, type: { notIn: ['SAAS', 'SAAS_UNIT'] } };
+      const empty = {
+        users: { none: {} }, children: { none: {} }, documents: { none: {} },
+        invoices: { none: {} }, projects: { none: {} }, projectsDelivered: { none: {} },
+      };
+      return (await prisma.tenant.findFirst({ where: { ...foreign, ...empty }, orderBy: { id: 'asc' }, select: { id: true } }))
+        || prisma.tenant.findFirst({ where: foreign, orderBy: { id: 'asc' }, select: { id: true } });
+    }],
     ...RECORD_OF,
     [/^\/api\/billing\/invoices\/:id/, (out) => prisma.invoice.findFirst({ where: out, select: { id: true } })],
     [/^\/api\/billing\/subscriptions\/:id/, (out) => prisma.subscription.findFirst({ where: out, select: { id: true } })],

@@ -303,6 +303,17 @@ export const deleteTenant = async (req: AuthenticatedRequest, res: Response): Pr
       return;
     }
 
+    // The same guard as updating a tenant. Deleting had none: any organisation
+    // administrator could delete any empty organisation on the platform — a
+    // holding's Group Admin deleted another customer's audit-room organisation
+    // in the isolation suite (QA-030). The emptiness rule below was the only
+    // thing that ever stopped it, and only for organisations with contents.
+    const scope = await resolveTenantScope(req.user!);
+    if (!canWriteToTenant(scope, id)) {
+      res.status(403).json({ status: 'error', message: 'Tenant is outside your authorized scope' });
+      return;
+    }
+
     const tenant = await prisma.tenant.findUnique({
       where: { id },
       include: {
