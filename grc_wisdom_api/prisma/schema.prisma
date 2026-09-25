@@ -408,8 +408,18 @@ model AuditLog {
   /// verifier reports them as unverifiable rather than as tampered.
   hashedAt      DateTime?
   wormLocked    Boolean  @default(true) // Enforces Write-Once-Read-Many
+  /// Position in the organisation's chain: 1, 2, 3 … Assigned by writeAudit
+  /// under a per-organisation lock, so two requests arriving together cannot
+  /// both chain to the same entry (QA-029). The verifier reads in this order.
+  /// Null only on a row written by a process older than this column.
+  chainSeq      Int?
+  /// True on entries that existed before chainSeq did: their position was
+  /// inferred from when they landed. Only those can hold a fork from the time
+  /// before appends were serialised; a fork anywhere else is tampering.
+  orderInferred Boolean  @default(false)
 
   @@index([tenantId, actorId, action, subjectId])
+  @@unique([tenantId, chainSeq])
 }
 
 // ----------------------------------------------------------------------

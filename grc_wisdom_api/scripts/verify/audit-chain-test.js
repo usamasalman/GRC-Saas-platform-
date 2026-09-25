@@ -192,6 +192,49 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
     'and reads every row rather than a sample of the oldest hundred');
 }
 
+// ─── One append at a time per organisation (QA-029) ─────────────────────────
+//
+// Two requests arriving together both read the same last entry and both
+// chained to it. Each entry was intact and every verifier called the trail
+// tampered. Pinned behaviourally by audit-concurrency-test; the shape is
+// pinned here so a refactor cannot quietly drop a piece of it.
+{
+  const fn = writer.slice(writer.indexOf('export async function writeAudit'));
+  const lockAt = fn.search(/pg_advisory_xact_lock\(hashtextextended\(\$\{entry\.tenantId\}/);
+  const readAt = fn.indexOf('tx.auditLog.findFirst');
+  ok(lockAt > 0 && readAt > lockAt,
+    'THE PACKET: writeAudit takes a per-organisation advisory lock BEFORE it reads the last '
+    + 'entry. A lock taken after the read serialises nothing');
+  ok(/if \(\(tx as unknown\) === prisma\) \{\s*return prisma\.\$transaction\(/.test(fn),
+    'called with the client rather than a transaction, it opens one: a transaction-scoped lock '
+    + 'taken outside a transaction ends with its own statement and guards nothing. The client is '
+    + 'recognised by identity: a transaction client carries a $transaction too, and testing for '
+    + 'the method nested every write in a second transaction until the pool starved');
+  ok(/where: \{ tenantId: entry\.tenantId, chainSeq: \{ not: null \} \},\s*orderBy: \{ chainSeq: 'desc' \}/.test(fn),
+    'the predecessor is the entry with the highest position — not the latest landing time, and '
+    + 'never an unpositioned row, which Postgres sorts first when descending');
+  ok(/const chainSeq = \(lastLog\?\.chainSeq \?\? 0\) \+ 1;/.test(fn) && /\bchainSeq,\n/.test(fn),
+    'and the new entry takes the next position');
+  ok(/@@unique\(\[tenantId, chainSeq\]\)/.test(schema),
+    'two entries at one position fail on the unique index rather than fork quietly');
+
+  ok(/orderBy: \{ chainSeq: 'asc' \}/.test(verifier) && /chainSeq: \{ gt: after \}/.test(verifier),
+    'the verifier reads in position order, by position range: a cursor over a nullable sort '
+    + 'column can stop early at a NULL without saying so');
+  ok(/const forkParent = log\.orderInferred && recent\.has\(log\.previousHash\)/.test(verifier),
+    'a fork is forgiven only among entries whose order was inferred at migration, and only '
+    + 'onto an entry just read; anywhere else it is tampering');
+  ok(/'FORKED'/.test(verifier) && /forkedCount: forked/.test(verifier),
+    'and it is reported as FORKED, with a count, rather than folded into VALID');
+
+  const seq = fs.readdirSync(MIGRATIONS).find((d) => /audit_chain_sequence$/.test(d));
+  const sql = seq ? read(MIGRATIONS, seq, 'migration.sql').replace(/^\s*--[^\n]*$/gm, '') : '';
+  ok(/ROW_NUMBER\(\) OVER \(PARTITION BY "tenantId" ORDER BY "timestamp", "id"\)/.test(sql)
+    && /"orderInferred" = true/.test(sql),
+    'existing entries are numbered in the order the verifier already read them, and marked as '
+    + 'inferred, so a chain that verified before verifies the same way');
+}
+
 // ─── CI ─────────────────────────────────────────────────────────────────────
 {
   ok(

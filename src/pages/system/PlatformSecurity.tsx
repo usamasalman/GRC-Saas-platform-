@@ -34,6 +34,8 @@ interface WormVerificationResult {
   verifiedCount: number;
   /** Entries written before the sealing time was stored, which cannot be recomputed. */
   unverifiableCount: number;
+  /** Entries written together before appends were serialised: each intact, chained to an earlier entry. */
+  forkedCount: number;
   tampered: { tenantId: string; tenantName: string; firstTamperedLogId: string | null }[];
   verifiedAt: string;
   genesisHash: string;
@@ -167,6 +169,10 @@ const PlatformSecurity: React.FC = () => {
             across {wormResult.organisations} organisation{wormResult.organisations === 1 ? '' : 's'}.
             {wormResult.unverifiableCount > 0 && (
               <> {wormResult.unverifiableCount.toLocaleString()} could not be checked: they were written before the sealing time was stored.</>
+            )}
+            {wormResult.forkedCount > 0 && (
+              <><br />{wormResult.forkedCount.toLocaleString()} were written together before entries were numbered, and chain to an
+              entry a step earlier than the one before them. Each is intact; none was changed.</>
             )}
             {wormResult.tampered.length > 0 && (
               <><br />Changed after writing: {wormResult.tampered

@@ -264,9 +264,12 @@ export const verifyWormIntegrity = async (req: AuthenticatedRequest, res: Respon
       totalLogs: sum((r) => r.logCount),
       // Rows actually examined: all of them, unless a chain broke, where the
       // check stops at the first changed row.
-      totalLogsChecked: sum((r) => r.verifiedCount + r.unverifiableCount) + tampered.length,
+      totalLogsChecked: sum((r) => r.verifiedCount + r.unverifiableCount + r.forkedCount) + tampered.length,
       verifiedCount: sum((r) => r.verifiedCount),
       unverifiableCount: sum((r) => r.unverifiableCount),
+      // Entries written together before appends were serialised, each intact
+      // and chained to an entry just before the one it follows (QA-029).
+      forkedCount: sum((r) => r.forkedCount),
       tampered: tampered.map((r) => ({
         tenantId: r.tenantId, tenantName: r.tenantName, firstTamperedLogId: r.firstTamperedLogId,
       })),
