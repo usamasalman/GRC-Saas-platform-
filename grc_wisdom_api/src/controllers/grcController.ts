@@ -6,6 +6,7 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import {
   resolveTenantScope, auditCrossTenantRead, canWriteToTenant, StaleTenantError,
 } from '../services/scopeResolver';
+import { assertPackageAllows, PackageLimitError } from '../services/packageLimits';
 import { checkSod, SodViolation } from '../services/sodEngine';
 import { recomputeRisksForImplementations, describeMovement } from '../services/riskScoring';
 
@@ -72,7 +73,10 @@ export const listStandards = async (req: AuthenticatedRequest, res: Response): P
         clauseCount: s._count.clauses,
         isSystem: s.isSystem,
         // Tells the UI whether to offer edit controls at all.
-        isOwnedHere: s.tenantId !== null && scope.tenantIds.includes(s.tenantId),
+        // The platform maintains the library it writes (QA-031); the published
+        // system frameworks stay read-only for everyone.
+        isOwnedHere: (s.tenantId !== null && scope.tenantIds.includes(s.tenantId))
+          || (scope.kind === 'PLATFORM' && s.tenantId === null && !s.isSystem),
         publishedPlatformWide: s.tenantId === null,
         enabledFor: s.enablements.map((e) => ({
           tenantId: e.tenantId, tenantName: e.tenant.name,
@@ -147,6 +151,8 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
     }
 
     const enablement = await prisma.$transaction(async (tx) => {
+      // Within the package the organisation's group holds (QA-031).
+      await assertPackageAllows(tx, target, 'frameworks', { standardId: String(standardId) });
       const e = await tx.tenantStandardEnablement.create({
         data: { tenantId: target, standardId, applicability: applicability || 'Full', ownerId: ownerId || null },
       });
@@ -160,6 +166,10 @@ export const enableStandard = async (req: AuthenticatedRequest, res: Response): 
 
     res.status(201).json({ status: 'success', message: `${standard.code} enabled`, enablement });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     // The duplicate check above is a read followed by a write, and
     // @@unique([tenantId, standardId]) is what actually holds the line. Two
     // enables of the same pairing arriving together -- a double-click, or one

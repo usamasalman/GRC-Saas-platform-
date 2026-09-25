@@ -3,7 +3,7 @@ import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMidd
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   listSubscriptions, createSubscription,
-  listPlans, createPlan,
+  listPlans, createPlan, getMyPackage,
   listInvoices, createInvoice, previewInvoice, payInvoice,
   listPayments, getGatewayConfig, updateGatewayConfig,
   updatePlan,
@@ -34,6 +34,8 @@ router.delete('/subscriptions/:id', requireCapability(CAP.MANAGE_SUBSCRIPTION), 
 
 // Plans & Catalogue
 router.get('/plans', listPlans);
+// The caller's own package and its use, read-only (QA-031).
+router.get('/package', getMyPackage);
 router.post('/plans', requireCapability(CAP.SELECT_PLAN), createPlan);
 // Repricing a plan with live subscribers is refused unless the caller confirms,
 // because it re-prices every one of them on the next invoice.

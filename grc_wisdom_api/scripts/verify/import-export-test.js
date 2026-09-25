@@ -63,12 +63,18 @@ async function buildTestSheet(file) {
   const grc = await login('grc.manager@omniops.me');
   const aud = await login('internal.audit@omniops.me');
   if (!grc) { console.error('Could not log in — is the API running?'); process.exit(1); }
+  // Frameworks are imported by the platform alone (QA-031); the customer then
+  // reads what landed in the library.
+  const importer = (await api('/api/auth/login', {
+    method: 'POST', body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD },
+  })).token;
+  if (!importer) { console.error('Set ADMIN_EMAIL and ADMIN_PASSWORD: only the platform imports frameworks.'); process.exit(1); }
 
   log('=== IMPORT ===');
 
   step(1, 'Upload a spreadsheet with a title block and three faulty rows:');
   const up = await api('/api/grc/imports', {
-    method: 'POST', token: grc,
+    method: 'POST', token: importer,
     body: {
       kind: 'Clause',
       fileName: 'iso22301.xlsx',
@@ -85,20 +91,20 @@ async function buildTestSheet(file) {
   const impId = up.import.id;
 
   step(2, 'Review queue, least confident first:');
-  const review = await api(`/api/grc/imports/${impId}`, { token: grc });
+  const review = await api(`/api/grc/imports/${impId}`, { token: importer });
   out(`extracted ${review.totals.extracted} · needs attention ${review.totals.needsAttention}`);
   for (const c of review.candidates) {
     out(`row ${String(c.rowNumber).padStart(2)}  ${c.confidence.padEnd(6)} ${(c.ref || '(no ref)').slice(0, 26).padEnd(26)} ${c.issue ? '! ' + c.issue : 'ok'}`);
   }
 
   step(3, 'Accept only the clean rows — faulty ones are left for a human:');
-  say(await api(`/api/grc/imports/${impId}/accept-clean`, { method: 'POST', token: grc, body: {} }));
+  say(await api(`/api/grc/imports/${impId}/accept-clean`, { method: 'POST', token: importer, body: {} }));
 
   step(4, 'Correct the row that lost its title, then accept it:');
   const noTitle = review.candidates.find((c) => !c.title);
   if (noTitle) {
     say(await api(`/api/grc/import-candidates/${noTitle.id}`, {
-      method: 'PATCH', token: grc,
+      method: 'PATCH', token: importer,
       body: { title: 'Exercise programme', decision: 'Accepted' },
     }));
   }
@@ -107,13 +113,13 @@ async function buildTestSheet(file) {
   const dup = review.candidates.find((c) => c.issue && /Duplicate/.test(c.issue));
   if (dup) {
     const r = await api(`/api/grc/import-candidates/${dup.id}`, {
-      method: 'PATCH', token: grc, body: { decision: 'Rejected' },
+      method: 'PATCH', token: importer, body: { decision: 'Rejected' },
     });
     out(r.candidate ? `row ${dup.rowNumber} rejected — ${dup.issue}` : JSON.stringify(r).slice(0, 100));
   }
 
   step(6, 'Commit:');
-  say(await api(`/api/grc/imports/${impId}/commit`, { method: 'POST', token: grc, body: {} }));
+  say(await api(`/api/grc/imports/${impId}/commit`, { method: 'POST', token: importer, body: {} }));
 
   step(7, 'The standard exists with exactly the accepted clauses:');
   const stds = await api('/api/grc/standards', { token: grc });
@@ -121,7 +127,7 @@ async function buildTestSheet(file) {
   out(iso ? `${iso.code} v${iso.version} · ${iso.clauseCount} clauses · owned here: ${iso.isOwnedHere}` : 'NOT FOUND');
 
   step(8, 'Committing twice is refused:');
-  say(await api(`/api/grc/imports/${impId}/commit`, { method: 'POST', token: grc, body: {} }));
+  say(await api(`/api/grc/imports/${impId}/commit`, { method: 'POST', token: importer, body: {} }));
 
   log('\n=== EXPORT ===');
 

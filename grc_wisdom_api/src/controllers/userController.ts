@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { assertPackageAllows, packageHolderId, PackageLimitError, SEAT_STATUSES } from '../services/packageLimits';
 import { excessCapabilities, capabilitiesOfRole } from '../services/capabilityEngine';
 
 /** How long an unused invitation credential stays valid. */
@@ -257,6 +258,8 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
     const tempPasswordExpiresAt = new Date(Date.now() + TEMP_CREDENTIAL_DAYS * 86_400_000);
 
     const user = await prisma.$transaction(async (tx) => {
+      // A seat in the package the organisation's group holds (QA-031).
+      await assertPackageAllows(tx, targetTenantId, 'users');
       const created = await tx.user.create({
         data: {
           email: cleanEmail,
@@ -293,6 +296,10 @@ export const inviteUser = async (req: AuthenticatedRequest, res: Response): Prom
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[User Invite Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to invite user' });
   }
@@ -395,7 +402,13 @@ export const transferUser = async (req: AuthenticatedRequest, res: Response): Pr
     const currentRole = user.roleId ? await prisma.role.findUnique({ where: { id: user.roleId } }) : null;
     const roleSurvives = !currentRole || currentRole.tenantId === null;
 
+    // Moving between organisations under one package changes nothing it
+    // counts; into another package, the person takes a seat there (QA-031).
+    const seatMoves = SEAT_STATUSES.includes(user.status)
+      && (await packageHolderId(user.tenantId)) !== (await packageHolderId(targetTenantId));
+
     const result = await prisma.$transaction(async (tx) => {
+      if (seatMoves) await assertPackageAllows(tx, targetTenantId, 'users');
       const openApprovals = await tx.approvalQueue.count({ where: { approverId: id, status: 'PENDING' } });
 
       const u = await tx.user.update({
@@ -443,6 +456,10 @@ export const transferUser = async (req: AuthenticatedRequest, res: Response): Pr
       openApprovals: result.openApprovals,
     });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Transfer User Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to transfer user' });
   }
@@ -502,6 +519,10 @@ export const setUserStatus = async (req: AuthenticatedRequest, res: Response): P
     }
 
     await prisma.$transaction(async (tx) => {
+      // Bringing someone back takes a seat again (QA-031).
+      if (SEAT_STATUSES.includes(status) && !SEAT_STATUSES.includes(user.status)) {
+        await assertPackageAllows(tx, user.tenantId, 'users');
+      }
       await tx.user.update({
         where: { id },
         data: {
@@ -522,6 +543,10 @@ export const setUserStatus = async (req: AuthenticatedRequest, res: Response): P
 
     res.json({ status: 'success', message: `${user.email} is now ${status}` });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Set User Status Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update user status' });
   }

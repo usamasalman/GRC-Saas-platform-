@@ -6,6 +6,7 @@ import {
   resolveTenantScope, auditCrossTenantRead, StaleTenantError,
 } from '../services/scopeResolver';
 import { planEnablement, Pair } from '../services/standardEnablement';
+import { assertPackageAllows, PackageLimitError, packageUsageMany } from '../services/packageLimits';
 
 /**
  * Enabling standards across an estate, from the control plane.
@@ -80,10 +81,13 @@ export const getEnablementMatrix = async (req: AuthenticatedRequest, res: Respon
     const { scope, tenants, standards } = await loadScope(req);
     await auditCrossTenantRead(scope, req.user!.id, 'grc.standards.matrix');
 
-    const enablements = await prisma.tenantStandardEnablement.findMany({
-      where: { tenantId: { in: scope.tenantIds } },
-      select: { tenantId: true, standardId: true, applicability: true, enabledAt: true },
-    });
+    const [enablements, usage] = await Promise.all([
+      prisma.tenantStandardEnablement.findMany({
+        where: { tenantId: { in: scope.tenantIds } },
+        select: { tenantId: true, standardId: true, applicability: true, enabledAt: true },
+      }),
+      packageUsageMany(tenants.map((t: { id: string }) => t.id)),
+    ]);
 
     res.json({
       status: 'success',
@@ -94,6 +98,10 @@ export const getEnablementMatrix = async (req: AuthenticatedRequest, res: Respon
       // thirty standards is twelve hundred cells, nearly all of them empty, and
       // the screen builds whichever view it wants from this.
       enablements,
+      // Each organisation's package and what its group has used of it, so the
+      // grid can say "1 of 1 frameworks" before anyone clicks (QA-031). Null
+      // for an organisation with no package.
+      packages: Object.fromEntries(usage),
     });
   } catch (error: any) {
     if (error instanceof StaleTenantError) {
@@ -152,48 +160,39 @@ export const bulkEnableStandards = async (req: AuthenticatedRequest, res: Respon
     // and audited change, and the operator would be told nothing happened when
     // some of it had. Per-tenant commits make the report accurate.
     const enabled: Pair[] = [];
-    const failed: (Pair & { message: string })[] = [];
+    const failed: (Pair & { code: string; message: string })[] = [];
 
-    const byTenant = new Map<string, Pair[]>();
+    // One pair at a time, each within the package its organisation's group
+    // holds (QA-031). A pair past the package is refused with the reason and
+    // the others still apply, so a grid of forty cells reports forty answers.
     for (const p of plan.apply) {
-      if (!byTenant.has(p.tenantId)) byTenant.set(p.tenantId, []);
-      byTenant.get(p.tenantId)!.push(p);
-    }
-
-    for (const [tenantId, pairs] of byTenant) {
       try {
         await prisma.$transaction(async (tx) => {
-          for (const p of pairs) {
-            await tx.tenantStandardEnablement.create({
-              data: {
-                tenantId,
-                standardId: p.standardId,
-                applicability: plan.applicability,
-              },
-            });
-            // Keyed to the target tenant, inside the transaction, field named
-            // payload. The customer's own WORM trail is where this belongs;
-            // stamping the operator's tenant would make it unreadable from the
-            // side that needs it.
-            await writeAudit(tx, {
-              tenantId,
-              actorId: req.user!.id,
-              action: 'STANDARD_ENABLED',
-              subjectType: 'Standard',
-              subjectId: p.standardId,
-              payload: { code: p.standardCode, applicability: plan.applicability, batch: true },
-            });
-          }
+          await assertPackageAllows(tx, p.tenantId, 'frameworks', { standardId: p.standardId });
+          await tx.tenantStandardEnablement.create({
+            data: {
+              tenantId: p.tenantId,
+              standardId: p.standardId,
+              applicability: plan.applicability,
+            },
+          });
+          await writeAudit(tx, {
+            tenantId: p.tenantId,
+            actorId: req.user!.id,
+            action: 'STANDARD_ENABLED',
+            subjectType: 'Standard',
+            subjectId: p.standardId,
+            payload: { code: p.standardCode, applicability: plan.applicability, batch: true },
+          });
         });
-        enabled.push(...pairs);
+        enabled.push(p);
       } catch (err: any) {
-        // A pairing created between the plan and the write is the outcome the
-        // caller wanted, so it is a skip rather than a failure.
-        const message = err?.code === 'P2002'
-          ? 'Already enabled'
-          : 'Could not be enabled';
-        if (err?.code === 'P2002') plan.skip.push(...pairs);
-        else failed.push(...pairs.map((p) => ({ ...p, message })));
+        if (err?.code === 'P2002') { plan.skip.push(p); continue; }
+        failed.push({
+          ...p,
+          code: err instanceof PackageLimitError ? err.code : 'NOT_ENABLED',
+          message: err instanceof PackageLimitError ? err.message : 'Could not be enabled',
+        });
       }
     }
 

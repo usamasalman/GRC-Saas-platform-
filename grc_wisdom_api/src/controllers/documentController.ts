@@ -7,6 +7,7 @@ import { prisma } from '../db';
 import { readPage, pageInfo } from '../utils/paging';
 import { generateHash } from '../utils/cryptoUtils';
 import { writeAudit } from '../middlewares/auditMiddleware';
+import { assertPackageAllows, PackageLimitError } from '../services/packageLimits';
 import { notify } from '../services/notificationService';
 import {
   planPublication, coverage, AUDIENCE_KINDS,
@@ -71,6 +72,17 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 function isFrozenByLegalHold(doc: { legalHoldAt?: Date | null }): boolean {
   return !!doc.legalHoldAt;
+}
+
+/**
+ * Removes the stored file of an upload whose document was never written — a
+ * transaction refused, for instance, because the file would take the package
+ * past its storage (QA-031). Without this the file would sit on disk, counted
+ * by nothing and reachable by nothing.
+ */
+function discardUpload(uploaded: { fileUrl: string } | null) {
+  if (!uploaded) return;
+  try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(uploaded.fileUrl))); } catch { /* already gone */ }
 }
 
 function processFileUpload(fileData?: string, fileName?: string, fileType?: string) {
@@ -278,6 +290,11 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
     const uploaded = processFileUpload(fileData, fileName, fileType);
 
     const document = await prisma.$transaction(async (tx) => {
+      // Within the storage the organisation's package allows (QA-031).
+      if (uploaded) {
+        await assertPackageAllows(tx, tenantId, 'storage', { bytes: uploaded.fileSize })
+          .catch((e) => { discardUpload(uploaded); throw e; });
+      }
       const doc = await tx.document.create({
         data: {
           code, title, category, classification, content,
@@ -315,6 +332,10 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
 
     res.status(201).json({ status: 'success', document });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Document Create Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to create document' });
   }
@@ -347,6 +368,10 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
     const uploaded = processFileUpload(fileData, fileName, fileType);
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (uploaded) {
+        await assertPackageAllows(tx, tenantId, 'storage', { bytes: uploaded.fileSize })
+          .catch((e) => { discardUpload(uploaded); throw e; });
+      }
       const u = await tx.document.update({
         where: { id },
         data: {
@@ -411,6 +436,10 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
 
     res.json({ status: 'success', document: updated });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Document Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update document' });
   }
@@ -485,6 +514,10 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
     const contentHash = generateHash(fileData || content || doc.content);
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (uploaded) {
+        await assertPackageAllows(tx, tenantId, 'storage', { bytes: uploaded.fileSize })
+          .catch((e) => { discardUpload(uploaded); throw e; });
+      }
       const version = await tx.documentVersion.create({
         data: {
           documentId: id,
@@ -526,6 +559,10 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
 
     res.json({ status: 'success', message: `Checked in as version ${newVersion}`, document: updated });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Checkin Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to checkin document' });
   }

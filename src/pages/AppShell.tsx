@@ -162,21 +162,21 @@ const NAV: Record<string, any[]> = {
   ],
   holding: [
     ['Group Control Plane', [['dashboard', '▦', 'Group Dashboard'], ['hierarchy', '◫', 'Group Hierarchy'], ['shared-services', '⇄', 'Shared Services']]],
-    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Group Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Group Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Group Audit Programme'], ['vendors', '◇', 'Group Vendor Master']]],
     ['People & Support', [['team-directory', '♣', 'Group Teams'], ['user-admin', '♙', 'Users & Entity Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   multibranch: [
     ['Organization Control', [['dashboard', '▦', 'Organization Dashboard'], ['branches', '▥', 'Branch Scorecards'], ['posture', '◈', 'Branch Posture']]],
-    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Compliance Project Delivery'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Organization Standards'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Consolidated Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Consolidated Audits'], ['vendors', '◇', 'Consolidated Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Teams & Departments'], ['user-admin', '♙', 'Users & Branch Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Standard Enablement']]],
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Installed Tools']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ],
   branch: [
     ['Branch Operations', [['dashboard', '▦', 'Branch Dashboard']]],
-    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
+    ['Assurance', [['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Branch Project Execution'], ['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Local Standards'], ['controls', '⌘', 'Local Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Local Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Local Audits'], ['vendors', '◇', 'Local Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Local Teams'], ['user-admin', '♙', 'Local Users'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
     ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Approved Tool Marketplace'], ['tool-installations', '⇩', 'Branch Tool Entitlements']]],
     ['Subscriptions & Billing', [['invoices', '▤', 'Branch Invoices'], ['payments', '▣', 'Branch Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
@@ -193,16 +193,16 @@ const NAV: Record<string, any[]> = {
   ],
   partner: [
     ['Partner Portfolio', [['dashboard', '▦', 'Portfolio Dashboard'], ['my-work', '✓', 'My Work'], ['project-delivery', '▶', 'Consulting Delivery']]],
-    ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards'], ['framework-authoring', '✎', 'Framework Authoring']]],
+    ['IP & Content', [['library', '≡', 'Document Library'], ['partner-library', '≡', 'Partner Library'], ['standards', '§', 'Partner Standards']]],
     ['People & Support', [['team-directory', '♣', 'Partner Teams'], ['user-admin', '♙', 'Consultants & Access'], ['itsm', '?', 'Partner Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Client Tool Installations'], ['standard-repository', '§', 'Partner Standard Repository']]],
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Client Tool Installations']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Client Subscriptions'], ['plans', '◇', 'Wholesale Rate Cards & Plans'], ['wholesale-billing', '▤', 'Wholesale Invoices'], ['payments', '▣', 'Payments & Receipts']]]
   ],
   franchise: [
     ['Network Control Plane', [['dashboard', '▦', 'Network Dashboard'], ['hierarchy', '◫', 'Franchise Hierarchy'], ['locations', '▥', 'Location Scorecards']]],
-    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['framework-authoring', '✎', 'Framework Authoring'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Network Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
+    ['Assurance', [['tasks', '✓', 'To Do & Approvals'], ['library', '≡', 'Document Library'], ['standards', '§', 'Mandatory Baseline'], ['controls', '⌘', 'Mandated Controls'], ['implementations', '⚙', 'Implementations & Evidence'], ['assets', '◈', 'Asset Register'], ['risk', '△', 'Network Risk'], ['kris', '◷', 'Key Risk Indicators'], ['loss-events', '▤', 'Loss Events'], ['audits', '◎', 'Network Audit Programme'], ['vendors', '◇', 'Network Vendors']]],
     ['People & Support', [['team-directory', '♣', 'Network Teams'], ['user-admin', '♙', 'Users & Location Transfers'], ['role-matrix', '⊞', 'Roles & Permissions'], ['itsm', '?', 'ITSM Service Desk'], ['knowledge', '◎', 'Knowledge Base']]],
-    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements'], ['standard-repository', '§', 'Standard Repository'], ['tenant-standards', '◉', 'Location Standard Enablement']]],
+    ['Modules & Entitlements', [['marketplace', '▦', 'GRC Module Marketplace'], ['tool-marketplace', '⬢', 'Open Source Tool Marketplace'], ['tool-installations', '⇩', 'Location Tool Entitlements']]],
     ['Subscriptions & Billing', [['subscriptions', '¤', 'Franchise Subscriptions'], ['plans', '◇', 'Plans & Catalogue'], ['invoices', '▤', 'Invoices'], ['payments', '▣', 'Payments'], ['payment-gateway', '⛓', 'Payment Gateway & Tax']]]
   ]
 };
@@ -445,6 +445,13 @@ const AppShell = () => {
     // Authoring the framework itself: standards, clauses, controls, mapping.
     // The Standard Repository is where that catalogue is maintained, so it
     // opens the authoring workspace rather than the read-only library.
+    // The platform's alone (QA-031): customers no longer write, import or
+    // enable frameworks, and a remembered page or an old link must not reopen
+    // what the menu no longer offers. The server refuses the writes anyway.
+    const platformOnly = ['framework-authoring', 'standard-repository', 'tenant-standards'];
+    if (platformOnly.includes(currentPage) && account.portal !== 'saas') {
+      return <StandardsLibrary key={`${account.id}-standards`} />;
+    }
     if (currentPage === 'framework-authoring' || currentPage === 'standard-repository') {
       return <FrameworkAuthoring key={`${account.id}-${currentPage}`} />;
     }

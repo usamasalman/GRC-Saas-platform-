@@ -67,7 +67,11 @@ export const createStandard = async (req: AuthenticatedRequest, res: Response): 
       });
       return;
     }
-    const owningTenantId = wantsPlatform ? null : req.user!.tenantId;
+    // Written by the platform, a framework goes to the platform-wide library:
+    // frameworks are the platform's to write and to enable for customers
+    // (QA-031), and one filed under the platform's own organisation could be
+    // enabled for a customer who could then not see it.
+    const owningTenantId = wantsPlatform || scope.kind === 'PLATFORM' ? null : req.user!.tenantId;
 
     const cleanCode = String(code).trim().toUpperCase();
     const clash = await prisma.standard.findFirst({
