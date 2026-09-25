@@ -8,7 +8,7 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 
 | Severity | Open |
 |---|---|
-| High | 4 |
+| High | 3 |
 | Medium | 0 |
 | Low | 0 |
 
@@ -21,20 +21,15 @@ Owner is **TBD** for every entry until someone takes it. Status is **Open** unle
 - Reproduce: `journey-billing-test` (`the invoice hash is a real SHA-256`, `the QR is ZATCA TLV`).
 - Fix: build the UBL XML, hash and sign it, and encode the TLV QR on issue. Until then, show REQ-07 as not implemented.
 
-**QA-017: PDPL field encryption is marked Verified but never used, and its key is in the source**
-- Where: `utils/pdplUtils.ts` defines `encryptPii`/`decryptPii`, which nothing calls. `encryptedNationalId` and `encryptedPhone` are never written. The key is `scryptSync('grc-wisdom-pdpl-secret-2026', 'salt')`. REQ-08 is shown as Verified.
+**QA-017: PDPL field encryption is marked Verified but never used: no national ID or phone is collected or encrypted**
+- Where: `utils/pdplUtils.ts` defines `encryptPii`/`decryptPii`, which nothing calls. No screen or API collects a national ID or phone number, and `encryptedNationalId` and `encryptedPhone` on the user record are never written. The key half is fixed (`ab3ea50`): it comes from `PDPL_ENCRYPTION_KEY` (32 bytes, base64), with no fallback, and encrypting without it refuses.
 - Reproduce: `qa-claims-test` (`claims:REQ-08 …`).
-- Fix: take the key from configuration (or a KMS), and encrypt on write where those fields are stored. Until then, show REQ-08 as not implemented.
+- Fix: decide which personal data the product collects. If it collects national IDs or phone numbers, encrypt them on write with `encryptPii` and set `PDPL_ENCRYPTION_KEY` on the server (32 random bytes, base64); if it collects none, restate REQ-08. Until then the BRD shows REQ-08 Not verified.
 
 **QA-018: OCI Riyadh data residency is marked Verified; the pipeline deploys to a Contabo server**
 - Where: REQ-12 on the BRD screen (`systemController.ts`), against `deploy.yml`, whose deploy job is "Deploy to Contabo".
 - Reproduce: `qa-claims-test` (`claims:REQ-12 the deployment is in OCI Riyadh`).
 - Fix: deploy to OCI me-riyadh-1, or change the screen to state where the data actually is. A residency claim is one customers repeat to regulators. The architecture page now calls itself a target and names this defect (QA-028); the BRD still shows REQ-12 Not verified.
-
-**QA-029: The audit chain forks when audited requests arrive together, and every verifier then reports the trail as tampered**
-- Where: `writeAudit` (`middlewares/auditMiddleware.ts`) reads an organisation's last entry and chains the new one to it, with nothing stopping a second request doing the same at the same moment. Two entries then share one predecessor. Each is intact on its own, but the chain no longer reads as one line, so the verifier (database console and security screen alike) reports TAMPERED on records nobody changed. It needs no load: after an ordinary walk through the product, one organisation's chain held three forks, from a platform screen's parallel audited reads. This was OI-03.
-- Reproduce: `audit-concurrency-test` (12 audited requests at once, then verify). Reproduces on the first burst.
-- Fix: give each entry a per-organisation sequence number, assigned under a per-organisation lock (`pg_advisory_xact_lock`) in the same transaction, and verify in sequence order. Existing rows are backfilled in their current order; the forks already written stay visible, and the verifier should report them as forks (each entry intact) rather than as tampering. Until then, a TAMPERED result may be a fork, and the security screen and BRD show REQ-02 Not verified.
 
 ### Medium
 
@@ -56,7 +51,7 @@ These need a decision or a look at the live server, not a code check.
 |---|---|---|---|
 | OI-01 | **High, confirmed 2026-09-24** | The live site (http://161.97.120.202) is plain HTTP: port 443 does not answer, so passwords and session tokens cross the network readable. `synthetic-check.js` fails on it. | Point a domain's A record at the server, set `SITE_ADDRESS` to that domain (no `http://`) in the server's `deploy/.env`, open ports 80 and 443, and restart Caddy; it obtains the certificate itself. No rebuild: the app calls its API on its own origin. Then change every password that was used over plain HTTP. |
 | OI-02 | High, if present | The live database may still hold the demo seed's 66 accounts, which share one published password. | Run `grc_wisdom_api/scripts/ops/demo-accounts-find.sql` on the server (read only), then `demo-accounts-suspend.sql`: suspends, deletes nothing (168 relations cascade on a user delete), keeps any address you list, and refuses if it would leave no active platform account. Tested against a seeded database. |
-| OI-03 | — | Observed and pinned: now QA-029 (High). | — |
+| OI-03 | — | Observed, pinned and fixed as QA-029. | — |
 | OI-04 | Medium | Impersonation approvers include HR roles, who should not grant support access to customer data. | Limit approvers to tenant administrators. |
 | OI-05 | Medium | Capacity: one API process tops out at 100 to 180 requests/s, limited by its single CPU core; each request makes about 14 queries one after another. | Fix QA-015 and QA-023, then run one process per core before expecting more than about 100 people active at the same moment. Keep the database on the same host until queries per request come down. |
 | OI-06 | Medium | ISO 27001 has no Statement of Applicability or management-review screen. | Product decision: both are mandatory ISO 27001 records. |
@@ -71,6 +66,8 @@ Found by the QA work and fixed, kept here so the history is in one place.
 
 | Defect | Fixed in |
 |---|---|
+| QA-030 Any organisation administrator could delete any empty organisation on the platform: DELETE /api/tenants/:id checked the capability and not the scope. Found by the isolation suite on a run whose probe happened to pick an empty organisation (a holding's Group Admin deleted another customer's). Now refused outside the caller's scope, as updating is; the probe aims at an empty foreign organisation on every run | `26385f0` |
+| QA-029 The audit chain forked when audited requests arrived together, and every verifier then reported tampering on untouched records. Each entry now takes a position under a per-organisation advisory lock, with a unique index as the backstop; the migration numbers existing entries and the verifier reports forks among them as FORKED, each entry intact, while a fork after the fix is tampering. Deploying runs the migration once. Two organisations audited in one transaction can, in a rare race, deadlock; Postgres rolls one back whole within a second | `05ea4f3` |
 | QA-028 The security posture answered a fixed score of 98 and grade A+ and graded PDPL encryption and ZATCA signing "Active, A+" against open defects saying neither is in use; the screen fell back to 98, A+, 1,420 records and 14 "sessions" when it could not read them. The architecture page presented the OCI Riyadh target as running (two data centres ACTIVE, ZATCA and CITC Certified, "100% KSA Sovereign"), with a client-side copy for when the server failed. Both now take status from the register, as the BRD does; the architecture is stated to be a target | `a56ab3d` |
 | QA-027 "Verify WORM Chain" read the oldest 100 rows on the platform, organisations interleaved, compared links without recomputing a digest, and reported TAMPERING on a clean seeded database after 8 rows. It now runs the database console's verifier on every organisation in scope; an altered payload is caught and named | `5f84056` |
 | QA-026 The framework import routes acted on asset, risk and vendor imports: they listed them, and would accept a risk import's rows past its duplicate hold, commit them as controls, or discard them, behind the framework permission. Measured on the old build: a risk import committed as controls. Scoped to Clause and Control | `ba2d21b` |
