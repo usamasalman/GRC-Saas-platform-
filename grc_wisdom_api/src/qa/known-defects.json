@@ -12,13 +12,12 @@
   },
   "QA-017": {
     "severity": "High",
-    "title": "PDPL field encryption is marked Verified but never used, and its key is written in the source",
+    "title": "PDPL field encryption is marked Verified but never used: no national ID or phone is collected or encrypted",
     "requirements": [
       "REQ-08"
     ],
     "checks": [
-      "claims:REQ-08 PII is encrypted when it is stored",
-      "claims:REQ-08 the encryption key comes from configuration"
+      "claims:REQ-08 PII is encrypted when it is stored"
     ]
   },
   "QA-018": {
