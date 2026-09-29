@@ -94,18 +94,35 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:-http://:80}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The other projects' site blocks (see the end of the Caddyfile). The
+      # folder is the server's: the deploy creates it if missing and never
+      # writes into it, so a GRC Wisdom deploy cannot remove their routes.
+      - ./sites:/etc/caddy/sites:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      # Declared explicitly so Caddy joins this network and no other. It had
-      # been attached by hand to a second stack's network, which is how the
-      # `api` name collision arose. Naming it here also changes the service
-      # config hash, so compose recreates the container and any stray manual
-      # attachment is dropped rather than surviving forever.
+      # This stack's own network, where Caddy reaches grcwisdom-api-svc and
+      # grcwisdom-web-svc.
       - default
+      # The network Caddy shares with the other projects it serves. It used to
+      # be attached to their networks by hand, and every deploy that recreated
+      # this container dropped those attachments and took their sites offline.
+      # A named, external network survives both sides: no project's deploy or
+      # `compose down` removes it, and each project joins it in its own compose
+      # file (deploy/SHARED-PROXY.md). Caddy addresses this stack's services by
+      # their grcwisdom-* aliases, so a service called `api` or `web` in
+      # another project on this network cannot be mistaken for ours.
+      - caddy-edge
     depends_on:
       - api
       - web
+
+networks:
+  # Created by the deploy if it does not exist (docker network create
+  # caddy-edge), and shared with the other projects on this server.
+  caddy-edge:
+    external: true
+    name: caddy-edge
 
 volumes:
   pgdata:

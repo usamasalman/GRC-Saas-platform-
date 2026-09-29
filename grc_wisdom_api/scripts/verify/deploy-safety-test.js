@@ -249,6 +249,33 @@ for (const d of dirs) {
   );
 }
 
+// ─── The shared proxy leaves the other projects alone ──────────────────────
+//
+// This stack's Caddy also serves other projects on the server (asset
+// management, the phishing simulator). Their blocks were kept by hand in the
+// Caddyfile the deploy copies over, and Caddy reached them over networks it
+// had been attached to by hand: every deploy deleted the one and dropped the
+// other, and took their sites offline. See deploy/SHARED-PROXY.md.
+{
+  const caddyfile = read(ROOT, 'deploy', 'Caddyfile').replace(/^\s*#[^\n]*$/gm, '');
+  const compose = read(ROOT, 'deploy', 'docker-compose.yml');
+  const workflow = read(ROOT, '.github', 'workflows', 'deploy.yml');
+
+  ok(/^import sites\/\*\.caddy\s*$/m.test(caddyfile),
+    'the Caddyfile imports the other projects\' site files from sites/, which the deploy never writes');
+  ok(!/\b(assets|assetsapi|assetsfiles|phish|admin-phish)\.grcwisdom\.com\b/.test(caddyfile),
+    'and carries none of their blocks itself: the file is copied over the server\'s on every deploy');
+  ok(/-\s*\.\/sites:\/etc\/caddy\/sites:ro/.test(compose),
+    'Caddy mounts the server\'s sites folder, read-only');
+  ok(/caddy-edge:\s*\n\s*external: true/.test(compose) && /networks:[\s\S]*?- default\s*\n[\s\S]*?- caddy-edge/.test(compose),
+    'Caddy joins the shared caddy-edge network, declared outside every project, alongside its own');
+  const shipped = (workflow.match(/source:\s*"([^"]+)"/) || [])[1] || '';
+  ok(shipped && !/sites/.test(shipped) && /deploy\/Caddyfile/.test(shipped),
+    'the deploy ships this stack\'s Caddyfile and compose file only, never anything into sites/');
+  ok(/docker network inspect caddy-edge[^\n]*\|\|\s*docker network create caddy-edge/.test(workflow),
+    'and creates the shared network if it is missing, rather than failing or touching it otherwise');
+}
+
 console.log(
   `deploy-safety: ${checks} assertions passed (${dirs.length} migrations checked)`,
 );
