@@ -21,6 +21,7 @@
 const path = require('path');
 const q = require('./qa/lib');
 const { prisma } = require('../../dist/db');
+const { bringFirm } = require('./engagement-firm');
 const T = require('../../dist/services/planTemplates');
 const { PLATFORM_PLAN_TEMPLATES } = require('../../dist/utils/planTemplateCatalogue');
 
@@ -160,13 +161,14 @@ const iso = PLATFORM_PLAN_TEMPLATES.find((t) => t.familyId === 'platform-iso2700
   if (!platform) { await prisma.$disconnect(); v.finish(); return; }
 
   // ── A new ISO 27001 engagement, planned from it ──────────────────────────
-  const firms = (await as('GET', '/api/projects/engageable-providers')).json?.providers || [];
-  const gcp = firms.find((f) => /GRC Consulting/i.test(f.name));
   const created = await as('POST', '/api/projects', {
     name: `S3 ISO 27001 ${stamp}`, startDate: day(7), targetEndDate: day(60), ownerId: me, managerId: me,
-    projectType: 'Certification', providerTenantId: gcp?.id,
+    projectType: 'Certification',
   });
   const project = created.json?.project;
+  // The delivery firm joins by invitation (sprint 4), so it can read the plan
+  // and save its method as a template later.
+  await bringFirm({ clientToken: client.token, leadLogin: firmA, projectId: project.id, prisma });
   const detail = (await as('GET', `/api/plan-templates/${platform.id}`)).json?.template;
   const policies = detail?.phases?.find((p) => p.name === 'Policies');
   const body = {

@@ -20,6 +20,7 @@
 const path = require('path');
 const q = require('./qa/lib');
 const { prisma } = require('../../dist/db');
+const { bringFirm } = require('./engagement-firm');
 
 const v = q.verdicts('engagement-s1');
 const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
@@ -85,16 +86,19 @@ const RESUME = 'Budget approved by the steering committee';
     return ok ? { project, taskId: task.json.task.id } : null;
   };
 
-  // A delivery firm the manager may name, so the firm's trail can be read too.
-  const firms = (await as('GET', '/api/projects/engageable-providers')).json?.providers || [];
-  const firm = firms[0] || null;
-  const main = await activeProject('S1 lifecycle', firm ? { providerTenantId: firm.id } : {});
+  const main = await activeProject('S1 lifecycle');
   const held = await activeProject('S1 cancelled on hold');
   if (!main || !held) {
     await prisma.$disconnect();
     v.finish();
     return;
   }
+  // A delivery firm on the engagement, so its trail can be read too. It joins
+  // the way the product requires once consulting is on (sprint 4).
+  const firm = await bringFirm({
+    clientToken: pm.token, leadLogin: await q.login('engagement.manager@grcconsulting.com'),
+    projectId: main.project.id, prisma,
+  });
   const { project, taskId } = main;
   const projectId = project.id;
   const holds = async (id) => (await as('GET', `/api/projects/${id}`)).json?.project?.holds || [];
@@ -174,7 +178,7 @@ const RESUME = 'Budget approved by the steering committee';
     on(project.tenantId, 'PROJECT_PUT_ON_HOLD', HOLD) && on(project.tenantId, 'PROJECT_RESUMED', RESUME)
       && on(project.tenantId, 'PROJECT_REBASELINED', 'Scope grew after the gap assessment') && on(project.tenantId, 'PROJECT_CLOSED'),
     trail.filter((t) => t.tenantId === project.tenantId).map((t) => t.action).join(', ') || 'no entries');
-  if (firm) {
+  {
     v.record('engagement-s1:the delivery firm\'s trail gets a summary of each',
       LIFECYCLE.every((a) => on(firm.id, a)),
       trail.filter((t) => t.tenantId === firm.id).map((t) => t.action).join(', ') || 'no entries');
@@ -190,7 +194,7 @@ const RESUME = 'Budget approved by the steering committee';
     `cancel HTTP ${cancelled.status} ${cancelled.json?.message || ''}, ${ended.length} interval(s), ended ${ended[0]?.endedAt}`);
 
   await prisma.$disconnect();
-  v.finish(`${project.ref}${firm ? ` delivered by ${firm.name}` : ', no delivery firm to name'}`);
+  v.finish(`${project.ref} delivered by ${firm.name}`);
 })().catch(async (err) => {
   console.error(err);
   try { await prisma.$disconnect(); } catch { /* closed */ }

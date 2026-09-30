@@ -43,6 +43,8 @@ const RECORD_OF = [
   [/^\/api\/projects\/tasks\/:taskId/, (out) => prisma.projectTask.findFirst({ where: { project: out }, select: { id: true } })],
   [/^\/api\/projects\/evidence\/:evidenceId/, (out) => prisma.projectEvidence.findFirst({ where: { project: out }, select: { id: true } })],
   [/^\/api\/projects\/:id/, (out) => prisma.project.findFirst({ where: out, select: { id: true } })],
+  // A consulting engagement's management view: the organisation's and its firm's only.
+  [/^\/api\/engagements\/:projectId/, (out) => prisma.project.findFirst({ where: out, select: { id: true } })],
   // A firm's or organisation's own template; the platform's are read by everyone.
   [/^\/api\/plan-templates\/:id/, (out) => prisma.planTemplate.findFirst({ where: { ...out, level: { not: 'Platform' } }, select: { id: true } })],
 ];
