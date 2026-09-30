@@ -8,11 +8,12 @@ import { canWriteProject } from '../services/projectAccess';
 import { notify } from '../services/notificationService';
 import { DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
 import { noteIsEnough, MIN_NOTE } from '../services/projectActivation';
-import { CONSULTING_FLAG, featureRefusal, isFeatureOn } from '../services/featureFlags';
+import { CONSULTING_FLAG, featureRefusal, featureStates, isFeatureOn } from '../services/featureFlags';
 import {
   DEFAULT_DELIVERY_STYLE, invitationState, invitationExpiry, isDeliveryStyle, isEngagementRole,
-  roleMay, roleRefusal,
+  roleMay, roleRefusal, accessOpen,
 } from '../services/engagementRules';
+import { SHADOW_RULES, SHADOW_RETENTION_DAYS } from '../services/engagementShadow';
 
 /**
  * Consulting engagements: the invitation, the relationship, the firm's people
@@ -412,7 +413,7 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
     const refusal = await flagFor(e);
     if (refusal) { send(res, refusal); return; }
 
-    const [invitations, members, relationship, mine] = await Promise.all([
+    const [invitations, members, relationship, mine, hold, pending] = await Promise.all([
       prisma.engagementInvitation.findMany({
         where: { projectId: e.id, ...(isFirm ? { firmTenantId: req.user!.tenantId } : {}) },
         orderBy: { invitedAt: 'desc' },
@@ -428,8 +429,10 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         select: {
           id: true, engagementRole: true, memberStatus: true, roleLabel: true, active: true, accessFrom: true, accessTo: true,
           nominatedAt: true, decidedAt: true, decisionNote: true,
+          extensionRequestedTo: true, extensionRequestNote: true, extensionRequestedAt: true,
           user: { select: { id: true, name: true, email: true } },
           nominatedBy: { select: { name: true } }, decidedBy: { select: { name: true } },
+          extensionRequestedBy: { select: { name: true } },
         },
       }),
       e.providerTenantId
@@ -439,8 +442,23 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         })
         : null,
       membershipOf(e.id, req.user!.id),
+      e.status === 'OnHold'
+        ? prisma.projectHold.findFirst({
+          where: { projectId: e.id, endedAt: null }, orderBy: { startedAt: 'desc' },
+          select: {
+            startedAt: true, reason: true, firmAccess: true, firmAccessSetAt: true, firmAccessNote: true,
+            firmAccessSetBy: { select: { name: true } },
+          },
+        })
+        : null,
+      isClient && e.status === 'Active'
+        ? prisma.projectHold.count({ where: { projectId: e.id, endedAt: { not: null }, windowsSettledAt: null } })
+        : 0,
     ]);
     const now = new Date();
+    const held = e.status === 'OnHold';
+    // Asking for more time: not while held, and not once it has ended.
+    const asking = isFirm && !['OnHold', 'Closed', 'Cancelled'].includes(e.status) && live(mine);
     res.json({
       status: 'success',
       engagement: {
@@ -450,13 +468,20 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
       side: isClient ? 'Client' : 'Provider',
       relationship,
       invitations: invitations.map((i) => ({ ...i, state: invitationState(i, now) })),
-      members,
-      me: mine && live(mine) ? { engagementRole: mine.engagementRole, memberStatus: mine.memberStatus } : null,
+      // accessOpen: inside the window today (the end date counts in full).
+      members: members.map((m) => ({ ...m, accessOpen: m.memberStatus === 'Approved' && m.active && accessOpen(m, now) })),
+      me: mine && live(mine) ? { memberId: mine.id, engagementRole: mine.engagementRole, memberStatus: mine.memberStatus } : null,
+      hold,
+      resumeProposalPending: pending > 0,
       can: {
         invite: isClient && !e.providerTenantId && !['Closed', 'Cancelled'].includes(e.status),
         decide: isClient,
         changeStyle: isClient && e.deliveryStyle !== null,
-        nominate: isFirm && live(mine) && roleMay(mine?.engagementRole, 'nominate'),
+        nominate: isFirm && !held && live(mine) && roleMay(mine?.engagementRole, 'nominate'),
+        changeWindows: isClient && !['Closed', 'Cancelled'].includes(e.status),
+        // Anyone approved asks for themselves; the Lead asks for the team.
+        requestExtension: asking && mine!.memberStatus === 'Approved',
+        requestForTeam: asking && roleMay(mine?.engagementRole, 'nominate'),
       },
     });
   } catch (error: any) {
@@ -712,5 +737,385 @@ export const changeDeliveryStyle = async (req: AuthenticatedRequest, res: Respon
     if (error instanceof Conflict) { send(res, { status: 409, code: error.code, message: error.message }); return; }
     console.error('[Engagement Style Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to change the delivery style' });
+  }
+};
+
+// ─── Access windows (sprint 5) ──────────────────────────────────────────────
+
+const DAY = 86_400_000;
+const isoDay = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+const parseDay = (v: unknown): Date | null => {
+  if (v === undefined || v === null || v === '') return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const WINDOW_SELECT = {
+  id: true, projectId: true, userId: true, engagementRole: true, memberStatus: true, active: true,
+  accessFrom: true, accessTo: true, extensionRequestedTo: true, extensionRequestedById: true,
+  user: { select: { name: true } },
+} as const;
+
+async function loadWindow(projectId: string, memberId: string) {
+  const [e, m] = await Promise.all([
+    loadEngagement(projectId),
+    prisma.projectMember.findUnique({ where: { id: memberId }, select: WINDOW_SELECT }),
+  ]);
+  return e && m && m.projectId === e.id && m.engagementRole ? { e, m } : null;
+}
+
+const NOT_APPROVED = {
+  status: 409, code: 'NOT_APPROVED',
+  message: 'Only an approved person\'s access can be changed. Access that was removed or turned down stays so '
+    + 'until the firm nominates them again and you approve them.',
+};
+
+/**
+ * PATCH /api/engagements/:projectId/members/:memberId/window — the
+ * organisation extends or shortens one person's access, with a reason, on
+ * both trails, and the person is told. Extending restores access that had
+ * expired; it never restores access that was removed or turned down.
+ */
+export const changeAccessWindow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const found = await loadWindow(str(req.params.projectId), str(req.params.memberId));
+    if (!found || !(await clientSide(req, found.e))) { notFound(res, 'Member'); return; }
+    const { e, m } = found;
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    // What a firm may see after the engagement ends is its own view (sprint 7), not a person's window.
+    if (e.status === 'Closed' || e.status === 'Cancelled') {
+      send(res, { status: 409, code: 'ENGAGEMENT_ENDED', message: 'This engagement has ended; its people\'s access is no longer changed here.' });
+      return;
+    }
+    if (m.memberStatus !== 'Approved' || !m.active) { send(res, NOT_APPROVED); return; }
+    // Only the end moves; the start stays as approved.
+    const to = parseDay(req.body?.accessTo);
+    const from = m.accessFrom;
+    if (!to || (from && to < from)) { send(res, { status: 400, message: 'Give an end date on or after the start of access.' }); return; }
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
+    const actorId = str(req.user!.id);
+    const restored = !accessOpen(m) && accessOpen({ accessTo: to });
+    await prisma.$transaction(async (tx) => {
+      const moved = await tx.projectMember.updateMany({
+        where: { id: m.id, memberStatus: 'Approved', active: true },
+        data: {
+          accessTo: to, accessWarnedAt: null, accessEndNoticeAt: null,
+          extensionRequestedTo: null, extensionRequestNote: null, extensionRequestedAt: null, extensionRequestedById: null,
+        },
+      });
+      if (moved.count === 0) throw new Conflict('NOT_APPROVED', NOT_APPROVED.message);
+      await bothTrails(tx, {
+        e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
+        payload: {
+          memberId: m.id, person: m.user.name, cause: 'change', reason, restored,
+          from: { accessTo: isoDay(m.accessTo) }, to: { accessTo: isoDay(to) },
+        },
+      });
+      await notify(tx, {
+        tenantId: e.providerTenantId || e.tenantId, recipientId: m.userId, actorId, event: 'ENGAGEMENT_ACCESS_CHANGED',
+        subjectType: 'Project', subjectId: e.id,
+        title: `Your access to ${e.ref} now ends ${isoDay(to)}`,
+        body: `${e.tenant?.name} ${restored ? 'restored and ' : ''}changed your access: ${reason}`,
+        link: 'project-delivery',
+      });
+    });
+    res.json({ status: 'success', accessTo: to, restored });
+  } catch (error: any) {
+    if (error instanceof Conflict) { send(res, { status: 409, code: error.code, message: error.message }); return; }
+    console.error('[Engagement Window Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to change the access window' });
+  }
+};
+
+/**
+ * POST .../members/:memberId/extension-request — the firm asks for a later
+ * end date: the person for themselves, or the firm's Lead for anyone on the
+ * team. Only the organisation grants it.
+ */
+export const requestExtension = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const found = await loadWindow(str(req.params.projectId), str(req.params.memberId));
+    if (!found || found.e.providerTenantId !== req.user!.tenantId) { notFound(res, 'Member'); return; }
+    const { e, m } = found;
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    if (e.status === 'OnHold') { send(res, HELD_READ_ONLY); return; }
+    if (e.status === 'Closed' || e.status === 'Cancelled') {
+      send(res, { status: 409, code: 'ENGAGEMENT_ENDED', message: 'This engagement has ended.' });
+      return;
+    }
+    const mine = await membershipOf(e.id, req.user!.id);
+    const self = m.userId === req.user!.id;
+    if (!live(mine) || (!self && !roleMay(mine!.engagementRole, 'nominate'))) {
+      send(res, { status: 403, code: 'ENGAGEMENT_ROLE', message: 'Ask for your own access, or as the firm\'s Lead for your team.' });
+      return;
+    }
+    if (m.memberStatus !== 'Approved' || !m.active) { send(res, NOT_APPROVED); return; }
+    const to = parseDay(req.body?.accessTo);
+    if (!to || (m.accessTo && to <= m.accessTo)) { send(res, { status: 400, message: 'Ask for a date after the current end of access.' }); return; }
+    const note = str(req.body?.note).trim();
+    if (!noteIsEnough(note)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
+    const actorId = str(req.user!.id);
+    await prisma.$transaction(async (tx) => {
+      await tx.projectMember.update({
+        where: { id: m.id },
+        data: { extensionRequestedTo: to, extensionRequestNote: note, extensionRequestedAt: new Date(), extensionRequestedById: actorId },
+      });
+      await bothTrails(tx, {
+        e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_EXTENSION_REQUESTED',
+        payload: { memberId: m.id, person: m.user.name, current: isoDay(m.accessTo), requested: isoDay(to), note },
+      });
+      await notify(tx, [e.managerId, e.ownerId].map((recipientId) => ({
+        tenantId: e.tenantId, recipientId, actorId, event: 'ENGAGEMENT_ACCESS_EXTENSION_REQUESTED',
+        subjectType: 'Project', subjectId: e.id,
+        title: `${e.providerTenant?.name} asks to extend ${m.user.name}'s access to ${e.ref}`,
+        body: `To ${isoDay(to)}: ${note}. Grant or decline it on the Team tab.`,
+        link: 'project-delivery',
+      })));
+    });
+    res.status(201).json({ status: 'success' });
+  } catch (error: any) {
+    console.error('[Engagement Extension Request Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to ask for more time' });
+  }
+};
+
+/** POST .../extension-request/decline — the organisation says no, with a reason. */
+export const declineExtension = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const found = await loadWindow(str(req.params.projectId), str(req.params.memberId));
+    if (!found || !(await clientSide(req, found.e))) { notFound(res, 'Member'); return; }
+    const { e, m } = found;
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
+    const actorId = str(req.user!.id);
+    await prisma.$transaction(async (tx) => {
+      const moved = await tx.projectMember.updateMany({
+        where: { id: m.id, extensionRequestedTo: { not: null } },
+        data: { extensionRequestedTo: null, extensionRequestNote: null, extensionRequestedAt: null, extensionRequestedById: null },
+      });
+      if (moved.count === 0) throw new Conflict('NO_REQUEST', 'There is no request for more time to decline.');
+      await bothTrails(tx, {
+        e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_EXTENSION_DECLINED',
+        payload: { memberId: m.id, person: m.user.name, requested: isoDay(m.extensionRequestedTo), reason },
+      });
+      if (m.extensionRequestedById) {
+        await notify(tx, {
+          tenantId: e.providerTenantId || e.tenantId, recipientId: m.extensionRequestedById, actorId,
+          event: 'ENGAGEMENT_ACCESS_EXTENSION_DECLINED', subjectType: 'Project', subjectId: e.id,
+          title: `More time on ${e.ref} was declined`, body: reason, link: 'project-delivery',
+        });
+      }
+    });
+    res.json({ status: 'success' });
+  } catch (error: any) {
+    if (error instanceof Conflict) { send(res, { status: 409, code: error.code, message: error.message }); return; }
+    console.error('[Engagement Extension Decline Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to decline the request' });
+  }
+};
+
+// ─── The resume proposal (sprint 5) ─────────────────────────────────────────
+
+/**
+ * The holds that ended and whose days have not yet been offered to the
+ * people's windows. Normally one; more when a resume was left unconfirmed and
+ * the engagement was held again, so no hold's days are ever lost.
+ */
+async function pendingHolds(db: any, projectId: string): Promise<{ id: string; startedAt: Date; endedAt: Date }[]> {
+  return db.projectHold.findMany({
+    where: { projectId, endedAt: { not: null }, windowsSettledAt: null },
+    orderBy: { startedAt: 'asc' },
+    select: { id: true, startedAt: true, endedAt: true },
+  });
+}
+
+const holdDays = (holds: { startedAt: Date; endedAt: Date }[]) => holds.reduce(
+  (n, h) => n + Math.max(0, Math.round((h.endedAt.getTime() - h.startedAt.getTime()) / DAY)), 0,
+);
+
+/**
+ * Who the hold cost time: approved people whose window was still open when
+ * the first pending hold began, and who were approved before the last ended.
+ */
+async function heldPeople(db: any, projectId: string, holds: { startedAt: Date; endedAt: Date }[]) {
+  return db.projectMember.findMany({
+    where: {
+      projectId, engagementRole: { not: null }, memberStatus: 'Approved', active: true,
+      accessTo: { gte: new Date(holds[0].startedAt.getTime() - DAY) },
+      OR: [{ decidedAt: null }, { decidedAt: { lte: holds[holds.length - 1].endedAt } }],
+    },
+    orderBy: { nominatedAt: 'asc' },
+    select: { id: true, engagementRole: true, accessFrom: true, accessTo: true, user: { select: { name: true } } },
+  });
+}
+
+/**
+ * GET /api/engagements/:projectId/resume-proposal — after a resume, each
+ * approved person's current end of access and the proposed one, the hold's
+ * days later. The engagement's target end is not moved: the Gantt counts
+ * those days as on hold, against nobody, and Rebaseline re-agrees dates.
+ */
+export const getResumeProposal = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const e = await loadEngagement(str(req.params.projectId));
+    if (!e || !(await clientSide(req, e))) { notFound(res); return; }
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    // Offered once the engagement is running again, never while held or after it ended.
+    const holds = e.status === 'Active' ? await pendingHolds(prisma, e.id) : [];
+    if (holds.length === 0) { res.json({ status: 'success', proposal: null }); return; }
+    const days = holdDays(holds);
+    const people: any[] = await heldPeople(prisma, e.id, holds);
+    res.json({
+      status: 'success',
+      proposal: {
+        holds: holds.length, startedAt: holds[0].startedAt, endedAt: holds[holds.length - 1].endedAt, days,
+        people: people.map((p) => ({
+          memberId: p.id, name: p.user.name, engagementRole: p.engagementRole,
+          currentEnd: p.accessTo, proposedEnd: new Date(p.accessTo.getTime() + days * DAY),
+        })),
+      },
+    });
+  } catch (error: any) {
+    console.error('[Resume Proposal Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to build the proposal' });
+  }
+};
+
+/**
+ * POST /api/engagements/:projectId/resume-proposal — confirm it once, with
+ * exceptions: the new end date for each person kept ticked, one audit entry
+ * per person. An empty list settles it with every window left as it was.
+ */
+export const settleResumeProposal = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const e = await loadEngagement(str(req.params.projectId));
+    if (!e || !(await clientSide(req, e))) { notFound(res); return; }
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    if (e.status !== 'Active') { send(res, { status: 409, code: 'NOT_ACTIVE', message: 'Only once the engagement is running again.' }); return; }
+    const raw = Array.isArray(req.body?.changes) ? req.body.changes : [];
+    if (raw.length > 200) { send(res, { status: 400, message: 'Too many changes at once.' }); return; }
+    const changes: { memberId: string; accessTo: Date }[] = [];
+    for (const c of raw) {
+      const to = parseDay(c?.accessTo);
+      if (!c?.memberId || !to) { send(res, { status: 400, message: 'Each change needs a person and an end date.' }); return; }
+      if (changes.some((x) => x.memberId === str(c.memberId))) { send(res, { status: 400, message: 'Each person once.' }); return; }
+      changes.push({ memberId: str(c.memberId), accessTo: to });
+    }
+    const actorId = str(req.user!.id);
+    const result = await prisma.$transaction(async (tx) => {
+      const holds = await pendingHolds(tx, e.id);
+      if (holds.length === 0) throw new Conflict('NOTHING_PENDING', 'There is no hold whose days are waiting to be offered.');
+      const settled = await tx.projectHold.updateMany({
+        where: { id: { in: holds.map((h) => h.id) }, windowsSettledAt: null },
+        data: { windowsSettledAt: new Date(), windowsSettledById: actorId },
+      });
+      if (settled.count !== holds.length) throw new Conflict('ALREADY_SETTLED', 'Someone has just confirmed this. Reload it.');
+      const days = holdDays(holds);
+      const offered = new Map<string, any>((await heldPeople(tx, e.id, holds)).map((p: any) => [p.id, p]));
+      let applied = 0;
+      for (const c of changes) {
+        const m = offered.has(c.memberId)
+          ? await tx.projectMember.findUnique({ where: { id: c.memberId }, select: WINDOW_SELECT })
+          : null;
+        if (!m) throw new Conflict('NOT_OFFERED', 'Change only the people the proposal lists.');
+        if (m.accessFrom && c.accessTo < m.accessFrom) {
+          throw new Conflict('BAD_DATE', `${m.user.name}'s end date must be on or after the start of their access.`);
+        }
+        await tx.projectMember.update({
+          where: { id: m.id }, data: { accessTo: c.accessTo, accessWarnedAt: null, accessEndNoticeAt: null },
+        });
+        await bothTrails(tx, {
+          e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
+          payload: {
+            memberId: m.id, person: m.user.name, cause: 'resume', holdDays: days,
+            from: { accessTo: isoDay(m.accessTo) }, to: { accessTo: isoDay(c.accessTo) },
+          },
+        });
+        await notify(tx, {
+          tenantId: e.providerTenantId || e.tenantId, recipientId: m.userId, actorId, event: 'ENGAGEMENT_ACCESS_CHANGED',
+          subjectType: 'Project', subjectId: e.id,
+          title: `Your access to ${e.ref} now ends ${isoDay(c.accessTo)}`,
+          body: `${e.tenant?.name} added the ${days} day(s) the engagement was on hold.`,
+          link: 'project-delivery',
+        });
+        applied += 1;
+      }
+      return { days, applied };
+    });
+    res.json({ status: 'success', ...result });
+  } catch (error: any) {
+    if (error instanceof Conflict) { send(res, { status: 409, code: error.code, message: error.message }); return; }
+    console.error('[Resume Proposal Settle Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to confirm the proposal' });
+  }
+};
+
+// ─── The guard in shadow (sprint 5) ─────────────────────────────────────────
+
+/**
+ * GET /api/engagements/shadow/summary — for the platform: per organisation
+ * and rule, how many times the guard would have refused a firm's request, on
+ * how many engagements, first and last seen. It decides go-live per
+ * organisation. ?clientTenantId= lists that organisation's rows by
+ * engagement and route.
+ */
+export const shadowSummary = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    // The route admits only the platform's own people (requirePlatformTenant).
+    const clientTenantId = req.query.clientTenantId ? str(req.query.clientTenantId) : null;
+    const groups = await prisma.engagementShadowRefusal.groupBy({
+      by: ['clientTenantId', 'rule', 'projectId', 'route'],
+      ...(clientTenantId ? { where: { clientTenantId } } : {}),
+      _sum: { count: true }, _min: { firstSeenAt: true }, _max: { lastSeenAt: true },
+    });
+    const tenants = await prisma.tenant.findMany({
+      where: { id: { in: [...new Set(groups.map((g) => g.clientTenantId))] } }, select: { id: true, name: true },
+    });
+    const nameOf = new Map(tenants.map((t) => [t.id, t.name]));
+    const on = await featureStates(CONSULTING_FLAG, tenants.map((t) => t.id));
+    const byRule = new Map<string, {
+      clientTenantId: string; client: string; rule: string; count: number;
+      engagements: Set<string>; routes: Set<string>; firstSeenAt: Date | null; lastSeenAt: Date | null;
+    }>();
+    for (const g of groups) {
+      const k = `${g.clientTenantId}|${g.rule}`;
+      const row = byRule.get(k) ?? {
+        clientTenantId: g.clientTenantId, client: nameOf.get(g.clientTenantId) || g.clientTenantId, rule: g.rule,
+        count: 0, engagements: new Set<string>(), routes: new Set<string>(), firstSeenAt: null, lastSeenAt: null,
+      };
+      row.count += g._sum.count || 0;
+      row.engagements.add(g.projectId);
+      row.routes.add(g.route);
+      if (g._min.firstSeenAt && (!row.firstSeenAt || g._min.firstSeenAt < row.firstSeenAt)) row.firstSeenAt = g._min.firstSeenAt;
+      if (g._max.lastSeenAt && (!row.lastSeenAt || g._max.lastSeenAt > row.lastSeenAt)) row.lastSeenAt = g._max.lastSeenAt;
+      byRule.set(k, row);
+    }
+    res.json({
+      status: 'success',
+      retentionDays: SHADOW_RETENTION_DAYS,
+      summary: [...byRule.values()]
+        .sort((a, b) => b.count - a.count)
+        .map((r) => ({
+          clientTenantId: r.clientTenantId, client: r.client, rule: r.rule, description: SHADOW_RULES[r.rule] || r.rule,
+          count: r.count, engagements: r.engagements.size, routes: r.routes.size,
+          firstSeenAt: r.firstSeenAt, lastSeenAt: r.lastSeenAt, consultingOn: Boolean(on.get(r.clientTenantId)),
+        })),
+      ...(clientTenantId ? {
+        rows: groups.map((g) => ({
+          projectId: g.projectId, rule: g.rule, route: g.route, count: g._sum.count || 0,
+          firstSeenAt: g._min.firstSeenAt, lastSeenAt: g._max.lastSeenAt,
+        })),
+      } : {}),
+    });
+  } catch (error: any) {
+    console.error('[Shadow Summary Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load the shadow refusals' });
   }
 };

@@ -1,24 +1,28 @@
 import { Router } from 'express';
-import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
+import { requireAuth, rejectIfMustChangePassword, requirePlatformTenant } from '../middlewares/authMiddleware';
 import { requireCapability, CAP } from '../services/capabilityEngine';
 import {
   featureState, listInvitations, inviteFirm, revokeInvitation, acceptInvitation, declineInvitation,
   getEngagement, nominatePerson, approvePerson, rejectPerson, removePerson, changeDeliveryStyle,
+  changeAccessWindow, requestExtension, declineExtension, getResumeProposal, settleResumeProposal, shadowSummary,
 } from '../controllers/engagementController';
 
 /**
- * Consulting engagements (sprint 4): invitations, the relationship, the firm's
- * people and the delivery style.
+ * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
+ * firm's people, the delivery style, access windows, the resume proposal and
+ * the guard's shadow counts.
  *
- * Every route but /feature refuses unless the "Consulting Engagements" flag is
- * on for the organisation and the firm involved. Which side may act is decided
- * per request in the controller; the capability here is the floor.
+ * Every route but /feature and /shadow/summary refuses unless the "Consulting
+ * Engagements" flag is on for the organisation and the firm involved. Which
+ * side may act is decided per request in the controller; the capability here
+ * is the floor.
  */
 const router = Router();
 router.use(requireAuth);
 router.use(rejectIfMustChangePassword);
 
 router.get('/feature', featureState);
+router.get('/shadow/summary', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), shadowSummary);
 
 router.get('/invitations', listInvitations);
 router.post('/invitations', requireCapability(CAP.MANAGE_PROJECT), inviteFirm);
@@ -31,6 +35,11 @@ router.post('/:projectId/nominations', requireCapability(CAP.MANAGE_PROJECT), no
 router.post('/:projectId/members/:memberId/approve', requireCapability(CAP.MANAGE_PROJECT), approvePerson);
 router.post('/:projectId/members/:memberId/reject', requireCapability(CAP.MANAGE_PROJECT), rejectPerson);
 router.post('/:projectId/members/:memberId/remove', requireCapability(CAP.MANAGE_PROJECT), removePerson);
+router.patch('/:projectId/members/:memberId/window', requireCapability(CAP.MANAGE_PROJECT), changeAccessWindow);
+router.post('/:projectId/members/:memberId/extension-request', requireCapability(CAP.EXECUTE_PROJECT_WORK), requestExtension);
+router.post('/:projectId/members/:memberId/extension-request/decline', requireCapability(CAP.MANAGE_PROJECT), declineExtension);
+router.get('/:projectId/resume-proposal', getResumeProposal);
+router.post('/:projectId/resume-proposal', requireCapability(CAP.MANAGE_PROJECT), settleResumeProposal);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;
