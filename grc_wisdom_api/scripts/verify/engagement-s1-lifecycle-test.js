@@ -186,8 +186,22 @@ const RESUME = 'Budget approved by the steering committee';
 
   // ── Cancelling a held project ends its hold ──────────────────────────────
   const hid = held.project.id;
+  // A blocker open when the hold starts: the organisation may still clear it,
+  // and the days on hold are not charged to the side that owed it.
+  const blockerRaised = await as('POST', `/api/projects/tasks/${held.taskId}/block`, {
+    title: 'Waiting on the asset owners', owingSide: 'Client', category: 'ClientDependency',
+  });
   await as('PATCH', `/api/projects/${hid}`, { status: 'OnHold', reason: HOLD });
-  const cancelled = await as('POST', `/api/projects/${hid}/close`, { outcome: 'Cancelled', closureNote: 'Programme withdrawn by the board' });
+  const openBlocker = await prisma.projectImpediment.findFirst({ where: { taskId: held.taskId, resolvedAt: null }, select: { id: true } });
+  await prisma.projectImpediment.update({ where: { id: openBlocker.id }, data: { raisedAt: new Date(Date.now() - 5 * 86_400_000) } });
+  await prisma.projectHold.updateMany({ where: { projectId: hid, endedAt: null }, data: { startedAt: new Date(Date.now() - 3 * 86_400_000) } });
+  const clearedOnHold = await as('POST', `/api/projects/impediments/${openBlocker.id}/resolve`, { resolutionNote: 'Asset owners named by the CIO' });
+  const cost = (await prisma.projectImpediment.findUnique({ where: { id: openBlocker.id }, select: { impactDays: true } }))?.impactDays;
+  v.record('engagement-s1:on hold the organisation can clear a blocker, and hold days are not charged to it',
+    blockerRaised.status < 300 && clearedOnHold.status === 200 && cost === 2,
+    `block ${blockerRaised.status}, resolve on hold ${clearedOnHold.status} ${clearedOnHold.json?.code || ''}, charged ${cost} of 5 days (3 on hold)`);
+
+  const cancelled =await as('POST', `/api/projects/${hid}/close`, { outcome: 'Cancelled', closureNote: 'Programme withdrawn by the board' });
   const ended = await holds(hid);
   v.record('engagement-s1:cancelling a held project ends its hold interval',
     cancelled.status === 200 && ended.length === 1 && ended[0].endedAt !== null && ended[0].resumeReason === null,

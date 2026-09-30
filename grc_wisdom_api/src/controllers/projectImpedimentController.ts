@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { stampActualStart } from '../services/taskActuals';
 import { stretchToWork } from '../services/projectBaseline';
+import { holdDaysWithin } from '../services/projectVariance';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
@@ -372,7 +373,10 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
     { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
-    if (isHeld(project.status)) { held(res); return; }
+    // On hold the organisation may still clear a blocker: its days stop when
+    // it is cleared, and a blocker left open through a hold would keep running
+    // against whoever owes it. The firm's side is read-only while held.
+    if (isHeld(project.status) && !canWrite) { held(res); return; }
 
     const refusal = checkResolvable(imp);
     if (refusal) {
@@ -393,7 +397,12 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
 
     const now = new Date();
     const userId = str(req.user!.id);
-    const cost = Math.max(0, signedDays(imp.raisedAt, now));
+    // Days the engagement was on hold while this was open are nobody's delay,
+    // as on the Gantt, so they are not charged to the side that owed it.
+    const holds = await prisma.projectHold.findMany({
+      where: { projectId: imp.projectId }, select: { startedAt: true, endedAt: true },
+    });
+    const cost = Math.max(0, signedDays(imp.raisedAt, now) - holdDaysWithin(holds, imp.raisedAt, now, now));
 
     const result = await prisma.$transaction(async (tx) => {
       const cleared = await tx.projectImpediment.update({
