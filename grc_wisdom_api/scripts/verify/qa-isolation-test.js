@@ -43,6 +43,8 @@ const RECORD_OF = [
   [/^\/api\/projects\/tasks\/:taskId/, (out) => prisma.projectTask.findFirst({ where: { project: out }, select: { id: true } })],
   [/^\/api\/projects\/evidence\/:evidenceId/, (out) => prisma.projectEvidence.findFirst({ where: { project: out }, select: { id: true } })],
   [/^\/api\/projects\/:id/, (out) => prisma.project.findFirst({ where: out, select: { id: true } })],
+  // A firm's or organisation's own template; the platform's are read by everyone.
+  [/^\/api\/plan-templates\/:id/, (out) => prisma.planTemplate.findFirst({ where: { ...out, level: { not: 'Platform' } }, select: { id: true } })],
 ];
 /** Routes that take a parameter but not a record id. */
 const NOT_A_RECORD = {
@@ -90,6 +92,9 @@ const NOT_A_RECORD = {
   await seedCall(omniGrc, 'POST', `/api/projects/phases/${phase.phase.id}/tasks`, {
     name: 'Probe task', assigneeId: omniGrc.user.id, dueDate: iso(7),
   }, 'a project task');
+  await seedCall(omniGrc, 'POST', `/api/plan-templates/from-project/${project.project.id}`, {
+    name: 'QA isolation probe method',
+  }, 'a plan template');
 
   // ── Isolation ────────────────────────────────────────────────────────────
   const routes = q.routeTable().filter((r) => r.method === 'GET' && (r.path.match(/:\w+/g) || []).length === 1);
