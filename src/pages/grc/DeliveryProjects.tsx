@@ -9,6 +9,7 @@ import ProjectReports from './project/ProjectReports';
 import ProjectTimeline from './project/ProjectTimeline';
 import NewProject from './project/NewProject';
 import ProjectTeam from './project/ProjectTeam';
+import ProjectLifecycle from './project/ProjectLifecycle';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -28,6 +29,8 @@ interface Selected { id: string; ref: string; name: string; }
 const DeliveryProjects: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('portfolio');
   const [selected, setSelected] = useState<Selected | null>(null);
+  // Bumped when the lifecycle changes, so the open tab reloads and shows it.
+  const [version, setVersion] = useState(0);
 
   const open = (project: Selected) => {
     setSelected(project);
@@ -110,15 +113,20 @@ const DeliveryProjects: React.FC = () => {
           Timeline
         </button>
 
-        {tab !== 'portfolio' && selected && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}>
-              <span style={{ color: 'var(--ink-faint)' }}>{selected.ref}</span> · {selected.name}
-            </span>
-            <button style={ghostBtn} onClick={() => setTab('portfolio')}>Back to portfolio</button>
-          </div>
-        )}
       </div>
+
+      {/* The open engagement and its lifecycle, on a row of its own so the
+          status, the hold reason and the four decisions wrap on a narrow
+          screen instead of running off the tab bar. */}
+      {tab !== 'portfolio' && tab !== 'new' && selected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '-8px 0 18px' }}>
+          <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
+            <span style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>{selected.ref}</span> · {selected.name}
+          </span>
+          <ProjectLifecycle key={`${selected.id}-${version}`} projectId={selected.id} onChanged={() => setVersion((v) => v + 1)} />
+          <button style={{ ...ghostBtn, marginLeft: 'auto' }} onClick={() => setTab('portfolio')}>Back to portfolio</button>
+        </div>
+      )}
 
       {tab === 'portfolio' && (
         <ProjectPortfolio onOpen={open} onCreate={() => setTab('new')} />
@@ -129,22 +137,22 @@ const DeliveryProjects: React.FC = () => {
           onCancel={() => setTab('portfolio')}
         />
       )}
-      {tab === 'plan' && selected && <ProjectPlan key={selected.id} projectId={selected.id} />}
-      {tab === 'team' && selected && <ProjectTeam key={selected.id} projectId={selected.id} />}
+      {tab === 'plan' && selected && <ProjectPlan key={`${selected.id}-${version}`} projectId={selected.id} onActivated={() => setVersion((v) => v + 1)} />}
+      {tab === 'team' && selected && <ProjectTeam key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'verification' && selected && (
-        <ProjectVerification key={selected.id} projectId={selected.id} />
+        <ProjectVerification key={`${selected.id}-${version}`} projectId={selected.id} />
       )}
       {tab === 'impediments' && selected && (
-        <ProjectImpediments key={selected.id} projectId={selected.id} />
+        <ProjectImpediments key={`${selected.id}-${version}`} projectId={selected.id} />
       )}
       {tab === 'evidence' && selected && (
-        <ProjectEvidence key={selected.id} projectId={selected.id} />
+        <ProjectEvidence key={`${selected.id}-${version}`} projectId={selected.id} />
       )}
       {tab === 'reports' && selected && (
-        <ProjectReports key={selected.id} projectId={selected.id} />
+        <ProjectReports key={`${selected.id}-${version}`} projectId={selected.id} />
       )}
       {tab === 'timeline' && selected && (
-        <ProjectTimeline key={selected.id} projectId={selected.id} />
+        <ProjectTimeline key={`${selected.id}-${version}`} projectId={selected.id} />
       )}
     </div>
   );

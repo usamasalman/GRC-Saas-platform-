@@ -177,6 +177,52 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
     ]
   },
 
+  'project-delivery': {
+    id: 'project-delivery',
+    title: 'Compliance Project Delivery',
+    category: 'Assurance & Governance',
+    icon: 'target',
+    badge: 'Engagement Lifecycle',
+    summary: 'Runs a compliance engagement from a draft plan to closure: phases and tasks mapped to clauses, an agreed baseline, independent verification, delays owed by each side, and a lifecycle you can hold, resume, rebaseline and close from the project header.',
+    roles: ['Project Manager', 'Task Assignee', 'Verifier', 'Delivery Firm'],
+    capabilities: ['manage-a-delivery-project', 'execute-project-work', 'verify-project-delivery'],
+    keyActions: [
+      'Create a draft with "New engagement", then build the plan with "+ Phase", "+ task" and "+ clause"',
+      'Stamp the baseline with "Agree plan & activate"; an empty plan is refused',
+      'Put an active project on hold with "Put on hold" and restart it with "Resume", giving a reason each time',
+      'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"'
+    ],
+    howToUse: [
+      {
+        step: 1,
+        title: 'Plan and agree',
+        instruction: 'Open an engagement from the portfolio. On the Plan tab add phases and tasks with an assignee, due date and the clauses each addresses, then click "Agree plan & activate" to stamp the baseline every slip is measured against.',
+        tip: 'A task records when work on it actually began the first time it moves to In progress, and that date is never overwritten.'
+      },
+      {
+        step: 2,
+        title: 'Hold and resume',
+        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it; "Resume" closes the interval with its own reason and leaves the agreed baseline as it was.',
+        tip: 'The header shows since when the project has been on hold and why.'
+      },
+      {
+        step: 3,
+        title: 'Rebaseline or close',
+        instruction: 'Click "Rebaseline" to make the current dates the agreed plan (the plan version goes up by one), or "Close" to end the engagement. Both ask for a reason of at least 10 characters.',
+        tip: 'A closed engagement cannot be reopened, and its reports lose the DRAFT banner. Resume a held project before closing it.'
+      }
+    ],
+    proTips: [
+      'Only the organisation that owns the engagement can hold, resume, rebaseline or close it; a named delivery firm sees the status, and each change is written to both organisations\' audit trails.',
+      'If the status changed while you were deciding, the action is refused and you are asked to reload, so a project is never resumed or closed twice.'
+    ],
+    relatedTabs: [
+      { id: 'my-work', title: 'My Work' },
+      { id: 'standards', title: 'Standards' },
+      { id: 'logs', title: 'Immutable Audit Log' }
+    ]
+  },
+
   acknowledgements: {
     id: 'acknowledgements',
     title: 'My Acknowledgements & Staff Compliance',

@@ -298,7 +298,7 @@ const extensionOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 };
 
-const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
+const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = ({ projectId, onActivated }) => {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -334,6 +334,8 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       setShowActivateDialog(false);
       setProjectStatus('Active');
       await load();
+      // The header's lifecycle bar shows the status too.
+      onActivated?.();
     } catch (err: any) {
       setShowActivateDialog(false);
       setError(apiError(err));
