@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { stampActualStart } from '../services/taskActuals';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
@@ -91,6 +92,8 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             verificationOverride: true, verificationRound: true,
             submittedAt: true, verifiedAt: true,
             baselineStartDate: true, baselineDueDate: true,
+            // When work began (S1); the actual line of the Gantt with completedAt.
+            actualStartDate: true,
             assignee: { select: { id: true, name: true, email: true } },
             submittedBy: { select: { id: true, name: true } },
             verifiedBy: { select: { id: true, name: true } },
@@ -808,6 +811,8 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.projectTask.update({ where: { id: taskId }, data });
+      // The first move to InProgress is when work began (S1); never overwritten.
+      if (data.status === 'InProgress') await stampActualStart(tx, taskId);
       await writeAudit(tx, {
         tenantId: project.tenantId,
         actorId: userId,

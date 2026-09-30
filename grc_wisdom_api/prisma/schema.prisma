@@ -3309,6 +3309,12 @@ model ProjectTask {
   /// agreed the moment it was added.
   baselineStartDate DateTime?
   baselineDueDate   DateTime?
+  /// When work on the task actually began: stamped the first time it moves to
+  /// InProgress and never overwritten, so a task sent back and restarted keeps
+  /// the day it first started. With completedAt it is the task's actual line on
+  /// the Gantt; null on a task that has not started, and on tasks that were
+  /// already under way before this was recorded.
+  actualStartDate   DateTime?
 
   /// null follows the project's verificationPolicy. true and false are explicit
   /// decisions that survive a policy change — a manager who exempted one task

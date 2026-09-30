@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { stampActualStart } from '../services/taskActuals';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
@@ -106,6 +107,8 @@ async function record(args: {
       where: { id: args.taskId },
       data: args.taskData,
     });
+    // Reopened work keeps the day it first started; stamped only if it never had one (S1).
+    if (args.taskData.status === 'InProgress') await stampActualStart(tx, args.taskId);
 
     await tx.projectVerification.create({
       data: {

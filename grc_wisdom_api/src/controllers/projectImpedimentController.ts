@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { stampActualStart } from '../services/taskActuals';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
@@ -415,6 +416,8 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
               where: { id: imp.taskId },
               data: { status: 'InProgress' },
             });
+            // Blocked before it ever started: clearing the blocker is its start (S1).
+            await stampActualStart(tx, imp.taskId);
           }
         }
       }
