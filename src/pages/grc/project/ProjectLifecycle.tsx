@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
 import { ReasonDialog } from '../../../components/Dialog';
+import FormDialog from '../../../components/FormDialog';
 import { MAY, can } from '../../../components/Can';
 import { pill, ghostBtn, apiError } from '../../iam/iamStyles';
 import { calendarDate } from '../../../utils/calendarDate';
+import ResumeProposal from './ResumeProposal';
+import { HOLD_ACCESS_LABELS } from './holdAccess';
 
 interface Hold {
   id: string;
@@ -13,6 +16,8 @@ interface Hold {
   resumeReason: string | null;
   startedBy: { name: string } | null;
   endedBy: { name: string } | null;
+  firmAccess: string | null;
+  windowsSettledAt: string | null;
 }
 
 interface ProjectHeader {
@@ -21,6 +26,8 @@ interface ProjectHeader {
   side: 'Client' | 'Provider' | null;
   baselineSetAt: string | null;
   baselineVersion: number;
+  providerTenantId: string | null;
+  deliveryStyle: string | null;
   holds: Hold[];
 }
 
@@ -69,33 +76,43 @@ const ACTIONS: Record<Action, { label: string; title: string; message: string; f
   },
 };
 
+// Every change remounts this header (the page keys it by a version), so the
+// proposal to open after a resume is remembered across that remount.
+const proposeAfterResume = new Set<string>();
+
 const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> = ({ projectId, onChanged }) => {
   const [project, setProject] = useState<ProjectHeader | null>(null);
   const [action, setAction] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // After a consulting engagement resumes: its people's end dates (S5).
+  const [proposing, setProposing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (first = false) => {
     try {
       const res = await apiClient.get(`/api/projects/${projectId}`);
-      setProject(res.data?.project || null);
+      const p: ProjectHeader | null = res.data?.project || null;
+      setProject(p);
+      if (first && p?.status === 'Active' && proposeAfterResume.delete(projectId)) setProposing(true);
     } catch {
       setProject(null);
     }
   }, [projectId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(true); }, [load]);
 
-  const act = async (reason: string) => {
+  const act = async (reason: string, holdFirmAccess?: string) => {
     if (!action) return;
     setBusy(true);
     setError('');
     try {
-      if (action === 'hold') await apiClient.patch(`/api/projects/${projectId}`, { status: 'OnHold', reason });
+      // holdFirmAccess is left out (undefined) when no firm delivers it.
+      if (action === 'hold') await apiClient.patch(`/api/projects/${projectId}`, { status: 'OnHold', reason, holdFirmAccess });
       if (action === 'resume') await apiClient.patch(`/api/projects/${projectId}`, { status: 'Active', reason });
       if (action === 'rebaseline') await apiClient.post(`/api/projects/${projectId}/rebaseline`, { reason });
       if (action === 'close') await apiClient.post(`/api/projects/${projectId}/close`, { outcome: 'Closed', closureNote: reason });
       setAction(null);
+      if (action === 'resume' && project?.deliveryStyle && project.providerTenantId) proposeAfterResume.add(projectId);
       await load();
       onChanged();
     } catch (err) {
@@ -110,6 +127,11 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
 
   const open = project.holds.find((h) => !h.endedAt) || null;
   const mayDecide = project.side === 'Client' && can(MAY.MANAGE_PROJECT);
+  const withFirm = Boolean(project.providerTenantId);
+  // A hold whose days were never offered to the firm's people: the proposal
+  // can be opened again until it is confirmed either way.
+  const proposalWaiting = mayDecide && withFirm && Boolean(project.deliveryStyle) && project.status === 'Active'
+    && project.holds.some((h) => h.endedAt && !h.windowsSettledAt);
   const offered: { key: Action; disabled?: string }[] = [];
   if (project.status === 'Active') {
     offered.push({ key: 'hold' });
@@ -146,8 +168,43 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
           {ACTIONS[key].label}
         </button>
       ))}
+      {proposalWaiting && (
+        <button
+          style={{ ...ghostBtn, padding: '4px 10px', fontSize: 12 }}
+          disabled={busy}
+          onClick={() => { setError(''); setProposing(true); }}
+        >
+          Access after the hold
+        </button>
+      )}
       {error && <span style={{ fontSize: 11.5, color: 'var(--danger)', maxWidth: 320 }}>{error}</span>}
-      {action && (
+      {action === 'hold' && withFirm && (
+        <FormDialog
+          title={ACTIONS.hold.title}
+          intro={`${ACTIONS.hold.message} Choose what the delivery firm may do until it resumes; you can change it during the hold, and on resume the firm's people get back exactly the access they had.`}
+          fields={[
+            { name: 'reason', label: ACTIONS.hold.field, type: 'textarea', required: true },
+            {
+              name: 'firmAccess', label: 'While on hold', type: 'select', options: ['View', 'None'], initial: 'View',
+              optionLabels: HOLD_ACCESS_LABELS,
+              help: 'Read-only: the firm sees the engagement and changes nothing. No access: it disappears from the firm\'s lists until it resumes.',
+            },
+          ]}
+          submitLabel={busy ? 'Working…' : ACTIONS.hold.confirm}
+          busy={busy}
+          validate={(v) => (v.reason.trim().length < 10 ? 'Give a little more detail — at least 10 characters.' : null)}
+          onSubmit={(v) => act(v.reason.trim(), v.firmAccess)}
+          onCancel={() => setAction(null)}
+        />
+      )}
+      {proposing && (
+        <ResumeProposal
+          projectId={projectId}
+          onDone={() => { setProposing(false); load(); }}
+          onRebaseline={project.baselineSetAt ? () => { setProposing(false); setAction('rebaseline'); } : undefined}
+        />
+      )}
+      {action && !(action === 'hold' && withFirm) && (
         <ReasonDialog
           title={ACTIONS[action].title}
           message={ACTIONS[action].message}

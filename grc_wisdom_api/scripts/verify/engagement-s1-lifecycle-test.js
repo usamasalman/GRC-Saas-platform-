@@ -32,7 +32,8 @@ const RESUME = 'Budget approved by the steering committee';
 {
   const screen = q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'project', 'ProjectLifecycle.tsx'));
   const callers = {
-    'PATCH /api/projects/:id to OnHold': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}`, \{ status: 'OnHold', reason \}\)/,
+    // With the firm's access while held, when a firm delivers it (sprint 5).
+    'PATCH /api/projects/:id to OnHold': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}`, \{ status: 'OnHold', reason(, holdFirmAccess)? \}\)/,
     'PATCH /api/projects/:id to Active (resume)': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}`, \{ status: 'Active', reason \}\)/,
     'POST /api/projects/:id/rebaseline': /apiClient\.post\(`\/api\/projects\/\$\{projectId\}\/rebaseline`, \{ reason \}\)/,
     'POST /api/projects/:id/close': /apiClient\.post\(`\/api\/projects\/\$\{projectId\}\/close`, \{ outcome: 'Closed', closureNote: reason \}\)/,

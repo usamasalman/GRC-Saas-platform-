@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
+import EngagementShadow from './EngagementShadow';
 
 interface FeatureFlag {
   id: string;
@@ -259,6 +260,9 @@ const FeatureFlagsManager: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* What the consulting rules would have refused, per organisation (S5). */}
+      {flags.some((f) => f.key === 'Consulting Engagements') && <EngagementShadow />}
 
       {/* Create Flag Modal */}
       {modalOpen && (

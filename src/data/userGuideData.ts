@@ -194,7 +194,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Move an agreed date later with "Move date", naming who owes the slip and why; the phase and the engagement end no earlier than their work',
       'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
       'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"',
-      'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates'
+      'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates',
+      'Set how long each of the firm\'s people has access with "Change access"; answer their "Request more time" with "Grant more time" or "Decline request"'
     ],
     howToUse: [
       {
@@ -206,8 +207,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Hold and resume',
-        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it. While it lasts, work is paused (no task status or progress, evidence, verification or blocker is recorded) but the plan can still be adjusted. "Resume" closes the interval with its own reason and leaves the agreed baseline as it was.',
-        tip: 'The header shows since when the project has been on hold and why.'
+        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it. While it lasts, work is paused (no task status or progress, evidence, verification or blocker is recorded) but the plan can still be adjusted. "Resume" closes the interval with its own reason and leaves the agreed baseline as it was. When a firm delivers the engagement, choose "Firm can view (read-only)" or "Firm has no access" as you put it on hold; the firm changes nothing either way.',
+        tip: 'The header shows since when the project has been on hold and why. "Change hold access" on the Team tab switches between the two during the hold, with a reason, and on resume the firm\'s people get back exactly the access they had. After a consulting engagement resumes, "Access after the hold" lists each person\'s current and proposed end date, all ticked: untick or edit, then confirm once, or "Leave end dates as they are". The target end is not moved; "Rebaseline the plan" is on the same screen.'
       },
       {
         step: 3,
@@ -232,6 +233,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Work with a consulting firm',
         instruction: 'Where the platform has switched consulting on for your organisation and the firm, click "Invite a firm" on the Team tab, choose the delivery style (Client-led unless you choose otherwise) and send it. The firm answers from its "Invitations" tab: whoever clicks "Accept" becomes its Lead and adds the firm\'s people with "Nominate a person". Nobody from the firm can open the engagement until you "Approve" them, with their role and access dates.',
         tip: 'Roles: the Lead submits deliverables for you to approve; a Consultant works assigned tasks; a Reviewer checks and changes nothing. Approving and verifying always stay with your own people. Only you can "Change delivery style", and each step is recorded on both organisations\' audit trails. An invitation lasts 14 days and is used once; expired and withdrawn ones stay on record.'
+      },
+      {
+        step: 7,
+        title: 'Access dates of the firm\'s people',
+        instruction: 'Each approved person has access to the end of their "Access to" date, checked on every request. Click "Change access" beside a person on the Team tab to move the date, with a reason; they are told. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold.',
+        tip: 'Extending brings back access that had ended ("Access ended"), never access that was removed: a removed person must be nominated and approved again.'
       }
     ],
     proTips: [
@@ -1308,8 +1315,14 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Toggle or Override',
-        instruction: 'Switch toggle or click "Tenant Overrides" to enable specifically for a beta customer tenant.',
+        instruction: 'Switch toggle or click "Override…" to hold one organisation on or off whatever the platform setting.',
         tip: 'Overrides take effect instantly via WebSocket/SSE stream.'
+      },
+      {
+        step: 3,
+        title: 'Read the engagement guard in shadow',
+        instruction: 'Under the flags, "Engagement guard in shadow" lists, per organisation and rule, how many times the consulting rules would have refused a delivery firm\'s request ("would have refused N times"), on how many engagements, and when first and last seen. Click "Routes" for where.',
+        tip: 'Counted, never enforced: switch an organisation to enforcing with a "Consulting Engagements" override once its count is understood. IDs only; rows not seen for 90 days are deleted.'
       }
     ],
     proTips: [

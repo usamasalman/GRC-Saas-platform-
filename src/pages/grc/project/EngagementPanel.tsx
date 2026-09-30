@@ -23,6 +23,10 @@ interface Member {
   accessFrom: string | null; accessTo: string | null; nominatedAt: string | null; decidedAt: string | null;
   decisionNote: string | null; user: { id: string; name: string; email: string };
   nominatedBy: { name: string } | null; decidedBy: { name: string } | null;
+  // Sprint 5: whether the window is open today, and a request for more time.
+  accessOpen: boolean;
+  extensionRequestedTo: string | null; extensionRequestNote: string | null; extensionRequestedAt: string | null;
+  extensionRequestedBy: { name: string } | null;
 }
 interface Invitation {
   id: string; state: string; deliveryStyle: string; invitedAt: string; expiresAt: string; respondedAt: string | null;
@@ -35,8 +39,12 @@ interface Engagement {
   relationship: { establishedAt: string } | null;
   invitations: Invitation[];
   members: Member[];
-  me: { engagementRole: string; memberStatus: string } | null;
-  can: { invite: boolean; decide: boolean; changeStyle: boolean; nominate: boolean };
+  me: { memberId: string; engagementRole: string; memberStatus: string } | null;
+  hold: { startedAt: string; firmAccess: string | null } | null;
+  can: {
+    invite: boolean; decide: boolean; changeStyle: boolean; nominate: boolean;
+    changeWindows: boolean; requestExtension: boolean; requestForTeam: boolean;
+  };
 }
 
 export const STYLE_LABEL: Record<string, string> = { ClientLed: 'Client-led', ConsultantLed: 'Consultant-led' };
@@ -59,7 +67,10 @@ type Dialog =
   | null
   | { kind: 'invite' } | { kind: 'revoke'; inv: Invitation } | { kind: 'style' }
   | { kind: 'approve'; m: Member } | { kind: 'reject'; m: Member } | { kind: 'remove'; m: Member }
-  | { kind: 'nominate' };
+  | { kind: 'nominate' }
+  | { kind: 'window'; m: Member } | { kind: 'extend'; m: Member } | { kind: 'declineExt'; m: Member };
+
+const day = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 
 const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> = ({ projectId, onChanged }) => {
   const [on, setOn] = useState<boolean | null>(null);
@@ -146,6 +157,15 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
         </span>
       </div>
       {error && <div style={{ ...S.error, margin: 12 }}>{error}</div>}
+      {data.hold && e.firm && (
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--line-soft)', fontSize: 12.5, color: 'var(--warning)' }}>
+          {/* What the firm may do is on the Delivered by card below, where it is changed. */}
+          On hold since {new Date(data.hold.startedAt).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })}.
+          {data.side === 'Provider'
+            ? ' You can view the engagement and change nothing until it resumes.'
+            : ' Nobody from the firm can change anything until it resumes.'}
+        </div>
+      )}
 
       {data.side === 'Client' && data.invitations.length > 0 && (
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)' }}>
@@ -191,6 +211,18 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
                 </td>
                 <td style={{ ...S.td, fontSize: 12 }}>
                   {m.memberStatus === 'Approved' ? `${calendarDate(m.accessFrom)} → ${calendarDate(m.accessTo)}` : 'None'}
+                  {m.memberStatus === 'Approved' && m.active && !m.accessOpen && (
+                    <span style={{ ...pill('var(--danger)', 'var(--danger-line)'), marginLeft: 6 }}>
+                      Access ended
+                    </span>
+                  )}
+                  {m.extensionRequestedTo && (
+                    <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
+                      Asked for more time to {calendarDate(m.extensionRequestedTo)}
+                      {m.extensionRequestedBy ? ` by ${m.extensionRequestedBy.name}` : ''}
+                      {m.extensionRequestNote ? `: ${m.extensionRequestNote}` : ''}
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...S.td, fontSize: 11.5, color: 'var(--ink-muted)' }}>
                   {m.nominatedBy?.name || '—'}{m.decidedBy ? ` / ${m.decidedBy.name}` : ''}
@@ -203,6 +235,23 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
                       <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
                         onClick={() => setDialog({ kind: 'reject', m })}>Turn down</button>
                     </>
+                  )}
+                  {m.memberStatus === 'Approved' && m.active && data.can.changeWindows && (
+                    <>
+                      {m.extensionRequestedTo && (
+                        <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
+                          onClick={() => setDialog({ kind: 'declineExt', m })}>Decline request</button>
+                      )}
+                      <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
+                        onClick={() => setDialog({ kind: 'window', m })}>
+                        {m.extensionRequestedTo ? 'Grant more time' : 'Change access'}
+                      </button>
+                    </>
+                  )}
+                  {m.memberStatus === 'Approved' && m.active && !m.extensionRequestedTo
+                    && ((data.can.requestExtension && data.me?.memberId === m.id) || data.can.requestForTeam) && (
+                    <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
+                      onClick={() => setDialog({ kind: 'extend', m })}>Request more time</button>
                   )}
                   {m.active && (data.can.decide || data.can.nominate) && (
                     <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5 }} disabled={busy}
@@ -309,6 +358,48 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
           minLength={10}
           busy={busy}
           onConfirm={(reason) => act(() => apiClient.post(`/api/engagements/${projectId}/members/${dialog.m.id}/remove`, { reason }))}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'window' && (
+        <FormDialog
+          title={`${dialog.m.extensionRequestedTo ? 'Grant more time to' : 'Change access for'} ${dialog.m.user.name}?`}
+          intro={<>Their access lasts to the end of the date you set. Extending brings back access that had ended; it never brings back someone who was removed. Recorded on both organisations' trails, and they are told.</>}
+          submitLabel="Save access"
+          busy={busy}
+          fields={[
+            { name: 'to', label: 'Access to', type: 'date', required: true, initial: day(dialog.m.extensionRequestedTo || dialog.m.accessTo) },
+            { name: 'reason', label: 'Why', type: 'textarea', required: true },
+          ]}
+          validate={(v) => (v.reason.trim().length < 10 ? 'Say why, in at least 10 characters.' : null)}
+          onSubmit={(v) => act(() => apiClient.patch(`/api/engagements/${projectId}/members/${dialog.m.id}/window`, { accessTo: v.to, reason: v.reason.trim() }))}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'extend' && (
+        <FormDialog
+          title={`Ask ${e.client} for more time${data.me?.memberId === dialog.m.id ? '' : ` for ${dialog.m.user.name}`}?`}
+          intro={<>Access now ends {calendarDate(dialog.m.accessTo)}. Only {e.client} can extend it; their project manager is told.</>}
+          submitLabel="Send request"
+          busy={busy}
+          fields={[
+            { name: 'to', label: 'Until', type: 'date', required: true },
+            { name: 'note', label: 'Why the work needs it', type: 'textarea', required: true },
+          ]}
+          validate={(v) => (v.note.trim().length < 10 ? 'Say why, in at least 10 characters.' : null)}
+          onSubmit={(v) => act(() => apiClient.post(`/api/engagements/${projectId}/members/${dialog.m.id}/extension-request`, { accessTo: v.to, note: v.note.trim() }))}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'declineExt' && (
+        <ReasonDialog
+          title={`Decline more time for ${dialog.m.user.name}?`}
+          message="Their access keeps its current end date. The person who asked is told why."
+          label="Why?"
+          confirmLabel="Decline"
+          minLength={10}
+          busy={busy}
+          onConfirm={(reason) => act(() => apiClient.post(`/api/engagements/${projectId}/members/${dialog.m.id}/extension-request/decline`, { reason }))}
           onCancel={() => setDialog(null)}
         />
       )}
