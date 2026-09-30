@@ -99,6 +99,8 @@ model Tenant {
   projects         Project[]
   /// Delivery projects this tenant runs FOR someone else, as a consulting partner.
   projectsDelivered Project[] @relation("ProjectProvider")
+  /// Plan templates this firm or organisation keeps in its own library.
+  planTemplates     PlanTemplate[]
 }
 
 model User {
@@ -250,6 +252,7 @@ model User {
   impedimentsCleared ProjectImpediment[] @relation("ImpedimentResolver")
   projectHoldsStarted ProjectHold[] @relation("ProjectHoldStarter")
   projectHoldsEnded   ProjectHold[] @relation("ProjectHoldEnder")
+  planTemplatesAuthored PlanTemplate[] @relation("PlanTemplateAuthor")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3141,6 +3144,10 @@ model Project {
   /// Null where the engagement was rebaselined before these were kept.
   firstBaselineStartDate     DateTime?
   firstBaselineTargetEndDate DateTime?
+  /// The template version the plan was copied from, for the record only: a
+  /// copy, never a link, so changing the template changes nothing here.
+  planTemplateId             String?
+  planTemplate               PlanTemplate? @relation(fields: [planTemplateId], references: [id], onDelete: SetNull)
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -3174,6 +3181,92 @@ model Project {
   @@index([tenantId, status])
   @@index([providerTenantId, status])
   @@index([tenantId, targetEndDate])
+}
+
+/// A plan to start an engagement from (consulting engagement, sprint 3).
+///
+/// Three libraries: Platform (kept by the platform and read by everyone), Firm
+/// (a consulting firm's own method, private to that firm) and Client (an
+/// organisation's own). A template is COPIED into a plan, never linked, and a
+/// version is never edited: saving changes makes the next version of the same
+/// family, and retiring one hides it from the wizard without touching any plan
+/// made from it.
+model PlanTemplate {
+  id             String    @id @default(uuid())
+  /// Platform | Firm | Client
+  level          String
+  /// The owning firm or organisation; null for a Platform template.
+  tenantId       String?
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Shared by every version of one template.
+  familyId       String
+  version        Int       @default(1)
+  name           String
+  description    String?
+  /// Certification | Readiness | Remediation | Implementation | Assessment
+  engagementType String?
+  /// The framework's code, so one template serves every organisation that has
+  /// that framework enabled, whichever copy of it they hold.
+  standardCode   String?
+  /// Active | Retired
+  status         String    @default("Active")
+  retiredAt      DateTime?
+  createdById    String?
+  createdBy      User?     @relation("PlanTemplateAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+
+  phases         PlanTemplatePhase[]
+  projects       Project[]
+
+  @@unique([familyId, version])
+  @@index([level, status])
+  @@index([tenantId, status])
+}
+
+/// A phase in a template, in order, with its default length.
+model PlanTemplatePhase {
+  id           String       @id @default(uuid())
+  templateId   String
+  template     PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sequence     Int
+  name         String
+  description  String?
+  durationDays Int
+
+  tasks        PlanTemplateTask[]
+
+  @@index([templateId, sequence])
+}
+
+/// A task in a template phase: what it is, whose it is, how long it takes, what
+/// it waits on, which clauses it addresses and what it produces.
+model PlanTemplateTask {
+  id                String            @id @default(uuid())
+  phaseId           String
+  phase             PlanTemplatePhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  /// Stable within the template, so "waits on" survives reordering.
+  key               String
+  sequence          Int
+  name              String
+  description       String?
+  /// Client | Provider
+  side              String            @default("Client")
+  durationDays      Int
+  weight            Int               @default(1)
+  /// true or false, or null to follow the engagement's verification policy.
+  needsVerification Boolean?
+  /// The key of the task this one waits on, in the same template.
+  dependsOnKey      String?
+  /// JSON array of clause refs or prefixes: "A.5.15", or "A.5" for every
+  /// clause under A.5.
+  clauses           String?
+  /// Once | PerClause | PerTheme: one task, or one per matched clause, or one
+  /// per theme ("A.5", "A.8") of the matched clauses.
+  generate          String            @default("Once")
+  /// The deliverable or evidence the task produces.
+  deliverable       String?
+
+  @@index([phaseId, sequence])
 }
 
 /// A period an engagement stood still, and why.
