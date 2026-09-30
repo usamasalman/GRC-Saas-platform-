@@ -99,7 +99,8 @@ const causes = (c) => CAUSES.filter((k) => c[k] > 0).map((k) => `${k} ${c[k]}`).
     /apiClient\.post\(`\/api\/projects\/tasks\/\$\{task\.id\}\/reschedule`/.test(plan) && /Move date/.test(plan),
     'ProjectPlan must offer "Move date" over POST /api/projects/tasks/:id/reschedule');
 
-  const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts'));
+  // Line endings normalised: a Windows checkout has CRLF, and the section split is on LF.
+  const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts')).replace(/\r\n/g, '\n');
   const section = (guide.split(/\n  'project-delivery': \{/)[1] || '').split(/\n  \},\n/)[0];
   const quoted = [...section.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const labels = screen + host;

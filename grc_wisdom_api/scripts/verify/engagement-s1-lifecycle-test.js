@@ -44,7 +44,8 @@ const RESUME = 'Budget approved by the steering committee';
     missing.length ? `no caller for ${missing.join(', ')}` : 'ProjectLifecycle is not mounted in the project header');
 
   // The guide quotes the screen's labels; each one has to be on the screen.
-  const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts'));
+  // Line endings normalised: a Windows checkout has CRLF, and the section split is on LF.
+  const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts')).replace(/\r\n/g, '\n');
   const section = (guide.split(/\n  'project-delivery': \{/)[1] || '').split(/\n  \},\n/)[0];
   const projectDir = path.join(q.WEB_SRC, 'pages', 'grc', 'project');
   const screens = require('fs').readdirSync(projectDir).filter((f) => f.endsWith('.tsx'))
