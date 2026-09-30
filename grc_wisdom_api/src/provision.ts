@@ -234,14 +234,14 @@ async function provisionFeatureFlags(): Promise<number> {
     if (existing) {
       await prisma.featureFlag.update({ where: { key: f.key }, data: describe });
     } else {
-      const expires = new Date(f.expiryDate);
+      const expires = f.expiryDate ? new Date(f.expiryDate) : null;
       await prisma.featureFlag.create({
         data: {
           ...describe,
           key: f.key,
           status: f.status,
           rolloutPercentage: f.rolloutPercentage,
-          expiryDate: Number.isNaN(expires.getTime()) ? null : expires,
+          expiryDate: expires && !Number.isNaN(expires.getTime()) ? expires : null,
         },
       });
     }
