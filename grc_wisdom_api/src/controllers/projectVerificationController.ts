@@ -6,7 +6,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
 import { hasCapability, CAP } from '../services/capabilityEngine';
-import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmRefusal, refuse, actsForFirm, clientDecides } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import {
   requiresVerification, checkTaskTransition, checkSeparationOfDuties,
@@ -175,6 +175,7 @@ export const submitTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, canWrite, side, needsVerification } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    { const r = await firmRefusal(project, req.user!, 'submit'); if (r) { refuse(res, r); return; } }
     if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
@@ -261,6 +262,8 @@ export const verifyTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, side } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    // Approvals stay with the organisation's own people on a consulting engagement (S4).
+    if (actsForFirm(project, req.user!)) { clientDecides(res); return; }
     if (isHeld(project.status)) { held(res); return; }
 
     if (task.status !== 'SubmittedForVerification') {
@@ -382,6 +385,7 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, canWrite, side } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);

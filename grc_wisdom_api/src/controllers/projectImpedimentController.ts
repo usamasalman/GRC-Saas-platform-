@@ -5,7 +5,7 @@ import { stretchToWork } from '../services/projectBaseline';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
-import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmRefusal, refuse } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { checkTaskTransition } from '../services/projectLifecycle';
 import {
@@ -75,6 +75,7 @@ export const raiseImpediment = async (req: AuthenticatedRequest, res: Response):
       req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
     if (isHeld(project.status)) { held(res); return; }
@@ -247,6 +248,7 @@ export const blockTask = async (req: AuthenticatedRequest, res: Response): Promi
 
     const { project, canWrite, side } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
     if (isHeld(project.status)) { held(res); return; }
 
@@ -367,6 +369,7 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
 
     const { project, canWrite, side } = await guardProject(req.user!, imp.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
     if (isHeld(project.status)) { held(res); return; }

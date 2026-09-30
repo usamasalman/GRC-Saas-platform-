@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, firmRefusal, refuse } from '../services/projectGuard';
 import { isComplete, taskTiming } from '../services/projectLifecycle';
 import { slippage } from '../services/projectDelay';
 import {
@@ -161,6 +161,7 @@ export const linkTasks = async (req: AuthenticatedRequest, res: Response): Promi
       req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'sequence'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
@@ -263,6 +264,7 @@ export const unlinkTasks = async (req: AuthenticatedRequest, res: Response): Pro
       req.user!, link.projectId,
     );
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'sequence'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 

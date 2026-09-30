@@ -5,7 +5,7 @@ import { stretchToWork } from '../services/projectBaseline';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmRefusal, refuse } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { projectWhere } from '../services/projectAccess';
@@ -668,6 +668,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const { project, canWrite } = await authorise(req, existing.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
     const userId = str(req.user!.id);

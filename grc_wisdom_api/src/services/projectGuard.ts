@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { resolveTenantScope, ScopeActor, TenantScope } from './scopeResolver';
 import { canReadProject, canWriteProject, sideOf } from './projectAccess';
+import { EngagementAction, roleMay, roleRefusal } from './engagementRules';
 
 /**
  * Load a delivery project and decide what a caller may do with it.
@@ -137,4 +138,47 @@ export const frozen = (res: Response, projectStatus: string): void => {
     code: 'PROJECT_FROZEN',
     message: `This project is ${projectStatus}. Reopen it before changing the plan.`,
   });
+};
+
+// ─── The firm's role on a consulting engagement ─────────────────────────────
+
+/** Whether this caller acts for the firm on a consulting engagement. */
+export function actsForFirm(
+  project: { tenantId: string; providerTenantId: string | null; deliveryStyle: string | null },
+  user: { tenantId: string },
+): boolean {
+  return Boolean(project.deliveryStyle && project.providerTenantId
+    && user.tenantId === project.providerTenantId && user.tenantId !== project.tenantId);
+}
+
+/**
+ * The refusal when the firm's person may not take this action on a consulting
+ * engagement, by their engagement role; null when they may, and always null
+ * on the organisation's side or on an engagement named the old way.
+ */
+export async function firmRefusal(
+  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null },
+  user: { id: string; tenantId: string },
+  action: EngagementAction,
+): Promise<{ status: number; code: string; message: string } | null> {
+  if (!actsForFirm(project, user)) return null;
+  const m = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: project.id, userId: user.id } },
+    select: { engagementRole: true, memberStatus: true, active: true },
+  });
+  const role = m && m.active && m.memberStatus === 'Approved' ? m.engagementRole : null;
+  return roleMay(role, action) ? null : roleRefusal(role, action);
+}
+
+/** Approving, verifying and accepting stay with the organisation's own people. */
+export const clientDecides = (res: Response): void => {
+  res.status(403).json({
+    status: 'error',
+    code: 'CLIENT_DECIDES',
+    message: 'Approving and verifying work on this engagement stays with the organisation\'s own people.',
+  });
+};
+
+export const refuse = (res: Response, r: { status: number; code: string; message: string }): void => {
+  res.status(r.status).json({ status: 'error', code: r.code, message: r.message });
 };
