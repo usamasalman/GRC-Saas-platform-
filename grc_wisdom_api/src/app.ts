@@ -24,6 +24,7 @@ import systemRoutes from './routes/systemRoutes';
 import projectRoutes from './routes/projectRoutes';
 import planTemplateRoutes from './routes/planTemplateRoutes';
 import engagementRoutes from './routes/engagementRoutes';
+import { requestContext } from './services/requestContext';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { requireCapability, CAP } from './services/capabilityEngine';
 import { SodViolation } from './services/sodEngine';
@@ -177,6 +178,9 @@ app.use('/api', apiLimiter);
 
 // Body Parsing (50mb limit for document file uploads)
 app.use(express.json({ limit: '50mb' }));
+// The route each request came in on, with ids replaced, for services that
+// must say where something happened without holding the request (sprint 5).
+app.use(requestContext);
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // uploads/ is NOT served statically.

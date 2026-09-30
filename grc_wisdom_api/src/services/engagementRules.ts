@@ -83,3 +83,19 @@ export function roleRefusal(role: string | null | undefined, action: EngagementA
 
 export const isDeliveryStyle = (v: unknown): v is DeliveryStyle => (DELIVERY_STYLES as readonly unknown[]).includes(v);
 export const isEngagementRole = (v: unknown): v is EngagementRole => (ENGAGEMENT_ROLES as readonly unknown[]).includes(v);
+
+// ─── Access windows (sprint 5) ──────────────────────────────────────────────
+
+export const DAY_MS = 86_400_000;
+
+/**
+ * Whether a person's access has not ended. The end date counts in full:
+ * access to 31 July lasts until the end of that day (UTC). Checked on every
+ * request, not by a nightly job, because an end date the organisation set on
+ * purpose is a rule, not a trial. The start recorded at approval does not
+ * gate access, so an approved firm can prepare before the engagement starts.
+ */
+export function accessOpen(m: { accessTo: Date | null }, now: Date = new Date()): boolean {
+  return !m.accessTo || now.getTime() < m.accessTo.getTime() + DAY_MS;
+}
+

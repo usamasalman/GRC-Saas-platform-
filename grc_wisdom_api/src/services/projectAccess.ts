@@ -26,18 +26,26 @@ import { TenantScope } from './scopeResolver';
  */
 
 /** Prisma `where` fragment restricting Project rows to what this caller may read. */
-export function projectWhere(scope: TenantScope, userId?: string) {
+export function projectWhere(scope: TenantScope, userId?: string, now: Date = new Date()) {
   return {
     OR: [
       { tenantId: { in: scope.tenantIds } },
       {
         providerTenantId: { in: scope.tenantIds },
         // A consulting engagement (one with a delivery style) is the firm's to
-        // see person by person: only people the organisation approved. One
-        // naming a firm the old way is read by the firm as before (sprint 4).
+        // see person by person: only people the organisation approved, until
+        // their access ends (the end date counts in full). One naming a firm
+        // the old way is read by the firm as before (sprints 4 and 5).
         OR: [
           { deliveryStyle: null },
-          ...(userId ? [{ members: { some: { userId, side: 'Provider', memberStatus: 'Approved', active: true } } }] : []),
+          ...(userId ? [{
+            members: {
+              some: {
+                userId, side: 'Provider', memberStatus: 'Approved', active: true,
+                OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }],
+              },
+            },
+          }] : []),
         ],
       },
     ],

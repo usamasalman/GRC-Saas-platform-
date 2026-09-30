@@ -2,7 +2,8 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { resolveTenantScope, ScopeActor, TenantScope } from './scopeResolver';
 import { canReadProject, canWriteProject, sideOf } from './projectAccess';
-import { EngagementAction, roleMay, roleRefusal } from './engagementRules';
+import { EngagementAction, roleMay, roleRefusal, accessOpen } from './engagementRules';
+import { recordShadow } from './engagementShadow';
 
 /**
  * Load a delivery project and decide what a caller may do with it.
@@ -59,12 +60,27 @@ export async function canReadEngagement(
 ): Promise<boolean> {
   if (scope.tenantIds.includes(project.tenantId)) return true;
   if (!canReadProject(scope, project)) return false;
-  if (!project.deliveryStyle) return true;
+
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId } },
-    select: { side: true, memberStatus: true, active: true },
+    select: { side: true, memberStatus: true, active: true, accessTo: true },
   });
-  return Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
+  const approved = Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
+
+  if (!project.deliveryStyle) {
+    // Named the old way: read as before, and counted in shadow where going
+    // live would refuse it, so the organisation can see that before it does.
+    if (!approved) {
+      recordShadow({
+        projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
+        rule: 'member-required',
+      });
+    }
+    return true;
+  }
+  // An approved member whose access has not ended, checked on every
+  // request: an end date the organisation set is enforced, not shadowed.
+  return approved && accessOpen(m!);
 }
 
 export async function guardProject(
@@ -161,12 +177,26 @@ export async function firmRefusal(
   user: { id: string; tenantId: string },
   action: EngagementAction,
 ): Promise<{ status: number; code: string; message: string } | null> {
-  if (!actsForFirm(project, user)) return null;
+  const firmSide = Boolean(project.providerTenantId && user.tenantId === project.providerTenantId
+    && user.tenantId !== project.tenantId);
+  if (!firmSide) return null;
+
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId: user.id } },
-    select: { engagementRole: true, memberStatus: true, active: true },
+    select: { engagementRole: true, memberStatus: true, active: true, accessTo: true },
   });
-  const role = m && m.active && m.memberStatus === 'Approved' ? m.engagementRole : null;
+  const role = m && m.active && m.memberStatus === 'Approved' && accessOpen(m) ? m.engagementRole : null;
+
+  if (!project.deliveryStyle) {
+    // Named the old way: allowed as before, counted where going live would refuse.
+    if (!roleMay(role, action)) {
+      recordShadow({
+        projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
+        rule: 'role-required',
+      });
+    }
+    return null;
+  }
   return roleMay(role, action) ? null : roleRefusal(role, action);
 }
 
