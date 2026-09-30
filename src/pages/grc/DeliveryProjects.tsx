@@ -10,6 +10,7 @@ import ProjectTimeline from './project/ProjectTimeline';
 import NewProject from './project/NewProject';
 import ProjectTeam from './project/ProjectTeam';
 import ProjectLifecycle from './project/ProjectLifecycle';
+import ProjectGantt from './project/ProjectGantt';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -22,7 +23,7 @@ import ProjectLifecycle from './project/ProjectLifecycle';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+type TabKey = 'portfolio' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -63,6 +64,14 @@ const DeliveryProjects: React.FC = () => {
           title={selected ? undefined : 'Open a project from the portfolio first'}
         >
           Plan
+        </button>
+        <button
+          style={{ ...tabStyle(tab === 'gantt'), opacity: selected ? 1 : 0.45 }}
+          onClick={() => selected && setTab('gantt')}
+          disabled={!selected}
+          title={selected ? undefined : 'Open a project from the portfolio first'}
+        >
+          Gantt
         </button>
         <button
           style={{ ...tabStyle(tab === 'team'), opacity: selected ? 1 : 0.45 }}
@@ -138,6 +147,7 @@ const DeliveryProjects: React.FC = () => {
         />
       )}
       {tab === 'plan' && selected && <ProjectPlan key={`${selected.id}-${version}`} projectId={selected.id} onActivated={() => setVersion((v) => v + 1)} />}
+      {tab === 'gantt' && selected && <ProjectGantt key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'team' && selected && <ProjectTeam key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'verification' && selected && (
         <ProjectVerification key={`${selected.id}-${version}`} projectId={selected.id} />

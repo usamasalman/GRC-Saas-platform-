@@ -190,7 +190,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Create a draft with "New engagement", then build the plan with "+ Phase", "+ task" and "+ clause"',
       'Stamp the baseline with "Agree plan & activate"; an empty plan is refused',
       'Put an active project on hold with "Put on hold" and restart it with "Resume", giving a reason each time',
-      'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"'
+      'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"',
+      'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab'
     ],
     howToUse: [
       {
@@ -210,6 +211,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Rebaseline or close',
         instruction: 'Click "Rebaseline" to make the current dates the agreed plan (the plan version goes up by one), or "Close" to end the engagement. Both ask for a reason of at least 10 characters.',
         tip: 'A closed engagement cannot be reopened, and its reports lose the DRAFT banner. Resume a held project before closing it.'
+      },
+      {
+        step: 4,
+        title: 'Read the Gantt',
+        instruction: 'Open the "Gantt" tab. Each task has three lines: Planned (the plan first agreed), Actual (from the day work began to the day it finished, or a Forecast while unfinished) and the variance between the two finishes. Phases and the engagement roll up the same way.',
+        tip: 'Every variance says why, and the parts add up: days on hold first, then the days each side owed on the work that set the finish, then any rebaseline, then the rest as unattributed. The Engagement status and Phase delivery reports print the same figures.'
       }
     ],
     proTips: [
