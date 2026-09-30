@@ -4,7 +4,6 @@ import { ReasonDialog } from '../../../components/Dialog';
 import FormDialog from '../../../components/FormDialog';
 import { MAY, can } from '../../../components/Can';
 import { pill, ghostBtn, apiError } from '../../iam/iamStyles';
-import { calendarDate } from '../../../utils/calendarDate';
 import ResumeProposal from './ResumeProposal';
 import { HOLD_ACCESS_LABELS } from './holdAccess';
 
@@ -75,6 +74,10 @@ const ACTIONS: Record<Action, { label: string; title: string; message: string; f
     confirm: 'Close project',
   },
 };
+
+// When a hold began is an instant, read in the reader's own day: as a UTC
+// calendar date it showed yesterday east of Greenwich late at night.
+const heldSince = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 
 // Every change remounts this header (the page keys it by a version), so the
 // proposal to open after a resume is remembered across that remount.
@@ -154,7 +157,7 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
       <span style={statusPill}>{project.status === 'OnHold' ? 'On hold' : project.status}</span>
       {open && (
         <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', maxWidth: 320 }} title={open.reason}>
-          since {calendarDate(open.startedAt)}: {open.reason.length > 60 ? `${open.reason.slice(0, 60)}…` : open.reason}
+          since {heldSince(open.startedAt)}: {open.reason.length > 60 ? `${open.reason.slice(0, 60)}…` : open.reason}
         </span>
       )}
       {mayDecide && offered.map(({ key, disabled }) => (
