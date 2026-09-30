@@ -29,6 +29,8 @@ export interface GuardedProject {
   /** Null until the plan is agreed. Slice 4 measures slippage against it. */
   baselineSetAt: Date | null;
   baselineVersion: number;
+  /** ClientLed | ConsultantLed on a consulting engagement; null otherwise. */
+  deliveryStyle: string | null;
 }
 
 export interface ProjectGuard {
@@ -37,6 +39,31 @@ export interface ProjectGuard {
   canWrite: boolean;
   side: 'Client' | 'Provider' | null;
   scope: TenantScope;
+}
+
+/**
+ * Whether the caller may read this engagement at all.
+ *
+ * The organisation's side and a firm on an engagement named the old way read
+ * it as before. On a consulting engagement (one with a delivery style) a
+ * person from the firm reads it only once the organisation has approved them:
+ * a nominee, a person turned down or removed, and the rest of the firm get the
+ * same 404 as for an engagement that does not exist (consulting engagement,
+ * sprint 4). Switching the flag off takes nothing away from people approved.
+ */
+export async function canReadEngagement(
+  scope: TenantScope,
+  userId: string,
+  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null },
+): Promise<boolean> {
+  if (scope.tenantIds.includes(project.tenantId)) return true;
+  if (!canReadProject(scope, project)) return false;
+  if (!project.deliveryStyle) return true;
+  const m = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: project.id, userId } },
+    select: { side: true, memberStatus: true, active: true },
+  });
+  return Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
 }
 
 export async function guardProject(
@@ -50,11 +77,11 @@ export async function guardProject(
       id: true, tenantId: true, providerTenantId: true,
       ref: true, name: true, status: true, verificationPolicy: true,
       ownerId: true, managerId: true,
-      baselineSetAt: true, baselineVersion: true,
+      baselineSetAt: true, baselineVersion: true, deliveryStyle: true,
     },
   });
 
-  if (!project || !canReadProject(scope, project)) {
+  if (!project || !(await canReadEngagement(scope, String(caller.id), project))) {
     return { project: null, canWrite: false, side: null, scope };
   }
   return {

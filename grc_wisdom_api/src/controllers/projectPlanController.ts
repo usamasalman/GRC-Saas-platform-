@@ -254,7 +254,7 @@ export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<
       where: {
         assigneeId: userId,
         project: {
-          ...projectWhere(scope),
+          ...projectWhere(scope, userId),
           status: { notIn: ['Closed', 'Cancelled'] },
         },
         ...(includeDone ? {} : { status: { notIn: ['Done', 'Verified'] } }),
