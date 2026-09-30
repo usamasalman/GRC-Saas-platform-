@@ -598,6 +598,9 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
           // same as one that has slipped by zero.
           baselineStartDate: baselineNow && startDate ? new Date(startDate) : null,
           baselineDueDate: baselineNow && dueDate ? new Date(dueDate) : null,
+          // And that is the first time it was agreed (S2).
+          firstBaselineStartDate: baselineNow && startDate ? new Date(startDate) : null,
+          firstBaselineDueDate: baselineNow && dueDate ? new Date(dueDate) : null,
           verificationOverride: override,
         },
       });

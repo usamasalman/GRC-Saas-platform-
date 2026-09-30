@@ -13,6 +13,11 @@
  *
  * Never on an ordinary edit. A baseline that moves when a date moves measures
  * nothing.
+ *
+ * The first stamp also fills the first-agreed columns, and no later stamp
+ * touches them: a rebaseline re-agrees the plan, and the distance it moved
+ * the dates is the rebaseline's share of the variance on the Gantt
+ * (consulting engagement, sprint 2).
  */
 
 export interface BaselineResult {
@@ -36,7 +41,10 @@ export async function stampBaseline(
 ): Promise<BaselineResult> {
   const project = await tx.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { startDate: true, targetEndDate: true, baselineVersion: true },
+    select: {
+      startDate: true, targetEndDate: true, baselineVersion: true,
+      firstBaselineStartDate: true, firstBaselineTargetEndDate: true,
+    },
   });
 
   const version = (project.baselineVersion || 0) + 1;
@@ -48,6 +56,11 @@ export async function stampBaseline(
       baselineTargetEndDate: project.targetEndDate,
       baselineSetAt: now,
       baselineVersion: version,
+      // Only on the first agreement. A project rebaselined before these were
+      // kept has lost its first plan, and does not get today's in its place.
+      ...(version === 1 && !project.firstBaselineTargetEndDate
+        ? { firstBaselineStartDate: project.startDate, firstBaselineTargetEndDate: project.targetEndDate }
+        : {}),
     },
   });
 
@@ -56,22 +69,32 @@ export async function stampBaseline(
   // hundreds of tasks, not millions, and this happens twice in an engagement.
   const phases = await tx.projectPhase.findMany({
     where: { projectId },
-    select: { id: true, targetEndDate: true },
+    select: { id: true, targetEndDate: true, firstBaselineTargetEndDate: true },
   });
   await Promise.all(phases.map((p: any) =>
     tx.projectPhase.update({
       where: { id: p.id },
-      data: { baselineTargetEndDate: p.targetEndDate },
+      data: {
+        baselineTargetEndDate: p.targetEndDate,
+        // A phase added after the first agreement is first agreed now.
+        ...(p.firstBaselineTargetEndDate || (version > 1 && !project.firstBaselineTargetEndDate)
+          ? {} : { firstBaselineTargetEndDate: p.targetEndDate }),
+      },
     })));
 
   const tasks = await tx.projectTask.findMany({
     where: { projectId },
-    select: { id: true, startDate: true, dueDate: true },
+    select: { id: true, startDate: true, dueDate: true, firstBaselineDueDate: true },
   });
   await Promise.all(tasks.map((t: any) =>
     tx.projectTask.update({
       where: { id: t.id },
-      data: { baselineStartDate: t.startDate, baselineDueDate: t.dueDate },
+      data: {
+        baselineStartDate: t.startDate,
+        baselineDueDate: t.dueDate,
+        ...(t.firstBaselineDueDate || (version > 1 && !project.firstBaselineTargetEndDate)
+          ? {} : { firstBaselineStartDate: t.startDate, firstBaselineDueDate: t.dueDate }),
+      },
     })));
 
   return { version, phases: phases.length, tasks: tasks.length, setAt: now };

@@ -3135,6 +3135,12 @@ model Project {
   /// different fact from one still on its first, and it is the fact a steering
   /// committee asks about.
   baselineVersion       Int      @default(0)
+  /// The plan as FIRST agreed, which a rebaseline never rewrites. The Gantt
+  /// measures variance from it, so the days a rebaseline re-agreed show as
+  /// their own cause instead of vanishing (consulting engagement, sprint 2).
+  /// Null where the engagement was rebaselined before these were kept.
+  firstBaselineStartDate     DateTime?
+  firstBaselineTargetEndDate DateTime?
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -3250,6 +3256,8 @@ model ProjectPhase {
 
   /// Stamped with the project's baseline and moved only by a rebaseline.
   baselineTargetEndDate DateTime?
+  /// The end first agreed for the phase; never rewritten by a rebaseline.
+  firstBaselineTargetEndDate DateTime?
 
   ownerId       String
   owner         User    @relation("PhaseOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -3336,6 +3344,11 @@ model ProjectTask {
   /// agreed the moment it was added.
   baselineStartDate DateTime?
   baselineDueDate   DateTime?
+  /// The dates first agreed for the task, stamped once with its first baseline
+  /// and never rewritten: a rebaseline moves baselineDueDate, and the distance
+  /// it moved is the rebaseline's share of the variance.
+  firstBaselineStartDate DateTime?
+  firstBaselineDueDate   DateTime?
   /// When work on the task actually began: stamped the first time it moves to
   /// InProgress and never overwritten, so a task sent back and restarted keeps
   /// the day it first started. With completedAt it is the task's actual line on
