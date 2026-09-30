@@ -220,6 +220,20 @@ const causes = (c) => CAUSES.filter((k) => c[k] > 0).map((k) => `${k} ${c[k]}`).
       && exact(d2, 3, { client: 3 }),
     `rebaseline HTTP ${rebased.status}; planned ${d2?.planned.finish}, agreed ${d2?.agreedFinish}, ${say(d2)}`);
 
+  // The slip carried the task past its phase's end and the engagement's; both
+  // grew with it, and the rebaseline agreed them where the work now ends.
+  const ends = await prisma.project.findUnique({
+    where: { id: project.id },
+    select: { targetEndDate: true, baselineTargetEndDate: true, phases: { where: { id: fix.id }, select: { targetEndDate: true, baselineTargetEndDate: true } } },
+  });
+  const day63 = at(63).getTime();
+  v.record('engagement-s2:a phase and the engagement end no earlier than the work inside them',
+    ends?.targetEndDate.getTime() === day63 && ends?.phases[0]?.targetEndDate.getTime() === day63
+      && ends?.baselineTargetEndDate?.getTime() === day63 && ends?.phases[0]?.baselineTargetEndDate?.getTime() === day63
+      && after?.phases?.[1]?.agreedFinish === at(63).toISOString(),
+    `project ${ends?.targetEndDate.toISOString().slice(0, 10)} agreed ${ends?.baselineTargetEndDate?.toISOString().slice(0, 10)}, `
+      + `phase ${ends?.phases[0]?.targetEndDate.toISOString().slice(0, 10)} agreed ${ends?.phases[0]?.baselineTargetEndDate?.toISOString().slice(0, 10)}`);
+
   // ── Every engagement reconciles ───────────────────────────────────────────
   const others = await prisma.project.findMany({ select: { id: true, ref: true } });
   const broken = [];

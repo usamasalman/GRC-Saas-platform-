@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../db';
 import { stampActualStart } from '../services/taskActuals';
+import { stretchToWork } from '../services/projectBaseline';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
@@ -604,6 +605,7 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
           verificationOverride: override,
         },
       });
+      if (created.dueDate) await stretchToWork(tx, project.id);
       await writeAudit(tx, {
         tenantId: project.tenantId,
         actorId: str(req.user!.id),
@@ -816,6 +818,8 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       const updated = await tx.projectTask.update({ where: { id: taskId }, data });
       // The first move to InProgress is when work began (S1); never overwritten.
       if (data.status === 'InProgress') await stampActualStart(tx, taskId);
+      // A date moved within what was agreed can still pass its phase's end.
+      if (data.dueDate) await stretchToWork(tx, existing.projectId);
       await writeAudit(tx, {
         tenantId: project.tenantId,
         actorId: userId,

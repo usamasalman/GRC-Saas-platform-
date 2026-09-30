@@ -39,6 +39,10 @@ export async function stampBaseline(
   projectId: string,
   now: Date = new Date(),
 ): Promise<BaselineResult> {
+  // What is agreed is where the work now ends, not where its containers were
+  // last set: a phase a task has overrun is agreed at the task's date.
+  await stretchToWork(tx, projectId);
+
   const project = await tx.project.findUniqueOrThrow({
     where: { id: projectId },
     select: {
@@ -109,3 +113,43 @@ export async function stampBaseline(
  */
 export const isBaselined = (project: { baselineSetAt: Date | null }): boolean =>
   project.baselineSetAt !== null;
+
+/**
+ * Grows each phase's end to its latest task, and the engagement's end to its
+ * latest phase. Never shrinks either.
+ *
+ * A task could move past the end of its phase while the phase, and the
+ * engagement, kept the old date, so a report printed "Against the agreed date:
+ * On plan" beside a task seven days late, and a rebaseline agreed the old end
+ * again. A container cannot finish before the work inside it, so its end
+ * follows the work whenever a due date moves, and before any baseline is
+ * stamped.
+ */
+export async function stretchToWork(
+  tx: any,
+  projectId: string,
+): Promise<{ phasesMoved: number; projectEnd: Date | null }> {
+  const project = await tx.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: {
+      targetEndDate: true,
+      phases: { select: { id: true, targetEndDate: true, tasks: { select: { dueDate: true } } } },
+    },
+  });
+  let phasesMoved = 0;
+  let latestPhaseEnd: Date = project.targetEndDate;
+  for (const p of project.phases) {
+    let end: Date = p.targetEndDate;
+    for (const t of p.tasks) if (t.dueDate && t.dueDate > end) end = t.dueDate;
+    if (end > p.targetEndDate) {
+      await tx.projectPhase.update({ where: { id: p.id }, data: { targetEndDate: end } });
+      phasesMoved += 1;
+    }
+    if (end > latestPhaseEnd) latestPhaseEnd = end;
+  }
+  if (latestPhaseEnd > project.targetEndDate) {
+    await tx.project.update({ where: { id: projectId }, data: { targetEndDate: latestPhaseEnd } });
+    return { phasesMoved, projectEnd: latestPhaseEnd };
+  }
+  return { phasesMoved, projectEnd: null };
+}

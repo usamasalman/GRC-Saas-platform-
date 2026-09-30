@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../db';
 import { stampActualStart } from '../services/taskActuals';
+import { stretchToWork } from '../services/projectBaseline';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
@@ -579,6 +580,8 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
         where: { id: task.id },
         data: { dueDate: newDue },
       });
+      // The phase and the engagement cannot end before this task now does.
+      const stretched = await stretchToWork(tx, project.id);
 
       await writeAudit(tx, {
         tenantId: project.tenantId,
@@ -591,6 +594,8 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
           from: (task.dueDate || task.baselineDueDate)?.toISOString() || null,
           to: newDue.toISOString(),
           slipDays: cost, category: b.category, owingSide: b.owingSide,
+          phasesMoved: stretched.phasesMoved,
+          projectEnd: stretched.projectEnd ? stretched.projectEnd.toISOString().slice(0, 10) : null,
         },
       });
 
