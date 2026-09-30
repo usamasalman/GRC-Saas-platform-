@@ -73,6 +73,27 @@ const iso = PLATFORM_PLAN_TEMPLATES.find((t) => t.familyId === 'platform-iso2700
       && annex.length === 2 && annex[0].name.endsWith('A.5') && annex[0].clauseIds.length === 2 && !annex[0].clauseIds.includes('c4'),
     `${plan.phases.length} phases; annex tasks ${annex.map((t) => t.name).join(' | ')}; chained ${chained}`);
 
+  // Every copy of a split task keeps its link, every phase hands over to the
+  // next, so the critical path runs the whole plan; and a phase ends with its
+  // last task, so a new plan shows nothing early.
+  const full = T.planFromTemplate({ template: tmpl, startDate: at(0), clauses });
+  const fullTasks = full.phases.flatMap((p) => p.tasks);
+  const intoReport = full.dependencies.filter((d) => d.successorKey === 'g4').map((d) => d.predecessorKey).sort();
+  const phaseOf = (k) => full.phases.findIndex((p) => p.tasks.some((t) => t.key === k));
+  const crossings = full.dependencies.filter((d) => phaseOf(d.predecessorKey) !== phaseOf(d.successorKey)).length;
+  const { criticalPath } = require('../../dist/services/projectDependency');
+  const cp = criticalPath(
+    fullTasks.map((t) => ({ id: t.key, startDate: t.startDate, dueDate: t.dueDate, status: 'NotStarted' })),
+    full.dependencies.map((d) => ({ predecessorId: d.predecessorKey, successorId: d.successorKey, kind: 'FinishToStart', lagDays: d.lagDays })),
+  );
+  const planDays = Math.round((full.endDate - at(0)) / DAY);
+  const flush = full.phases.every((p) => p.targetEndDate.getTime() === Math.max(...p.tasks.map((t) => t.dueDate.getTime())));
+  v.record('engagement-s3:split tasks keep every link, phases hand over, and nothing starts early',
+    intoReport.join(',') === 'g3#1,g3#2' && crossings >= full.phases.length - 1
+      && cp.lengthDays === planDays && new Set(cp.path.map(phaseOf)).size === full.phases.length && flush,
+    `gap report waits on ${intoReport.join(', ')}; ${crossings} handovers; critical path ${cp.lengthDays} of ${planDays} days `
+      + `across ${new Set(cp.path.map(phaseOf)).size} phases; phases end with their last task: ${flush}`);
+
   const body = T.templateFromPlan({
     name: 'From a plan', description: 'Built for Acme Holdings by Jane Roe on 2026-01-05, jane@acme.test',
     engagementType: 'Certification', standardCode: 'ISO27001',
@@ -171,7 +192,16 @@ const iso = PLATFORM_PLAN_TEMPLATES.find((t) => t.familyId === 'platform-iso2700
       && tasks.every((t) => t.startDate && t.dueDate),
     `preview ${preview.status} ${preview.json?.message || ''}, apply ${applied.status} ${applied.json?.message || ''}, `
       + `${plan?.phases?.length} phases, ${tasks.length} tasks, annex ${annex.length}, ${links} clause links, ${edges} links, starts ${firstStart}`);
-  const similar = (await as('GET', '/api/plan-templates/similar-tasks?q=asset%20list')).json?.tasks || [];
+
+  // The Timeline's critical path runs the whole plan, not one phase of it.
+  const timeline = (await as('GET', `/api/projects/${project?.id}/timeline`)).json;
+  const span = plan?.phases?.length
+    ? Math.round((new Date(plan.phases[plan.phases.length - 1].targetEndDate) - new Date(plan.phases[0].startDate)) / DAY) : 0;
+  const pathPhases = new Set((timeline?.phases || []).filter((p) => p.tasks.some((t) => t.onCriticalPath)).map((p) => p.id)).size;
+  v.record('engagement-s3:the critical path of a plan from a template runs from its first phase to its last',
+    span > 0 && timeline?.criticalPath?.lengthDays === span && pathPhases === plan.phases.length,
+    `critical path ${timeline?.criticalPath?.lengthDays} of ${span} days, across ${pathPhases} of ${plan?.phases?.length} phases`);
+  const similar =(await as('GET', '/api/plan-templates/similar-tasks?q=asset%20list')).json?.tasks || [];
   v.record('engagement-s3:typing a custom task offers similar library tasks first',
     similar.some((t) => t.name === 'Supply the asset list'), similar.map((t) => t.name).join(', ') || 'none');
   v.record('engagement-s3:a template only starts an empty draft plan',

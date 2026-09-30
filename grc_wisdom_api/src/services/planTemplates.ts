@@ -232,21 +232,32 @@ export interface PlannedPhase {
 
 export interface PlannedPlan {
   phases: PlannedPhase[];
-  dependencies: { predecessorKey: string; successorKey: string }[];
+  dependencies: { predecessorKey: string; successorKey: string; lagDays: number }[];
   endDate: Date;
   /** Clause refs or prefixes the template names that match nothing in this framework. */
   unmatched: string[];
 }
 
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * MS_PER_DAY);
+const daysBetween = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / MS_PER_DAY);
 
 /**
  * Lays a tailored template out from a start date.
  *
  * Phases run one after another. A task starts when the phase starts, or when
- * the task it waits on is due, whichever is later; the phase lasts its default
- * length or until its last task is due. A task left out is simply absent: what
- * waited on it starts with its phase.
+ * the task it waits on is due, whichever is later. A phase ends when its last
+ * task is due: the template's default length only sizes a phase with no
+ * tasks, so a new plan never shows a phase finishing early against padding.
+ *
+ * Every dependency is a link in the plan, so the critical path runs through
+ * it end to end:
+ *   - a task split per theme or clause keeps every copy: what waits on it
+ *     waits on all of them, or, where both were split the same way, on the
+ *     copy for the same theme or clause;
+ *   - work that waits on nothing in its phase waits on the previous phase's
+ *     last task, which is when its phase starts;
+ *   - a task left out is simply absent: what waited on it starts with its
+ *     phase, and waits on the phase before.
  */
 export function planFromTemplate(args: {
   template: TemplateForPlan;
@@ -260,28 +271,51 @@ export function planFromTemplate(args: {
   const outPhases = new Set(args.excludePhaseIds || []);
   const outTasks = new Set(args.excludeTaskKeys || []);
   const dueOf = new Map<string, Date>();
-  const lastInstance = new Map<string, string>();
-  const dependencies: { predecessorKey: string; successorKey: string }[] = [];
+  // Every task a template task became, with the theme or clause it covers.
+  const instances = new Map<string, { key: string; group: string }[]>();
+  const dependencies: { predecessorKey: string; successorKey: string; lagDays: number }[] = [];
   const unmatched = new Set<string>();
   const phases: PlannedPhase[] = [];
+  let lastOfPrevious: string[] = [];
   let cursor = new Date(Date.UTC(args.startDate.getUTCFullYear(), args.startDate.getUTCMonth(), args.startDate.getUTCDate()));
 
-  const layPhase = (
-    name: string, description: string | null, durationDays: number,
-    tasks: { key: string; body: Omit<PlannedTask, 'startDate' | 'dueDate'>; days: number; after: string | null }[],
-    custom: boolean,
-  ) => {
+  type Pending = { key: string; group: string; body: Omit<PlannedTask, 'startDate' | 'dueDate'>; days: number; after: string | null };
+
+  const layPhase = (name: string, description: string | null, durationDays: number, tasks: Pending[], custom: boolean) => {
     const start = cursor;
-    let end = addDays(start, durationDays);
     const planned: PlannedTask[] = [];
+    const waits = new Set<string>();
+    let lastDue: Date | null = null;
     for (const t of tasks) {
-      const waitFor = t.after ? lastInstance.get(t.after) : undefined;
-      const from = waitFor && dueOf.get(waitFor)! > start ? dueOf.get(waitFor)! : start;
+      const copies = t.after ? instances.get(t.after) || [] : [];
+      const sameGroup = t.group ? copies.filter((c) => c.group === t.group) : [];
+      let from = start;
+      for (const c of (sameGroup.length ? sameGroup : copies)) {
+        const due = dueOf.get(c.key);
+        if (!due) continue;
+        if (due > from) from = due;
+        dependencies.push({ predecessorKey: c.key, successorKey: t.key, lagDays: 0 });
+        waits.add(t.key);
+      }
       const due = addDays(from, t.days);
       dueOf.set(t.key, due);
-      if (waitFor) dependencies.push({ predecessorKey: waitFor, successorKey: t.key });
-      if (due > end) end = due;
+      if (!lastDue || due > lastDue) lastDue = due;
       planned.push({ ...t.body, startDate: from, dueDate: due });
+    }
+    const end = lastDue ?? addDays(start, durationDays);
+
+    // The handover from the phase before, so no phase floats free of the one
+    // it follows. The lag covers a phase in between that has no tasks.
+    for (const t of planned) {
+      if (waits.has(t.key)) continue;
+      for (const k of lastOfPrevious) {
+        dependencies.push({
+          predecessorKey: k, successorKey: t.key, lagDays: Math.max(0, daysBetween(dueOf.get(k)!, t.startDate)),
+        });
+      }
+    }
+    if (planned.length) {
+      lastOfPrevious = planned.filter((t) => t.dueDate.getTime() === end.getTime()).map((t) => t.key);
     }
     phases.push({ name, description, startDate: start, targetEndDate: end, tasks: planned, custom });
     cursor = end;
@@ -289,7 +323,7 @@ export function planFromTemplate(args: {
 
   for (const p of args.template.phases) {
     if (outPhases.has(p.id)) continue;
-    const tasks: { key: string; body: Omit<PlannedTask, 'startDate' | 'dueDate'>; days: number; after: string | null }[] = [];
+    const tasks: Pending[] = [];
     for (const t of p.tasks) {
       if (outTasks.has(t.key)) continue;
       const after = t.dependsOnKey && !outTasks.has(t.dependsOnKey) ? t.dependsOnKey : null;
@@ -297,21 +331,22 @@ export function planFromTemplate(args: {
       for (const c of t.clauses) if (matchClauses([c], args.clauses).length === 0) unmatched.add(c);
 
       // One task, or one per clause, or one per theme of the matched clauses.
-      const groups: { suffix: string; clauses: ClauseRow[] }[] = [];
+      const groups: { group: string; suffix: string; clauses: ClauseRow[] }[] = [];
       if (t.generate === 'PerClause' && matched.length) {
-        for (const c of matched) groups.push({ suffix: ` — ${c.ref} ${c.title}`, clauses: [c] });
+        for (const c of matched) groups.push({ group: c.ref, suffix: ` — ${c.ref} ${c.title}`, clauses: [c] });
       } else if (t.generate === 'PerTheme' && matched.length) {
         const themes = new Map<string, ClauseRow[]>();
         for (const c of matched) themes.set(themeOf(c.ref), [...(themes.get(themeOf(c.ref)) || []), c]);
-        for (const [theme, cs] of themes) groups.push({ suffix: ` — ${theme}`, clauses: cs });
+        for (const [theme, cs] of themes) groups.push({ group: theme, suffix: ` — ${theme}`, clauses: cs });
       } else {
-        groups.push({ suffix: '', clauses: matched });
+        groups.push({ group: '', suffix: '', clauses: matched });
       }
 
-      groups.forEach((g, i) => {
+      const copies = groups.map((g, i) => {
         const key = groups.length === 1 ? t.key : `${t.key}#${i + 1}`;
         tasks.push({
           key,
+          group: g.group,
           after,
           days: t.durationDays,
           body: {
@@ -320,13 +355,14 @@ export function planFromTemplate(args: {
             clauseIds: g.clauses.map((c) => c.id), deliverable: t.deliverable ?? null, custom: false,
           },
         });
-        lastInstance.set(t.key, key);
+        return { key, group: g.group };
       });
+      instances.set(t.key, copies);
     }
     (args.customTasks || []).filter((c) => c.phaseId === p.id).forEach((c, i) => {
       const key = `custom:${p.id}:${i + 1}`;
       tasks.push({
-        key, after: null, days: c.durationDays,
+        key, group: '', after: null, days: c.durationDays,
         body: {
           key, name: c.name, description: null, side: c.side, weight: 1, verificationOverride: null,
           clauseIds: [], deliverable: null, custom: true,
@@ -340,7 +376,7 @@ export function planFromTemplate(args: {
     layPhase(cp.name, null, cp.durationDays, cp.tasks.map((c, i) => {
       const key = `custom-phase:${pi + 1}:${i + 1}`;
       return {
-        key, after: null, days: c.durationDays,
+        key, group: '', after: null, days: c.durationDays,
         body: {
           key, name: c.name, description: null, side: c.side, weight: 1, verificationOverride: null,
           clauseIds: [], deliverable: null, custom: true,

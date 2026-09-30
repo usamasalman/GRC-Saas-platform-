@@ -561,7 +561,7 @@ export const planFromTemplateRoute = async (req: AuthenticatedRequest, res: Resp
         const successorId = idOf.get(d.successorKey);
         if (!predecessorId || !successorId) continue;
         await tx.projectDependency.create({
-          data: { projectId: full.id, predecessorId, successorId, kind: 'FinishToStart', lagDays: 0, linkedById: actorId },
+          data: { projectId: full.id, predecessorId, successorId, kind: 'FinishToStart', lagDays: d.lagDays, linkedById: actorId },
         });
       }
       await recomputeProject(tx, full.id);
