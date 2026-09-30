@@ -46,9 +46,9 @@ const RESUME = 'Budget approved by the steering committee';
   // The guide quotes the screen's labels; each one has to be on the screen.
   const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts'));
   const section = (guide.split(/\n  'project-delivery': \{/)[1] || '').split(/\n  \},\n/)[0];
-  const screens = q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'project', 'ProjectPlan.tsx'))
-    + q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'project', 'ProjectPortfolio.tsx'))
-    + screen + host;
+  const projectDir = path.join(q.WEB_SRC, 'pages', 'grc', 'project');
+  const screens = require('fs').readdirSync(projectDir).filter((f) => f.endsWith('.tsx'))
+    .map((f) => q.read(path.join(projectDir, f))).join('\n') + host;
   const quoted = [...section.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const absent = quoted.filter((label) => !screens.includes(label));
   v.record('engagement-s1:the guide covers the lifecycle and every label it quotes is on the screen',
