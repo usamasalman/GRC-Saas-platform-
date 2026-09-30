@@ -263,6 +263,9 @@ model User {
   engagementInvitationsRevoked   EngagementInvitation[] @relation("InvitationRevoker")
   projectMembersNominated        ProjectMember[] @relation("MemberNominator")
   projectMembersDecided          ProjectMember[] @relation("MemberDecider")
+  projectHoldFirmAccessSet       ProjectHold[]   @relation("HoldFirmAccessSetter")
+  projectHoldWindowsSettled      ProjectHold[]   @relation("HoldWindowsSettler")
+  projectMemberExtensionRequests ProjectMember[] @relation("MemberExtensionRequester")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3163,6 +3166,7 @@ model Project {
   /// and a firm named on it the old way reads it as before (sprint 4).
   deliveryStyle              String?
   invitations                EngagementInvitation[]
+  shadowRefusals             EngagementShadowRefusal[]
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -3196,6 +3200,31 @@ model Project {
   @@index([tenantId, status])
   @@index([providerTenantId, status])
   @@index([tenantId, targetEndDate])
+}
+
+/// What the engagement guard would have refused, in shadow (sprint 5).
+///
+/// Diagnostics, not a record of what happened: the audit trail holds that. One
+/// row per engagement, rule and route, counted, with IDs only and never any
+/// request content, kept 90 days after it was last seen. It is what decides
+/// whether an organisation's engagements can go live under enforcement.
+model EngagementShadowRefusal {
+  id             String   @id @default(uuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientTenantId String
+  firmTenantId   String?
+  /// The rule that would have refused, e.g. member-required.
+  rule           String
+  /// Method and path with every id replaced: "GET /api/projects/:id/plan".
+  route          String
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+  count          Int      @default(1)
+
+  @@unique([projectId, rule, route])
+  @@index([clientTenantId, lastSeenAt])
+  @@index([lastSeenAt])
 }
 
 /// A consulting firm and an organisation it works for (sprint 4).
@@ -3363,6 +3392,20 @@ model ProjectHold {
   endedById     String?
   endedBy       User?     @relation("ProjectHoldEnder", fields: [endedById], references: [id], onDelete: SetNull)
 
+  /// View | None: what a delivery firm may do while it is held, asked when the
+  /// hold starts (sprint 5). View is read-only. Null when no firm delivered it.
+  firmAccess         String?
+  firmAccessSetById  String?
+  firmAccessSetBy    User?     @relation("HoldFirmAccessSetter", fields: [firmAccessSetById], references: [id], onDelete: SetNull)
+  firmAccessSetAt    DateTime?
+  /// Why it was changed during the hold, when it was.
+  firmAccessNote     String?
+  /// When the resume proposal (the hold's days added to access windows) was
+  /// confirmed or passed over, so it is offered once.
+  windowsSettledAt   DateTime?
+  windowsSettledById String?
+  windowsSettledBy   User?     @relation("HoldWindowsSettler", fields: [windowsSettledById], references: [id], onDelete: SetNull)
+
   @@index([projectId, startedAt])
 }
 
@@ -3402,6 +3445,16 @@ model ProjectMember {
   /// The person's own access window, inside the engagement's (sprint 5 enforces it).
   accessFrom     DateTime?
   accessTo       DateTime?
+  /// The notices for the current access end: seven days before, and when it
+  /// ends. Cleared when the end date moves, so each is sent once per date.
+  accessWarnedAt      DateTime?
+  accessEndNoticeAt   DateTime?
+  /// The firm asking for a later end date; the organisation grants or declines.
+  extensionRequestedTo   DateTime?
+  extensionRequestNote   String?
+  extensionRequestedAt   DateTime?
+  extensionRequestedById String?
+  extensionRequestedBy   User?     @relation("MemberExtensionRequester", fields: [extensionRequestedById], references: [id], onDelete: SetNull)
 
   /// Removed members are deactivated rather than deleted, so historical
   /// assignment stays answerable after someone leaves the project.
