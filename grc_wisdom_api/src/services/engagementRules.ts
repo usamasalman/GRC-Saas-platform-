@@ -87,6 +87,8 @@ export const isEngagementRole = (v: unknown): v is EngagementRole => (ENGAGEMENT
 // ─── Access windows (sprint 5) ──────────────────────────────────────────────
 
 export const DAY_MS = 86_400_000;
+export const HOLD_FIRM_ACCESS = ['View', 'None'] as const;
+export type HoldFirmAccess = (typeof HOLD_FIRM_ACCESS)[number];
 
 /**
  * Whether a person's access has not ended. The end date counts in full:

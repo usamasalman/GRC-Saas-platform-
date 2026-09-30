@@ -34,6 +34,12 @@ class Conflict extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 
+/** The firm is read-only while an engagement is held (sprint 5). */
+const HELD_READ_ONLY = {
+  status: 403, code: 'ON_HOLD_READ_ONLY',
+  message: 'This engagement is on hold. The firm can view it and change nothing until it resumes.',
+};
+
 const send = (res: Response, r: { status: number; code?: string; message: string }) => {
   res.status(r.status).json({ status: 'error', ...(r.code ? { code: r.code } : {}), message: r.message });
 };
@@ -472,6 +478,7 @@ export const nominatePerson = async (req: AuthenticatedRequest, res: Response): 
     if (refusal) { send(res, refusal); return; }
     const mine = await membershipOf(e.id, req.user!.id);
     if (!live(mine) || !roleMay(mine!.engagementRole, 'nominate')) { send(res, roleRefusal(live(mine) ? mine!.engagementRole : null, 'nominate')); return; }
+    if (e.status === 'OnHold') { send(res, HELD_READ_ONLY); return; }
 
     const b = req.body || {};
     const role = str(b.engagementRole || 'Consultant');
@@ -643,6 +650,7 @@ export const removePerson = async (req: AuthenticatedRequest, res: Response): Pr
     if (isFirm) {
       const mine = await membershipOf(e.id, req.user!.id);
       if (!live(mine) || !roleMay(mine!.engagementRole, 'nominate')) { send(res, roleRefusal(live(mine) ? mine!.engagementRole : null, 'nominate')); return; }
+      if (e.status === 'OnHold') { send(res, HELD_READ_ONLY); return; }
     }
     const reason = str(req.body?.reason).trim();
     if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }

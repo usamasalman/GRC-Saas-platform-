@@ -16,10 +16,17 @@ export type HoldEnd = { interval: 'closed' | 'unrecorded'; daysOnHold: number | 
 
 export async function openHold(
   tx: Prisma.TransactionClient,
-  args: { projectId: string; reason: string; actorId: string; at: Date },
+  args: { projectId: string; reason: string; actorId: string; at: Date; firmAccess?: string | null },
 ): Promise<void> {
   await tx.projectHold.create({
-    data: { projectId: args.projectId, reason: args.reason, startedById: args.actorId, startedAt: args.at },
+    data: {
+      projectId: args.projectId, reason: args.reason, startedById: args.actorId, startedAt: args.at,
+      // What the delivery firm may do while held, chosen as the hold starts
+      // and recorded with who chose it (sprint 5). Null when no firm.
+      ...(args.firmAccess
+        ? { firmAccess: args.firmAccess, firmAccessSetById: args.actorId, firmAccessSetAt: args.at }
+        : {}),
+    },
   });
 }
 

@@ -11,6 +11,7 @@ import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
 import { openHold, endHold } from '../services/projectHolds';
+import { HOLD_FIRM_ACCESS } from '../services/engagementRules';
 import { planStandardBinding } from '../services/projectStandards';
 import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { planProviderNomination, DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
@@ -241,6 +242,8 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
           select: {
             id: true, startedAt: true, endedAt: true, reason: true, resumeReason: true,
             startedBy: { select: { name: true } }, endedBy: { select: { name: true } },
+            firmAccess: true, firmAccessSetAt: true, firmAccessNote: true, firmAccessSetBy: { select: { name: true } },
+            windowsSettledAt: true,
           },
         },
         members: {
@@ -725,6 +728,9 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     // still belong to nobody's delay, and nothing recorded them before.
     let holdMove: 'hold' | 'resume' | null = null;
     let holdReason = '';
+    // What the delivery firm may do while held (sprint 5): View (read-only),
+    // the default, or None. Asked only when a firm delivers the engagement.
+    let holdFirmAccess: string | null = null;
     let activationCounts: { phaseCount: number; taskCount: number } = { phaseCount: 0, taskCount: 0 };
     if (b.status !== undefined) {
       if (!STATUSES.includes(b.status)) {
@@ -750,6 +756,13 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
 
       if (existing.status === 'Active' && b.status === 'OnHold') holdMove = 'hold';
       if (existing.status === 'OnHold' && b.status === 'Active') holdMove = 'resume';
+      if (holdMove === 'hold' && existing.providerTenantId) {
+        holdFirmAccess = b.holdFirmAccess === undefined || b.holdFirmAccess === null ? 'View' : str(b.holdFirmAccess);
+        if (!(HOLD_FIRM_ACCESS as readonly string[]).includes(holdFirmAccess)) {
+          res.status(400).json({ status: 'error', message: 'holdFirmAccess must be View or None.' });
+          return;
+        }
+      }
       if (holdMove) {
         holdReason = b.reason ? str(b.reason).trim() : '';
         if (!noteIsEnough(holdReason)) {
@@ -816,7 +829,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         let interval: 'opened' | 'closed' | 'unrecorded' = 'opened';
         let daysOnHold: number | null = null;
         if (holdMove === 'hold') {
-          await openHold(tx, { projectId: id, reason: holdReason, actorId, at: now });
+          await openHold(tx, { projectId: id, reason: holdReason, actorId, at: now, firmAccess: holdFirmAccess });
         } else {
           ({ interval, daysOnHold } = await endHold(tx, { projectId: id, actorId, at: now, resumeReason: holdReason }));
         }
@@ -824,14 +837,14 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         const action = holdMove === 'hold' ? 'PROJECT_PUT_ON_HOLD' : 'PROJECT_RESUMED';
         await writeAudit(tx, {
           tenantId: existing.tenantId, actorId, action, subjectType: 'Project', subjectId: id,
-          payload: { ref: existing.ref, reason: holdReason, interval, daysOnHold },
+          payload: { ref: existing.ref, reason: holdReason, interval, daysOnHold, ...(holdFirmAccess ? { firmAccess: holdFirmAccess } : {}) },
         });
         // The delivery firm's trail records that its engagement stopped or
         // started again, and why: a firm told nothing cannot plan around it.
         if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
           await writeAudit(tx, {
             tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
-            payload: { ref: existing.ref, clientTenantId: existing.tenantId, reason: holdReason, daysOnHold },
+            payload: { ref: existing.ref, clientTenantId: existing.tenantId, reason: holdReason, daysOnHold, ...(holdFirmAccess ? { firmAccess: holdFirmAccess } : {}) },
           });
         }
       } else {
@@ -1177,6 +1190,93 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
   } catch (error: any) {
     console.error('[Project Rebaseline Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to rebaseline the project' });
+  }
+};
+
+// ─── What the firm may do while held ────────────────────────────────────────
+
+/**
+ * PATCH /api/projects/:id/hold-access — "Firm can view" (read-only) or "Firm
+ * has no access" for the rest of the current hold (sprint 5).
+ *
+ * Asked when the hold starts; changed during it only by the organisation's
+ * managers, with a reason, on both organisations' trails. Resuming gives
+ * everyone back exactly the access they had before, because nothing about
+ * their access is stored on them: the choice lives on the hold.
+ */
+export const changeHoldAccess = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!);
+    const id = str(req.params.id);
+    const existing = await prisma.project.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true, status: true },
+    });
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
+      res.status(404).json({ status: 'error', message: 'Project not found' });
+      return;
+    }
+    if (!canWriteProject(scope, existing.tenantId)) {
+      res.status(403).json({
+        status: 'error', code: 'CLIENT_DECIDES',
+        message: 'Only the organisation\'s managers decide what the firm may do while it is on hold.',
+      });
+      return;
+    }
+    if (existing.status !== 'OnHold' || !existing.providerTenantId) {
+      res.status(409).json({
+        status: 'error', code: 'NOT_HELD_WITH_FIRM',
+        message: 'This applies while an engagement a firm delivers is on hold.',
+      });
+      return;
+    }
+    const firmAccess = str(req.body?.firmAccess);
+    if (!(HOLD_FIRM_ACCESS as readonly string[]).includes(firmAccess)) {
+      res.status(400).json({ status: 'error', message: 'firmAccess must be View or None.' });
+      return;
+    }
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) {
+      res.status(400).json({
+        status: 'error', code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.`,
+      });
+      return;
+    }
+
+    const actorId = str(req.user!.id);
+    const changed = await prisma.$transaction(async (tx) => {
+      const hold = await tx.projectHold.findFirst({
+        where: { projectId: id, endedAt: null }, orderBy: { startedAt: 'desc' }, select: { id: true, firmAccess: true },
+      });
+      if (!hold) throw new StatusChanged();
+      if (hold.firmAccess === firmAccess) return false;
+      const moved = await tx.projectHold.updateMany({
+        where: { id: hold.id, endedAt: null, firmAccess: hold.firmAccess },
+        data: { firmAccess, firmAccessSetById: actorId, firmAccessSetAt: new Date(), firmAccessNote: reason },
+      });
+      if (moved.count === 0) throw new StatusChanged();
+      for (const tenantId of [existing.tenantId, existing.providerTenantId!]) {
+        await writeAudit(tx, {
+          tenantId, actorId, action: 'PROJECT_HOLD_FIRM_ACCESS_CHANGED', subjectType: 'Project', subjectId: id,
+          payload: {
+            ref: existing.ref, from: hold.firmAccess, to: firmAccess, reason,
+            ...(tenantId !== existing.tenantId ? { clientTenantId: existing.tenantId } : {}),
+          },
+        });
+      }
+      return true;
+    });
+    res.json({ status: 'success', firmAccess, changed });
+  } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error', code: 'STATUS_CHANGED',
+        message: 'The engagement resumed or changed while you were deciding. Reload it.',
+      });
+      return;
+    }
+    console.error('[Hold Access Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to change the firm\'s access' });
   }
 };
 

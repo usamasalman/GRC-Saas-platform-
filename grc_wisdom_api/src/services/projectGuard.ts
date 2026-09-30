@@ -56,10 +56,17 @@ export interface ProjectGuard {
 export async function canReadEngagement(
   scope: TenantScope,
   userId: string,
-  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null },
+  project: {
+    id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null; status: string;
+  },
 ): Promise<boolean> {
   if (scope.tenantIds.includes(project.tenantId)) return true;
   if (!canReadProject(scope, project)) return false;
+
+  // The firm's side from here. While the engagement is held with "Firm has
+  // no access", the firm reads nothing; with "Firm can view" it reads, and
+  // changes nothing (firmRefusal). Sprint 5.
+  if (project.status === 'OnHold' && await firmShutOut(project.id)) return false;
 
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId } },
@@ -81,6 +88,14 @@ export async function canReadEngagement(
   // An approved member whose access has not ended, checked on every
   // request: an end date the organisation set is enforced, not shadowed.
   return approved && accessOpen(m!);
+}
+
+/** Whether the current hold keeps the delivery firm out entirely. */
+async function firmShutOut(projectId: string): Promise<boolean> {
+  const hold = await prisma.projectHold.findFirst({
+    where: { projectId, endedAt: null }, orderBy: { startedAt: 'desc' }, select: { firmAccess: true },
+  });
+  return hold?.firmAccess === 'None';
 }
 
 export async function guardProject(
@@ -173,13 +188,23 @@ export function actsForFirm(
  * on the organisation's side or on an engagement named the old way.
  */
 export async function firmRefusal(
-  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null },
+  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null; status: string },
   user: { id: string; tenantId: string },
   action: EngagementAction,
 ): Promise<{ status: number; code: string; message: string } | null> {
   const firmSide = Boolean(project.providerTenantId && user.tenantId === project.providerTenantId
     && user.tenantId !== project.tenantId);
   if (!firmSide) return null;
+
+  // Held: the firm reads (where the organisation chose "Firm can view") and
+  // changes nothing, whatever its role, on any engagement it delivers (S5).
+  if (project.status === 'OnHold' && action !== 'read') {
+    return {
+      status: 403,
+      code: 'ON_HOLD_READ_ONLY',
+      message: 'This engagement is on hold. The firm can view it and change nothing until it resumes.',
+    };
+  }
 
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId: user.id } },

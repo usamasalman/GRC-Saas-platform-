@@ -9,6 +9,7 @@ import {
   updateProject,
   activateProject,
   closeProject,
+  changeHoldAccess,
   rebaselineProject,
 } from '../controllers/projectController';
 import {
@@ -116,6 +117,8 @@ router.post('/:id/activate', requireCapability(CAP.MANAGE_PROJECT), activateProj
 // Lay a tailored plan template out as the draft plan; ?preview=1 only computes it (S3).
 router.post('/:id/plan-from-template', requireCapability(CAP.MANAGE_PROJECT), planFromTemplateRoute);
 router.post('/:id/close', requireCapability(CAP.MANAGE_PROJECT), closeProject);
+// What the delivery firm may do for the rest of a hold (sprint 5).
+router.patch('/:id/hold-access', requireCapability(CAP.MANAGE_PROJECT), changeHoldAccess);
 // Moving the agreed plan is a management act with a reason attached — it is the
 // only thing that can move a baseline after the engagement starts.
 router.post('/:id/rebaseline', requireCapability(CAP.MANAGE_PROJECT), rebaselineProject);

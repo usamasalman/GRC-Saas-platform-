@@ -47,6 +47,8 @@ export function projectWhere(scope: TenantScope, userId?: string, now: Date = ne
             },
           }] : []),
         ],
+        // Held with "Firm has no access": out of the firm's lists entirely.
+        NOT: { status: 'OnHold', holds: { some: { endedAt: null, firmAccess: 'None' } } },
       },
     ],
   };
