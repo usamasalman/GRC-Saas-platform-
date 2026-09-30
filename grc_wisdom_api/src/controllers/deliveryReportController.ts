@@ -4,6 +4,7 @@ import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound } from '../services/projectGuard';
+import { buildSchedule, Figures, varianceWords, causeWords } from '../services/projectVariance';
 import {
   ReportDocument, ReportSection, ReportFormat, FORMATS, MIME,
   Provenance, fileNameFor, stampOf,
@@ -140,6 +141,8 @@ async function loadEngagement(projectId: string) {
       verificationPolicy: true, startDate: true, targetEndDate: true, actualEndDate: true,
       baselineStartDate: true, baselineTargetEndDate: true, baselineVersion: true,
       baselineSetAt: true, closureNote: true, tenantId: true, providerTenantId: true,
+      firstBaselineStartDate: true, firstBaselineTargetEndDate: true,
+      holds: { select: { startedAt: true, endedAt: true } },
       owner: { select: { id: true, name: true } },
       manager: { select: { id: true, name: true } },
       sponsor: { select: { id: true, name: true } },
@@ -154,6 +157,7 @@ async function loadEngagement(projectId: string) {
         select: {
           id: true, sequence: true, name: true, objectives: true, status: true,
           startDate: true, targetEndDate: true, baselineTargetEndDate: true,
+          firstBaselineTargetEndDate: true,
           reportedProgress: true, verifiedProgress: true,
           owner: { select: { id: true, name: true } },
           tasks: {
@@ -161,7 +165,8 @@ async function loadEngagement(projectId: string) {
             select: {
               id: true, ref: true, name: true, status: true, completionPercent: true,
               weight: true, priority: true, side: true, department: true,
-              startDate: true, dueDate: true, completedAt: true,
+              startDate: true, dueDate: true, completedAt: true, actualStartDate: true,
+              baselineStartDate: true, firstBaselineStartDate: true, firstBaselineDueDate: true,
               baselineDueDate: true, verificationOverride: true, verificationRound: true,
               submittedAt: true, verifiedAt: true,
               assigneeId: true, submittedById: true, verifiedById: true,
@@ -208,6 +213,7 @@ async function loadEngagement(projectId: string) {
         orderBy: [{ raisedAt: 'asc' }],
         select: {
           id: true, ref: true, kind: true, category: true, owingSide: true,
+          taskId: true, phaseId: true,
           severity: true, title: true, description: true, impactDays: true,
           expectedClearDate: true, raisedAt: true, resolvedAt: true, resolutionNote: true,
           raisedBy: { select: { name: true } },
@@ -222,6 +228,32 @@ async function loadEngagement(projectId: string) {
 type Engagement = NonNullable<Awaited<ReturnType<typeof loadEngagement>>>;
 
 const allTasks = (e: Engagement) => e.phases.flatMap((p) => p.tasks);
+
+/**
+ * Planned, actual and variance, from the same function the Gantt tab calls, so
+ * the paper a steering committee reads carries the figure the screen shows
+ * (consulting engagement, sprint 2).
+ */
+const scheduleOf = (e: Engagement, now: Date) => buildSchedule({
+  project: e, phases: e.phases, ledger: e.impediments, holds: e.holds, edges: e.dependencies, now,
+});
+
+const finishLabel = (f: Figures) => (f.actual.forecast ? 'Forecast finish' : 'Actual finish');
+
+/** The variance table's row for one phase or task. */
+const varianceRow = (f: Figures) => ({
+  planned: day(f.planned.finish),
+  finish: day(f.actual.finish) + (f.actual.forecast && f.actual.finish ? ' (forecast)' : ''),
+  variance: varianceWords({ ...f, actual: { ...f.actual, forecast: false } }),
+  why: causeWords(f.causes) || '—',
+});
+
+const VARIANCE_COLUMNS = [
+  { header: 'Planned finish', key: 'planned', width: 13 },
+  { header: 'Actual or forecast', key: 'finish', width: 20 },
+  { header: 'Variance', key: 'variance', width: 14 },
+  { header: 'Why', key: 'why', width: 30 },
+];
 
 /**
  * The tasks, with needsVerification resolved.
@@ -540,6 +572,40 @@ function statusSections(e: Engagement, now: Date): ReportSection[] {
     },
   ];
 
+  // The Gantt's figure, and where the days went. Placed beside the days lost
+  // because the two answer one question from two ends: what the ledger says
+  // was owed, and what that did to the finish.
+  const sched = scheduleOf(e, now);
+  sections.push({
+    kind: 'fields',
+    title: 'Planned, actual and variance',
+    fields: [
+      { label: 'Planned finish (first agreed)', value: day(sched.project.planned.finish) },
+      ...(sched.project.agreedFinish && sched.project.planned.finish
+        && day(sched.project.agreedFinish) !== day(sched.project.planned.finish)
+        ? [{ label: 'Finish as re-agreed', value: day(sched.project.agreedFinish) }]
+        : []),
+      { label: finishLabel(sched.project), value: day(sched.project.actual.finish) },
+      { label: 'Variance', value: varianceWords(sched.project) },
+      { label: 'Why, in days', value: causeWords(sched.project.causes) || 'Nothing to explain' },
+      {
+        label: 'Reading these figures',
+        value: 'Measured from the plan first agreed. Days on hold are counted first and '
+          + 'are nobody\'s delay; then the days each side owed on the work that set the '
+          + 'finish; then any rebaseline; the rest is unattributed. The parts add up to '
+          + 'the variance.'
+          + (sched.project.firstPlanKnown ? '' : ' This engagement was rebaselined before '
+            + 'first agreed plans were kept, so it is measured from its current baseline.'),
+      },
+    ],
+  });
+  sections.push({
+    kind: 'table',
+    title: 'Variance by phase',
+    columns: [{ header: 'Phase', key: 'name', width: 26 }, ...VARIANCE_COLUMNS],
+    rows: e.phases.map((p, i) => ({ name: `${p.sequence}. ${p.name}`, ...varianceRow(sched.phases[i]) })),
+  });
+
   if (openImpediments.length > 0) {
     sections.push({
       kind: 'table',
@@ -662,6 +728,30 @@ function phaseSections(e: Engagement, phaseId: string, now: Date): ReportSection
       ],
     },
   ];
+
+  // The phase's line on the Gantt, and every task's, from the same schedule.
+  const sched = scheduleOf(e, now);
+  const phaseFigures = sched.phases[e.phases.indexOf(p)];
+  sections.push({
+    kind: 'fields',
+    title: 'Planned, actual and variance',
+    fields: [
+      { label: 'Planned end (first agreed)', value: day(phaseFigures.planned.finish) },
+      { label: finishLabel(phaseFigures), value: day(phaseFigures.actual.finish) },
+      { label: 'Variance', value: varianceWords(phaseFigures) },
+      { label: 'Why, in days', value: causeWords(phaseFigures.causes) || 'Nothing to explain' },
+    ],
+  });
+  sections.push({
+    kind: 'table',
+    title: 'Variance by task',
+    columns: [
+      { header: 'Ref', key: 'ref', width: 10 },
+      { header: 'Task', key: 'name', width: 24 },
+      ...VARIANCE_COLUMNS,
+    ],
+    rows: p.tasks.map((t) => ({ ref: t.ref, name: t.name, ...varianceRow(sched.tasks.get(t.id)!) })),
+  });
 
   const COLUMNS = [
     { header: 'Ref', key: 'ref', width: 10 },
