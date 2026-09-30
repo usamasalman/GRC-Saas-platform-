@@ -11,6 +11,7 @@ import NewProject from './project/NewProject';
 import ProjectTeam from './project/ProjectTeam';
 import ProjectLifecycle from './project/ProjectLifecycle';
 import ProjectGantt from './project/ProjectGantt';
+import TemplateLibrary from './project/TemplateLibrary';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -23,7 +24,7 @@ import ProjectGantt from './project/ProjectGantt';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+type TabKey = 'portfolio' | 'templates' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -32,9 +33,12 @@ const DeliveryProjects: React.FC = () => {
   const [selected, setSelected] = useState<Selected | null>(null);
   // Bumped when the lifecycle changes, so the open tab reloads and shows it.
   const [version, setVersion] = useState(0);
+  // The engagement just created from "New engagement" with a template wanted.
+  const [wizardFor, setWizardFor] = useState<string | null>(null);
 
-  const open = (project: Selected) => {
+  const open = (project: Selected, fromTemplate = false) => {
     setSelected(project);
+    setWizardFor(fromTemplate ? project.id : null);
     setTab('plan');
   };
 
@@ -56,6 +60,9 @@ const DeliveryProjects: React.FC = () => {
       <div style={{ borderBottom: '1px solid var(--line)', marginBottom: 20, display: 'flex', alignItems: 'center' }}>
         <button style={tabStyle(tab === 'portfolio')} onClick={() => setTab('portfolio')}>
           Portfolio
+        </button>
+        <button style={tabStyle(tab === 'templates')} onClick={() => setTab('templates')}>
+          Templates
         </button>
         <button
           style={{ ...tabStyle(tab === 'plan'), opacity: selected ? 1 : 0.45 }}
@@ -127,7 +134,7 @@ const DeliveryProjects: React.FC = () => {
       {/* The open engagement and its lifecycle, on a row of its own so the
           status, the hold reason and the four decisions wrap on a narrow
           screen instead of running off the tab bar. */}
-      {tab !== 'portfolio' && tab !== 'new' && selected && (
+      {tab !== 'portfolio' && tab !== 'new' && tab !== 'templates' && selected && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '-8px 0 18px' }}>
           <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
             <span style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>{selected.ref}</span> · {selected.name}
@@ -140,13 +147,14 @@ const DeliveryProjects: React.FC = () => {
       {tab === 'portfolio' && (
         <ProjectPortfolio onOpen={open} onCreate={() => setTab('new')} />
       )}
+      {tab === 'templates' && <TemplateLibrary />}
       {tab === 'new' && (
         <NewProject
-          onCreated={(p) => open(p)}
+          onCreated={(p, fromTemplate) => open(p, fromTemplate)}
           onCancel={() => setTab('portfolio')}
         />
       )}
-      {tab === 'plan' && selected && <ProjectPlan key={`${selected.id}-${version}`} projectId={selected.id} onActivated={() => setVersion((v) => v + 1)} />}
+      {tab === 'plan' && selected && <ProjectPlan key={`${selected.id}-${version}`} projectId={selected.id} startWithWizard={wizardFor === selected.id} onActivated={() => setVersion((v) => v + 1)} />}
       {tab === 'gantt' && selected && <ProjectGantt key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'team' && selected && <ProjectTeam key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'verification' && selected && (

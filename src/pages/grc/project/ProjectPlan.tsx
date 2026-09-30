@@ -5,6 +5,7 @@ import { ReasonDialog, ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY, can } from '../../../components/Can';
 import { calendarDate } from '../../../utils/calendarDate';
 import ClauseMapDialog from '../ClauseMapDialog';
+import PlanWizard from './PlanWizard';
 import { S, pill, ghostBtn, primaryBtn } from '../../iam/iamStyles';
 
 /**
@@ -298,7 +299,12 @@ const extensionOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 };
 
-const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = ({ projectId, onActivated }) => {
+const ProjectPlan: React.FC<{
+  projectId: string;
+  onActivated?: () => void;
+  /** Open the template wizard straight away, as after "New engagement" (S3). */
+  startWithWizard?: boolean;
+}> = ({ projectId, onActivated, startWithWizard }) => {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -309,6 +315,10 @@ const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = (
   const [projectStatus, setProjectStatus] = useState<string>('Draft');
   const [activating, setActivating] = useState(false);
   const [showActivateDialog, setShowActivateDialog] = useState(false);
+  // A draft plan can start from a template; any plan can become one (S3).
+  const [wizard, setWizard] = useState(Boolean(startWithWizard));
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -826,13 +836,32 @@ const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = (
               >
                 + Phase
               </button>
+              <button
+                onClick={() => { setTemplateNotice(''); setSavingTemplate(true); }}
+                title="Keep this plan's method in your own template library, without the client's details"
+                style={ghostBtn}
+              >
+                Save as template
+              </button>
             </Can>
             <button style={ghostBtn} onClick={load}>Refresh</button>
           </span>
         </div>
       )}
 
-      {phases.length === 0 ? (
+      {templateNotice && (
+        <div style={{ ...S.card, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: 'var(--success)' }}>
+          {templateNotice}
+        </div>
+      )}
+
+      {phases.length === 0 && wizard && projectStatus === 'Draft' && mayPlan ? (
+        <PlanWizard
+          projectId={projectId}
+          onDone={() => { setWizard(false); load(); }}
+          onCancel={() => setWizard(false)}
+        />
+      ) : phases.length === 0 ? (
         <div style={{ ...S.card, padding: '44px 32px', textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
             No phases yet
@@ -853,6 +882,11 @@ const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = (
               </div>
             )}
           >
+            {projectStatus === 'Draft' && (
+              <button onClick={() => setWizard(true)} style={{ ...primaryBtn(false), marginTop: 16, marginRight: 8 }}>
+                Start from a template
+              </button>
+            )}
             <button
               onClick={openNewPhase}
               disabled={!canOffer}
@@ -1615,6 +1649,39 @@ const ProjectPlan: React.FC<{ projectId: string; onActivated?: () => void }> = (
           )}
           onConfirm={handleActivate}
           onCancel={() => setShowActivateDialog(false)}
+        />
+      )}
+
+      {savingTemplate && (
+        <FormDialog
+          title="Save this plan as a template?"
+          intro={(
+            <>
+              The phases, tasks, sides, lengths, what each waits on and the clauses each addresses go into
+              your own library as a new template. The client's people, organisation and entity names, files
+              and dates do not. This engagement is not linked to it and does not change.
+            </>
+          )}
+          submitLabel="Save as template"
+          fields={[
+            { name: 'name', label: 'Template name', type: 'text', required: true },
+            { name: 'description', label: 'What it is for', type: 'textarea' },
+          ]}
+          validate={(v) => ((v.name || '').trim().length < 3 ? 'Give the template a name of at least 3 characters.' : null)}
+          onSubmit={async (v) => {
+            try {
+              const res = await apiClient.post(`/api/plan-templates/from-project/${projectId}`, {
+                name: v.name.trim(), description: v.description?.trim() || undefined,
+              });
+              const t = res.data?.template;
+              setSavingTemplate(false);
+              setTemplateNotice(`Saved to your ${String(t?.level || '').toLowerCase()} library as "${t?.name}", version ${t?.version}.`);
+            } catch (err: any) {
+              setSavingTemplate(false);
+              setError(err?.response?.data?.message || 'Could not save the plan as a template.');
+            }
+          }}
+          onCancel={() => setSavingTemplate(false)}
         />
       )}
     </div>

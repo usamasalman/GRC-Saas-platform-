@@ -32,7 +32,8 @@ import PickManyDialog from '../../../components/PickManyDialog';
 interface Person { id: string; name: string; email: string }
 
 interface Props {
-  onCreated: (project: { id: string; ref: string; name: string }) => void;
+  /** fromTemplate: open the plan wizard on the new engagement (S3). */
+  onCreated: (project: { id: string; ref: string; name: string }, fromTemplate: boolean) => void;
   onCancel: () => void;
 }
 
@@ -145,6 +146,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
     { id: string; name: string; type: string; reason: string }[]
   >([]);
   const [providerTenantId, setProviderTenantId] = useState('');
+  const [fromTemplate, setFromTemplate] = useState(true);
 
   useEffect(() => {
     // Every provider, not the first page: this is the choice itself (QA-021).
@@ -200,7 +202,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
         verificationPolicy: form.verificationPolicy,
       });
       const p = res.data?.project;
-      if (p?.id) onCreated({ id: p.id, ref: p.ref, name: p.name });
+      if (p?.id) onCreated({ id: p.id, ref: p.ref, name: p.name }, fromTemplate);
     } catch (err: any) {
       setError(apiError(err));
     } finally {
@@ -381,7 +383,15 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
           </div>
         </div>
 
-        <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <label style={{ marginTop: 18, display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--ink)' }}>
+          <input type="checkbox" checked={fromTemplate} onChange={(e) => setFromTemplate(e.target.checked)} />
+          Start the plan from a template
+          <span style={{ color: 'var(--ink-muted)' }}>
+            — pick one, tick what applies, add your own, and see the dates before anything is created
+          </span>
+        </label>
+
+        <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
           <button style={primaryBtn(busy || people.length === 0)}
                   disabled={busy || people.length === 0} onClick={submit}>
             {busy ? 'Creating…' : 'Create engagement'}

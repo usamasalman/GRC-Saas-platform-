@@ -191,7 +191,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Stamp the baseline with "Agree plan & activate"; an empty plan is refused',
       'Put an active project on hold with "Put on hold" and restart it with "Resume", giving a reason each time',
       'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"',
-      'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab'
+      'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
+      'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"'
     ],
     howToUse: [
       {
@@ -217,6 +218,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Read the Gantt',
         instruction: 'Open the "Gantt" tab. Each task has three lines: Planned (the plan first agreed), Actual (from the day work began to the day it finished, or a Forecast while unfinished) and the variance between the two finishes. Phases and the engagement roll up the same way.',
         tip: 'Every variance says why, and the parts add up: days on hold first, then the days each side owed on the work that set the finish, then any rebaseline, then the rest as unattributed. The Engagement status and Phase delivery reports print the same figures.'
+      },
+      {
+        step: 5,
+        title: 'Start from a template',
+        instruction: 'On a new engagement\'s empty plan click "Start from a template", pick one, untick the phases and tasks that do not apply, add your own with "+ Your own task", and check the dates before you click "Create the draft plan". The "Templates" tab holds the library: the platform\'s, your organisation\'s or your firm\'s own.',
+        tip: 'A template is copied, never linked: editing it saves its next version and changes no plan already made from it. "Save as template" on a plan keeps its method and leaves out the client\'s people, names, files and dates. A firm\'s templates are private to the firm.'
       }
     ],
     proTips: [
