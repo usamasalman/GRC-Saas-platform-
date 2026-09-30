@@ -42,7 +42,7 @@ const ACTIONS: Record<Action, { label: string; title: string; message: string; f
   hold: {
     label: 'Put on hold',
     title: 'Put the project on hold?',
-    message: 'The project stops until it is resumed. The days on hold are recorded as their own cause of delay, not as either side\'s.',
+    message: 'Work stops until it is resumed: no task changes status or progress, and no evidence, verification or blocker is recorded. The plan can still be adjusted. The days on hold are recorded as their own cause of delay, not as either side\'s.',
     field: 'Why is it going on hold?',
     confirm: 'Put on hold',
   },

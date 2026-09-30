@@ -874,6 +874,13 @@ const ProjectPlan: React.FC<{
         </div>
       )}
 
+      {projectStatus === 'OnHold' && (
+        <div style={{ ...S.card, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: 'var(--warning)', borderLeft: '3px solid var(--warning)' }}>
+          This engagement is on hold. Work is paused until it resumes — task status and progress, evidence,
+          verification and blockers wait — but the plan can still be adjusted.
+        </div>
+      )}
+
       {templateNotice && (
         <div style={{ ...S.card, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: 'var(--success)' }}>
           {templateNotice}

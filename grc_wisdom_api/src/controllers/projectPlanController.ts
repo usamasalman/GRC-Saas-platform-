@@ -5,7 +5,7 @@ import { stretchToWork } from '../services/projectBaseline';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { projectWhere } from '../services/projectAccess';
@@ -676,6 +676,13 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const b = req.body || {};
     const data: any = {};
+
+    // On hold, work is paused: status and progress wait for the resume, while
+    // the task's planning fields can still be adjusted.
+    if (isHeld(project.status) && (b.status !== undefined || b.completionPercent !== undefined)) {
+      held(res);
+      return;
+    }
 
     // ── Fields anyone working the task may change ──
     if (b.completionPercent !== undefined) {

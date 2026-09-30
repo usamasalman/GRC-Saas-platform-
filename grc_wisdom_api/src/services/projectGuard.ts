@@ -85,6 +85,25 @@ export function isFrozen(status: string): boolean {
   return status === 'Closed' || status === 'Cancelled';
 }
 
+/**
+ * A held engagement's work stops: no task changes status or progress, and no
+ * evidence, verification or blocker is recorded until it resumes. Planning
+ * goes on — phases, tasks, dates, links and clauses can still be adjusted —
+ * so the restart is ready. The hold's days are nobody's delay, and work
+ * recorded inside them would blur exactly that (consulting engagement, S1).
+ */
+export function isHeld(status: string): boolean {
+  return status === 'OnHold';
+}
+
+export const held = (res: Response): void => {
+  res.status(409).json({
+    status: 'error',
+    code: 'PROJECT_ON_HOLD',
+    message: 'This engagement is on hold, so work is paused until it resumes. The plan can still be adjusted.',
+  });
+};
+
 export const frozen = (res: Response, projectStatus: string): void => {
   res.status(409).json({
     status: 'error',

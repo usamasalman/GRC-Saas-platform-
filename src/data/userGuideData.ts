@@ -205,7 +205,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Hold and resume',
-        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it; "Resume" closes the interval with its own reason and leaves the agreed baseline as it was.',
+        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it. While it lasts, work is paused (no task status or progress, evidence, verification or blocker is recorded) but the plan can still be adjusted. "Resume" closes the interval with its own reason and leaves the agreed baseline as it was.',
         tip: 'The header shows since when the project has been on hold and why.'
       },
       {

@@ -6,7 +6,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
 import { hasCapability, CAP } from '../services/capabilityEngine';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import {
   requiresVerification, checkTaskTransition, checkSeparationOfDuties,
@@ -175,6 +175,7 @@ export const submitTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, canWrite, side, needsVerification } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     const isAssignee = task.assigneeId === userId;
@@ -260,6 +261,7 @@ export const verifyTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, side } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     if (task.status !== 'SubmittedForVerification') {
       res.status(409).json({
@@ -380,6 +382,7 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response): Prom
     const { task, project, canWrite, side } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     const note = req.body?.note ? str(req.body.note).trim() : '';

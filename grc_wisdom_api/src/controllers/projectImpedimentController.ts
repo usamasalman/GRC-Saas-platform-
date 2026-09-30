@@ -5,7 +5,7 @@ import { stretchToWork } from '../services/projectBaseline';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { checkTaskTransition } from '../services/projectLifecycle';
 import {
@@ -77,6 +77,7 @@ export const raiseImpediment = async (req: AuthenticatedRequest, res: Response):
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const b = req.body || {};
     const kind = b.kind ? str(b.kind) : 'Blocker';
@@ -247,6 +248,7 @@ export const blockTask = async (req: AuthenticatedRequest, res: Response): Promi
     const { project, canWrite, side } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     if (!canWrite && task.assigneeId !== userId && side !== 'Provider') { readOnly(res); return; }
@@ -367,6 +369,7 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
     if (!project) { notFound(res); return; }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const refusal = checkResolvable(imp);
     if (refusal) {

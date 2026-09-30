@@ -113,6 +113,14 @@ const RESUME = 'Budget approved by the steering committee';
       && whileHeld[0].reason === HOLD && Boolean(whileHeld[0].startedBy?.name),
     `HTTP ${onHold.status}/${again.status}, ${whileHeld.length} interval(s)`);
 
+  // Work stops while it is held; planning does not.
+  const work = await as('PATCH', `/api/projects/tasks/${taskId}`, { status: 'InProgress' });
+  const blocked = await as('POST', `/api/projects/tasks/${taskId}/block`, { title: 'Waiting on access', owingSide: 'Client', category: 'Other' });
+  const replanned = await as('PATCH', `/api/projects/tasks/${taskId}`, { name: 'First task, renamed on hold' });
+  v.record('engagement-s1:while on hold work is paused, and the plan can still be adjusted',
+    work.status === 409 && work.json?.code === 'PROJECT_ON_HOLD' && blocked.status === 409 && replanned.status === 200,
+    `status change HTTP ${work.status} ${work.json?.code || ''}, block HTTP ${blocked.status}, rename HTTP ${replanned.status}`);
+
   const shortResume = await as('PATCH', `/api/projects/${projectId}`, { status: 'Active', reason: 'ok' });
   const resumed = await as('PATCH', `/api/projects/${projectId}`, { status: 'Active', reason: RESUME });
   const after = await holds(projectId);

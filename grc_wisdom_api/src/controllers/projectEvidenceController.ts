@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { isComplete } from '../services/projectLifecycle';
 import {
@@ -87,6 +87,7 @@ export const attachEvidence = async (req: AuthenticatedRequest, res: Response): 
     const { task, project, canWrite, side } = loaded;
 
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     const isAssignee = task.assigneeId === userId;
@@ -305,6 +306,7 @@ export const withdrawEvidence = async (req: AuthenticatedRequest, res: Response)
     );
     if (!project) { notFound(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     if (!canWrite && evidence.uploadedById !== userId && side !== 'Provider') {
