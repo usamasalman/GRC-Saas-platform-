@@ -191,6 +191,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Stamp the baseline with "Agree plan & activate"; an empty plan is refused',
       'Put an active project on hold with "Put on hold" and restart it with "Resume", giving a reason each time',
       'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"',
+      'Move an agreed date later with "Move date", naming who owes the slip and why; the phase and the engagement end no earlier than their work',
       'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
       'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"'
     ],

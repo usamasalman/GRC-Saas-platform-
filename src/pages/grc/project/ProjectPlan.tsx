@@ -738,7 +738,29 @@ const ProjectPlan: React.FC<{
     | { kind: 'block'; task: Task }
     | { kind: 'sendBack'; task: Task }
     | { kind: 'reopen'; task: Task }
+    | { kind: 'move'; task: Task }
   >(null);
+
+  /**
+   * Moving an agreed date later, with who owes the slip and why. The ordinary
+   * edit refuses that (USE_RESCHEDULE_ENDPOINT) because a plan whose dates move
+   * without a reason is never late; this is the route that records one.
+   */
+  const moveTask = async (task: Task, v: Record<string, string>) => {
+    setDialog(null);
+    setBusyTask(task.id);
+    setError('');
+    try {
+      await apiClient.post(`/api/projects/tasks/${task.id}/reschedule`, {
+        dueDate: v.dueDate, owingSide: v.owingSide, category: v.category, reason: v.reason.trim(),
+      });
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setBusyTask(null);
+    }
+  };
 
   const blockTask = async (task: Task, title: string, owingSide: string) => {
     setDialog(null);
@@ -1138,6 +1160,18 @@ const ProjectPlan: React.FC<{
                                     +{t.slippage.slipDays}d vs plan
                                   </div>
                                 )}
+                                {t.slippage?.baselined && !['Done', 'Verified'].includes(t.status) && (
+                                  <Can do={MAY.MANAGE_PROJECT}>
+                                    <button
+                                      style={{ ...actionBtn('var(--ink-muted)', busy), marginTop: 4, marginRight: 0 }}
+                                      disabled={busy}
+                                      title="Move the agreed date later, saying who owes the slip and why"
+                                      onClick={() => setDialog({ kind: 'move', task: t })}
+                                    >
+                                      Move date
+                                    </button>
+                                  </Can>
+                                )}
                               </td>
 
                               <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 12.5 }}>
@@ -1257,6 +1291,48 @@ const ProjectPlan: React.FC<{
             </div>
           );
         })
+      )}
+
+      {dialog?.kind === 'move' && (
+        <FormDialog
+          title={`Move ${dialog.task.ref} later?`}
+          intro={(
+            <>
+              <div>{dialog.task.name} — due {fmtDate(dialog.task.dueDate)}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                The agreed date stays as it was; the days this moves past it are recorded as a delay
+                owed by the side you name, and show on the Delays tab and the Gantt.
+              </div>
+            </>
+          )}
+          submitLabel="Move date"
+          fields={[
+            { name: 'dueDate', label: 'New due date', type: 'date', required: true },
+            {
+              name: 'owingSide', label: 'Who owes the slip', type: 'select',
+              options: ['Client', 'Provider', 'ThirdParty'], optionLabels: SIDE_LABEL,
+            },
+            {
+              name: 'category', label: 'Why', type: 'select',
+              options: ['ClientDependency', 'ProviderCapacity', 'ThirdParty', 'Regulatory', 'ScopeChange', 'Technical', 'Resourcing', 'Other'],
+              optionLabels: {
+                ClientDependency: 'Waiting on the client', ProviderCapacity: 'Delivery firm capacity',
+                ThirdParty: 'A third party', Regulatory: 'Regulatory', ScopeChange: 'Scope change',
+                Technical: 'Technical', Resourcing: 'Resourcing', Other: 'Other',
+              },
+            },
+            { name: 'reason', label: 'What happened', type: 'textarea', required: true },
+          ]}
+          validate={(v) => {
+            if (!v.dueDate) return 'Choose the new due date.';
+            if (dialog.task.dueDate && v.dueDate <= dialog.task.dueDate.slice(0, 10)) {
+              return 'Moving a date earlier needs no reason; edit the task instead.';
+            }
+            return v.reason.trim().length < 10 ? 'Say what happened, in at least 10 characters.' : null;
+          }}
+          onSubmit={(v) => moveTask(dialog.task, v)}
+          onCancel={() => setDialog(null)}
+        />
       )}
 
       {dialog?.kind === 'block' && (

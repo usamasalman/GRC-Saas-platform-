@@ -93,6 +93,12 @@ const causes = (c) => CAUSES.filter((k) => c[k] > 0).map((k) => `${k} ${c[k]}`).
     /apiClient\.get\(`\/api\/projects\/\$\{projectId\}\/gantt`\)/.test(screen) && /<ProjectGantt\b/.test(host),
     'ProjectGantt must call GET /api/projects/:id/gantt and be mounted in DeliveryProjects');
 
+  // The recorded slips the Gantt attributes are made on a screen too.
+  const plan = q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'project', 'ProjectPlan.tsx'));
+  v.record('engagement-s2:moving a date later with a reason has a caller on a screen',
+    /apiClient\.post\(`\/api\/projects\/tasks\/\$\{task\.id\}\/reschedule`/.test(plan) && /Move date/.test(plan),
+    'ProjectPlan must offer "Move date" over POST /api/projects/tasks/:id/reschedule');
+
   const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts'));
   const section = (guide.split(/\n  'project-delivery': \{/)[1] || '').split(/\n  \},\n/)[0];
   const quoted = [...section.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
