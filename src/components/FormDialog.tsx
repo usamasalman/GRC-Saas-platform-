@@ -24,7 +24,9 @@ import { S, primaryBtn, ghostBtn } from '../pages/iam/iamStyles';
 
 export type Field =
   | { name: string; label: string; type: 'text' | 'textarea' | 'number' | 'date'; required?: boolean; placeholder?: string; help?: React.ReactNode; initial?: string }
-  | { name: string; label: string; type: 'select'; options: readonly string[]; required?: boolean; help?: React.ReactNode; initial?: string };
+  | { name: string; label: string; type: 'select'; options: readonly string[]; required?: boolean; help?: React.ReactNode; initial?: string;
+      /** What each option reads as, where the stored value is not how a person says it. */
+      optionLabels?: Readonly<Record<string, string>> };
 
 export interface FormDialogProps {
   title: string;
@@ -132,7 +134,7 @@ const FormDialog: React.FC<FormDialogProps> = ({
                 autoFocus={i === 0}
                 onChange={(e) => set(f.name, e.target.value)}
               >
-                {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                {f.options.map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
               </select>
             ) : (
               <input

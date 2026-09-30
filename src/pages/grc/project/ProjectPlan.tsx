@@ -299,6 +299,9 @@ const extensionOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 };
 
+/** Who owes a blocker or a slip, as a person says it. */
+const SIDE_LABEL: Record<string, string> = { Client: 'Client', Provider: 'Provider', ThirdParty: 'Third party' };
+
 const ProjectPlan: React.FC<{
   projectId: string;
   onActivated?: () => void;
@@ -1191,7 +1194,7 @@ const ProjectPlan: React.FC<{
                                 {t.status === 'Blocked' ? (
                                   <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 3 }}>
                                     {t.impediments?.[0]
-                                      ? `${t.impediments[0].title} · ${t.impediments[0].owingSide}`
+                                      ? `${t.impediments[0].title} · ${SIDE_LABEL[t.impediments[0].owingSide] ?? t.impediments[0].owingSide}`
                                       : 'Blocked'}
                                   </div>
                                 ) : ['InProgress', 'NotStarted', 'Rejected'].includes(t.status) && (
@@ -1286,6 +1289,7 @@ const ProjectPlan: React.FC<{
               // Typed free-hand before and validated by the server, so "client"
               // and "3rd party" both came back as a 400.
               options: ['Client', 'Provider', 'ThirdParty'],
+              optionLabels: SIDE_LABEL,
             },
           ]}
           validate={(v) => (v.title.trim().length < 3 ? 'Say what is blocking it.' : null)}
