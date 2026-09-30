@@ -61,6 +61,7 @@ import {
   getVerificationQueue,
   getTaskVerifications,
 } from '../controllers/projectVerificationController';
+import { planFromTemplateRoute } from '../controllers/planTemplateController';
 import {
   listMembers, addMember, updateMember, removeMember, getCommitments,
 } from '../controllers/projectMemberController';
@@ -112,6 +113,8 @@ router.get('/:id', getProject);
 router.post('/', requireCapability(CAP.MANAGE_PROJECT), createProject);
 router.patch('/:id', requireCapability(CAP.MANAGE_PROJECT), updateProject);
 router.post('/:id/activate', requireCapability(CAP.MANAGE_PROJECT), activateProject);
+// Lay a tailored plan template out as the draft plan; ?preview=1 only computes it (S3).
+router.post('/:id/plan-from-template', requireCapability(CAP.MANAGE_PROJECT), planFromTemplateRoute);
 router.post('/:id/close', requireCapability(CAP.MANAGE_PROJECT), closeProject);
 // Moving the agreed plan is a management act with a reason attached — it is the
 // only thing that can move a baseline after the engagement starts.
