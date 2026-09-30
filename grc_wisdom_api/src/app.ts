@@ -23,6 +23,7 @@ import usageRoutes from './routes/usageRoutes';
 import systemRoutes from './routes/systemRoutes';
 import projectRoutes from './routes/projectRoutes';
 import planTemplateRoutes from './routes/planTemplateRoutes';
+import engagementRoutes from './routes/engagementRoutes';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { requireCapability, CAP } from './services/capabilityEngine';
 import { SodViolation } from './services/sodEngine';
@@ -271,6 +272,7 @@ app.use('/api/system', systemRoutes);
 // Delivery projects (slice 1: the engagement itself)
 app.use('/api/projects', projectRoutes);
 app.use('/api/plan-templates', planTemplateRoutes);
+app.use('/api/engagements', engagementRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 //

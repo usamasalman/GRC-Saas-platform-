@@ -101,6 +101,11 @@ model Tenant {
   projectsDelivered Project[] @relation("ProjectProvider")
   /// Plan templates this firm or organisation keeps in its own library.
   planTemplates     PlanTemplate[]
+  /// Consulting relationships: as the organisation served, and as the firm.
+  relationshipsAsClient  ProviderRelationship[] @relation("RelationshipClient")
+  relationshipsAsFirm    ProviderRelationship[] @relation("RelationshipFirm")
+  invitationsSent        EngagementInvitation[] @relation("InvitationClient")
+  invitationsReceived    EngagementInvitation[] @relation("InvitationFirm")
 }
 
 model User {
@@ -253,6 +258,11 @@ model User {
   projectHoldsStarted ProjectHold[] @relation("ProjectHoldStarter")
   projectHoldsEnded   ProjectHold[] @relation("ProjectHoldEnder")
   planTemplatesAuthored PlanTemplate[] @relation("PlanTemplateAuthor")
+  engagementInvitationsSent      EngagementInvitation[] @relation("InvitationSender")
+  engagementInvitationsAnswered  EngagementInvitation[] @relation("InvitationResponder")
+  engagementInvitationsRevoked   EngagementInvitation[] @relation("InvitationRevoker")
+  projectMembersNominated        ProjectMember[] @relation("MemberNominator")
+  projectMembersDecided          ProjectMember[] @relation("MemberDecider")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3148,6 +3158,11 @@ model Project {
   /// copy, never a link, so changing the template changes nothing here.
   planTemplateId             String?
   planTemplate               PlanTemplate? @relation(fields: [planTemplateId], references: [id], onDelete: SetNull)
+  /// ClientLed | ConsultantLed. Set when a consulting firm is invited, and
+  /// changed only by the organisation. Null: not a consulting engagement,
+  /// and a firm named on it the old way reads it as before (sprint 4).
+  deliveryStyle              String?
+  invitations                EngagementInvitation[]
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -3181,6 +3196,64 @@ model Project {
   @@index([tenantId, status])
   @@index([providerTenantId, status])
   @@index([tenantId, targetEndDate])
+}
+
+/// A consulting firm and an organisation it works for (sprint 4).
+///
+/// One per pair, made when the firm first accepts an invitation, never when
+/// one is sent. Every engagement between them still needs its own invitation.
+/// Switching the consulting flag off never deletes one.
+model ProviderRelationship {
+  id                   String   @id @default(uuid())
+  clientTenantId       String
+  client               Tenant   @relation("RelationshipClient", fields: [clientTenantId], references: [id], onDelete: Cascade)
+  firmTenantId         String
+  firm                 Tenant   @relation("RelationshipFirm", fields: [firmTenantId], references: [id], onDelete: Cascade)
+  /// Active | Ended
+  status               String   @default("Active")
+  establishedAt        DateTime @default(now())
+  /// The invitation whose acceptance made it.
+  establishedByInvitationId String?
+
+  @@unique([clientTenantId, firmTenantId])
+  @@index([firmTenantId])
+}
+
+/// An invitation to a consulting firm to deliver one engagement (sprint 4).
+///
+/// To the firm's organisation, not to an email address. Single use: accepted,
+/// declined or revoked is final, and one past its date has expired; all stay
+/// on record, and inviting again makes a new one. Before it is accepted the
+/// firm sees only this summary, never the engagement.
+model EngagementInvitation {
+  id             String    @id @default(uuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientTenantId String
+  client         Tenant    @relation("InvitationClient", fields: [clientTenantId], references: [id], onDelete: Cascade)
+  firmTenantId   String
+  firm           Tenant    @relation("InvitationFirm", fields: [firmTenantId], references: [id], onDelete: Cascade)
+  /// ClientLed | ConsultantLed, as offered.
+  deliveryStyle  String
+  message        String?
+  /// Pending | Accepted | Declined | Revoked. A Pending one past expiresAt has expired.
+  status         String    @default("Pending")
+  invitedById    String?
+  invitedBy      User?     @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedAt      DateTime  @default(now())
+  expiresAt      DateTime
+  respondedById  String?
+  respondedBy    User?     @relation("InvitationResponder", fields: [respondedById], references: [id], onDelete: SetNull)
+  respondedAt    DateTime?
+  responseNote   String?
+  revokedById    String?
+  revokedBy      User?     @relation("InvitationRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokedAt      DateTime?
+  revokeReason   String?
+
+  @@index([projectId, status])
+  @@index([firmTenantId, status])
+  @@index([clientTenantId, status])
 }
 
 /// A plan to start an engagement from (consulting engagement, sprint 3).
@@ -3311,6 +3384,24 @@ model ProjectMember {
   raci       String  @default("R")
   /// Percentage of their time, where the organisation tracks it.
   allocation Int?
+
+  /// The firm's people on a consulting engagement (sprint 4). roleLabel and
+  /// raci stay the job title and the RACI; engagementRole is what they may
+  /// do: Lead | Consultant | Reviewer. Null for the organisation's own people.
+  engagementRole String?
+  /// Nominated | Approved | Rejected | Removed. Until the organisation
+  /// approves a nominee, the nominee has no access.
+  memberStatus   String?
+  nominatedById  String?
+  nominatedBy    User?     @relation("MemberNominator", fields: [nominatedById], references: [id], onDelete: SetNull)
+  nominatedAt    DateTime?
+  decidedById    String?
+  decidedBy      User?     @relation("MemberDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt      DateTime?
+  decisionNote   String?
+  /// The person's own access window, inside the engagement's (sprint 5 enforces it).
+  accessFrom     DateTime?
+  accessTo       DateTime?
 
   /// Removed members are deactivated rather than deleted, so historical
   /// assignment stays answerable after someone leaves the project.

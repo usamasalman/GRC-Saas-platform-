@@ -14,6 +14,7 @@ import { planStandardBinding } from '../services/projectStandards';
 import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { planProviderNomination, DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
 import { notify } from '../services/notificationService';
+import { CONSULTING_FLAG, featureStates } from '../services/featureFlags';
 
 /**
  * Delivery projects — slice 1.
@@ -57,6 +58,25 @@ const TRANSITIONS: Record<string, readonly string[]> = {
  * services/providerEngagement and run without a database; this does the lookup
  * and hands back either a refusal to send or the value to store.
  */
+/**
+ * When the organisation and the firm both have consulting switched on, a firm
+ * joins an engagement only by accepting an invitation, which sets the same
+ * providerTenantId; naming it directly would skip the relationship and the
+ * approval of each person (sprint 4). Otherwise naming works as before.
+ */
+async function invitationRequired(clientTenantId: string, firmTenantId: string | null | undefined): Promise<boolean> {
+  if (!firmTenantId) return false;
+  const on = await featureStates(CONSULTING_FLAG, [clientTenantId, firmTenantId]);
+  return Boolean(on.get(clientTenantId) && on.get(firmTenantId));
+}
+
+const USE_INVITATION = {
+  status: 'error',
+  code: 'USE_INVITATION',
+  message: 'This organisation and this firm work through consulting engagements: invite the firm from the '
+    + 'engagement\'s Team tab. It joins when it accepts, and its people when you approve them.',
+};
+
 async function resolveProvider(
   requested: unknown,
   clientTenantId: string,
@@ -275,6 +295,31 @@ export const engageableProviders = async (
 
     // A picker: searchable by name and paged, so an organisation beyond the
     // first 200 can still be found (QA-021).
+    // Consulting (sprint 4). ?purpose=invite lists the firms that could be
+    // invited: consulting firms with the flag on. Otherwise, for an
+    // organisation running consulting, the delivery-firm dropdown lists only
+    // firms it has an accepted relationship with; a first engagement with a
+    // firm starts from an invitation.
+    const purpose = str(req.query.purpose);
+    const clientOn = (await featureStates(CONSULTING_FLAG, [clientTenantId])).get(clientTenantId);
+    if (purpose === 'invite') {
+      const flag = await prisma.featureFlag.findUnique({
+        where: { key: CONSULTING_FLAG },
+        select: { status: true, expiryDate: true, overrides: { select: { tenantId: true, enabled: true } } },
+      });
+      const globallyOn = Boolean(flag && flag.status === 'Enabled' && !(flag.expiryDate && flag.expiryDate < new Date()));
+      where.type = { in: [...DELIVERY_PARTNER_TYPES] };
+      delete where.OR;
+      where.id = globallyOn
+        ? { not: clientTenantId, notIn: (flag?.overrides || []).filter((o) => !o.enabled).map((o) => o.tenantId) }
+        : { not: clientTenantId, in: (flag?.overrides || []).filter((o) => o.enabled).map((o) => o.tenantId) };
+    } else if (clientOn) {
+      const related = await prisma.providerRelationship.findMany({
+        where: { clientTenantId, status: 'Active' }, select: { firmTenantId: true },
+      });
+      where.id = { not: clientTenantId, in: related.map((r) => r.firmTenantId) };
+    }
+
     const search = str(req.query.search || '').trim();
     if (search) where.name = { contains: search, mode: 'insensitive' };
     const page = readPage(req.query as Record<string, unknown>, 200);
@@ -453,6 +498,10 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       });
       return;
     }
+    if (await invitationRequired(tenantId, provider.providerTenantId)) {
+      res.status(409).json(USE_INVITATION);
+      return;
+    }
 
     const ref = await nextRef(tenantId);
 
@@ -613,6 +662,10 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         return;
       }
       if (providerChange.change !== 'unchanged') {
+        if (await invitationRequired(existing.tenantId, providerChange.providerTenantId)) {
+          res.status(409).json(USE_INVITATION);
+          return;
+        }
         data.providerTenantId = providerChange.providerTenantId;
       }
     }
