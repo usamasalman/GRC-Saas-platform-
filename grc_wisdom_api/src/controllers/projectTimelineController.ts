@@ -9,6 +9,7 @@ import {
   DEPENDENCY_KINDS, checkDependency, detectCycle, criticalPath,
   scheduleViolations, crossSideLinks, downstreamOf, topologicalOrder,
 } from '../services/projectDependency';
+import { buildSchedule, Figures } from '../services/projectVariance';
 
 /**
  * The timeline: what waits on what, and where a slip costs the end date.
@@ -342,5 +343,100 @@ export const getImpact = async (req: AuthenticatedRequest, res: Response): Promi
   } catch (error: any) {
     console.error('[Impact Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to compute the impact' });
+  }
+};
+
+// ─── The Gantt ──────────────────────────────────────────────────────────────
+
+const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
+const figures = (f: Figures) => ({
+  planned: { start: iso(f.planned.start), finish: iso(f.planned.finish) },
+  agreedFinish: iso(f.agreedFinish),
+  actual: { start: iso(f.actual.start), finish: iso(f.actual.finish), forecast: f.actual.forecast },
+  varianceDays: f.varianceDays,
+  causes: f.causes,
+});
+
+/**
+ * Planned, actual and variance for every task, phase and the engagement.
+ *
+ * Every figure comes from buildSchedule, which the Engagement status and
+ * Phase delivery reports call too, so the screen and the paper cannot differ
+ * (consulting engagement, sprint 2). Read-only: anyone who can read the
+ * engagement can read its Gantt, and anyone who cannot gets the same 404 as
+ * for the engagement itself.
+ */
+export const getGantt = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { project: guarded } = await guardProject(req.user!, str(req.params.id));
+    if (!guarded) { notFound(res); return; }
+
+    const TASK_SELECT = {
+      id: true, ref: true, name: true, side: true, status: true,
+      startDate: true, dueDate: true, completedAt: true, actualStartDate: true,
+      baselineStartDate: true, baselineDueDate: true,
+      firstBaselineStartDate: true, firstBaselineDueDate: true,
+    } as const;
+    const [project, edges] = await Promise.all([
+      prisma.project.findUniqueOrThrow({
+        where: { id: guarded.id },
+        select: {
+          ref: true, name: true, startDate: true, targetEndDate: true,
+          baselineStartDate: true, baselineTargetEndDate: true, baselineVersion: true,
+          firstBaselineStartDate: true, firstBaselineTargetEndDate: true,
+          phases: {
+            orderBy: [{ sequence: 'asc' }],
+            select: {
+              id: true, sequence: true, name: true, startDate: true, targetEndDate: true,
+              baselineTargetEndDate: true, firstBaselineTargetEndDate: true,
+              tasks: { orderBy: [{ sequence: 'asc' }], select: TASK_SELECT },
+            },
+          },
+          impediments: {
+            select: {
+              taskId: true, phaseId: true, kind: true, category: true, owingSide: true,
+              impactDays: true, raisedAt: true, resolvedAt: true,
+            },
+          },
+          holds: { orderBy: { startedAt: 'asc' }, select: { startedAt: true, endedAt: true } },
+        },
+      }),
+      edgesFor(guarded.id),
+    ]);
+
+    const now = new Date();
+    const s = buildSchedule({
+      project, phases: project.phases, ledger: project.impediments,
+      holds: project.holds, edges, now,
+    });
+    const onPath = new Set(s.criticalPath);
+    const refOf = new Map(project.phases.flatMap((p) => p.tasks).map((t) => [t.id, t.ref]));
+
+    res.json({
+      status: 'success',
+      today: now.toISOString(),
+      project: {
+        ref: project.ref, name: project.name, firstPlanKnown: s.project.firstPlanKnown,
+        ...figures(s.project),
+      },
+      phases: project.phases.map((p, i) => ({
+        id: p.id, sequence: p.sequence, name: p.name,
+        ...figures(s.phases[i]),
+        tasks: p.tasks.map((t) => {
+          const f = s.tasks.get(t.id)!;
+          return {
+            id: t.id, ref: t.ref, name: t.name, side: t.side, status: t.status,
+            onCriticalPath: onPath.has(t.id),
+            drivenBy: f.drivenBy.map((id) => refOf.get(id) || id),
+            ...figures(f),
+          };
+        }),
+      })),
+      dependencies: edges.map((e) => ({ predecessorId: e.predecessorId, successorId: e.successorId })),
+      holds: project.holds.map((h) => ({ startedAt: iso(h.startedAt), endedAt: iso(h.endedAt) })),
+    });
+  } catch (error: any) {
+    console.error('[Gantt Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load the Gantt' });
   }
 };

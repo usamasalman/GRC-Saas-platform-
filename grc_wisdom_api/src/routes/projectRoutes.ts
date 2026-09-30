@@ -24,6 +24,7 @@ import {
 } from '../controllers/projectPlanController';
 import {
   getTimeline,
+  getGantt,
   linkTasks,
   unlinkTasks,
   getImpact,
@@ -210,6 +211,9 @@ router.get('/:id/reports/:kind', requireCapability(CAP.REPORT), exportDeliveryRe
 // timeline does not: "if this slips, what else moves" is a question anyone
 // working the engagement should be able to answer without asking a manager.
 router.get('/:id/timeline', getTimeline);
+// Planned, actual and variance with its causes (consulting engagement, S2).
+// Read like the timeline: anyone working the engagement may see why it is late.
+router.get('/:id/gantt', getGantt);
 router.post('/:id/dependencies', requireCapability(CAP.MANAGE_PROJECT), linkTasks);
 router.delete('/dependencies/:dependencyId', requireCapability(CAP.MANAGE_PROJECT), unlinkTasks);
 router.get('/tasks/:taskId/impact', getImpact);
