@@ -5,6 +5,7 @@ import FormDialog from '../../../components/FormDialog';
 import { ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY } from '../../../components/Can';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import EngagementPanel from './EngagementPanel';
 
 /**
  * Who is on this engagement, and how much of them it has.
@@ -45,6 +46,11 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [members, setMembers] = useState<Member[]>([]);
   const [accountable, setAccountable] = useState<{ ownerId: string; managerId: string } | null>(null);
   const [hasProvider, setHasProvider] = useState(false);
+  // With consulting on, a firm is invited, never named directly (sprint 4).
+  const [consulting, setConsulting] = useState(false);
+  useEffect(() => {
+    apiClient.get('/api/engagements/feature').then((r) => setConsulting(Boolean(r.data?.enabled))).catch(() => setConsulting(false));
+  }, []);
   const [raciOptions, setRaciOptions] = useState<string[]>(['R', 'A', 'C', 'I']);
 
   const [people, setPeople] = useState<Candidate[]>([]);
@@ -251,6 +257,9 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   return (
     <div>
+      {/* The consulting firm: invitation, its people, the delivery style. */}
+      <EngagementPanel projectId={projectId} onChanged={() => { loadProvider(); load(); }} />
+
       {/* Who delivers this, above the people, because it decides which
           organisations the people below may come from. */}
       <div style={{
@@ -277,9 +286,13 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
               Who delivers this is the project manager's to set.
             </span>}
           >
-            <button style={ghostBtn} onClick={openProvider} disabled={savingProvider}>
-              {provider ? 'Change' : 'Name a delivery firm'}
-            </button>
+            {consulting ? (
+              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>A firm joins by invitation, above.</span>
+            ) : (
+              <button style={ghostBtn} onClick={openProvider} disabled={savingProvider}>
+                {provider ? 'Change' : 'Name a delivery firm'}
+              </button>
+            )}
           </Can>
         </span>
       </div>

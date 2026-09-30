@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { S, ghostBtn } from '../iam/iamStyles';
 import ProjectPortfolio from './project/ProjectPortfolio';
 import ProjectPlan from './project/ProjectPlan';
@@ -12,6 +12,8 @@ import ProjectTeam from './project/ProjectTeam';
 import ProjectLifecycle from './project/ProjectLifecycle';
 import ProjectGantt from './project/ProjectGantt';
 import TemplateLibrary from './project/TemplateLibrary';
+import InvitationsInbox from './project/InvitationsInbox';
+import apiClient from '../../api/apiClient';
 
 /**
  * The delivery workspace, laid out in the order the work happens: the portfolio
@@ -24,7 +26,7 @@ import TemplateLibrary from './project/TemplateLibrary';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'templates' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+type TabKey = 'portfolio' | 'templates' | 'invitations' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -35,6 +37,11 @@ const DeliveryProjects: React.FC = () => {
   const [version, setVersion] = useState(0);
   // The engagement just created from "New engagement" with a template wanted.
   const [wizardFor, setWizardFor] = useState<string | null>(null);
+  // Invitations appear only where consulting is switched on (sprint 4).
+  const [consulting, setConsulting] = useState(false);
+  useEffect(() => {
+    apiClient.get('/api/engagements/feature').then((r) => setConsulting(Boolean(r.data?.enabled))).catch(() => setConsulting(false));
+  }, []);
 
   const open = (project: Selected, fromTemplate = false) => {
     setSelected(project);
@@ -64,6 +71,11 @@ const DeliveryProjects: React.FC = () => {
         <button style={tabStyle(tab === 'templates')} onClick={() => setTab('templates')}>
           Templates
         </button>
+        {consulting && (
+          <button style={tabStyle(tab === 'invitations')} onClick={() => setTab('invitations')}>
+            Invitations
+          </button>
+        )}
         <button
           style={{ ...tabStyle(tab === 'plan'), opacity: selected ? 1 : 0.45 }}
           onClick={() => selected && setTab('plan')}
@@ -134,7 +146,7 @@ const DeliveryProjects: React.FC = () => {
       {/* The open engagement and its lifecycle, on a row of its own so the
           status, the hold reason and the four decisions wrap on a narrow
           screen instead of running off the tab bar. */}
-      {tab !== 'portfolio' && tab !== 'new' && tab !== 'templates' && selected && (
+      {tab !== 'portfolio' && tab !== 'new' && tab !== 'templates' && tab !== 'invitations' && selected && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '-8px 0 18px' }}>
           <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
             <span style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>{selected.ref}</span> · {selected.name}
@@ -148,6 +160,7 @@ const DeliveryProjects: React.FC = () => {
         <ProjectPortfolio onOpen={open} onCreate={() => setTab('new')} />
       )}
       {tab === 'templates' && <TemplateLibrary />}
+      {tab === 'invitations' && consulting && <InvitationsInbox />}
       {tab === 'new' && (
         <NewProject
           onCreated={(p, fromTemplate) => open(p, fromTemplate)}

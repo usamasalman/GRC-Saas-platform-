@@ -289,9 +289,12 @@ const base = {
       `${name} must offer the list rather than ask for a tenant uuid`,
     );
   }
+  // Where consulting is switched on (sprint 4) the choice travels as an
+  // invitation instead of a name; either way what was chosen is sent.
   ok(
-    /providerTenantId: providerTenantId \|\| undefined/.test(newProject),
-    'the creation form must send what was chosen',
+    /providerTenantId: consulting \? undefined : \(providerTenantId \|\| undefined\)/.test(newProject)
+      && /firmTenantId: providerTenantId/.test(newProject),
+    'the creation form must send what was chosen: named, or invited where consulting is on',
   );
   ok(
     /providerTenantId: chosen \? chosen\.id : ''/.test(team),

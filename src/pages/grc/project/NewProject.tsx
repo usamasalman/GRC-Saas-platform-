@@ -147,6 +147,17 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
   >([]);
   const [providerTenantId, setProviderTenantId] = useState('');
   const [fromTemplate, setFromTemplate] = useState(true);
+  // With consulting on, the firm is invited rather than named: the list holds
+  // only firms this organisation already has a relationship with, and the
+  // firm joins when it accepts (sprint 4).
+  const [consulting, setConsulting] = useState(false);
+  const [deliveryStyle, setDeliveryStyle] = useState('ClientLed');
+
+  useEffect(() => {
+    apiClient.get('/api/engagements/feature')
+      .then((r) => setConsulting(Boolean(r.data?.enabled)))
+      .catch(() => setConsulting(false));
+  }, []);
 
   useEffect(() => {
     // Every provider, not the first page: this is the choice itself (QA-021).
@@ -193,7 +204,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
         // Real framework rows, bound in the same transaction as the project.
         // The server refuses any the organisation has not enabled, and names it.
         standardIds: standardIds.length > 0 ? standardIds : undefined,
-        providerTenantId: providerTenantId || undefined,
+        providerTenantId: consulting ? undefined : (providerTenantId || undefined),
         startDate: form.startDate,
         targetEndDate: form.targetEndDate,
         ownerId: form.ownerId,
@@ -202,6 +213,13 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
         verificationPolicy: form.verificationPolicy,
       });
       const p = res.data?.project;
+      if (p?.id && consulting && providerTenantId) {
+        // The engagement exists either way; a refused invitation is said on
+        // the Team tab, where it can be sent again.
+        await apiClient.post('/api/engagements/invitations', {
+          projectId: p.id, firmTenantId: providerTenantId, deliveryStyle,
+        }).catch(() => undefined);
+      }
       if (p?.id) onCreated({ id: p.id, ref: p.ref, name: p.name }, fromTemplate);
     } catch (err: any) {
       setError(apiError(err));
@@ -317,13 +335,27 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
               ))}
             </select>
             <div style={help}>
-              {providerTenantId
-                ? 'That organisation will be able to read this engagement in full and record '
-                  + 'work against it. They are told they have been named, and you can remove '
-                  + 'them again at any time.'
-                : 'Leave this as it is for a programme the organisation runs itself, which is '
-                  + 'the ordinary case.'}
+              {consulting
+                ? (providerTenantId
+                  ? 'The firm is invited when you create the engagement. It sees only the invitation until it '
+                    + 'accepts, and its people only once you approve each of them on the Team tab.'
+                  : 'Listed: firms you already work with. Invite a new firm from the engagement\'s Team tab.')
+                : providerTenantId
+                  ? 'That organisation will be able to read this engagement in full and record '
+                    + 'work against it. They are told they have been named, and you can remove '
+                    + 'them again at any time.'
+                  : 'Leave this as it is for a programme the organisation runs itself, which is '
+                    + 'the ordinary case.'}
             </div>
+            {consulting && providerTenantId && (
+              <>
+                <span style={{ ...label, marginTop: 10, display: 'block' }}>Delivery style</span>
+                <select style={field} value={deliveryStyle} onChange={(e) => setDeliveryStyle(e.target.value)} disabled={busy}>
+                  <option value="ClientLed">Client-led — the consultant proposes, you decide</option>
+                  <option value="ConsultantLed">Consultant-led — the consultant drafts, you still approve</option>
+                </select>
+              </>
+            )}
           </div>
 
           <div>

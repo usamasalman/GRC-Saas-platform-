@@ -193,7 +193,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"',
       'Move an agreed date later with "Move date", naming who owes the slip and why; the phase and the engagement end no earlier than their work',
       'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
-      'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"'
+      'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"',
+      'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates'
     ],
     howToUse: [
       {
@@ -225,6 +226,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Start from a template',
         instruction: 'On a new engagement\'s empty plan click "Start from a template", pick one, untick the phases and tasks that do not apply, add your own with "+ Your own task", and check the dates before you click "Create the draft plan". The "Templates" tab holds the library: the platform\'s, your organisation\'s or your firm\'s own.',
         tip: 'A template is copied, never linked: editing it saves its next version and changes no plan already made from it. "Save as template" on a plan keeps its method and leaves out the client\'s people, names, files and dates. A firm\'s templates are private to the firm.'
+      },
+      {
+        step: 6,
+        title: 'Work with a consulting firm',
+        instruction: 'Where the platform has switched consulting on for your organisation and the firm, click "Invite a firm" on the Team tab, choose the delivery style (Client-led unless you choose otherwise) and send it. The firm answers from its "Invitations" tab: whoever clicks "Accept" becomes its Lead and adds the firm\'s people with "Nominate a person". Nobody from the firm can open the engagement until you "Approve" them, with their role and access dates.',
+        tip: 'Roles: the Lead submits deliverables for you to approve; a Consultant works assigned tasks; a Reviewer checks and changes nothing. Approving and verifying always stay with your own people. Only you can "Change delivery style", and each step is recorded on both organisations\' audit trails. An invitation lasts 14 days and is used once; expired and withdrawn ones stay on record.'
       }
     ],
     proTips: [
