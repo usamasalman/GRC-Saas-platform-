@@ -248,6 +248,8 @@ model User {
   verificationsMade ProjectVerification[] @relation("VerificationActor")
   impedimentsRaised ProjectImpediment[] @relation("ImpedimentRaiser")
   impedimentsCleared ProjectImpediment[] @relation("ImpedimentResolver")
+  projectHoldsStarted ProjectHold[] @relation("ProjectHoldStarter")
+  projectHoldsEnded   ProjectHold[] @relation("ProjectHoldEnder")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3160,11 +3162,36 @@ model Project {
   reportIssues     ReportIssue[]
   dependencies     ProjectDependency[]
   standards        ProjectStandard[]
+  holds            ProjectHold[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
   @@index([providerTenantId, status])
   @@index([tenantId, targetEndDate])
+}
+
+/// A period an engagement stood still, and why.
+///
+/// Opened when the project is put on hold and closed when it resumes, each with
+/// the reason given and who gave it. The days on hold are their own cause of
+/// delay: kept out of either side's account, and shown as such on the Gantt.
+/// At most one is open at a time, because a project on hold cannot be put on
+/// hold again; the status move and the interval are written together.
+model ProjectHold {
+  id            String    @id @default(uuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startedAt     DateTime  @default(now())
+  /// Null while the project is still on hold.
+  endedAt       DateTime?
+  reason        String
+  startedById   String?
+  startedBy     User?     @relation("ProjectHoldStarter", fields: [startedById], references: [id], onDelete: SetNull)
+  resumeReason  String?
+  endedById     String?
+  endedBy       User?     @relation("ProjectHoldEnder", fields: [endedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, startedAt])
 }
 
 /// Who is on the engagement, and on which side of it.

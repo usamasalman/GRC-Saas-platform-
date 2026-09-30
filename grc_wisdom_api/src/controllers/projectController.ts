@@ -9,6 +9,7 @@ import { schedule, derivedStatus, parseFrameworks } from '../services/projectSch
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
+import { openHold, endHold } from '../services/projectHolds';
 import { planStandardBinding } from '../services/projectStandards';
 import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { planProviderNomination, DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
@@ -33,6 +34,9 @@ const STATUSES = ['Draft', 'Active', 'OnHold', 'Closed', 'Cancelled'] as const;
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 const HEALTH = ['Green', 'Amber', 'Red'] as const;
 const TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment'] as const;
+
+/** The status read before the transaction was no longer the status inside it. */
+class StatusChanged extends Error {}
 
 /**
  * Legal status moves. Closed and Cancelled are terminal — a finished engagement
@@ -207,6 +211,15 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
         ...LIST_SELECT,
         description: true, objectives: true, closureNote: true, updatedAt: true,
         sponsor: { select: { id: true, name: true, email: true } },
+        // Every hold, newest first: the open one says why the project is
+        // stopped, and the closed ones are the days it stood still (S1).
+        holds: {
+          orderBy: { startedAt: 'desc' },
+          select: {
+            id: true, startedAt: true, endedAt: true, reason: true, resumeReason: true,
+            startedBy: { select: { name: true } }, endedBy: { select: { name: true } },
+          },
+        },
         members: {
           where: { active: true },
           select: {
@@ -651,6 +664,11 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     // Status changes go through the transition table. Closure has its own
     // endpoint because it needs a reason and stamps the completion date.
     let activationDecision: any = null;
+    // Putting a project on hold and resuming it are decisions with reasons,
+    // kept as an interval (consulting engagement, sprint 1): the days it stood
+    // still belong to nobody's delay, and nothing recorded them before.
+    let holdMove: 'hold' | 'resume' | null = null;
+    let holdReason = '';
     let activationCounts: { phaseCount: number; taskCount: number } = { phaseCount: 0, taskCount: 0 };
     if (b.status !== undefined) {
       if (!STATUSES.includes(b.status)) {
@@ -672,6 +690,22 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
           message: `A project cannot move from ${existing.status} to ${b.status}.`,
         });
         return;
+      }
+
+      if (existing.status === 'Active' && b.status === 'OnHold') holdMove = 'hold';
+      if (existing.status === 'OnHold' && b.status === 'Active') holdMove = 'resume';
+      if (holdMove) {
+        holdReason = b.reason ? str(b.reason).trim() : '';
+        if (!noteIsEnough(holdReason)) {
+          res.status(400).json({
+            status: 'error',
+            code: 'REASON_REQUIRED',
+            message: holdMove === 'hold'
+              ? `Say why the project is going on hold — at least ${MIN_NOTE} characters.`
+              : `Say why the project is resuming — at least ${MIN_NOTE} characters.`,
+          });
+          return;
+        }
       }
 
       if (b.status === 'Active' && existing.status === 'Draft') {
@@ -715,7 +749,38 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.project.update({ where: { id }, data });
+      if (holdMove) {
+        // Conditional on the status read above, so two clicks arriving together
+        // cannot open two intervals or resume a project twice.
+        const moved = await tx.project.updateMany({ where: { id, status: existing.status }, data });
+        if (moved.count === 0) throw new StatusChanged();
+
+        const actorId = str(req.user!.id);
+        const now = new Date();
+        let interval: 'opened' | 'closed' | 'unrecorded' = 'opened';
+        let daysOnHold: number | null = null;
+        if (holdMove === 'hold') {
+          await openHold(tx, { projectId: id, reason: holdReason, actorId, at: now });
+        } else {
+          ({ interval, daysOnHold } = await endHold(tx, { projectId: id, actorId, at: now, resumeReason: holdReason }));
+        }
+
+        const action = holdMove === 'hold' ? 'PROJECT_PUT_ON_HOLD' : 'PROJECT_RESUMED';
+        await writeAudit(tx, {
+          tenantId: existing.tenantId, actorId, action, subjectType: 'Project', subjectId: id,
+          payload: { ref: existing.ref, reason: holdReason, interval, daysOnHold },
+        });
+        // The delivery firm's trail records that its engagement stopped or
+        // started again, and why: a firm told nothing cannot plan around it.
+        if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+          await writeAudit(tx, {
+            tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
+            payload: { ref: existing.ref, clientTenantId: existing.tenantId, reason: holdReason, daysOnHold },
+          });
+        }
+      } else {
+        await tx.project.update({ where: { id }, data });
+      }
       await writeAudit(tx, {
         tenantId: existing.tenantId,
         actorId: str(req.user!.id),
@@ -825,6 +890,14 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
       ],
     });
   } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error',
+        code: 'STATUS_CHANGED',
+        message: 'The project status changed while you were deciding. Reload it and try again.',
+      });
+      return;
+    }
     console.error('[Project Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update project' });
   }
@@ -1021,6 +1094,21 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
           reason,
         },
       });
+      // The baseline is what the firm's delay is measured against, so the
+      // firm's trail records that it moved, and why.
+      if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+        await writeAudit(tx, {
+          tenantId: existing.providerTenantId,
+          actorId: str(req.user!.id),
+          action: 'PROJECT_REBASELINED',
+          subjectType: 'Project',
+          subjectId: id,
+          payload: {
+            ref: existing.ref, clientTenantId: existing.tenantId,
+            from: existing.baselineVersion, to: stamped.version, reason,
+          },
+        });
+      }
       return stamped;
     });
 
@@ -1081,26 +1169,55 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
     }
 
     const closed = await prisma.$transaction(async (tx) => {
-      const p = await tx.project.update({
-        where: { id },
-        data: { status: outcome, closureNote: str(closureNote).trim(), actualEndDate: new Date() },
-        select: LIST_SELECT,
+      const now = new Date();
+      const actorId = str(req.user!.id);
+      const action = outcome === 'Closed' ? 'PROJECT_CLOSED' : 'PROJECT_CANCELLED';
+      // Conditional on the status read above, now that Close is a button: two
+      // clicks arriving together close it once, and a project resumed or held
+      // in between is not closed from a state nobody saw.
+      const moved = await tx.project.updateMany({
+        where: { id, status: existing.status },
+        data: { status: outcome, closureNote: str(closureNote).trim(), actualEndDate: now },
       });
+      if (moved.count === 0) throw new StatusChanged();
+      // Cancelling a held project ends its hold, or the interval stays open
+      // and its days keep counting on a project that no longer exists.
+      const hold = existing.status === 'OnHold'
+        ? await endHold(tx, { projectId: id, actorId, at: now, resumeReason: null })
+        : null;
       await writeAudit(tx, {
         tenantId: existing.tenantId,
-        actorId: str(req.user!.id),
-        action: outcome === 'Closed' ? 'PROJECT_CLOSED' : 'PROJECT_CANCELLED',
+        actorId,
+        action,
         subjectType: 'Project',
         subjectId: id,
         // The progress at closure is the number worth keeping: a project closed
         // at 60% is a different event from one closed at 100%.
-        payload: { ref: existing.ref, progressAtClosure: existing.reportedProgress, closureNote },
+        payload: {
+          ref: existing.ref, progressAtClosure: existing.reportedProgress, closureNote,
+          ...(hold ? { daysOnHold: hold.daysOnHold } : {}),
+        },
       });
-      return p;
+      // The delivery firm's trail records that its engagement ended.
+      if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+        await writeAudit(tx, {
+          tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
+          payload: { ref: existing.ref, clientTenantId: existing.tenantId },
+        });
+      }
+      return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
     });
 
     res.json({ status: 'success', project: decorate(closed, scope) });
   } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error',
+        code: 'STATUS_CHANGED',
+        message: 'The project status changed while you were deciding. Reload it and try again.',
+      });
+      return;
+    }
     console.error('[Project Close Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to close project' });
   }
