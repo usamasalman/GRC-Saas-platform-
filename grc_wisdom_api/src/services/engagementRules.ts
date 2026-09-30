@@ -87,6 +87,7 @@ export const isEngagementRole = (v: unknown): v is EngagementRole => (ENGAGEMENT
 // ─── Access windows (sprint 5) ──────────────────────────────────────────────
 
 export const DAY_MS = 86_400_000;
+export const WARNING_DAYS = 7;
 export const HOLD_FIRM_ACCESS = ['View', 'None'] as const;
 export type HoldFirmAccess = (typeof HOLD_FIRM_ACCESS)[number];
 
@@ -101,3 +102,14 @@ export function accessOpen(m: { accessTo: Date | null }, now: Date = new Date())
   return !m.accessTo || now.getTime() < m.accessTo.getTime() + DAY_MS;
 }
 
+/** The notice due for a person's end date now, if any; each is sent once per date. */
+export function noticeDue(
+  m: { accessTo: Date | null; accessWarnedAt: Date | null; accessEndNoticeAt: Date | null },
+  now: Date = new Date(),
+): 'ended' | 'soon' | null {
+  if (!m.accessTo) return null;
+  const end = m.accessTo.getTime() + DAY_MS;
+  if (now.getTime() >= end) return m.accessEndNoticeAt ? null : 'ended';
+  if (end - now.getTime() <= WARNING_DAYS * DAY_MS) return m.accessWarnedAt ? null : 'soon';
+  return null;
+}

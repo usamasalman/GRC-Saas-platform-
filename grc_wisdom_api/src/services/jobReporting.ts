@@ -48,9 +48,10 @@ export interface JobRun {
 /**
  * Every background worker this API actually starts.
  *
- * server.ts calls startEscalationScanner() and startRiskReviewScanner() and
- * nothing else. A row here that no timer drives is the defect this file
- * exists to have removed, so the list stays exactly as long as that one.
+ * server.ts calls startEscalationScanner(), startRiskReviewScanner() and
+ * startEngagementAccessScanner() and nothing else. A row here that no timer
+ * drives is the defect this file exists to have removed, so the list stays
+ * exactly as long as that one.
  */
 export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   {
@@ -70,6 +71,16 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
       + 'risks now overdue for review.',
     intervalMs: 15 * 60_000,
     measures: ['reopened', 'overdueReviews'],
+  },
+  {
+    id: 'JOB-ENGAGEMENT-ACCESS',
+    name: 'Engagement access notices',
+    description:
+      'Tells a firm person, their Lead and the project manager seven days before '
+      + 'access to an engagement ends and again when it has ended, paused while '
+      + 'on hold. Deletes shadow refusals not seen for 90 days.',
+    intervalMs: 60 * 60_000,
+    measures: ['warned', 'ended', 'pruned'],
   },
 ];
 
