@@ -445,7 +445,7 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         orderBy: { nominatedAt: 'asc' },
         select: {
           id: true, engagementRole: true, memberStatus: true, roleLabel: true, active: true, accessFrom: true, accessTo: true,
-          nominatedAt: true, decidedAt: true, decisionNote: true,
+          nominatedAt: true, decidedAt: true, decisionNote: true, allocation: true,
           extensionRequestedTo: true, extensionRequestNote: true, extensionRequestedAt: true,
           user: { select: { id: true, name: true, email: true } },
           nominatedBy: { select: { name: true } }, decidedBy: { select: { name: true } },
@@ -510,6 +510,9 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         // Sprint 7: the organisation's after-close decisions.
         changeCloseWindow: isClient && Boolean(e.providerTenantId),
         setReportCopies: isClient && Boolean(e.providerTenantId) && !['Closed', 'Cancelled'].includes(e.status),
+        // The firm's Lead states its people's allocation; the organisation sets it on the team.
+        setAllocation: isFirm && !held && !['Closed', 'Cancelled'].includes(e.status)
+          && mine?.engagementRole === 'Lead' && mine.memberStatus === 'Approved' && mine.active,
       },
     });
   } catch (error: any) {

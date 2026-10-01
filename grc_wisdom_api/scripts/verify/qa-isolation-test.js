@@ -45,6 +45,9 @@ const RECORD_OF = [
   [/^\/api\/projects\/:id/, (out) => prisma.project.findFirst({ where: out, select: { id: true } })],
   // A consulting engagement's management view: the organisation's and its firm's only.
   [/^\/api\/engagements\/:projectId/, (out) => prisma.project.findFirst({ where: out, select: { id: true } })],
+  // A delivery firm's own record of a closed engagement, and its report copies: the firm's alone.
+  [/^\/api\/engagements\/records\/:id/, (out) => prisma.engagementRecord.findFirst({ where: { firmTenantId: out.tenantId }, select: { id: true } })],
+  [/^\/api\/engagements\/report-copies\/:id/, (out) => prisma.engagementReportCopy.findFirst({ where: { firmTenantId: out.tenantId }, select: { id: true } })],
   // A firm's or organisation's own template; the platform's are read by everyone.
   [/^\/api\/plan-templates\/:id/, (out) => prisma.planTemplate.findFirst({ where: { ...out, level: { not: 'Platform' } }, select: { id: true } })],
 ];
@@ -97,6 +100,25 @@ const NOT_A_RECORD = {
   await seedCall(omniGrc, 'POST', `/api/plan-templates/from-project/${project.project.id}`, {
     name: 'QA isolation probe method',
   }, 'a plan template');
+  // A consulting firm's record of an engagement it delivered for OmniOps, and
+  // a report copy: the client asking for either is outside, as is everyone else.
+  const firm = await prisma.tenant.findFirst({ where: { name: 'GRC Consulting Partners' }, select: { id: true } });
+  if (firm) {
+    const at = new Date();
+    await prisma.engagementRecord.create({
+      data: {
+        firmTenantId: firm.id, clientTenantId: omniGrc.user.tenantId, clientName: 'OmniOps', ref: 'PRJ-QA', name: 'QA isolation record',
+        projectType: 'Readiness', outcome: 'Closed', startDate: at, targetEndDate: at, closedAt: at,
+      },
+    });
+    await prisma.engagementReportCopy.create({
+      data: {
+        firmTenantId: firm.id, clientTenantId: omniGrc.user.tenantId, clientName: 'OmniOps', projectRef: 'PRJ-QA', reportKey: 'status',
+        reportName: 'Engagement status', documentRef: 'QA-ISOLATION', issueNumber: 1, format: 'pdf', fileName: 'qa.pdf',
+        storageKey: 'qa/isolation/none', sha256: '0', byteLength: 0, issuedAt: at,
+      },
+    });
+  }
 
   // ── Isolation ────────────────────────────────────────────────────────────
   const routes = q.routeTable().filter((r) => r.method === 'GET' && (r.path.match(/:\w+/g) || []).length === 1);

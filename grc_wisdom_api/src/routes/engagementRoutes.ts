@@ -17,13 +17,14 @@ import {
 } from '../controllers/engagementEnforcementController';
 import { externalAccess, confirmAccessReview, sharedWith } from '../controllers/engagementAccessController';
 import { changeCloseWindow, setReportCopies } from '../controllers/engagementCloseWindowController';
+import { listRecords, getRecord, reportCopyFile, firmTeam, setAllocation } from '../controllers/engagementFirmController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
  * firm's people, the delivery style, access windows, the resume proposal, the
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
- * after close and report copies.
+ * after close, report copies, the firm's records and its team.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -46,6 +47,10 @@ router.post('/enforcement/schedule', requirePlatformTenant, requireCapability(CA
 router.post('/enforcement/rollback', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), rollbackEnforcement);
 router.get('/enforcement/status', requireCapability(CAP.ADD_USER), myEnforcementStatus);
 router.post('/enforcement/confirm', requireCapability(CAP.ADD_USER), confirmEnforcement);
+router.get('/records', requireCapability(CAP.MANAGE_PROJECT), listRecords);
+router.get('/records/:id', requireCapability(CAP.MANAGE_PROJECT), getRecord);
+router.get('/report-copies/:id/file', requireCapability(CAP.MANAGE_PROJECT), reportCopyFile);
+router.get('/firm-team', requireCapability(CAP.MANAGE_PROJECT), firmTeam);
 
 router.get('/invitations', listInvitations);
 router.post('/invitations', requireCapability(CAP.MANAGE_PROJECT), inviteFirm);
@@ -59,6 +64,7 @@ router.post('/:projectId/members/:memberId/approve', requireCapability(CAP.MANAG
 router.post('/:projectId/members/:memberId/reject', requireCapability(CAP.MANAGE_PROJECT), rejectPerson);
 router.post('/:projectId/members/:memberId/remove', requireCapability(CAP.MANAGE_PROJECT), removePerson);
 router.patch('/:projectId/members/:memberId/window', requireCapability(CAP.MANAGE_PROJECT), changeAccessWindow);
+router.patch('/:projectId/members/:memberId/allocation', requireCapability(CAP.EXECUTE_PROJECT_WORK), setAllocation);
 router.post('/:projectId/members/:memberId/extension-request', requireCapability(CAP.EXECUTE_PROJECT_WORK), requestExtension);
 router.post('/:projectId/members/:memberId/extension-request/decline', requireCapability(CAP.MANAGE_PROJECT), declineExtension);
 router.get('/:projectId/resume-proposal', getResumeProposal);
