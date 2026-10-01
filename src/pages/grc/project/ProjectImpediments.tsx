@@ -38,6 +38,8 @@ interface Impediment {
   resolvedBy: Person | null;
   task: { id: string; ref: string; name: string; status: string } | null;
   phase: { id: string; name: string; sequence: number } | null;
+  /** Still open on the engagement before, so carried over to this follow-on (sprint 7). */
+  carriedFromId?: string | null;
 }
 
 interface Summary {
@@ -320,6 +322,7 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                           {i.ref} · {i.kind} · raised {fmtDate(i.raisedAt)}
                           {i.raisedBy && ` by ${i.raisedBy.name}`}
+                          {i.carriedFromId && <span style={{ color: 'var(--brand)' }}> · Carried over</span>}
                         </div>
                         {i.resolutionNote && (
                           <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 3 }}>

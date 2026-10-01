@@ -5,6 +5,7 @@ import FormDialog from '../../../components/FormDialog';
 import { ReasonDialog } from '../../../components/Dialog';
 import { S, ghostBtn, primaryBtn, pill, apiError } from '../../iam/iamStyles';
 import { calendarDate } from '../../../utils/calendarDate';
+import EngagementAfterClose, { type AfterCloseData, type OpenProject } from './EngagementAfterClose';
 
 /**
  * The consulting firm on an engagement (consulting engagement, sprint 4).
@@ -27,14 +28,16 @@ interface Member {
   accessOpen: boolean;
   extensionRequestedTo: string | null; extensionRequestNote: string | null; extensionRequestedAt: string | null;
   extensionRequestedBy: { name: string } | null;
+  // Sprint 7: the share of their time, and whether they came across with a follow-on.
+  allocation: number | null; origin: string | null;
 }
 interface Invitation {
   id: string; state: string; deliveryStyle: string; invitedAt: string; expiresAt: string; respondedAt: string | null;
   responseNote: string | null; revokeReason: string | null; firm: { id: string; name: string };
   invitedBy: { name: string } | null; respondedBy: { name: string } | null;
 }
-interface Engagement {
-  engagement: { id: string; ref: string; name: string; status: string; deliveryStyle: string | null; client: string; firm: string | null };
+interface Engagement extends AfterCloseData {
+  engagement: AfterCloseData['engagement'] & { deliveryStyle: string | null; client: string; firm: string | null };
   side: 'Client' | 'Provider';
   relationship: { establishedAt: string } | null;
   invitations: Invitation[];
@@ -44,7 +47,8 @@ interface Engagement {
   can: {
     invite: boolean; decide: boolean; changeStyle: boolean; nominate: boolean;
     changeWindows: boolean; requestExtension: boolean; requestForTeam: boolean;
-  };
+    setAllocation: boolean;
+  } & AfterCloseData['can'];
 }
 
 export const STYLE_LABEL: Record<string, string> = { ClientLed: 'Client-led', ConsultantLed: 'Consultant-led' };
@@ -68,11 +72,14 @@ type Dialog =
   | { kind: 'invite' } | { kind: 'revoke'; inv: Invitation } | { kind: 'style' }
   | { kind: 'approve'; m: Member } | { kind: 'reject'; m: Member } | { kind: 'remove'; m: Member }
   | { kind: 'nominate' }
-  | { kind: 'window'; m: Member } | { kind: 'extend'; m: Member } | { kind: 'declineExt'; m: Member };
+  | { kind: 'window'; m: Member } | { kind: 'extend'; m: Member } | { kind: 'declineExt'; m: Member }
+  | { kind: 'allocation'; m: Member };
 
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 
-const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> = ({ projectId, onChanged }) => {
+const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onOpenProject?: (p: OpenProject) => void }> = ({
+  projectId, onChanged, onOpenProject,
+}) => {
   const [on, setOn] = useState<boolean | null>(null);
   const [data, setData] = useState<Engagement | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -189,6 +196,10 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
         </div>
       )}
 
+      {e.firm && (
+        <EngagementAfterClose projectId={projectId} data={data} onOpenProject={onOpenProject} onChanged={() => { load(); onChanged?.(); }} />
+      )}
+
       {(members.length > 0 || past.length > 0) && (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -204,9 +215,17 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
                   <div style={{ fontSize: 12.5 }}>{m.user.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{m.roleLabel}</div>
                 </td>
-                <td style={S.td} title={ROLE_HELP[m.engagementRole]}>{m.engagementRole}</td>
+                <td style={S.td} title={ROLE_HELP[m.engagementRole]}>
+                  {m.engagementRole}
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+                    {m.allocation === null ? 'Allocation not stated' : `${m.allocation}% of their time`}
+                  </div>
+                </td>
                 <td style={S.td}>
                   <span style={tone(m.memberStatus)}>{m.memberStatus === 'Nominated' ? 'Awaiting approval' : m.memberStatus}</span>
+                  {m.origin === 'FollowOn' && m.memberStatus === 'Nominated' && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>Nominated again from the engagement before</div>
+                  )}
                   {m.decisionNote && <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{m.decisionNote}</div>}
                 </td>
                 <td style={{ ...S.td, fontSize: 12 }}>
@@ -253,6 +272,10 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
                     <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
                       onClick={() => setDialog({ kind: 'extend', m })}>Request more time</button>
                   )}
+                  {m.active && data.can.setAllocation && (m.memberStatus === 'Nominated' || m.memberStatus === 'Approved') && (
+                    <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }} disabled={busy}
+                      onClick={() => setDialog({ kind: 'allocation', m })}>Set allocation</button>
+                  )}
                   {m.active && (data.can.decide || data.can.nominate) && (
                     <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5 }} disabled={busy}
                       onClick={() => setDialog({ kind: 'remove', m })}>Remove</button>
@@ -282,11 +305,13 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
               optionLabels: Object.fromEntries(firms.map((f) => [f.id, f.name])) },
             { name: 'style', label: 'Delivery style', type: 'select', options: ['ClientLed', 'ConsultantLed'], optionLabels: STYLE_LABEL,
               help: 'Client-led keeps your records yours: the consultant proposes and you decide. Only you can change it later.' },
+            { name: 'copies', label: 'Firm keeps copies of issued reports', type: 'select', options: ['No', 'Yes'],
+              help: 'Yes: the firm keeps a copy of each report you issue, in its own records, for good. You can change it until close.' },
             { name: 'message', label: 'Message to the firm', type: 'textarea' },
           ]}
           validate={(v) => (v.firm ? null : 'Choose a firm. Only firms with consulting switched on are listed.')}
           onSubmit={(v) => act(() => apiClient.post('/api/engagements/invitations', {
-            projectId, firmTenantId: v.firm, deliveryStyle: v.style, message: v.message?.trim() || undefined,
+            projectId, firmTenantId: v.firm, deliveryStyle: v.style, reportCopies: v.copies === 'Yes', message: v.message?.trim() || undefined,
           }))}
           onCancel={() => setDialog(null)}
         />
@@ -406,6 +431,27 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
           minLength={10}
           busy={busy}
           onConfirm={(reason) => act(() => apiClient.post(`/api/engagements/${projectId}/members/${dialog.m.id}/extension-request/decline`, { reason }))}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'allocation' && (
+        <FormDialog
+          title={`How much of ${dialog.m.user.name}'s time does ${e.ref} take?`}
+          intro={<>Counted on the Firm team screen across the firm's open engagements. Recorded on both organisations' trails.</>}
+          submitLabel="Save allocation"
+          busy={busy}
+          fields={[
+            { name: 'allocation', label: 'Allocation (%)', type: 'number', initial: dialog.m.allocation === null ? '' : String(dialog.m.allocation),
+              help: '0 to 100. Left empty: not stated.' },
+          ]}
+          validate={(v) => {
+            if (v.allocation === '') return null;
+            const n = Number(v.allocation);
+            return Number.isInteger(n) && n >= 0 && n <= 100 ? null : 'A whole number from 0 to 100, or empty.';
+          }}
+          onSubmit={(v) => act(() => apiClient.patch(`/api/engagements/${projectId}/members/${dialog.m.id}/allocation`, {
+            allocation: v.allocation === '' ? null : Number(v.allocation),
+          }))}
           onCancel={() => setDialog(null)}
         />
       )}

@@ -200,7 +200,10 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Agree what the firm sees with "Draft a new scope version" on the "Scope" tab; someone else approves it with "Approve scope"',
       'See what is shared on the "Documents" and "Risks and assets" tabs, and set "Change document access" to view only or download',
       'Review who from outside sees what on "External access": "Revoke" a person or "Confirm access"; move engagements set up the old way with "Migrate engagement"',
-      'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"'
+      'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"',
+      'Decide how long the firm may read a closed engagement with "Window after close", then "Extend or shorten" or "Revoke now" once it has closed; decide "Report copies" for the firm',
+      'Carry on with the same firm from a closed engagement with "Start a follow-on"; tasks and blockers still open are marked "Carried over"',
+      'In the firm\'s portal, keep every closed engagement in "Completed engagements" and balance people on "Firm team"'
     ],
     howToUse: [
       {
@@ -267,6 +270,24 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         step: 11,
         title: 'For the delivery firm',
         instruction: 'In the firm\'s portal, "Home" shows your engagements across clients, access ending soon and your overdue tasks, and "Client engagements" has a card for each. Before your access starts you see the card only, with "Access starts on" and its date; the firm\'s Lead can still "Set up your team". "Open workspace" opens the engagement under a bar naming the client, the engagement, the delivery style and when your access ends.'
+      },
+      {
+        step: 12,
+        title: 'After close',
+        instruction: 'When a firm delivers the engagement, the "Close" dialog asks how long the firm may still read it, read-only: "Firm can read it for (days)", from 0 to 365, filled in with the days set ahead with "Window after close" on the Team tab (90 unless you change them). Once it has closed, only your organisation can "Extend or shorten" the window, never past 365 days after the close, or "Revoke now". Each change needs a reason, is on both organisations\' trails, and the firm\'s Lead is told; the firm\'s people are told seven days before the window ends and again when it has ended.',
+        tip: 'Whoever from the firm still had access at the moment of close keeps it until the window ends; anyone removed, or whose dates had ended, does not get it back. "Report copies" (asked as "Firm keeps copies of issued reports" when you invite a firm, No unless you choose Yes) lets the firm keep a copy of each report you issue. Copies made while it was on stay the firm\'s; switching it off stops only the copies still to come.'
+      },
+      {
+        step: 13,
+        title: 'A follow-on engagement',
+        instruction: 'On a closed engagement click "Start a follow-on": name it, give its start (and target end, or keep the length of the one before) and say whether the engagement before is in scope. It is created as a draft with the same firm. The plan comes across with its dates moved and none of its progress; tasks and blockers still open are marked "Carried over"; the scope comes across as a draft for you to approve; and the firm\'s people are nominated again, each waiting for your approval.',
+        tip: 'With the engagement before in scope, the firm\'s approved people on the follow-on may read it, read-only, while the follow-on runs, even after its own window has ended. "Change what the firm reads before" switches it, with a reason.'
+      },
+      {
+        step: 14,
+        title: 'The firm\'s records and its team',
+        instruction: 'In the firm\'s portal, "Completed engagements" lists every engagement the firm delivered that has closed. "Open record" shows it as it stood at close: the dates, the team, planned against actual for every phase and task, and the delay ledger; "Download copy" fetches a report copy the client allowed. While the window after close is open, "Open engagement (read-only)" opens the engagement itself. "Firm team" adds up each person\'s allocation across the firm\'s open engagements and by client: "not stated" is counted apart and "Over 100%" is flagged. The firm\'s Lead changes it with "Set allocation".',
+        tip: 'The record holds none of the client\'s documents, evidence, risks or assets, and stays the firm\'s after the window ends.'
       }
     ],
     proTips: [

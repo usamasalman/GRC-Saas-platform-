@@ -27,6 +27,8 @@ interface ProjectHeader {
   baselineVersion: number;
   providerTenantId: string | null;
   deliveryStyle: string | null;
+  /** Days the firm may read it after close, set ahead (sprint 7); null is 90. */
+  closeWindowDays: number | null;
   holds: Hold[];
 }
 
@@ -104,7 +106,7 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
 
   useEffect(() => { load(true); }, [load]);
 
-  const act = async (reason: string, holdFirmAccess?: string) => {
+  const act = async (reason: string, holdFirmAccess?: string, afterCloseDays?: number) => {
     if (!action) return;
     setBusy(true);
     setError('');
@@ -113,7 +115,8 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
       if (action === 'hold') await apiClient.patch(`/api/projects/${projectId}`, { status: 'OnHold', reason, holdFirmAccess });
       if (action === 'resume') await apiClient.patch(`/api/projects/${projectId}`, { status: 'Active', reason });
       if (action === 'rebaseline') await apiClient.post(`/api/projects/${projectId}/rebaseline`, { reason });
-      if (action === 'close') await apiClient.post(`/api/projects/${projectId}/close`, { outcome: 'Closed', closureNote: reason });
+      // afterCloseDays is left out (undefined) when no firm delivers it.
+      if (action === 'close') await apiClient.post(`/api/projects/${projectId}/close`, { outcome: 'Closed', closureNote: reason, afterCloseDays });
       setAction(null);
       if (action === 'resume' && project?.deliveryStyle && project.providerTenantId) proposeAfterResume.add(projectId);
       await load();
@@ -166,7 +169,9 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
           style={{ ...ghostBtn, padding: '4px 10px', fontSize: 12, opacity: disabled || busy ? 0.5 : 1 }}
           disabled={Boolean(disabled) || busy}
           title={disabled}
-          onClick={() => { setError(''); setAction(key); }}
+          // Close re-reads the project first, so its dialog offers the window
+          // after close as set now, not as it was when the header loaded.
+          onClick={async () => { setError(''); if (key === 'close') await load(); setAction(key); }}
         >
           {ACTIONS[key].label}
         </button>
@@ -200,6 +205,29 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
           onCancel={() => setAction(null)}
         />
       )}
+      {action === 'close' && withFirm && (
+        <FormDialog
+          title={ACTIONS.close.title}
+          intro={`${ACTIONS.close.message} The delivery firm keeps its own record of the engagement and may still read it, read-only, for the days below; after that its people get nothing of yours.`}
+          fields={[
+            { name: 'reason', label: ACTIONS.close.field, type: 'textarea', required: true },
+            {
+              name: 'days', label: 'Firm can read it for (days)', type: 'number', required: true,
+              initial: String(project.closeWindowDays ?? 90),
+              help: 'Read-only, from today: 0 to 365 days. Only your organisation can extend it later, up to 365 days after close, or revoke it.',
+            },
+          ]}
+          submitLabel={busy ? 'Working…' : ACTIONS.close.confirm}
+          busy={busy}
+          validate={(v) => {
+            if (v.reason.trim().length < 10) return 'Give a little more detail — at least 10 characters.';
+            const n = Number(v.days);
+            return Number.isInteger(n) && n >= 0 && n <= 365 ? null : 'The firm can read it for 0 to 365 days.';
+          }}
+          onSubmit={(v) => act(v.reason.trim(), undefined, Number(v.days))}
+          onCancel={() => setAction(null)}
+        />
+      )}
       {proposing && (
         <ResumeProposal
           projectId={projectId}
@@ -207,7 +235,7 @@ const ProjectLifecycle: React.FC<{ projectId: string; onChanged: () => void }> =
           onRebaseline={project.baselineSetAt ? () => { setProposing(false); setAction('rebaseline'); } : undefined}
         />
       )}
-      {action && !(action === 'hold' && withFirm) && (
+      {action && !((action === 'hold' || action === 'close') && withFirm) && (
         <ReasonDialog
           title={ACTIONS[action].title}
           message={ACTIONS[action].message}

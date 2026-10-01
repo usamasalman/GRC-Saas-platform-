@@ -36,7 +36,8 @@ const RESUME = 'Budget approved by the steering committee';
     'PATCH /api/projects/:id to OnHold': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}`, \{ status: 'OnHold', reason(, holdFirmAccess)? \}\)/,
     'PATCH /api/projects/:id to Active (resume)': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}`, \{ status: 'Active', reason \}\)/,
     'POST /api/projects/:id/rebaseline': /apiClient\.post\(`\/api\/projects\/\$\{projectId\}\/rebaseline`, \{ reason \}\)/,
-    'POST /api/projects/:id/close': /apiClient\.post\(`\/api\/projects\/\$\{projectId\}\/close`, \{ outcome: 'Closed', closureNote: reason \}\)/,
+    // With the window after close when a firm delivers it (sprint 7).
+    'POST /api/projects/:id/close': /apiClient\.post\(`\/api\/projects\/\$\{projectId\}\/close`, \{ outcome: 'Closed', closureNote: reason(, afterCloseDays)? \}\)/,
   };
   const missing = Object.entries(callers).filter(([, re]) => !re.test(screen)).map(([name]) => name);
   const host = q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'DeliveryProjects.tsx'));

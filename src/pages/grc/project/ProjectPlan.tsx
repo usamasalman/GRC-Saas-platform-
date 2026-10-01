@@ -67,6 +67,8 @@ interface Task {
   needsVerification: boolean;
   timing: Timing;
   slippage: { baselined: boolean; slipDays: number; slipped: boolean };
+  /** Still open on the engagement before, so carried over to this follow-on (sprint 7). */
+  carriedFromTaskId?: string | null;
   /**
    * The framework clauses this task satisfies.
    *
@@ -1079,6 +1081,7 @@ const ProjectPlan: React.FC<{
                                 <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                                   {t.ref}
                                   {t.side === 'Provider' && ' · provider'}
+                                  {t.carriedFromTaskId && <span style={{ color: 'var(--brand)' }}> · Carried over</span>}
                                   {t.department && ` · ${t.department}`}
                                   {t.needsVerification && (
                                     <span style={{ color: 'var(--warning)' }}> · needs verification</span>

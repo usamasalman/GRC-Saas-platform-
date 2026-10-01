@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY } from '../../../components/Can';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
 import EngagementPanel from './EngagementPanel';
+import type { OpenProject } from './EngagementAfterClose';
 import { HOLD_ACCESS_LABELS } from './holdAccess';
 
 /**
@@ -43,7 +44,7 @@ const RACI_MEANS: Record<string, string> = {
   I: 'Informed — told after them',
 };
 
-const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
+const ProjectTeam: React.FC<{ projectId: string; onOpenProject?: (p: OpenProject) => void }> = ({ projectId, onOpenProject }) => {
   const [members, setMembers] = useState<Member[]>([]);
   const [accountable, setAccountable] = useState<{ ownerId: string; managerId: string } | null>(null);
   const [hasProvider, setHasProvider] = useState(false);
@@ -106,6 +107,8 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
     firmAccessSetBy: { name: string } | null; startedAt: string;
   } | null>(null);
   const [isClientSide, setIsClientSide] = useState(false);
+  // Closed or cancelled: the firm reads it only during the window after close (sprint 7).
+  const [ended, setEnded] = useState(false);
   const [changingHold, setChangingHold] = useState(false);
   const [holdError, setHoldError] = useState('');
 
@@ -115,6 +118,7 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
       const p = res.data?.project;
       setProvider(p?.providerTenant || null);
       setIsClientSide(p?.side === 'Client');
+      setEnded(p?.status === 'Closed' || p?.status === 'Cancelled');
       setHeld(p?.status === 'OnHold' ? (p.holds || []).find((h: any) => !h.endedAt) || null : null);
     } catch {
       setProvider(null);
@@ -285,7 +289,7 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
   return (
     <div>
       {/* The consulting firm: invitation, its people, the delivery style. */}
-      <EngagementPanel projectId={projectId} onChanged={() => { loadProvider(); load(); }} />
+      <EngagementPanel projectId={projectId} onOpenProject={onOpenProject} onChanged={() => { loadProvider(); load(); }} />
 
       {/* Who delivers this, above the people, because it decides which
           organisations the people below may come from. */}
@@ -303,7 +307,9 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
         </span>
         {provider && (
           <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-            &mdash; their people can read this engagement in full and record work against it
+            {ended
+              ? <>&mdash; the engagement has ended: their people may read it, read-only, only while the window after close lasts</>
+              : <>&mdash; their people can read this engagement in full and record work against it</>}
           </span>
         )}
         <span style={{ marginLeft: 'auto' }}>

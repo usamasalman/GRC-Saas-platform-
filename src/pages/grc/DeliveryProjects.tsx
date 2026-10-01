@@ -20,6 +20,8 @@ import EngagementRisksAssets from './project/EngagementRisksAssets';
 import ClientEngagements from './project/ClientEngagements';
 import PartnerHome from './project/PartnerHome';
 import ExternalAccess from './project/ExternalAccess';
+import CompletedEngagements from './project/CompletedEngagements';
+import FirmTeam from './project/FirmTeam';
 import { STYLE_LABEL } from './project/EngagementPanel';
 import { MAY, can } from '../../components/Can';
 import { calendarDate } from '../../utils/calendarDate';
@@ -36,7 +38,7 @@ import apiClient from '../../api/apiClient';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'home' | 'engagements' | 'access' | 'portfolio' | 'templates' | 'invitations'
+type TabKey = 'home' | 'engagements' | 'completed' | 'firmteam' | 'access' | 'portfolio' | 'templates' | 'invitations'
   | 'overview' | 'scope' | 'documents' | 'registers'
   | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
@@ -47,7 +49,7 @@ function portalOf(): string {
 /** Portals of organisations that deliver for others (the delivery firm types). */
 const FIRM_PORTALS = ['partner', 'franchise'];
 /** Tabs that are not one engagement's workspace. */
-const OUTSIDE_WORKSPACE: TabKey[] = ['home', 'engagements', 'access', 'portfolio', 'new', 'templates', 'invitations'];
+const OUTSIDE_WORKSPACE: TabKey[] = ['home', 'engagements', 'completed', 'firmteam', 'access', 'portfolio', 'new', 'templates', 'invitations'];
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -68,6 +70,8 @@ const DeliveryProjects: React.FC = () => {
   const portal = portalOf();
   const firmPortal = FIRM_PORTALS.includes(portal);
   const orgPortal = portal !== 'partner' && can(MAY.MANAGE_PROJECT);
+  // Sprint 7: the firm's own records and its people, for the firm's managers.
+  const firmManager = firmPortal && can(MAY.MANAGE_PROJECT);
   const [engagement, setEngagement] = useState<any>(null);
   useEffect(() => {
     setEngagement(null);
@@ -107,6 +111,12 @@ const DeliveryProjects: React.FC = () => {
           <>
             <button style={tabStyle(tab === 'home')} onClick={() => setTab('home')}>Home</button>
             <button style={tabStyle(tab === 'engagements')} onClick={() => setTab('engagements')}>Client engagements</button>
+          </>
+        )}
+        {consulting && firmManager && (
+          <>
+            <button style={tabStyle(tab === 'completed')} onClick={() => setTab('completed')}>Completed engagements</button>
+            <button style={tabStyle(tab === 'firmteam')} onClick={() => setTab('firmteam')}>Firm team</button>
           </>
         )}
         <button style={tabStyle(tab === 'portfolio')} onClick={() => setTab('portfolio')}>
@@ -234,6 +244,8 @@ const DeliveryProjects: React.FC = () => {
       {tab === 'templates' && <TemplateLibrary />}
       {tab === 'home' && consulting && <PartnerHome onOpen={openFromFirm} onInvitations={() => setTab('invitations')} />}
       {tab === 'engagements' && consulting && <ClientEngagements onOpen={openFromFirm} />}
+      {tab === 'completed' && consulting && firmManager && <CompletedEngagements onOpen={openFromFirm} />}
+      {tab === 'firmteam' && consulting && firmManager && <FirmTeam />}
       {tab === 'access' && consulting && <ExternalAccess />}
       {tab === 'overview' && selected && consultingTabs && <EngagementOverview key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'scope' && selected && consultingTabs && <EngagementScope key={`${selected.id}-${version}`} projectId={selected.id} />}
@@ -248,7 +260,7 @@ const DeliveryProjects: React.FC = () => {
       )}
       {tab === 'plan' && selected && <ProjectPlan key={`${selected.id}-${version}`} projectId={selected.id} startWithWizard={wizardFor === selected.id} onActivated={() => setVersion((v) => v + 1)} />}
       {tab === 'gantt' && selected && <ProjectGantt key={`${selected.id}-${version}`} projectId={selected.id} />}
-      {tab === 'team' && selected && <ProjectTeam key={`${selected.id}-${version}`} projectId={selected.id} />}
+      {tab === 'team' && selected && <ProjectTeam key={`${selected.id}-${version}`} projectId={selected.id} onOpenProject={(p) => open(p)} />}
       {tab === 'verification' && selected && (
         <ProjectVerification key={`${selected.id}-${version}`} projectId={selected.id} />
       )}

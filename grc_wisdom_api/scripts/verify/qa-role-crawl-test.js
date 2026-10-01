@@ -24,6 +24,9 @@ const HANDLED_403 = {
   // Consulting engagement, sprint 6: both sit on the organisation's External access tab.
   '/api/engagements/enforcement/status': 'ExternalAccess renders EnforcementStatus only for can(CAP.ADD_USER), and a refusal hides it (setR(null))',
   '/api/engagements/migration': 'External access opens only for can(MAY.MANAGE_PROJECT) (orgPortal in DeliveryProjects), and a refusal shows no migration section (setRows([]))',
+  // Consulting engagement, sprint 7: the firm's own records and team.
+  '/api/engagements/records': 'Completed engagements opens only for the firm\'s managers, can(MAY.MANAGE_PROJECT) (firmManager in DeliveryProjects), and a refusal shows the error with no rows',
+  '/api/engagements/firm-team': 'Firm team opens only for the firm\'s managers, can(MAY.MANAGE_PROJECT) (firmManager in DeliveryProjects), and a refusal shows the error with no rows',
 };
 const SLOW_MS = 3000;
 
