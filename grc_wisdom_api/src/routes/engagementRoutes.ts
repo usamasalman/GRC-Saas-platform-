@@ -8,6 +8,9 @@ import {
 } from '../controllers/engagementController';
 import { myEngagements } from '../controllers/engagementPortalController';
 import { getScope, draftScope, approveScope, discardScope } from '../controllers/engagementScopeController';
+import {
+  listSharedDocuments, getSharedDocument, fileSharedDocument, setDocumentAccess, listSharedRisks, listSharedAssets,
+} from '../controllers/engagementRegistersController';
 
 /**
  * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
@@ -47,6 +50,12 @@ router.get('/:projectId/scope', getScope);
 router.post('/:projectId/scope', requireCapability(CAP.MANAGE_PROJECT), draftScope);
 router.post('/:projectId/scope/:versionId/approve', requireCapability(CAP.MANAGE_PROJECT), approveScope);
 router.post('/:projectId/scope/:versionId/discard', requireCapability(CAP.MANAGE_PROJECT), discardScope);
+router.get('/:projectId/documents', listSharedDocuments);
+router.get('/:projectId/documents/:documentId', getSharedDocument);
+router.get('/:projectId/documents/:documentId/file', fileSharedDocument);
+router.patch('/:projectId/document-access', requireCapability(CAP.MANAGE_PROJECT), setDocumentAccess);
+router.get('/:projectId/risks', listSharedRisks);
+router.get('/:projectId/assets', listSharedAssets);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

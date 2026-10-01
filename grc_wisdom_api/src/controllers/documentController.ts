@@ -570,6 +570,46 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
 
 // ─── Download ───────────────────────────────────────────────────────────────
 
+/**
+ * Hands over a document's bytes: its uploaded file, or the governed text
+ * export. The caller has already decided the read and recorded it; this is
+ * shared with the engagement route (consulting engagement, sprint 6) so a
+ * firm's copy is the same copy the organisation's people get.
+ */
+export function deliverDocument(res: Response, doc: any): void {
+  if (doc.fileUrl && typeof doc.fileUrl === 'string' && doc.fileUrl.startsWith('/uploads/')) {
+    const fileNameOnly = doc.fileUrl.replace('/uploads/', '');
+    const fullPath = path.join(UPLOADS_DIR, fileNameOnly);
+    if (fs.existsSync(fullPath)) {
+      res.download(fullPath, doc.fileName || `${doc.code}_v${doc.version}`);
+      return;
+    }
+  }
+
+  const exportContent = `================================================================================
+GRC WISDOM GOVERNANCE DOCUMENT
+================================================================================
+Document Code   : ${doc.code}
+Title           : ${doc.title}
+Version         : v${doc.version}
+Category        : ${doc.category}
+Classification  : ${doc.classification}
+Status          : ${doc.status}
+Export Date     : ${new Date().toUTCString()}
+================================================================================
+
+${doc.content}
+
+================================================================================
+END OF DOCUMENT — CONFIDENTIAL GRC RECORD
+================================================================================`;
+
+  const downloadFileName = `${doc.code.replace(/[^a-zA-Z0-9_-]/g, '_')}_v${doc.version}.txt`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
+  res.send(exportContent);
+}
+
 export const downloadDocument = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
@@ -615,37 +655,7 @@ export const downloadDocument = async (req: AuthenticatedRequest, res: Response)
     });
     if (!doc) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
 
-    if (doc.fileUrl && typeof doc.fileUrl === 'string' && doc.fileUrl.startsWith('/uploads/')) {
-      const fileNameOnly = doc.fileUrl.replace('/uploads/', '');
-      const fullPath = path.join(UPLOADS_DIR, fileNameOnly);
-      if (fs.existsSync(fullPath)) {
-        res.download(fullPath, doc.fileName || `${doc.code}_v${doc.version}`);
-        return;
-      }
-    }
-
-    const exportContent = `================================================================================
-GRC WISDOM GOVERNANCE DOCUMENT
-================================================================================
-Document Code   : ${doc.code}
-Title           : ${doc.title}
-Version         : v${doc.version}
-Category        : ${doc.category}
-Classification  : ${doc.classification}
-Status          : ${doc.status}
-Export Date     : ${new Date().toUTCString()}
-================================================================================
-
-${doc.content}
-
-================================================================================
-END OF DOCUMENT — CONFIDENTIAL GRC RECORD
-================================================================================`;
-
-    const downloadFileName = `${doc.code.replace(/[^a-zA-Z0-9_-]/g, '_')}_v${doc.version}.txt`;
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
-    res.send(exportContent);
+    deliverDocument(res, doc);
   } catch (error: any) {
     console.error('[Download Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to download document' });
