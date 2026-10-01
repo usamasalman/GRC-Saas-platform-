@@ -108,3 +108,56 @@ export const changeCloseWindow = async (req: AuthenticatedRequest, res: Response
   }
 };
 
+/**
+ * PATCH /api/engagements/:projectId/report-copies { allowed, reason }
+ *
+ * Whether the firm keeps a copy of each delivery report when it is issued.
+ * The organisation decides, at invitation (No unless it says otherwise) and
+ * then at any time until close. Copies made while it was allowed stay the
+ * firm's for good; switching it off stops the copies still to come.
+ */
+export const setReportCopies = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const e = await loadEngagement(str(req.params.projectId));
+    if (!e || !(await clientSide(req, e))) {
+      if (e && e.providerTenantId === req.user!.tenantId) {
+        send(res, { status: 403, code: 'CLIENT_DECIDES', message: 'Only the organisation decides whether the firm keeps copies of issued reports.' });
+        return;
+      }
+      notFound(res); return;
+    }
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    if (!e.providerTenantId) { send(res, { status: 409, code: 'NO_FIRM', message: 'No firm delivers this engagement.' }); return; }
+    if (isEnded(e.status)) { send(res, { status: 409, code: 'PROJECT_FROZEN', message: `This engagement is ${e.status}; report copies are settled.` }); return; }
+    if (typeof req.body?.allowed !== 'boolean') { send(res, { status: 400, message: 'Say whether the firm keeps copies: allowed true or false.' }); return; }
+    const allowed: boolean = req.body.allowed;
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
+    const before = e.reportCopiesAllowed === true;
+    if (before === allowed) { res.json({ status: 'success', reportCopiesAllowed: allowed }); return; }
+    const actorId = str(req.user!.id);
+    const now = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.project.update({ where: { id: e.id }, data: { reportCopiesAllowed: allowed, reportCopiesSetAt: now, reportCopiesSetById: actorId } });
+      await bothTrails(tx, {
+        e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_REPORT_COPIES_SET',
+        payload: { from: before, to: allowed, reason },
+      });
+      const leads = await tx.projectMember.findMany({
+        where: { projectId: e.id, side: 'Provider', engagementRole: 'Lead', memberStatus: 'Approved', active: true },
+        select: { userId: true },
+      });
+      await notify(tx, leads.map((l) => ({
+        tenantId: e.providerTenantId!, recipientId: l.userId, actorId, event: 'ENGAGEMENT_REPORT_COPIES_SET',
+        subjectType: 'Project', subjectId: e.id,
+        title: allowed ? `Your firm now keeps copies of reports issued on ${e.ref}` : `Your firm no longer keeps copies of reports issued on ${e.ref}`,
+        body: reason, link: 'project-delivery',
+      })));
+    });
+    res.json({ status: 'success', reportCopiesAllowed: allowed });
+  } catch (error: any) {
+    console.error('[Report Copies Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to change report copies' });
+  }
+};

@@ -15,6 +15,7 @@ import { renderXlsx } from '../services/renderXlsx';
 import { brandingFor, logoBytesFor } from './brandingController';
 import { effectiveMarking, selectSections } from '../services/tenantBranding';
 import { documentHash, snapshotOf, documentRefFor } from '../services/reportIssue';
+import { putEvidence } from '../services/evidenceStore';
 import {
   statusFigures, attentionLists, verificationRows, verificationIntegrity,
   unmappedClauses, taskCounts, attribute, slippage, clauseCoverage,
@@ -140,7 +141,7 @@ async function loadEngagement(projectId: string) {
       projectType: true, frameworks: true, reportedProgress: true, verifiedProgress: true,
       verificationPolicy: true, startDate: true, targetEndDate: true, actualEndDate: true,
       baselineStartDate: true, baselineTargetEndDate: true, baselineVersion: true,
-      baselineSetAt: true, closureNote: true, tenantId: true, providerTenantId: true,
+      baselineSetAt: true, closureNote: true, tenantId: true, providerTenantId: true, reportCopiesAllowed: true,
       firstBaselineStartDate: true, firstBaselineTargetEndDate: true,
       holds: { select: { startedAt: true, endedAt: true } },
       owner: { select: { id: true, name: true } },
@@ -1497,6 +1498,11 @@ export const exportDeliveryReport = async (
     });
 
     const fileName = fileNameFor(meta.name, format, e.ref);
+    // The delivery firm's own copy (consulting engagement, sprint 7), when the
+    // organisation allows it: the bytes as issued, kept in the firm's tenant
+    // for good. An export that is not an issue is never copied.
+    const firmCopy = issued && e.reportCopiesAllowed === true && e.providerTenantId && e.providerTenantId !== e.tenantId
+      ? putEvidence(buf) : null;
 
     await prisma.$transaction(async (tx) => {
       await tx.reportIssue.create({
@@ -1531,8 +1537,32 @@ export const exportDeliveryReport = async (
           projectRef: e.ref, report: meta.key, format,
           documentRef: document.chrome!.documentRef,
           documentHash: hash, issueNumber, marking: document.chrome!.marking,
+          ...(firmCopy ? { firmCopy: true } : {}),
         },
       });
+
+      if (firmCopy) {
+        const copy = await tx.engagementReportCopy.create({
+          data: {
+            firmTenantId: e.providerTenantId!, projectId: e.id, clientTenantId: e.tenantId, clientName: e.tenant?.name ?? 'Unknown',
+            projectRef: e.ref, reportKey: meta.key, reportName: meta.name,
+            documentRef: document.chrome!.documentRef, issueNumber, format, fileName,
+            storageKey: firmCopy.storageKey, sha256: firmCopy.sha256, byteLength: firmCopy.byteLength, issuedAt: now,
+          },
+          select: { id: true },
+        });
+        await writeAudit(tx, {
+          tenantId: e.providerTenantId!,
+          actorId: str(req.user!.id),
+          action: 'ENGAGEMENT_REPORT_COPY_KEPT',
+          subjectType: 'EngagementReportCopy',
+          subjectId: copy.id,
+          payload: {
+            projectRef: e.ref, clientTenantId: e.tenantId, report: meta.key, format,
+            documentRef: document.chrome!.documentRef, sha256: firmCopy.sha256,
+          },
+        });
+      }
     });
 
     res.setHeader('Content-Type', MIME[format]);

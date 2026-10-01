@@ -16,14 +16,14 @@ import {
   enforcementReadiness, markShadow, scheduleEnforcement, rollbackEnforcement, myEnforcementStatus, confirmEnforcement,
 } from '../controllers/engagementEnforcementController';
 import { externalAccess, confirmAccessReview, sharedWith } from '../controllers/engagementAccessController';
-import { changeCloseWindow } from '../controllers/engagementCloseWindowController';
+import { changeCloseWindow, setReportCopies } from '../controllers/engagementCloseWindowController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
  * firm's people, the delivery style, access windows, the resume proposal, the
  * guard's shadow counts, scope, the shared registers, the migration of
- * engagements set up the old way, enforcement, external access and the
- * window after close.
+ * engagements set up the old way, enforcement, external access, the window
+ * after close and report copies.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -76,6 +76,7 @@ router.get('/:projectId/assets', listSharedAssets);
 router.post('/:projectId/access-review', requireCapability(CAP.MANAGE_PROJECT), confirmAccessReview);
 router.post('/:projectId/migrate', requireCapability(CAP.MANAGE_PROJECT), migrateEngagement);
 router.patch('/:projectId/close-window', requireCapability(CAP.MANAGE_PROJECT), changeCloseWindow);
+router.patch('/:projectId/report-copies', requireCapability(CAP.MANAGE_PROJECT), setReportCopies);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

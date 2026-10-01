@@ -50,7 +50,7 @@ const notFound = (res: Response, what = 'Engagement') => send(res, { status: 404
 const ENGAGEMENT_SELECT = {
   id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true,
   startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
-  actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true,
+  actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true, reportCopiesAllowed: true,
   tenant: { select: { name: true } },
   providerTenant: { select: { name: true } },
 } as const;
@@ -152,7 +152,7 @@ export const listInvitations = async (req: AuthenticatedRequest, res: Response):
       respondedAt: true, responseNote: true, revokedAt: true, revokeReason: true,
       client: { select: { id: true, name: true } }, firm: { select: { id: true, name: true } },
       invitedBy: { select: { name: true } }, respondedBy: { select: { name: true } },
-      project: { select: { ref: true, name: true, startDate: true, targetEndDate: true } },
+      project: { select: { ref: true, name: true, startDate: true, targetEndDate: true, reportCopiesAllowed: true } },
     } as const;
     // One box per request, paged, so neither list stops at a fixed number of
     // rows (QA-021): ?box=received (the default, a firm's) or ?box=sent.
@@ -206,6 +206,12 @@ export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Prom
     }
     const style = b.deliveryStyle ?? DEFAULT_DELIVERY_STYLE;
     if (!isDeliveryStyle(style)) { send(res, { status: 400, message: 'deliveryStyle must be ClientLed or ConsultantLed.' }); return; }
+    // Whether the firm keeps a copy of each issued report (sprint 7): No
+    // unless the organisation says so here.
+    if (b.reportCopies !== undefined && typeof b.reportCopies !== 'boolean') {
+      send(res, { status: 400, message: 'reportCopies is true or false.' }); return;
+    }
+    const reportCopies = b.reportCopies === true;
     const firm = await prisma.tenant.findUnique({
       where: { id: str(b.firmTenantId) }, select: { id: true, name: true, type: true, suspendedAt: true },
     });
@@ -236,11 +242,14 @@ export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Prom
           invitedById: actorId, invitedAt: now, expiresAt: invitationExpiry(now),
         },
       });
-      await tx.project.update({ where: { id: e.id }, data: { deliveryStyle: style } });
+      await tx.project.update({
+        where: { id: e.id },
+        data: { deliveryStyle: style, reportCopiesAllowed: reportCopies, reportCopiesSetAt: now, reportCopiesSetById: actorId },
+      });
       await bothTrails(tx, {
         e, firmTenantId: firm.id, actorId, action: 'ENGAGEMENT_FIRM_INVITED',
-        payload: { invitationId: inv.id, firmTenantId: firm.id, firm: firm.name, deliveryStyle: style, expiresAt: inv.expiresAt },
-        firmPayload: { invitationId: inv.id, client: e.tenant?.name, deliveryStyle: style, expiresAt: inv.expiresAt },
+        payload: { invitationId: inv.id, firmTenantId: firm.id, firm: firm.name, deliveryStyle: style, reportCopies, expiresAt: inv.expiresAt },
+        firmPayload: { invitationId: inv.id, client: e.tenant?.name, deliveryStyle: style, reportCopies, expiresAt: inv.expiresAt },
       });
       await notify(tx, (await firmAdmins(firm.id)).map((recipientId) => ({
         tenantId: firm.id, recipientId, actorId, event: 'ENGAGEMENT_INVITATION', subjectType: 'Project', subjectId: e.id,
@@ -474,11 +483,12 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         client: e.tenant?.name, firm: e.providerTenant?.name ?? null,
         // Sprint 6: whether shared documents can be downloaded, and whether it was migrated.
         documentAccess: e.documentAccess === 'Download' ? 'Download' : 'View', migrated: Boolean(e.migratedAt),
-        // Sprint 7: the window after close.
+        // Sprint 7: the window after close and the report-copy terms.
         afterClose: {
           days: e.closeWindowDays ?? DEFAULT_CLOSE_WINDOW_DAYS, closedAt: e.actualEndDate,
           until: ['Closed', 'Cancelled'].includes(e.status) ? closeWindowEnd(e) : null, setAt: e.closeWindowSetAt,
         },
+        reportCopiesAllowed: e.reportCopiesAllowed === true,
       },
       side: isClient ? 'Client' : 'Provider',
       relationship,
@@ -497,8 +507,9 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         // Anyone approved asks for themselves; the Lead asks for the team.
         requestExtension: asking && mine!.memberStatus === 'Approved',
         requestForTeam: asking && roleMay(mine?.engagementRole, 'nominate'),
-        // Sprint 7: the organisation decides the window after close.
+        // Sprint 7: the organisation's after-close decisions.
         changeCloseWindow: isClient && Boolean(e.providerTenantId),
+        setReportCopies: isClient && Boolean(e.providerTenantId) && !['Closed', 'Cancelled'].includes(e.status),
       },
     });
   } catch (error: any) {
