@@ -78,9 +78,10 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
     description:
       'Tells a firm person, their Lead and the project manager seven days before '
       + 'access to an engagement ends and again when it has ended, paused while '
-      + 'on hold. Deletes shadow refusals not seen for 90 days.',
+      + 'on hold; does the same for the read-only window after an engagement '
+      + 'closes. Deletes shadow refusals not seen for 90 days.',
     intervalMs: 60 * 60_000,
-    measures: ['warned', 'ended', 'pruned'],
+    measures: ['warned', 'ended', 'closeWarned', 'closeEnded', 'pruned'],
   },
 ];
 
