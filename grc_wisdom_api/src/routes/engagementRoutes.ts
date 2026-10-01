@@ -7,6 +7,7 @@ import {
   changeAccessWindow, requestExtension, declineExtension, getResumeProposal, settleResumeProposal, shadowSummary,
 } from '../controllers/engagementController';
 import { myEngagements } from '../controllers/engagementPortalController';
+import { getScope, draftScope, approveScope, discardScope } from '../controllers/engagementScopeController';
 
 /**
  * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
@@ -42,6 +43,10 @@ router.post('/:projectId/members/:memberId/extension-request', requireCapability
 router.post('/:projectId/members/:memberId/extension-request/decline', requireCapability(CAP.MANAGE_PROJECT), declineExtension);
 router.get('/:projectId/resume-proposal', getResumeProposal);
 router.post('/:projectId/resume-proposal', requireCapability(CAP.MANAGE_PROJECT), settleResumeProposal);
+router.get('/:projectId/scope', getScope);
+router.post('/:projectId/scope', requireCapability(CAP.MANAGE_PROJECT), draftScope);
+router.post('/:projectId/scope/:versionId/approve', requireCapability(CAP.MANAGE_PROJECT), approveScope);
+router.post('/:projectId/scope/:versionId/discard', requireCapability(CAP.MANAGE_PROJECT), discardScope);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

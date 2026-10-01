@@ -48,7 +48,7 @@ const notFound = (res: Response, what = 'Engagement') => send(res, { status: 404
 
 const ENGAGEMENT_SELECT = {
   id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true,
-  startDate: true, targetEndDate: true, ownerId: true, managerId: true,
+  startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
   tenant: { select: { name: true } },
   providerTenant: { select: { name: true } },
 } as const;
@@ -112,6 +112,12 @@ async function firmAdmins(tenantId: string): Promise<string[]> {
   });
   return users.map((u) => u.id);
 }
+
+// Shared with the other engagement controllers (sprint 6).
+export {
+  str, Conflict, send, notFound, loadEngagement, clientSide, membershipOf, live, flagFor, bothTrails, HELD_READ_ONLY,
+};
+export type { Engagement };
 
 // ─── The flag, as the screens need it ───────────────────────────────────────
 
@@ -464,6 +470,8 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
       engagement: {
         id: e.id, ref: e.ref, name: e.name, status: e.status, deliveryStyle: e.deliveryStyle,
         client: e.tenant?.name, firm: e.providerTenant?.name ?? null,
+        // Sprint 6: whether shared documents can be downloaded, and whether it was migrated.
+        documentAccess: e.documentAccess === 'Download' ? 'Download' : 'View', migrated: Boolean(e.migratedAt),
       },
       side: isClient ? 'Client' : 'Provider',
       relationship,
