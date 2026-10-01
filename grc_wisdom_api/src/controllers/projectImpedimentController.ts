@@ -43,7 +43,7 @@ async function nextRef(projectId: string): Promise<string> {
 const SELECT = {
   id: true, ref: true, kind: true, category: true, owingSide: true, severity: true,
   title: true, description: true, impactDays: true, expectedClearDate: true,
-  raisedAt: true, resolvedAt: true, resolutionNote: true,
+  raisedAt: true, resolvedAt: true, resolutionNote: true, carriedFromId: true,
   raisedBy: { select: { id: true, name: true } },
   resolvedBy: { select: { id: true, name: true } },
   task: { select: { id: true, ref: true, name: true, status: true } },

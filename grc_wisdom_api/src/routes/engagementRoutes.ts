@@ -18,13 +18,14 @@ import {
 import { externalAccess, confirmAccessReview, sharedWith } from '../controllers/engagementAccessController';
 import { changeCloseWindow, setReportCopies } from '../controllers/engagementCloseWindowController';
 import { listRecords, getRecord, reportCopyFile, firmTeam, setAllocation } from '../controllers/engagementFirmController';
+import { createFollowOn, setPreviousInScope } from '../controllers/engagementFollowOnController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
  * firm's people, the delivery style, access windows, the resume proposal, the
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
- * after close, report copies, the firm's records and its team.
+ * after close, report copies, the firm's records, its team and follow-ons.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -83,6 +84,8 @@ router.post('/:projectId/access-review', requireCapability(CAP.MANAGE_PROJECT), 
 router.post('/:projectId/migrate', requireCapability(CAP.MANAGE_PROJECT), migrateEngagement);
 router.patch('/:projectId/close-window', requireCapability(CAP.MANAGE_PROJECT), changeCloseWindow);
 router.patch('/:projectId/report-copies', requireCapability(CAP.MANAGE_PROJECT), setReportCopies);
+router.post('/:projectId/follow-on', requireCapability(CAP.MANAGE_PROJECT), createFollowOn);
+router.patch('/:projectId/previous-in-scope', requireCapability(CAP.MANAGE_PROJECT), setPreviousInScope);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

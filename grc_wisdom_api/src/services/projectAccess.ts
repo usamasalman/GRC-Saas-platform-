@@ -59,7 +59,7 @@ export function projectWhere(scope: TenantScope, userId?: string, now: Date = ne
         // before until the client's rules are enforced (sprints 4 to 6).
         // Closed, it is read until the window after close ends: by those who
         // still had access at the close, or by the whole firm on one never
-        // migrated (sprint 7).
+        // migrated, and through a follow-on that puts it in scope (sprint 7).
         OR: [
           { deliveryStyle: null, tenantId: { notIn: [...enforcedClientIds] } },
           { migratedAt: { not: null }, tenantId: { notIn: [...enforcedClientIds] } },
@@ -84,6 +84,23 @@ export function projectWhere(scope: TenantScope, userId?: string, now: Date = ne
                 some: {
                   userId, side: 'Provider', memberStatus: 'Approved', active: true,
                   OR: [{ afterCloseAccess: null }, { afterCloseAccess: true }],
+                },
+              },
+            },
+            {
+              status: { in: ENDED },
+              followOns: {
+                some: {
+                  previousInScope: true, status: { notIn: ENDED },
+                  members: {
+                    some: {
+                      userId, side: 'Provider', memberStatus: 'Approved', active: true,
+                      AND: [
+                        { OR: [{ accessFrom: null }, { accessFrom: { lte: now } }] },
+                        { OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }] },
+                      ],
+                    },
+                  },
                 },
               },
             },

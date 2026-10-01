@@ -1,3 +1,4 @@
+import { prisma } from '../db';
 import { DAY_MS, accessOpen } from './engagementRules';
 
 /**
@@ -11,7 +12,9 @@ import { DAY_MS, accessOpen } from './engagementRules';
  *
  * A person's own end date stays separate from it: whoever still had access at
  * the moment of close keeps read-only access until the window ends; someone
- * removed, or whose dates had ended, does not get it back.
+ * removed, or whose dates had ended, does not get it back. A firm working on
+ * a follow-on may also read the engagement before it, read-only, while that
+ * follow-on runs, if the organisation put it in scope.
  */
 
 export const DEFAULT_CLOSE_WINDOW_DAYS = 90;
@@ -43,3 +46,18 @@ export const latestWindowEnd = (closedAt: Date): Date => new Date(closedAt.getTi
 /** Whether a person keeps read-only access after close: they still had access at the close. */
 export const keepsAfterClose = (m: { accessFrom: Date | null; accessTo: Date | null }, closedAt: Date): boolean => accessOpen(m, closedAt);
 
+/**
+ * Whether this person may read a closed engagement because a follow-on they
+ * are approved on, still running and inside their dates, put it in scope.
+ */
+export async function readsThroughFollowOn(projectId: string, userId: string, now: Date = new Date()): Promise<boolean> {
+  const rows = await prisma.projectMember.findMany({
+    where: {
+      userId, side: 'Provider', memberStatus: 'Approved', active: true,
+      project: { previousProjectId: projectId, previousInScope: true, status: { notIn: ENDED_STATUSES } },
+    },
+    select: { accessFrom: true, accessTo: true },
+    take: 5,
+  });
+  return rows.some((m) => accessOpen(m, now));
+}

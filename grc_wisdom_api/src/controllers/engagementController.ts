@@ -51,6 +51,7 @@ const ENGAGEMENT_SELECT = {
   id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true,
   startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
   actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true, reportCopiesAllowed: true,
+  previousProjectId: true, previousInScope: true,
   tenant: { select: { name: true } },
   providerTenant: { select: { name: true } },
 } as const;
@@ -430,7 +431,7 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
     const refusal = await flagFor(e);
     if (refusal) { send(res, refusal); return; }
 
-    const [invitations, members, relationship, mine, hold, pending] = await Promise.all([
+    const [invitations, members, relationship, mine, hold, pending, previous, followOns] = await Promise.all([
       prisma.engagementInvitation.findMany({
         where: { projectId: e.id, ...(isFirm ? { firmTenantId: req.user!.tenantId } : {}) },
         orderBy: { invitedAt: 'desc' },
@@ -445,7 +446,7 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         orderBy: { nominatedAt: 'asc' },
         select: {
           id: true, engagementRole: true, memberStatus: true, roleLabel: true, active: true, accessFrom: true, accessTo: true,
-          nominatedAt: true, decidedAt: true, decisionNote: true, allocation: true,
+          nominatedAt: true, decidedAt: true, decisionNote: true, allocation: true, origin: true,
           extensionRequestedTo: true, extensionRequestNote: true, extensionRequestedAt: true,
           user: { select: { id: true, name: true, email: true } },
           nominatedBy: { select: { name: true } }, decidedBy: { select: { name: true } },
@@ -471,6 +472,14 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
       isClient && e.status === 'Active'
         ? prisma.projectHold.count({ where: { projectId: e.id, endedAt: { not: null }, windowsSettledAt: null } })
         : 0,
+      // Sprint 7: the engagement this one follows, and those that follow it.
+      e.previousProjectId
+        ? prisma.project.findUnique({ where: { id: e.previousProjectId }, select: { id: true, ref: true, name: true, status: true } })
+        : null,
+      prisma.project.findMany({
+        where: { previousProjectId: e.id, ...(isFirm ? { providerTenantId: req.user!.tenantId } : {}) },
+        orderBy: { startDate: 'asc' }, select: { id: true, ref: true, name: true, status: true },
+      }),
     ]);
     const now = new Date();
     const held = e.status === 'OnHold';
@@ -483,12 +492,14 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         client: e.tenant?.name, firm: e.providerTenant?.name ?? null,
         // Sprint 6: whether shared documents can be downloaded, and whether it was migrated.
         documentAccess: e.documentAccess === 'Download' ? 'Download' : 'View', migrated: Boolean(e.migratedAt),
-        // Sprint 7: the window after close and the report-copy terms.
+        // Sprint 7: the window after close, the report-copy terms, the follow-on link.
         afterClose: {
           days: e.closeWindowDays ?? DEFAULT_CLOSE_WINDOW_DAYS, closedAt: e.actualEndDate,
           until: ['Closed', 'Cancelled'].includes(e.status) ? closeWindowEnd(e) : null, setAt: e.closeWindowSetAt,
         },
         reportCopiesAllowed: e.reportCopiesAllowed === true,
+        previousProjectId: e.previousProjectId, previousInScope: e.previousInScope === true,
+        previous, followOns,
       },
       side: isClient ? 'Client' : 'Provider',
       relationship,
@@ -510,6 +521,8 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         // Sprint 7: the organisation's after-close decisions.
         changeCloseWindow: isClient && Boolean(e.providerTenantId),
         setReportCopies: isClient && Boolean(e.providerTenantId) && !['Closed', 'Cancelled'].includes(e.status),
+        followOn: isClient && Boolean(e.providerTenantId) && e.status === 'Closed',
+        setPreviousInScope: isClient && Boolean(e.previousProjectId) && !['Closed', 'Cancelled'].includes(e.status),
         // The firm's Lead states its people's allocation; the organisation sets it on the team.
         setAllocation: isFirm && !held && !['Closed', 'Cancelled'].includes(e.status)
           && mine?.engagementRole === 'Lead' && mine.memberStatus === 'Approved' && mine.active,

@@ -93,6 +93,8 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             side: true, department: true, startDate: true, dueDate: true, completedAt: true,
             verificationOverride: true, verificationRound: true,
             submittedAt: true, verifiedAt: true,
+            // Sprint 7: still open on the engagement before, so carried over.
+            carriedFromTaskId: true,
             baselineStartDate: true, baselineDueDate: true,
             // When work began (S1); the actual line of the Gantt with completedAt.
             actualStartDate: true,

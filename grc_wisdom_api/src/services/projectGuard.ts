@@ -5,7 +5,7 @@ import { canReadProject, canWriteProject, sideOf } from './projectAccess';
 import { EngagementAction, roleMay, roleRefusal, accessOpen, planRefusal } from './engagementRules';
 import { recordShadow } from './engagementShadow';
 import { isEnforcedFor } from './engagementEnforcement';
-import { isEnded, closeWindowEnd } from './engagementAfterClose';
+import { isEnded, closeWindowEnd, readsThroughFollowOn } from './engagementAfterClose';
 
 /**
  * Load a delivery project and decide what a caller may do with it.
@@ -110,12 +110,13 @@ export async function canReadEngagement(
 
   // Closed or cancelled: read-only until the window after close ends, for the
   // people who still had access at the close; on an engagement never
-  // migrated, for the whole firm, as before (sprint 7).
+  // migrated, for the whole firm, as before. A follow-on in scope reads it
+  // too while it runs (sprint 7).
   if (isEnded(project.status)) {
     const until = closeWindowEnd(project);
     const windowOpen = Boolean(until && Date.now() < until.getTime());
     const keeps = project.deliveryStyle ? approved && m!.afterCloseAccess !== false : true;
-    const allowed = keeps && windowOpen;
+    const allowed = (keeps && windowOpen) || await readsThroughFollowOn(project.id, userId);
     if (regime === 'enforced') return allowed;
     if (!allowed) {
       recordShadow({

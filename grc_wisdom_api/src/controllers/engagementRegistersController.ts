@@ -8,7 +8,7 @@ import { recordAccess, recordingIsMandatory } from '../services/documentReadGuar
 import { noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { accessOpen } from '../services/engagementRules';
 import { bindingScope, registerScope, ScopeService } from '../services/engagementScope';
-import { isEnded, closeWindowEnd } from '../services/engagementAfterClose';
+import { isEnded, closeWindowEnd, readsThroughFollowOn } from '../services/engagementAfterClose';
 import { deliverDocument } from './documentController';
 import {
   str, send, notFound, loadEngagement, clientSide, flagFor, bothTrails, Engagement,
@@ -59,7 +59,8 @@ async function registerAccess(req: AuthenticatedRequest, service: ScopeService):
       // After close the window decides, not the person's own dates; the same
       // rule as the engagement itself, so its registers end with it.
       const until = closeWindowEnd(e);
-      approved = member && m!.afterCloseAccess !== false && Boolean(until && Date.now() < until.getTime());
+      approved = (member && m!.afterCloseAccess !== false && Boolean(until && Date.now() < until.getTime()))
+        || await readsThroughFollowOn(e.id, str(req.user!.id));
     } else {
       approved = member && accessOpen(m!);
     }
