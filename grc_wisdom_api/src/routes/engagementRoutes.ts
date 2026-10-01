@@ -11,6 +11,7 @@ import { getScope, draftScope, approveScope, discardScope } from '../controllers
 import {
   listSharedDocuments, getSharedDocument, fileSharedDocument, setDocumentAccess, listSharedRisks, listSharedAssets,
 } from '../controllers/engagementRegistersController';
+import { migrationProposals, migrateEngagement } from '../controllers/engagementMigrationController';
 
 /**
  * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
@@ -28,6 +29,7 @@ router.use(rejectIfMustChangePassword);
 
 router.get('/feature', featureState);
 router.get('/mine', myEngagements);
+router.get('/migration', requireCapability(CAP.MANAGE_PROJECT), migrationProposals);
 router.get('/shadow/summary', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), shadowSummary);
 
 router.get('/invitations', listInvitations);
@@ -56,6 +58,7 @@ router.get('/:projectId/documents/:documentId/file', fileSharedDocument);
 router.patch('/:projectId/document-access', requireCapability(CAP.MANAGE_PROJECT), setDocumentAccess);
 router.get('/:projectId/risks', listSharedRisks);
 router.get('/:projectId/assets', listSharedAssets);
+router.post('/:projectId/migrate', requireCapability(CAP.MANAGE_PROJECT), migrateEngagement);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;
