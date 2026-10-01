@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { resolveTenantScope, ScopeActor, TenantScope } from './scopeResolver';
 import { canReadProject, canWriteProject, sideOf } from './projectAccess';
-import { EngagementAction, roleMay, roleRefusal, accessOpen } from './engagementRules';
+import { EngagementAction, roleMay, roleRefusal, accessOpen, planRefusal } from './engagementRules';
 import { recordShadow } from './engagementShadow';
 import { isEnforcedFor } from './engagementEnforcement';
 
@@ -114,6 +114,55 @@ export async function canReadEngagement(
     });
   }
   return true;
+}
+
+/**
+ * A person of the delivery firm planning a task on a consulting engagement
+ * (sprint 6): null when they may, a refusal when they may not, or 'not-firm'
+ * when the caller is not the firm of a consulting engagement, for whom the
+ * existing read-only answer stands. The assignee must be on this engagement:
+ * an approved person of the firm, or someone on the organisation's side of
+ * its team.
+ */
+export async function firmPlanning(
+  project: GuardedProject,
+  user: { id: string; tenantId: string },
+  change: { side: string; assigneeId: string | null; previousAssigneeId?: string | null },
+): Promise<'not-firm' | { status: number; code: string; message: string } | null> {
+  const firmSide = Boolean(project.providerTenantId && user.tenantId === project.providerTenantId
+    && user.tenantId !== project.tenantId);
+  if (!firmSide || !project.deliveryStyle) return 'not-firm';
+  if (project.status === 'OnHold') {
+    return { status: 403, code: 'ON_HOLD_READ_ONLY', message: 'This engagement is on hold. The firm can view it and change nothing until it resumes.' };
+  }
+  const memberOf = (userId: string) => prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: project.id, userId } },
+    select: { side: true, engagementRole: true, memberStatus: true, active: true, accessFrom: true, accessTo: true },
+  });
+  const mine = await memberOf(String(user.id));
+  const role = mine && mine.active && mine.memberStatus === 'Approved' && accessOpen(mine) ? mine.engagementRole : null;
+
+  let assigneeIsClient = false;
+  if (change.assigneeId) {
+    const who = await prisma.user.findUnique({ where: { id: change.assigneeId }, select: { tenantId: true } });
+    const theirs = who ? await memberOf(change.assigneeId) : null;
+    if (who && who.tenantId === project.providerTenantId) {
+      if (!theirs || !theirs.active || theirs.memberStatus !== 'Approved') {
+        return { status: 400, code: 'BAD_ASSIGNEE', message: 'Assign the firm\'s tasks to someone the organisation approved on this engagement.' };
+      }
+    } else {
+      const onTeam = Boolean(who) && (change.assigneeId === project.ownerId || change.assigneeId === project.managerId
+        || Boolean(theirs && theirs.active && theirs.side === 'Client'));
+      if (!onTeam) {
+        return { status: 400, code: 'BAD_ASSIGNEE', message: 'Assign the organisation\'s tasks to someone on this engagement\'s team.' };
+      }
+      assigneeIsClient = true;
+    }
+  }
+  return planRefusal({
+    role, deliveryStyle: project.deliveryStyle, callerId: String(user.id), side: change.side,
+    assigneeIsClient, assigneeId: change.assigneeId, previousAssigneeId: change.previousAssigneeId,
+  });
 }
 
 /** Whether the current hold keeps the delivery firm out entirely. */

@@ -51,11 +51,12 @@ export const invitationExpiry = (from: Date): Date => new Date(from.getTime() + 
  * stay with the organisation's own people whatever the role, and what the
  * organisation has shared with the firm limits every role further (sprint 6).
  */
-export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate';
+export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan';
 
 const MAY: Record<EngagementRole, readonly EngagementAction[]> = {
-  Lead: ['read', 'work', 'submit', 'sequence', 'nominate'],
-  Consultant: ['read', 'work'],
+  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan'],
+  // A Consultant plans their own tasks only (sprint 6, planRefusal below).
+  Consultant: ['read', 'work', 'plan'],
   Reviewer: ['read'],
 };
 
@@ -69,6 +70,7 @@ const WORDS: Record<EngagementAction, string> = {
   submit: 'submit deliverables on this engagement; the firm\'s Lead does',
   sequence: 'link tasks on this engagement; the firm\'s Lead does',
   nominate: 'add or remove the firm\'s people; the firm\'s Lead does',
+  plan: 'plan tasks on this engagement',
 };
 
 export function roleRefusal(role: string | null | undefined, action: EngagementAction) {
@@ -128,3 +130,42 @@ export function noticeDue(
   return null;
 }
 
+// ─── Planning by the firm (sprint 6) ────────────────────────────────────────
+
+/**
+ * Whether a person of the delivery firm may plan this task, by the delivery
+ * style and their engagement role: the firm plans its own tasks; it assigns
+ * the organisation's tasks only on a consultant-led engagement, and only
+ * through its Lead; a Consultant plans only their own tasks; a Reviewer plans
+ * nothing. Null when allowed. Pure: the caller resolves who is on which side.
+ */
+export function planRefusal(args: {
+  role: string | null;
+  deliveryStyle: string | null;
+  callerId: string;
+  /** The task's side after the change, and whether its assignee is the organisation's. */
+  side: string;
+  assigneeIsClient: boolean;
+  /** The assignee after the change and, on an update, before it. */
+  assigneeId: string | null;
+  previousAssigneeId?: string | null;
+}): { status: 403; code: string; message: string } | null {
+  if (!roleMay(args.role, 'plan')) return roleRefusal(args.role, 'plan');
+  const clientTask = args.side === 'Client' || args.assigneeIsClient;
+  if (clientTask && args.deliveryStyle !== 'ConsultantLed') {
+    return {
+      status: 403, code: 'DELIVERY_STYLE',
+      message: 'This engagement is client-led: the firm plans its own tasks, and the organisation sets its own.',
+    };
+  }
+  if (clientTask && args.role !== 'Lead') {
+    return { status: 403, code: 'ENGAGEMENT_ROLE', message: 'Only the firm\'s Lead assigns the organisation\'s tasks.' };
+  }
+  if (args.role === 'Consultant') {
+    const own = (id: string | null | undefined) => !id || id === args.callerId;
+    if (!own(args.assigneeId) || (args.previousAssigneeId !== undefined && args.previousAssigneeId !== args.callerId)) {
+      return { status: 403, code: 'ENGAGEMENT_ROLE', message: 'As a Consultant you plan your own tasks; the firm\'s Lead plans the rest.' };
+    }
+  }
+  return null;
+}
