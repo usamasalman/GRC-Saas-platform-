@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, rejectIfMustChangePassword, requirePlatformTenant } from '../middlewares/authMiddleware';
-import { requireCapability, CAP } from '../services/capabilityEngine';
+import { requireCapability, requireAnyCapability, CAP } from '../services/capabilityEngine';
 import {
   featureState, listInvitations, inviteFirm, revokeInvitation, acceptInvitation, declineInvitation,
   getEngagement, nominatePerson, approvePerson, rejectPerson, removePerson, changeDeliveryStyle,
@@ -19,13 +19,18 @@ import { externalAccess, confirmAccessReview, sharedWith } from '../controllers/
 import { changeCloseWindow, setReportCopies } from '../controllers/engagementCloseWindowController';
 import { listRecords, getRecord, reportCopyFile, firmTeam, setAllocation } from '../controllers/engagementFirmController';
 import { createFollowOn, setPreviousInScope } from '../controllers/engagementFollowOnController';
+import {
+  listRequests, getRequest, myRequests, raiseRequest, answerRequest, declineRequest, withdrawRequest, reviewRequest,
+  reassignRequest, moveRequestDue, requestFile,
+} from '../controllers/engagementRequestController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
  * firm's people, the delivery style, access windows, the resume proposal, the
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
- * after close, report copies, the firm's records, its team and follow-ons.
+ * after close, report copies, the firm's records, its team and follow-ons,
+ * and (sprint 8) information requests.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -52,6 +57,7 @@ router.get('/records', requireCapability(CAP.MANAGE_PROJECT), listRecords);
 router.get('/records/:id', requireCapability(CAP.MANAGE_PROJECT), getRecord);
 router.get('/report-copies/:id/file', requireCapability(CAP.MANAGE_PROJECT), reportCopyFile);
 router.get('/firm-team', requireCapability(CAP.MANAGE_PROJECT), firmTeam);
+router.get('/requests/mine', myRequests);
 
 router.get('/invitations', listInvitations);
 router.post('/invitations', requireCapability(CAP.MANAGE_PROJECT), inviteFirm);
@@ -86,6 +92,20 @@ router.patch('/:projectId/close-window', requireCapability(CAP.MANAGE_PROJECT), 
 router.patch('/:projectId/report-copies', requireCapability(CAP.MANAGE_PROJECT), setReportCopies);
 router.post('/:projectId/follow-on', requireCapability(CAP.MANAGE_PROJECT), createFollowOn);
 router.patch('/:projectId/previous-in-scope', requireCapability(CAP.MANAGE_PROJECT), setPreviousInScope);
+
+// Information requests (sprint 8). The firm asks with project work; the
+// organisation's assignee answers with project work, its managers decide.
+// Who may do what beyond that floor is decided per request in the controller.
+router.get('/:projectId/requests', listRequests);
+router.post('/:projectId/requests', requireCapability(CAP.EXECUTE_PROJECT_WORK), raiseRequest);
+router.get('/:projectId/requests/:requestId', getRequest);
+router.get('/:projectId/requests/:requestId/files/:linkId', requestFile);
+router.post('/:projectId/requests/:requestId/answer', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), answerRequest);
+router.post('/:projectId/requests/:requestId/decline', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), declineRequest);
+router.post('/:projectId/requests/:requestId/review', requireCapability(CAP.EXECUTE_PROJECT_WORK), reviewRequest);
+router.post('/:projectId/requests/:requestId/withdraw', requireCapability(CAP.EXECUTE_PROJECT_WORK), withdrawRequest);
+router.patch('/:projectId/requests/:requestId/assignee', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), reassignRequest);
+router.patch('/:projectId/requests/:requestId/due', requireCapability(CAP.MANAGE_PROJECT), moveRequestDue);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

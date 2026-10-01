@@ -45,18 +45,21 @@ export const invitationExpiry = (from: Date): Date => new Date(from.getTime() + 
  *   submit    submit deliverables for the organisation to approve
  *   sequence  link the firm's tasks (what waits on what)
  *   nominate  add or remove the firm's people
+ *   request   ask the organisation for evidence, a document, a dataset or a
+ *             clarification, or for a wider scope (sprint 8)
+ *   review    review the organisation's answers to requests (sprint 8)
  *
  * The Lead does all of it; a Consultant works assigned tasks; a Reviewer
  * checks and comments and changes nothing. Approving, verifying and accepting
  * stay with the organisation's own people whatever the role, and what the
  * organisation has shared with the firm limits every role further (sprint 6).
  */
-export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan';
+export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan' | 'request' | 'review';
 
 const MAY: Record<EngagementRole, readonly EngagementAction[]> = {
-  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan'],
+  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan', 'request', 'review'],
   // A Consultant plans their own tasks only (sprint 6, planRefusal below).
-  Consultant: ['read', 'work', 'plan'],
+  Consultant: ['read', 'work', 'plan', 'request', 'review'],
   Reviewer: ['read'],
 };
 
@@ -71,6 +74,8 @@ const WORDS: Record<EngagementAction, string> = {
   sequence: 'link tasks on this engagement; the firm\'s Lead does',
   nominate: 'add or remove the firm\'s people; the firm\'s Lead does',
   plan: 'plan tasks on this engagement',
+  request: 'raise requests on this engagement; the firm\'s Lead and Consultants do',
+  review: 'review answers on this engagement; the firm\'s Lead and Consultants do',
 };
 
 export function roleRefusal(role: string | null | undefined, action: EngagementAction) {
