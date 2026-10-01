@@ -12,6 +12,9 @@ import {
   listSharedDocuments, getSharedDocument, fileSharedDocument, setDocumentAccess, listSharedRisks, listSharedAssets,
 } from '../controllers/engagementRegistersController';
 import { migrationProposals, migrateEngagement } from '../controllers/engagementMigrationController';
+import {
+  enforcementReadiness, markShadow, scheduleEnforcement, rollbackEnforcement, myEnforcementStatus, confirmEnforcement,
+} from '../controllers/engagementEnforcementController';
 
 /**
  * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
@@ -31,6 +34,12 @@ router.get('/feature', featureState);
 router.get('/mine', myEngagements);
 router.get('/migration', requireCapability(CAP.MANAGE_PROJECT), migrationProposals);
 router.get('/shadow/summary', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), shadowSummary);
+router.patch('/shadow/:id/disposition', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), markShadow);
+router.get('/enforcement/readiness', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), enforcementReadiness);
+router.post('/enforcement/schedule', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), scheduleEnforcement);
+router.post('/enforcement/rollback', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), rollbackEnforcement);
+router.get('/enforcement/status', requireCapability(CAP.ADD_USER), myEnforcementStatus);
+router.post('/enforcement/confirm', requireCapability(CAP.ADD_USER), confirmEnforcement);
 
 router.get('/invitations', listInvitations);
 router.post('/invitations', requireCapability(CAP.MANAGE_PROJECT), inviteFirm);
