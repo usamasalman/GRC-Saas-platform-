@@ -6,9 +6,8 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
 import { recordAccess, recordingIsMandatory } from '../services/documentReadGuard';
 import { noteIsEnough, MIN_NOTE } from '../services/projectActivation';
-import { accessOpen } from '../services/engagementRules';
 import { bindingScope, registerScope, ScopeService } from '../services/engagementScope';
-import { isEnded, closeWindowEnd, readsThroughFollowOn } from '../services/engagementAfterClose';
+import { firmAccess } from '../services/engagementFirmAccess';
 import { deliverDocument } from './documentController';
 import {
   str, send, notFound, loadEngagement, clientSide, flagFor, bothTrails, Engagement,
@@ -46,28 +45,9 @@ async function registerAccess(req: AuthenticatedRequest, service: ScopeService):
   let side: 'Client' | 'Provider' | null = null;
   if (await clientSide(req, e)) side = 'Client';
   else if (e.providerTenantId && e.providerTenantId === req.user!.tenantId) {
-    // New routes, so enforced from the start whatever the regime: an
-    // approved person of the firm inside their own dates, and not while a
-    // hold keeps the firm out.
-    const m = await prisma.projectMember.findUnique({
-      where: { projectId_userId: { projectId: e.id, userId: str(req.user!.id) } },
-      select: { side: true, memberStatus: true, active: true, accessFrom: true, accessTo: true, afterCloseAccess: true },
-    });
-    const member = Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
-    let approved: boolean;
-    if (isEnded(e.status)) {
-      // After close the window decides, not the person's own dates; the same
-      // rule as the engagement itself, so its registers end with it.
-      const until = closeWindowEnd(e);
-      approved = (member && m!.afterCloseAccess !== false && Boolean(until && Date.now() < until.getTime()))
-        || await readsThroughFollowOn(e.id, str(req.user!.id));
-    } else {
-      approved = member && accessOpen(m!);
-    }
-    const shutOut = e.status === 'OnHold' && (await prisma.projectHold.findFirst({
-      where: { projectId: e.id, endedAt: null }, select: { firmAccess: true },
-    }))?.firmAccess === 'None';
-    if (approved && !shutOut) side = 'Provider';
+    // New routes, so enforced from the start whatever the regime: one rule,
+    // shared with requests (services/engagementFirmAccess).
+    if ((await firmAccess(e, str(req.user!.id))).reads) side = 'Provider';
   }
   if (!side) return { ok: false, status: 404, message: 'Engagement not found' };
   const refusal = await flagFor(e);
