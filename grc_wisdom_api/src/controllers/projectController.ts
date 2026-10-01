@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { projectWhere, canWriteProject, sideOf } from '../services/projectAccess';
+import { enforcedClientsFor } from '../services/engagementEnforcement';
 import { canReadEngagement } from '../services/projectGuard';
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
@@ -127,7 +128,7 @@ async function nextRef(tenantId: string): Promise<string> {
 
 const LIST_SELECT = {
   // A consulting engagement's style; null for one named the old way (S4).
-  deliveryStyle: true,
+  deliveryStyle: true, migratedAt: true,
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
   verificationPolicy: true,
@@ -178,7 +179,9 @@ export const listProjects = async (req: AuthenticatedRequest, res: Response): Pr
 
     const { status, search } = req.query as Record<string, string | undefined>;
 
-    const where: any = { AND: [projectWhere(scope, str(req.user!.id))] };
+    // A firm's list honours each client's enforcement (sprint 6).
+    const enforced = await enforcedClientsFor(scope.tenantIds);
+    const where: any = { AND: [projectWhere(scope, str(req.user!.id), new Date(), enforced)] };
     if (status) where.AND.push({ status });
     if (search) {
       where.AND.push({
@@ -623,7 +626,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true, name: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, name: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
@@ -989,7 +992,7 @@ export const activateProject = async (req: AuthenticatedRequest, res: Response):
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
@@ -1101,7 +1104,7 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true,
         status: true, baselineVersion: true, baselineSetAt: true,
       },
     });
@@ -1210,7 +1213,7 @@ export const changeHoldAccess = async (req: AuthenticatedRequest, res: Response)
     const id = str(req.params.id);
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true, status: true },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, status: true },
     });
     if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
@@ -1305,7 +1308,7 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
 
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, ref: true, status: true, reportedProgress: true },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, status: true, reportedProgress: true },
     });
     if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });

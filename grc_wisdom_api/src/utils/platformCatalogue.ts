@@ -218,5 +218,17 @@ export const FEATURE_FLAG_CATALOGUE: FlagSeed[] = [
     scope: 'Selected Tenants',
     expiryDate: null,
     rolloutPercentage: 0
+  },
+  {
+    // Sprint 6. Separate from consulting being on: enforced for the client
+    // organisation, and only where consulting is also on for it. Off returns
+    // an organisation to shadow mode, not to consulting being off.
+    key: 'Consulting enforcement',
+    description: 'Enforces the consulting rules of an organisation on engagements that named a firm the old way or were migrated from one: only approved people, inside their dates, with their role. Off counts what would be refused instead. Checked against the client organisation; has no effect where consulting is off.',
+    status: 'Disabled',
+    owner: 'Product Operations',
+    scope: 'Selected Tenants',
+    expiryDate: null,
+    rolloutPercentage: 0
   }
 ];

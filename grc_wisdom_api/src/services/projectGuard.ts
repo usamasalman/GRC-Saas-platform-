@@ -4,6 +4,7 @@ import { resolveTenantScope, ScopeActor, TenantScope } from './scopeResolver';
 import { canReadProject, canWriteProject, sideOf } from './projectAccess';
 import { EngagementAction, roleMay, roleRefusal, accessOpen } from './engagementRules';
 import { recordShadow } from './engagementShadow';
+import { isEnforcedFor } from './engagementEnforcement';
 
 /**
  * Load a delivery project and decide what a caller may do with it.
@@ -33,6 +34,33 @@ export interface GuardedProject {
   baselineVersion: number;
   /** ClientLed | ConsultantLed on a consulting engagement; null otherwise. */
   deliveryStyle: string | null;
+  /** Set when the engagement was migrated from naming a firm the old way (S6). */
+  migratedAt: Date | null;
+}
+
+/** The engagement fields the firm-side checks need. */
+export interface EngagementRules {
+  id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null;
+  status: string; migratedAt: Date | null;
+}
+
+/**
+ * How an engagement's consulting rules apply to its delivery firm (sprint 6):
+ *
+ *   enforced  a firm that joined by invitation, from the start (sprints 4 and
+ *             5); an engagement named the old way, or migrated from one, once
+ *             the client's rules are enforced;
+ *   shadow    those two before then: the firm works as before and what the
+ *             rules would refuse is counted;
+ *   asBefore  a closed engagement named the old way, which keeps its access
+ *             until the after-close rules (sprint 7).
+ */
+export type Regime = 'enforced' | 'shadow' | 'asBefore';
+
+export async function regimeFor(p: Pick<EngagementRules, 'tenantId' | 'deliveryStyle' | 'migratedAt' | 'status'>): Promise<Regime> {
+  if (p.deliveryStyle && !p.migratedAt) return 'enforced';
+  if (!p.deliveryStyle && (p.status === 'Closed' || p.status === 'Cancelled')) return 'asBefore';
+  return (await isEnforcedFor(p.tenantId)) ? 'enforced' : 'shadow';
 }
 
 export interface ProjectGuard {
@@ -56,9 +84,7 @@ export interface ProjectGuard {
 export async function canReadEngagement(
   scope: TenantScope,
   userId: string,
-  project: {
-    id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null; status: string;
-  },
+  project: EngagementRules,
 ): Promise<boolean> {
   if (scope.tenantIds.includes(project.tenantId)) return true;
   if (!canReadProject(scope, project)) return false;
@@ -73,21 +99,21 @@ export async function canReadEngagement(
     select: { side: true, memberStatus: true, active: true, accessFrom: true, accessTo: true },
   });
   const approved = Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
+  const regime = await regimeFor(project);
+  if (regime === 'asBefore') return true;
+  // An approved member inside their window, checked on every request: dates
+  // the organisation set are enforced, not shadowed.
+  if (regime === 'enforced') return approved && accessOpen(m!);
 
-  if (!project.deliveryStyle) {
-    // Named the old way: read as before, and counted in shadow where going
-    // live would refuse it, so the organisation can see that before it does.
-    if (!approved) {
-      recordShadow({
-        projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
-        rule: 'member-required',
-      });
-    }
-    return true;
+  // Shadow: read as before, and counted where enforcement would refuse it,
+  // so the organisation can see that before it switches enforcement on.
+  if (!approved || !accessOpen(m!)) {
+    recordShadow({
+      projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
+      rule: approved ? 'outside-window' : 'member-required',
+    });
   }
-  // An approved member inside their window, checked on every request:
-  // dates the organisation set are enforced, not shadowed.
-  return approved && accessOpen(m!);
+  return true;
 }
 
 /** Whether the current hold keeps the delivery firm out entirely. */
@@ -109,7 +135,7 @@ export async function guardProject(
       id: true, tenantId: true, providerTenantId: true,
       ref: true, name: true, status: true, verificationPolicy: true,
       ownerId: true, managerId: true,
-      baselineSetAt: true, baselineVersion: true, deliveryStyle: true,
+      baselineSetAt: true, baselineVersion: true, deliveryStyle: true, migratedAt: true,
     },
   });
 
@@ -188,7 +214,7 @@ export function actsForFirm(
  * on the organisation's side or on an engagement named the old way.
  */
 export async function firmRefusal(
-  project: { id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null; status: string },
+  project: EngagementRules,
   user: { id: string; tenantId: string },
   action: EngagementAction,
 ): Promise<{ status: number; code: string; message: string } | null> {
@@ -212,17 +238,16 @@ export async function firmRefusal(
   });
   const role = m && m.active && m.memberStatus === 'Approved' && accessOpen(m) ? m.engagementRole : null;
 
-  if (!project.deliveryStyle) {
-    // Named the old way: allowed as before, counted where going live would refuse.
-    if (!roleMay(role, action)) {
-      recordShadow({
-        projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
-        rule: 'role-required',
-      });
-    }
-    return null;
+  const regime = await regimeFor(project);
+  if (regime === 'enforced') return roleMay(role, action) ? null : roleRefusal(role, action);
+  // Shadow: allowed as before, counted where enforcement would refuse it.
+  if (regime === 'shadow' && !roleMay(role, action)) {
+    recordShadow({
+      projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
+      rule: 'role-required',
+    });
   }
-  return roleMay(role, action) ? null : roleRefusal(role, action);
+  return null;
 }
 
 /** Approving, verifying and accepting stay with the organisation's own people. */

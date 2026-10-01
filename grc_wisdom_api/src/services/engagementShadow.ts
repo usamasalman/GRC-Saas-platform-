@@ -20,6 +20,8 @@ export const SHADOW_RULES: Record<string, string> = {
     'A person from the firm read the engagement without being an approved member of it.',
   'role-required':
     'A person from the firm changed something their engagement role would not allow, or without a role.',
+  'outside-window':
+    'An approved person from the firm used the engagement before their access started or after it ended.',
 };
 
 export const SHADOW_RETENTION_DAYS = 90;

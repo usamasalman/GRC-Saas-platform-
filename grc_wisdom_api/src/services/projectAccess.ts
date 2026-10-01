@@ -25,8 +25,14 @@ import { TenantScope } from './scopeResolver';
  * did not.
  */
 
-/** Prisma `where` fragment restricting Project rows to what this caller may read. */
-export function projectWhere(scope: TenantScope, userId?: string, now: Date = new Date()) {
+/**
+ * Prisma `where` fragment restricting Project rows to what this caller may read.
+ *
+ * `enforcedClientIds` are the client organisations whose consulting rules are
+ * enforced (engagementEnforcement.enforcedClientsFor); the list is one query,
+ * so the caller works them out first.
+ */
+export function projectWhere(scope: TenantScope, userId?: string, now: Date = new Date(), enforcedClientIds: readonly string[] = []) {
   return {
     OR: [
       { tenantId: { in: scope.tenantIds } },
@@ -35,9 +41,13 @@ export function projectWhere(scope: TenantScope, userId?: string, now: Date = ne
         // A consulting engagement (one with a delivery style) is the firm's to
         // see person by person: only people the organisation approved, inside
         // their window: from its start to the end of its end date. One naming
-        // a firm the old way is read by the firm as before (sprints 4 to 6).
+        // a firm the old way, or migrated from one, is read by the firm as
+        // before until the client's rules are enforced; a closed one keeps
+        // its old access until the after-close rules (sprints 4 to 7).
         OR: [
-          { deliveryStyle: null },
+          { deliveryStyle: null, status: { in: ['Closed', 'Cancelled'] } },
+          { deliveryStyle: null, tenantId: { notIn: [...enforcedClientIds] } },
+          { migratedAt: { not: null }, tenantId: { notIn: [...enforcedClientIds] } },
           ...(userId ? [{
             members: {
               some: {

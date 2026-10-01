@@ -19,11 +19,23 @@ import { prisma } from '../db';
 /** The consulting layer: invitations, relationships, nominations, delivery style. */
 export const CONSULTING_FLAG = 'Consulting Engagements';
 
-export interface FlagRow { status: string; expiryDate: Date | null }
+/**
+ * The consulting rules enforced for an organisation's engagements, rather
+ * than counted in shadow (sprint 6). Separate from CONSULTING_FLAG: "on" and
+ * "enforced" are two states, and switching enforcement off returns an
+ * organisation to shadow mode, not to consulting being off.
+ */
+export const ENFORCEMENT_FLAG = 'Consulting enforcement';
 
-export function flagOnFor(flag: FlagRow | null, override: { enabled: boolean } | null, now: Date = new Date()): boolean {
+export interface FlagRow { status: string; expiryDate: Date | null }
+export interface OverrideRow { enabled: boolean; effectiveFrom?: Date | null }
+
+export function flagOnFor(flag: FlagRow | null, override: OverrideRow | null, now: Date = new Date()): boolean {
   if (!flag) return false;
-  if (override) return override.enabled;
+  // An "on" override dated ahead does not count until its date: the platform
+  // gives notice before enforcement starts (sprint 6). "Off" counts at once.
+  const pending = Boolean(override?.enabled && override.effectiveFrom && override.effectiveFrom > now);
+  if (override && !pending) return override.enabled;
   if (flag.expiryDate && flag.expiryDate < now) return false;
   return flag.status === 'Enabled';
 }
@@ -33,7 +45,10 @@ export async function featureStates(key: string, tenantIds: readonly string[]): 
   const ids = [...new Set(tenantIds.filter(Boolean))];
   const flag = await prisma.featureFlag.findUnique({
     where: { key },
-    select: { status: true, expiryDate: true, overrides: { where: { tenantId: { in: ids } }, select: { tenantId: true, enabled: true } } },
+    select: {
+      status: true, expiryDate: true,
+      overrides: { where: { tenantId: { in: ids } }, select: { tenantId: true, enabled: true, effectiveFrom: true } },
+    },
   });
   const now = new Date();
   const byTenant = new Map((flag?.overrides || []).map((o) => [o.tenantId, o]));

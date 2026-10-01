@@ -255,8 +255,9 @@ const {
   checks += 1;
   assert.ok(
     // With the caller, so a firm's person sees a consulting engagement's
-    // tasks only while approved on it (sprint 4).
-    /projectWhere\(scope, userId\)/.test(plan),
+    // tasks only while approved on it (sprint 4), and with each client's
+    // enforcement (sprint 6).
+    /projectWhere\(scope, userId[,)]/.test(plan),
     'and must ALSO apply the caller\'s read scope. A task can be reassigned to somebody whose '
     + 'access to the engagement has since been withdrawn, and their own inbox must not become '
     + 'the back door to it.',

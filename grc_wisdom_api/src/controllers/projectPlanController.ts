@@ -9,6 +9,7 @@ import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmR
 import { recomputeProject } from '../services/projectRollup';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { projectWhere } from '../services/projectAccess';
+import { enforcedClientsFor } from '../services/engagementEnforcement';
 import { notify } from '../services/notificationService';
 import {
   assignmentAudience, bucketWork, bucketRank, summarise, WORK_BUCKETS,
@@ -254,7 +255,7 @@ export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<
       where: {
         assigneeId: userId,
         project: {
-          ...projectWhere(scope, userId),
+          ...projectWhere(scope, userId, now, await enforcedClientsFor(scope.tenantIds)),
           status: { notIn: ['Closed', 'Cancelled'] },
         },
         ...(includeDone ? {} : { status: { notIn: ['Done', 'Verified'] } }),
