@@ -109,6 +109,8 @@ model Tenant {
   enforcementConfirmations EnforcementConfirmation[]
   engagementRecords        EngagementRecord[]
   engagementReportCopies   EngagementReportCopy[]
+  // Consulting engagement, sprint 8.
+  evidenceItems            EvidenceItem[]
 }
 
 model User {
@@ -282,6 +284,17 @@ model User {
   closeWindowsSet                Project[]       @relation("CloseWindowSetter")
   reportCopySettings             Project[]       @relation("ReportCopiesSetter")
   engagementRecordsMade          EngagementRecord[] @relation("EngagementRecordMaker")
+  // Consulting engagement, sprint 8.
+  requestsRaised                 InformationRequest[] @relation("RequestRaiser")
+  requestsAssigned               InformationRequest[] @relation("RequestAssignee")
+  requestsClosed                 InformationRequest[] @relation("RequestCloser")
+  requestAnswers                 RequestAnswer[]      @relation("RequestAnswerer")
+  requestReviews                 RequestReview[]      @relation("RequestReviewer")
+  evidenceItemsUploaded          EvidenceItem[]       @relation("EvidenceItemUploader")
+  evidenceLinksMade              EvidenceLink[]       @relation("EvidenceLinker")
+  evidenceLinksRemoved           EvidenceLink[]       @relation("EvidenceUnlinker")
+  scopeChangesRequested          ScopeChangeRequest[] @relation("ScopeChangeRequester")
+  scopeChangesDecided            ScopeChangeRequest[] @relation("ScopeChangeDecider")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3218,6 +3231,8 @@ model Project {
   previousInScope            Boolean?
   engagementRecords          EngagementRecord[]
   engagementReportCopies     EngagementReportCopy[]
+  informationRequests        InformationRequest[]
+  scopeChangeRequests        ScopeChangeRequest[]
   invitations                EngagementInvitation[]
   shadowRefusals             EngagementShadowRefusal[]
 
@@ -3771,6 +3786,9 @@ model ProjectImpediment {
   resolutionNote String?
   /// Carried over from the engagement before, still open there (sprint 7).
   carriedFromId  String?
+  /// Recorded from an overdue information request (sprint 8).
+  informationRequestId String?
+  informationRequest   InformationRequest? @relation(fields: [informationRequestId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -4416,4 +4434,199 @@ model EngagementReportCopy {
   @@index([firmTenantId, issuedAt])
   @@index([firmTenantId, clientTenantId, projectRef])
   @@index([projectId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Consulting engagement, sprint 8: information requests
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// What a consulting firm asks the organisation for: evidence, a document, a
+/// dataset or a clarification, about something inside the engagement's scope.
+/// The organisation's record; the firm sees it through the engagement.
+model InformationRequest {
+  id           String    @id @default(uuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// REQ-0001, sequential per engagement.
+  ref          String
+  /// Evidence | Document | Dataset | Clarification
+  kind         String
+  title        String
+  /// What would satisfy it, as the firm will review the answer.
+  criteria     String?
+  /// Engagement | Task | Clause | Control | Register
+  targetType   String    @default("Engagement")
+  /// The task, clause, control implementation or register it is about.
+  targetId     String?
+  /// What the target was called when the request was raised.
+  targetLabel  String?
+  periodFrom   DateTime?
+  periodTo     DateTime?
+  dueDate      DateTime
+  /// Open | Answered | Returned | Accepted | Declined | Withdrawn
+  status       String    @default("Open")
+  raisedById   String
+  raisedBy     User      @relation("RequestRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
+  raisedAt     DateTime  @default(now())
+  /// Someone of the organisation: proposed by the firm from the engagement's
+  /// team, the project manager when nobody is named.
+  assigneeId   String
+  assignee     User      @relation("RequestAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+  /// Declined or withdrawn: by whom, when and why.
+  closedById   String?
+  closedBy     User?     @relation("RequestCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt     DateTime?
+  closeNote    String?
+  /// The notices sent for the due date, once each; cleared when it moves.
+  reminderSentAt DateTime?
+  dueNoticeAt    DateTime?
+  /// The file it came in, when it was imported in bulk.
+  importedFrom String?
+  /// The scope change it waited for, when it could not be raised before.
+  scopeChangeId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  answers      RequestAnswer[]
+  reviews      RequestReview[]
+  impediments  ProjectImpediment[]
+
+  @@unique([projectId, ref])
+  @@index([projectId, status])
+  @@index([assigneeId, status])
+  @@index([status, dueDate])
+}
+
+/// One answer to a request. A replacement adds the next version; the one it
+/// replaced stays, with its files and their hashes, as the request's history.
+model RequestAnswer {
+  id           String    @id @default(uuid())
+  requestId    String
+  request      InformationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  version      Int
+  /// Upload | Evidence | Document | Record | Text
+  kind         String
+  text         String?
+  /// A published document of the organisation's, shared by the scope.
+  documentId   String?
+  /// A record already shared by the scope: its register and id.
+  register     String?
+  recordId     String?
+  recordLabel  String?
+  answeredById String
+  answeredBy   User      @relation("RequestAnswerer", fields: [answeredById], references: [id], onDelete: Cascade)
+  answeredAt   DateTime  @default(now())
+  replacedAt   DateTime?
+
+  @@unique([requestId, version])
+}
+
+/// The firm's review of an answer. Evidence is reviewed against four tests,
+/// each Pass, Fail or NotApplicable; a Fail has a note. Accepted counts
+/// toward readiness only, never toward a task or control being verified.
+model RequestReview {
+  id           String    @id @default(uuid())
+  requestId    String
+  request      InformationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  answerId     String
+  reviewerId   String
+  reviewer     User      @relation("RequestReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  relevant     String?
+  complete     String?
+  coversPeriod String?
+  authentic    String?
+  /// JSON: the note for each test that failed.
+  testNotes    String    @default("{}")
+  /// Accepted | Returned
+  outcome      String
+  /// What is missing, when returned.
+  note         String?
+  reviewedAt   DateTime  @default(now())
+
+  @@index([requestId, reviewedAt])
+}
+
+/// A file the organisation holds as evidence, stored once in its tenant and
+/// hashed at upload. Linked wherever it is used; never deleted by unlinking.
+model EvidenceItem {
+  id             String    @id @default(uuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title          String
+  storageKey     String    @unique
+  fileName       String
+  fileSize       Int
+  /// Sniffed from the bytes, not taken from the caller.
+  mimeType       String
+  /// SHA-256 of the bytes on disk.
+  sha256         String
+  classification String    @default("Internal")
+  uploadedById   String
+  uploadedBy     User      @relation("EvidenceItemUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadedAt     DateTime  @default(now())
+
+  @@index([tenantId, sha256])
+}
+
+/// Where an evidence file is used: a request's answer, a task or a control.
+/// The item is an EvidenceItem or a task's ProjectEvidence; existing rows are
+/// linked, never moved. Removing a link keeps the file and the link's history.
+model EvidenceLink {
+  id          String    @id @default(uuid())
+  /// The organisation that holds the item.
+  tenantId    String
+  /// EvidenceItem | ProjectEvidence
+  itemKind    String
+  itemId      String
+  /// Request | Task | Control
+  targetType  String
+  targetId    String
+  /// For a request, the answer the file belongs to.
+  answerId    String?
+  /// The engagement it was linked in.
+  projectId   String?
+  linkedById  String
+  linkedBy    User      @relation("EvidenceLinker", fields: [linkedById], references: [id], onDelete: Cascade)
+  linkedAt    DateTime  @default(now())
+  removedById String?
+  removedBy   User?     @relation("EvidenceUnlinker", fields: [removedById], references: [id], onDelete: SetNull)
+  removedAt   DateTime?
+
+  @@index([itemKind, itemId])
+  @@index([targetType, targetId])
+  @@index([answerId])
+}
+
+/// The firm asks for more than the scope shares. Only the organisation
+/// decides: its approval drafts the next scope version, which a second person
+/// of the organisation approves before any access widens.
+model ScopeChangeRequest {
+  id            String    @id @default(uuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// SCR-001, sequential per engagement.
+  ref           String
+  /// JSON lists of what to add, and a higher ceiling if asked.
+  services      String    @default("[]")
+  entityIds     String    @default("[]")
+  frameworkIds  String    @default("[]")
+  classificationCeiling String?
+  reason        String
+  /// JSON: the request that could not be raised, raised when the scope binds.
+  pendingRequest String?
+  requestedById String
+  requestedBy   User      @relation("ScopeChangeRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedAt   DateTime  @default(now())
+  /// Pending | Drafted | Approved | Rejected | Withdrawn
+  status        String    @default("Pending")
+  decidedById   String?
+  decidedBy     User?     @relation("ScopeChangeDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt     DateTime?
+  decisionNote  String?
+  /// The draft its approval made.
+  scopeVersionId String?
+  /// The request raised when the new scope bound.
+  raisedRequestId String?
+
+  @@unique([projectId, ref])
+  @@index([projectId, status])
 }
