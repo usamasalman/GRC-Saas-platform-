@@ -6,6 +6,7 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
 import { projectWhere, canWriteProject, sideOf } from '../services/projectAccess';
 import { enforcedClientsFor } from '../services/engagementEnforcement';
+import { validWindowDays, windowDaysOf, keepsAfterClose } from '../services/engagementAfterClose';
 import { canReadEngagement } from '../services/projectGuard';
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
@@ -128,7 +129,7 @@ async function nextRef(tenantId: string): Promise<string> {
 
 const LIST_SELECT = {
   // A consulting engagement's style; null for one named the old way (S4).
-  deliveryStyle: true, migratedAt: true,
+  deliveryStyle: true, migratedAt: true, closeAccessUntil: true, closeWindowDays: true,
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
   verificationPolicy: true,
@@ -626,7 +627,7 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, name: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, name: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
@@ -992,7 +993,7 @@ export const activateProject = async (req: AuthenticatedRequest, res: Response):
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
@@ -1104,7 +1105,7 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true,
         status: true, baselineVersion: true, baselineSetAt: true,
       },
     });
@@ -1213,7 +1214,7 @@ export const changeHoldAccess = async (req: AuthenticatedRequest, res: Response)
     const id = str(req.params.id);
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, status: true },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, status: true },
     });
     if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
@@ -1295,6 +1296,13 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
       res.status(400).json({ status: 'error', message: "outcome must be 'Closed' or 'Cancelled'" });
       return;
     }
+    // The window after close (sprint 7): the days the dialog confirms, else
+    // those set ahead on the engagement, else ninety.
+    const askedDays = req.body?.afterCloseDays;
+    if (askedDays !== undefined && askedDays !== null && askedDays !== '' && validWindowDays(askedDays) === null) {
+      res.status(400).json({ status: 'error', code: 'BAD_WINDOW', message: 'The window after close is 0 to 365 days.' });
+      return;
+    }
     // One length rule, in services/projectActivation, so closing and
     // rebaselining cannot drift apart on what counts as an explanation.
     if (!noteIsEnough(closureNote)) {
@@ -1308,7 +1316,7 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
 
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, ref: true, status: true, reportedProgress: true },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, status: true, reportedProgress: true },
     });
     if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
@@ -1334,11 +1342,28 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
       // Conditional on the status read above, now that Close is a button: two
       // clicks arriving together close it once, and a project resumed or held
       // in between is not closed from a state nobody saw.
+      // The window is fixed only where a firm delivers the engagement.
+      const days = validWindowDays(askedDays) ?? windowDaysOf(existing);
+      const until = new Date(now.getTime() + days * 86_400_000);
       const moved = await tx.project.updateMany({
         where: { id, status: existing.status },
-        data: { status: outcome, closureNote: str(closureNote).trim(), actualEndDate: now },
+        data: {
+          status: outcome, closureNote: str(closureNote).trim(), actualEndDate: now,
+          ...(existing.providerTenantId
+            ? { closeWindowDays: days, closeAccessUntil: until, closeWarnedAt: null, closeEndNoticeAt: null }
+            : {}),
+        },
       });
       if (moved.count === 0) throw new StatusChanged();
+      // Who keeps read-only access until the window ends: the firm's people
+      // who still had access at this moment, not anyone whose dates had ended.
+      const firmPeople = existing.providerTenantId ? await tx.projectMember.findMany({
+        where: { projectId: id, side: 'Provider', memberStatus: 'Approved', active: true },
+        select: { id: true, accessFrom: true, accessTo: true },
+      }) : [];
+      for (const m of firmPeople) {
+        await tx.projectMember.update({ where: { id: m.id }, data: { afterCloseAccess: keepsAfterClose(m, now) } });
+      }
       // Cancelling a held project ends its hold, or the interval stays open
       // and its days keep counting on a project that no longer exists.
       const hold = existing.status === 'OnHold'
@@ -1355,13 +1380,15 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
         payload: {
           ref: existing.ref, progressAtClosure: existing.reportedProgress, closureNote,
           ...(hold ? { daysOnHold: hold.daysOnHold } : {}),
+          ...(existing.providerTenantId ? { afterCloseDays: days, firmReadsUntil: until } : {}),
         },
       });
-      // The delivery firm's trail records that its engagement ended.
+      // The delivery firm's trail records that its engagement ended, and
+      // until when it may still read it.
       if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
         await writeAudit(tx, {
           tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
-          payload: { ref: existing.ref, clientTenantId: existing.tenantId },
+          payload: { ref: existing.ref, clientTenantId: existing.tenantId, afterCloseDays: days, firmReadsUntil: until },
         });
       }
       return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });

@@ -5,6 +5,7 @@ import { canReadProject, canWriteProject, sideOf } from './projectAccess';
 import { EngagementAction, roleMay, roleRefusal, accessOpen, planRefusal } from './engagementRules';
 import { recordShadow } from './engagementShadow';
 import { isEnforcedFor } from './engagementEnforcement';
+import { isEnded, closeWindowEnd } from './engagementAfterClose';
 
 /**
  * Load a delivery project and decide what a caller may do with it.
@@ -36,12 +37,18 @@ export interface GuardedProject {
   deliveryStyle: string | null;
   /** Set when the engagement was migrated from naming a firm the old way (S6). */
   migratedAt: Date | null;
+  /** After close (S7): when it closed, and the window the organisation set. */
+  actualEndDate: Date | null;
+  closeAccessUntil: Date | null;
+  closeWindowDays: number | null;
 }
 
 /** The engagement fields the firm-side checks need. */
 export interface EngagementRules {
   id: string; tenantId: string; providerTenantId: string | null; deliveryStyle: string | null;
   status: string; migratedAt: Date | null;
+  /** After close (S7): when it closed, and the window the organisation set. */
+  actualEndDate: Date | null; closeAccessUntil: Date | null; closeWindowDays: number | null;
 }
 
 /**
@@ -51,15 +58,15 @@ export interface EngagementRules {
  *             5); an engagement named the old way, or migrated from one, once
  *             the client's rules are enforced;
  *   shadow    those two before then: the firm works as before and what the
- *             rules would refuse is counted;
- *   asBefore  a closed engagement named the old way, which keeps its access
- *             until the after-close rules (sprint 7).
+ *             rules would refuse is counted.
+ *
+ * A closed engagement named the old way follows the window after close under
+ * the same switch (sprint 7): counted until the client is enforced.
  */
-export type Regime = 'enforced' | 'shadow' | 'asBefore';
+export type Regime = 'enforced' | 'shadow';
 
 export async function regimeFor(p: Pick<EngagementRules, 'tenantId' | 'deliveryStyle' | 'migratedAt' | 'status'>): Promise<Regime> {
   if (p.deliveryStyle && !p.migratedAt) return 'enforced';
-  if (!p.deliveryStyle && (p.status === 'Closed' || p.status === 'Cancelled')) return 'asBefore';
   return (await isEnforcedFor(p.tenantId)) ? 'enforced' : 'shadow';
 }
 
@@ -96,11 +103,29 @@ export async function canReadEngagement(
 
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId } },
-    select: { side: true, memberStatus: true, active: true, accessFrom: true, accessTo: true },
+    select: { side: true, memberStatus: true, active: true, accessFrom: true, accessTo: true, afterCloseAccess: true },
   });
   const approved = Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
   const regime = await regimeFor(project);
-  if (regime === 'asBefore') return true;
+
+  // Closed or cancelled: read-only until the window after close ends, for the
+  // people who still had access at the close; on an engagement never
+  // migrated, for the whole firm, as before (sprint 7).
+  if (isEnded(project.status)) {
+    const until = closeWindowEnd(project);
+    const windowOpen = Boolean(until && Date.now() < until.getTime());
+    const keeps = project.deliveryStyle ? approved && m!.afterCloseAccess !== false : true;
+    const allowed = keeps && windowOpen;
+    if (regime === 'enforced') return allowed;
+    if (!allowed) {
+      recordShadow({
+        projectId: project.id, clientTenantId: project.tenantId, firmTenantId: project.providerTenantId,
+        rule: keeps ? 'after-close-window' : 'member-required',
+      });
+    }
+    return true;
+  }
+
   // An approved member inside their window, checked on every request: dates
   // the organisation set are enforced, not shadowed.
   if (regime === 'enforced') return approved && accessOpen(m!);
@@ -185,6 +210,7 @@ export async function guardProject(
       ref: true, name: true, status: true, verificationPolicy: true,
       ownerId: true, managerId: true,
       baselineSetAt: true, baselineVersion: true, deliveryStyle: true, migratedAt: true,
+      actualEndDate: true, closeAccessUntil: true, closeWindowDays: true,
     },
   });
 

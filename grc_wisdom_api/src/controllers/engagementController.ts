@@ -14,6 +14,7 @@ import {
   roleMay, roleRefusal, accessOpen, startAtApproval,
 } from '../services/engagementRules';
 import { SHADOW_RULES, SHADOW_RETENTION_DAYS } from '../services/engagementShadow';
+import { DEFAULT_CLOSE_WINDOW_DAYS, closeWindowEnd } from '../services/engagementAfterClose';
 
 /**
  * Consulting engagements: the invitation, the relationship, the firm's people
@@ -49,6 +50,7 @@ const notFound = (res: Response, what = 'Engagement') => send(res, { status: 404
 const ENGAGEMENT_SELECT = {
   id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true,
   startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
+  actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true,
   tenant: { select: { name: true } },
   providerTenant: { select: { name: true } },
 } as const;
@@ -472,6 +474,11 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         client: e.tenant?.name, firm: e.providerTenant?.name ?? null,
         // Sprint 6: whether shared documents can be downloaded, and whether it was migrated.
         documentAccess: e.documentAccess === 'Download' ? 'Download' : 'View', migrated: Boolean(e.migratedAt),
+        // Sprint 7: the window after close.
+        afterClose: {
+          days: e.closeWindowDays ?? DEFAULT_CLOSE_WINDOW_DAYS, closedAt: e.actualEndDate,
+          until: ['Closed', 'Cancelled'].includes(e.status) ? closeWindowEnd(e) : null, setAt: e.closeWindowSetAt,
+        },
       },
       side: isClient ? 'Client' : 'Provider',
       relationship,
@@ -490,6 +497,8 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         // Anyone approved asks for themselves; the Lead asks for the team.
         requestExtension: asking && mine!.memberStatus === 'Approved',
         requestForTeam: asking && roleMay(mine?.engagementRole, 'nominate'),
+        // Sprint 7: the organisation decides the window after close.
+        changeCloseWindow: isClient && Boolean(e.providerTenantId),
       },
     });
   } catch (error: any) {
