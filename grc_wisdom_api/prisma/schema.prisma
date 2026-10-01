@@ -107,6 +107,8 @@ model Tenant {
   invitationsSent        EngagementInvitation[] @relation("InvitationClient")
   invitationsReceived    EngagementInvitation[] @relation("InvitationFirm")
   enforcementConfirmations EnforcementConfirmation[]
+  engagementRecords        EngagementRecord[]
+  engagementReportCopies   EngagementReportCopy[]
 }
 
 model User {
@@ -276,6 +278,10 @@ model User {
   shadowDispositions             EngagementShadowRefusal[] @relation("ShadowDisposer")
   enforcementConfirmations       EnforcementConfirmation[] @relation("EnforcementConfirmer")
   documentAccessSettings         Project[]       @relation("DocumentAccessSetter")
+  // Consulting engagement, sprint 7.
+  closeWindowsSet                Project[]       @relation("CloseWindowSetter")
+  reportCopySettings             Project[]       @relation("ReportCopiesSetter")
+  engagementRecordsMade          EngagementRecord[] @relation("EngagementRecordMaker")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3188,6 +3194,30 @@ model Project {
   migratedBy                 User?     @relation("ProjectMigrator", fields: [migratedById], references: [id], onDelete: SetNull)
   scopeVersions              EngagementScopeVersion[]
   accessReviews              EngagementAccessReview[]
+  /// After close (sprint 7): how long the firm may still read the engagement,
+  /// set ahead by the organisation (0 to 365 days; null reads as 90), and the
+  /// moment it ends, fixed at close and then extended or revoked.
+  closeWindowDays            Int?
+  closeAccessUntil           DateTime?
+  closeWindowSetAt           DateTime?
+  closeWindowSetById         String?
+  closeWindowSetBy           User?     @relation("CloseWindowSetter", fields: [closeWindowSetById], references: [id], onDelete: SetNull)
+  closeWarnedAt              DateTime?
+  closeEndNoticeAt           DateTime?
+  /// Whether issued reports are copied to the firm when issued: the
+  /// engagement terms, set by the organisation (null reads as no).
+  reportCopiesAllowed        Boolean?
+  reportCopiesSetAt          DateTime?
+  reportCopiesSetById        String?
+  reportCopiesSetBy          User?     @relation("ReportCopiesSetter", fields: [reportCopiesSetById], references: [id], onDelete: SetNull)
+  /// A follow-on engagement names the one before it, and whether the firm
+  /// may read that one, read-only, while it works on this one.
+  previousProjectId          String?
+  previousProject            Project?  @relation("FollowOn", fields: [previousProjectId], references: [id], onDelete: SetNull)
+  followOns                  Project[] @relation("FollowOn")
+  previousInScope            Boolean?
+  engagementRecords          EngagementRecord[]
+  engagementReportCopies     EngagementReportCopy[]
   invitations                EngagementInvitation[]
   shadowRefusals             EngagementShadowRefusal[]
 
@@ -3493,6 +3523,9 @@ model ProjectMember {
   /// Invitation (nominated and approved) or Migration (proposed from the
   /// team of an engagement named the old way). Null before sprint 6.
   origin                 String?
+  /// Set at close: whether this person still had access then, and so may
+  /// read the engagement until the window after close ends (sprint 7).
+  afterCloseAccess       Boolean?
 
   /// Removed members are deactivated rather than deleted, so historical
   /// assignment stays answerable after someone leaves the project.
@@ -3660,6 +3693,8 @@ model ProjectTask {
   clauseLinks   ProjectTaskClause[]
   dependsOn     ProjectDependency[] @relation("DependencySuccessor")
   blocksTasks   ProjectDependency[] @relation("DependencyPredecessor")
+  /// Carried over from the engagement before, still open there (sprint 7).
+  carriedFromTaskId String?
 
   @@unique([projectId, ref])
   @@index([phaseId, sequence])
@@ -3734,6 +3769,8 @@ model ProjectImpediment {
   /// Required to close a blocker. "Resolved" with no account of how is the
   /// entry that makes a register useless six months later.
   resolutionNote String?
+  /// Carried over from the engagement before, still open there (sprint 7).
+  carriedFromId  String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -4315,4 +4352,68 @@ model EnforcementConfirmation {
   note           String?
 
   @@index([clientTenantId, confirmedAt])
+}
+
+/// The delivery firm's own record of an engagement, frozen at close and kept
+/// in the firm's tenant for good (consulting engagement, sprint 7): its name,
+/// the client, dates, team, the plan's phases and tasks with planned, actual
+/// and variance, and the delay ledger. Nothing of the client's records.
+model EngagementRecord {
+  id             String    @id @default(uuid())
+  firmTenantId   String
+  firmTenant     Tenant    @relation(fields: [firmTenantId], references: [id], onDelete: Cascade)
+  /// The engagement it records; kept by id after the client's record is gone.
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientTenantId String
+  clientName     String
+  ref            String
+  name           String
+  projectType    String
+  deliveryStyle  String?
+  /// Closed | Cancelled
+  outcome        String
+  startDate      DateTime
+  targetEndDate  DateTime
+  closedAt       DateTime
+  /// JSON: the firm's people and the client's project manager; the phases and
+  /// tasks with planned, actual and variance; the project figures; the ledger.
+  team           String    @default("[]")
+  plan           String    @default("[]")
+  figures        String    @default("{}")
+  delayLedger    String    @default("[]")
+  madeById       String?
+  madeBy         User?     @relation("EngagementRecordMaker", fields: [madeById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+
+  @@unique([projectId, firmTenantId])
+  @@index([firmTenantId, closedAt])
+}
+
+/// A copy of a report the organisation issued, kept by the delivery firm when
+/// the engagement terms allow (sprint 7). The bytes are the ones issued.
+model EngagementReportCopy {
+  id             String    @id @default(uuid())
+  firmTenantId   String
+  firmTenant     Tenant    @relation(fields: [firmTenantId], references: [id], onDelete: Cascade)
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// With projectRef, ties the copy to the firm's record after the client's project is gone.
+  clientTenantId String
+  clientName     String
+  projectRef     String
+  reportKey      String
+  reportName     String
+  documentRef    String
+  issueNumber    Int
+  format         String
+  fileName       String
+  storageKey     String
+  sha256         String
+  byteLength     Int
+  issuedAt       DateTime
+
+  @@index([firmTenantId, issuedAt])
+  @@index([firmTenantId, clientTenantId, projectRef])
+  @@index([projectId])
 }
