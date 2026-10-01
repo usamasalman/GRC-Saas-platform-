@@ -144,7 +144,8 @@ const FLAG = 'Consulting Engagements';
   const byConsultantBefore = await as(consultant)('GET', `/api/projects/${p.id}`);
   const members = (await c('GET', `/api/engagements/${p.id}`)).json?.members || [];
   const idOf = (who) => members.find((m) => m.user.id === who.user.id)?.id;
-  const approve = (who, role) => c('POST', `/api/engagements/${p.id}/members/${idOf(who)}/approve`, { engagementRole: role });
+  // From today, before the engagement's start: access starts on its start date (sprint 6).
+  const approve = (who, role) => c('POST', `/api/engagements/${p.id}/members/${idOf(who)}/approve`, { engagementRole: role, accessFrom: day(0) });
   const a0 = await approve(lead, 'Lead');
   const a1 = await approve(consultant, 'Consultant');
   const a2 = await approve(reviewer, 'Reviewer');

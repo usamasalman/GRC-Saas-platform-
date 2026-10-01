@@ -11,7 +11,7 @@ import { noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { CONSULTING_FLAG, featureRefusal, featureStates, isFeatureOn } from '../services/featureFlags';
 import {
   DEFAULT_DELIVERY_STYLE, invitationState, invitationExpiry, isDeliveryStyle, isEngagementRole,
-  roleMay, roleRefusal, accessOpen,
+  roleMay, roleRefusal, accessOpen, startAtApproval,
 } from '../services/engagementRules';
 import { SHADOW_RULES, SHADOW_RETENTION_DAYS } from '../services/engagementShadow';
 
@@ -584,9 +584,12 @@ export const approvePerson = async (req: AuthenticatedRequest, res: Response): P
     const b = req.body || {};
     const role = str(b.engagementRole || m.engagementRole);
     if (!isEngagementRole(role)) { send(res, { status: 400, message: 'engagementRole must be Lead, Consultant or Reviewer.' }); return; }
-    // The engagement's window by default: its start (or today) to 30 days
-    // after its target end, as the design sets it.
-    const from = b.accessFrom ? new Date(b.accessFrom) : new Date(Math.max(Date.now(), e.startDate.getTime()));
+    // The engagement's window by default: its start to 30 days after its
+    // target end, as the design sets it. A start before the approval is the
+    // approval itself: nobody's access is backdated (sprint 6).
+    const approvedAt = new Date();
+    const asked = b.accessFrom ? new Date(b.accessFrom) : e.startDate;
+    const from = Number.isNaN(asked.getTime()) ? asked : startAtApproval(asked, approvedAt);
     const to = b.accessTo ? new Date(b.accessTo) : new Date(e.targetEndDate.getTime() + 30 * 86_400_000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) {
       send(res, { status: 400, message: 'Give an access window whose end is after its start.' }); return;
@@ -603,7 +606,7 @@ export const approvePerson = async (req: AuthenticatedRequest, res: Response): P
       const moved = await tx.projectMember.updateMany({
         where: { id: m.id, memberStatus: 'Nominated', active: true },
         data: {
-          memberStatus: 'Approved', engagementRole: role, decidedById: actorId, decidedAt: new Date(),
+          memberStatus: 'Approved', engagementRole: role, decidedById: actorId, decidedAt: approvedAt,
           accessFrom: from, accessTo: to, ...(b.roleLabel ? { roleLabel: str(b.roleLabel).trim().slice(0, 80) } : {}),
         },
       });
@@ -752,7 +755,7 @@ const parseDay = (v: unknown): Date | null => {
 
 const WINDOW_SELECT = {
   id: true, projectId: true, userId: true, engagementRole: true, memberStatus: true, active: true,
-  accessFrom: true, accessTo: true, extensionRequestedTo: true, extensionRequestedById: true,
+  accessFrom: true, accessTo: true, extensionRequestedTo: true, extensionRequestedById: true, decidedAt: true,
   user: { select: { name: true } },
 } as const;
 
@@ -772,9 +775,10 @@ const NOT_APPROVED = {
 
 /**
  * PATCH /api/engagements/:projectId/members/:memberId/window — the
- * organisation extends or shortens one person's access, with a reason, on
- * both trails, and the person is told. Extending restores access that had
- * expired; it never restores access that was removed or turned down.
+ * organisation extends or shortens one person's access, and may move its
+ * start, with a reason, on both trails, and the person is told. Extending
+ * restores access that had expired; it never restores access that was removed
+ * or turned down. A start before the approval is the approval (sprint 6).
  */
 export const changeAccessWindow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -789,18 +793,24 @@ export const changeAccessWindow = async (req: AuthenticatedRequest, res: Respons
       return;
     }
     if (m.memberStatus !== 'Approved' || !m.active) { send(res, NOT_APPROVED); return; }
-    // Only the end moves; the start stays as approved.
     const to = parseDay(req.body?.accessTo);
-    const from = m.accessFrom;
-    if (!to || (from && to < from)) { send(res, { status: 400, message: 'Give an end date on or after the start of access.' }); return; }
+    const askedFrom = req.body?.accessFrom ? parseDay(req.body.accessFrom) : null;
+    if (req.body?.accessFrom && !askedFrom) { send(res, { status: 400, message: 'Give a valid start date.' }); return; }
+    const from = askedFrom ? startAtApproval(askedFrom, m.decidedAt ?? new Date()) : m.accessFrom;
+    // The end date counts in full, so a window ending the day it starts is one day long.
+    if (!to || (from && to.getTime() + DAY <= from.getTime())) {
+      send(res, { status: 400, message: 'Give an end date on or after the start of access.' }); return;
+    }
+    const startMoved = Boolean(askedFrom) && (from?.getTime() ?? 0) !== (m.accessFrom?.getTime() ?? 0);
     const reason = str(req.body?.reason).trim();
     if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
     const actorId = str(req.user!.id);
-    const restored = !accessOpen(m) && accessOpen({ accessTo: to });
+    const restored = !accessOpen(m) && accessOpen({ accessFrom: from, accessTo: to });
     await prisma.$transaction(async (tx) => {
       const moved = await tx.projectMember.updateMany({
         where: { id: m.id, memberStatus: 'Approved', active: true },
         data: {
+          ...(startMoved ? { accessFrom: from } : {}),
           accessTo: to, accessWarnedAt: null, accessEndNoticeAt: null,
           extensionRequestedTo: null, extensionRequestNote: null, extensionRequestedAt: null, extensionRequestedById: null,
         },
@@ -810,13 +820,16 @@ export const changeAccessWindow = async (req: AuthenticatedRequest, res: Respons
         e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
         payload: {
           memberId: m.id, person: m.user.name, cause: 'change', reason, restored,
-          from: { accessTo: isoDay(m.accessTo) }, to: { accessTo: isoDay(to) },
+          from: { ...(startMoved ? { accessFrom: m.accessFrom } : {}), accessTo: isoDay(m.accessTo) },
+          to: { ...(startMoved ? { accessFrom: from } : {}), accessTo: isoDay(to) },
         },
       });
       await notify(tx, {
         tenantId: e.providerTenantId || e.tenantId, recipientId: m.userId, actorId, event: 'ENGAGEMENT_ACCESS_CHANGED',
         subjectType: 'Project', subjectId: e.id,
-        title: `Your access to ${e.ref} now ends ${isoDay(to)}`,
+        title: startMoved
+          ? `Your access to ${e.ref} now runs from ${isoDay(from)} to ${isoDay(to)}`
+          : `Your access to ${e.ref} now ends ${isoDay(to)}`,
         body: `${e.tenant?.name} ${restored ? 'restored and ' : ''}changed your access: ${reason}`,
         link: 'project-delivery',
       });

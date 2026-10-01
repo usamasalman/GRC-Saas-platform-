@@ -6,6 +6,7 @@ import {
   getEngagement, nominatePerson, approvePerson, rejectPerson, removePerson, changeDeliveryStyle,
   changeAccessWindow, requestExtension, declineExtension, getResumeProposal, settleResumeProposal, shadowSummary,
 } from '../controllers/engagementController';
+import { myEngagements } from '../controllers/engagementPortalController';
 
 /**
  * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
@@ -22,6 +23,7 @@ router.use(requireAuth);
 router.use(rejectIfMustChangePassword);
 
 router.get('/feature', featureState);
+router.get('/mine', myEngagements);
 router.get('/shadow/summary', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), shadowSummary);
 
 router.get('/invitations', listInvitations);

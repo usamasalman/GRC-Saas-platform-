@@ -92,14 +92,28 @@ export const HOLD_FIRM_ACCESS = ['View', 'None'] as const;
 export type HoldFirmAccess = (typeof HOLD_FIRM_ACCESS)[number];
 
 /**
- * Whether a person's access has not ended. The end date counts in full:
- * access to 31 July lasts until the end of that day (UTC). Checked on every
- * request, not by a nightly job, because an end date the organisation set on
- * purpose is a rule, not a trial. The start recorded at approval does not
- * gate access, so an approved firm can prepare before the engagement starts.
+ * Whether a person's access window is open now: from their start to the end
+ * of their end date (UTC), both checked on every request, not by a nightly
+ * job, because dates the organisation set on purpose are rules. Before the
+ * start a person sees only the engagement's card (sprint 6).
  */
-export function accessOpen(m: { accessTo: Date | null }, now: Date = new Date()): boolean {
+export function accessOpen(m: { accessFrom: Date | null; accessTo: Date | null }, now: Date = new Date()): boolean {
+  if (m.accessFrom && now.getTime() < m.accessFrom.getTime()) return false;
   return !m.accessTo || now.getTime() < m.accessTo.getTime() + DAY_MS;
+}
+
+/** Whether the window has yet to start, as opposed to having ended. */
+export const accessNotStarted = (m: { accessFrom: Date | null }, now: Date = new Date()): boolean => Boolean(
+  m.accessFrom && now.getTime() < m.accessFrom.getTime(),
+);
+
+/**
+ * When access starts for a person approved now: the start asked for, unless
+ * that is before the approval, in which case at the approval (sprint 6). No
+ * one can be granted access backdated to before anyone approved it.
+ */
+export function startAtApproval(requested: Date, approvedAt: Date): Date {
+  return requested.getTime() < approvedAt.getTime() ? approvedAt : requested;
 }
 
 /** The notice due for a person's end date now, if any; each is sent once per date. */
@@ -113,3 +127,4 @@ export function noticeDue(
   if (end - now.getTime() <= WARNING_DAYS * DAY_MS) return m.accessWarnedAt ? null : 'soon';
   return null;
 }
+

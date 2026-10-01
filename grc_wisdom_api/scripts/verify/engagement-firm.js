@@ -21,7 +21,12 @@ async function bringFirm({ clientToken, leadLogin, projectId, firmName = 'GRC Co
   await step('accept the invitation', leadLogin.token, 'POST', `/api/engagements/invitations/${inv.id}/accept`);
   const members = (await step('read the engagement', clientToken, 'GET', `/api/engagements/${projectId}`)).members || [];
   const lead = members.find((m) => m.user.id === leadLogin.user.id);
-  await step('approve the Lead', clientToken, 'POST', `/api/engagements/${projectId}/members/${lead?.id}/approve`, { engagementRole: 'Lead' });
+  // From today: access starts on its start date (sprint 6), and the scripts
+  // work in engagements that start later. A start before the approval is
+  // the approval itself.
+  await step('approve the Lead', clientToken, 'POST', `/api/engagements/${projectId}/members/${lead?.id}/approve`, {
+    engagementRole: 'Lead', accessFrom: new Date().toISOString().slice(0, 10),
+  });
   return firm;
 }
 

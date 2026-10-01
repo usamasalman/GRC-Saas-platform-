@@ -33,16 +33,19 @@ export function projectWhere(scope: TenantScope, userId?: string, now: Date = ne
       {
         providerTenantId: { in: scope.tenantIds },
         // A consulting engagement (one with a delivery style) is the firm's to
-        // see person by person: only people the organisation approved, until
-        // their access ends (the end date counts in full). One naming a firm
-        // the old way is read by the firm as before (sprints 4 and 5).
+        // see person by person: only people the organisation approved, inside
+        // their window: from its start to the end of its end date. One naming
+        // a firm the old way is read by the firm as before (sprints 4 to 6).
         OR: [
           { deliveryStyle: null },
           ...(userId ? [{
             members: {
               some: {
                 userId, side: 'Provider', memberStatus: 'Approved', active: true,
-                OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }],
+                AND: [
+                  { OR: [{ accessFrom: null }, { accessFrom: { lte: now } }] },
+                  { OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }] },
+                ],
               },
             },
           }] : []),

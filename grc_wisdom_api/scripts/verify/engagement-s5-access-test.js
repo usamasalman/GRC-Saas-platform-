@@ -44,10 +44,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 {
   const now = new Date('2026-10-10T15:00:00Z');
   const d = (s) => new Date(`${s}T00:00:00Z`);
-  v.record('engagement-s5:an end date counts in full; the start recorded at approval does not gate access',
+  v.record('engagement-s5:an end date counts in full, and a start in the future keeps access shut',
     accessOpen({ accessFrom: null, accessTo: d('2026-10-10') }, now) === true
       && accessOpen({ accessFrom: null, accessTo: d('2026-10-09') }, now) === false
-      && accessOpen({ accessFrom: d('2026-10-11'), accessTo: d('2026-12-31') }, now) === true
+      && accessOpen({ accessFrom: d('2026-10-11'), accessTo: d('2026-12-31') }, now) === false
       && accessOpen({ accessFrom: null, accessTo: null }, now) === true,
     'accessOpen');
   const none = { accessWarnedAt: null, accessEndNoticeAt: null };
@@ -151,6 +151,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const [who, role] of [[consultant, 'Consultant'], [reviewer, 'Reviewer']]) {
     await c('POST', `/api/engagements/${pid}/members/${(await memberOf(who)).id}/approve`, { engagementRole: role, accessFrom: day(-30), accessTo: day(60) });
   }
+  // Approved a month ago, as people on a running engagement are: a start
+  // before the approval is the approval itself, so the approval moves too.
+  await prisma.projectMember.updateMany({
+    where: { projectId: pid, side: 'Provider', memberStatus: 'Approved' },
+    data: { accessFrom: new Date(Date.now() - 30 * DAY), decidedAt: new Date(Date.now() - 30 * DAY) },
+  });
   const ready = activated.status === 200 && task && (await memberOf(consultant))?.memberStatus === 'Approved'
     && (await memberOf(reviewer))?.memberStatus === 'Approved';
   v.record('engagement-s5:an engagement can be set up with a Lead, a Consultant and a Reviewer', Boolean(ready),
@@ -346,7 +352,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const rows = legacy ? await prisma.engagementShadowRefusal.findMany({ where: { projectId: legacy.id } }) : [];
   const member = rows.find((r) => r.rule === 'member-required' && r.route === 'GET /api/projects/:id');
   const role = rows.find((r) => r.rule === 'role-required');
-  const idsOnly = rows.every((r) => Object.keys(r).sort().join() === 'clientTenantId,count,firmTenantId,firstSeenAt,id,lastSeenAt,projectId,route,rule');
+  // IDs, counts and times, plus how the platform explained it (sprint 6); never request content.
+  const ALLOWED = ['clientTenantId', 'count', 'firmTenantId', 'firstSeenAt', 'id', 'lastSeenAt', 'projectId', 'route', 'rule',
+    'disposition', 'dispositionNote', 'dispositionAt', 'dispositionById'];
+  const idsOnly = rows.every((r) => Object.keys(r).every((k) => ALLOWED.includes(k)));
   v.record('engagement-s5:named the old way, the firm still gets in, and each would-be refusal is counted with first and last seen',
     Boolean(legacy) && legacy.deliveryStyle === null && r1 === 200 && r2 === 200 && write?.status !== 404 && write?.status !== 403
       && member?.count >= 2 && first && member.firstSeenAt.getTime() === first.firstSeenAt.getTime()

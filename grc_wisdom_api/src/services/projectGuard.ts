@@ -70,7 +70,7 @@ export async function canReadEngagement(
 
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId } },
-    select: { side: true, memberStatus: true, active: true, accessTo: true },
+    select: { side: true, memberStatus: true, active: true, accessFrom: true, accessTo: true },
   });
   const approved = Boolean(m && m.active && m.side === 'Provider' && m.memberStatus === 'Approved');
 
@@ -85,8 +85,8 @@ export async function canReadEngagement(
     }
     return true;
   }
-  // An approved member whose access has not ended, checked on every
-  // request: an end date the organisation set is enforced, not shadowed.
+  // An approved member inside their window, checked on every request:
+  // dates the organisation set are enforced, not shadowed.
   return approved && accessOpen(m!);
 }
 
@@ -208,7 +208,7 @@ export async function firmRefusal(
 
   const m = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId: project.id, userId: user.id } },
-    select: { engagementRole: true, memberStatus: true, active: true, accessTo: true },
+    select: { engagementRole: true, memberStatus: true, active: true, accessFrom: true, accessTo: true },
   });
   const role = m && m.active && m.memberStatus === 'Approved' && accessOpen(m) ? m.engagementRole : null;
 
