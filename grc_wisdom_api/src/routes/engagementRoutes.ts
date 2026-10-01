@@ -21,7 +21,7 @@ import { listRecords, getRecord, reportCopyFile, firmTeam, setAllocation } from 
 import { createFollowOn, setPreviousInScope } from '../controllers/engagementFollowOnController';
 import {
   listRequests, getRequest, myRequests, raiseRequest, answerRequest, declineRequest, withdrawRequest, reviewRequest,
-  reassignRequest, moveRequestDue, requestFile,
+  reassignRequest, moveRequestDue, requestFile, linkEvidence, unlinkEvidence, evidenceChoices,
 } from '../controllers/engagementRequestController';
 
 /**
@@ -30,7 +30,7 @@ import {
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
  * after close, report copies, the firm's records, its team and follow-ons,
- * and (sprint 8) information requests.
+ * and (sprint 8) information requests and evidence links.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -106,6 +106,9 @@ router.post('/:projectId/requests/:requestId/review', requireCapability(CAP.EXEC
 router.post('/:projectId/requests/:requestId/withdraw', requireCapability(CAP.EXECUTE_PROJECT_WORK), withdrawRequest);
 router.patch('/:projectId/requests/:requestId/assignee', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), reassignRequest);
 router.patch('/:projectId/requests/:requestId/due', requireCapability(CAP.MANAGE_PROJECT), moveRequestDue);
+router.get('/:projectId/evidence-choices', evidenceChoices);
+router.post('/:projectId/evidence-links', requireCapability(CAP.MANAGE_PROJECT), linkEvidence);
+router.post('/:projectId/evidence-links/:linkId/remove', requireCapability(CAP.MANAGE_PROJECT), unlinkEvidence);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

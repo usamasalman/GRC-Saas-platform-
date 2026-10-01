@@ -249,6 +249,7 @@ export const getRequest = async (req: AuthenticatedRequest, res: Response): Prom
         moveDue: a.side === 'Client' && live && a.manager && !isEnded(a.e.status),
         review: a.side === 'Provider' && r.status === 'Answered' && !firmMay(a, 'review'),
         withdraw: a.side === 'Provider' && live && !firmMay(a, 'request') && (r.raisedById === a.userId || a.firm.role === 'Lead'),
+        link: a.side === 'Client' && a.manager,
       },
     });
   } catch (error: any) {
@@ -830,6 +831,122 @@ export const requestFile = async (req: AuthenticatedRequest, res: Response): Pro
   } catch (error: any) {
     console.error('[Request File Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to deliver the file' });
+  }
+};
+
+// ─── Evidence links ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/engagements/:projectId/evidence-links { itemKind, itemId, targetType, targetId }
+ *
+ * One evidence file used again: linked to a task of this engagement or to one
+ * of the organisation's controls, with who linked it and when. Informational:
+ * it does not count as the task's evidence for verification, nor in a
+ * control's validation.
+ */
+export const linkEvidence = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const a = await access(req);
+    if (!a.ok) { fail(res, a); return; }
+    if (a.side !== 'Client' || !a.manager) { send(res, { status: 403, code: 'CLIENT_DECIDES', message: 'The organisation links its own evidence.' }); return; }
+    const b = req.body || {};
+    const itemKind = str(b.itemKind);
+    const itemId = str(b.itemId);
+    const owned = itemKind === 'EvidenceItem'
+      ? await prisma.evidenceItem.findFirst({ where: { id: itemId, tenantId: a.e.tenantId }, select: { id: true } })
+      : itemKind === 'ProjectEvidence'
+        ? await prisma.projectEvidence.findFirst({ where: { id: itemId, project: { tenantId: a.e.tenantId } }, select: { id: true } })
+        : null;
+    if (!owned) { notFound(res, 'Evidence'); return; }
+    const targetType = str(b.targetType);
+    // By id, or by reference as typed: a task's ref, a control's code.
+    const ref = b.targetRef ? str(b.targetRef).trim() : null;
+    const target = targetType === 'Task'
+      ? await prisma.projectTask.findFirst({ where: { projectId: a.e.id, ...(ref ? { ref } : { id: str(b.targetId) }) }, select: { id: true } })
+      : targetType === 'Control'
+        ? await prisma.controlImplementation.findFirst({
+          where: { tenantId: { in: await hierarchyOf(a.e.tenantId) }, ...(ref ? { control: { code: ref } } : { id: str(b.targetId) }) }, select: { id: true },
+        })
+        : null;
+    if (!target) { send(res, { status: 400, code: 'BAD_TARGET', message: 'Link it to a task of this engagement or to one of your controls.' }); return; }
+    const targetId = target.id;
+    const twin = await prisma.evidenceLink.findFirst({ where: { itemKind, itemId, targetType, targetId, removedAt: null }, select: { id: true } });
+    if (twin) { send(res, { status: 409, code: 'ALREADY_LINKED', message: 'It is already linked there.' }); return; }
+    const link = await prisma.$transaction(async (tx) => {
+      const row = await tx.evidenceLink.create({
+        data: { tenantId: a.e.tenantId, itemKind, itemId, targetType, targetId, projectId: a.e.id, linkedById: a.userId },
+        select: { id: true },
+      });
+      await writeAudit(tx, {
+        tenantId: a.e.tenantId, actorId: a.userId, action: 'EVIDENCE_LINKED', subjectType: 'EvidenceLink', subjectId: row.id,
+        payload: { projectRef: a.e.ref, itemKind, itemId, targetType, targetId },
+      });
+      return row;
+    });
+    res.status(201).json({ status: 'success', link });
+  } catch (error: any) {
+    console.error('[Evidence Link Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to link the evidence' });
+  }
+};
+
+/** POST /api/engagements/:projectId/evidence-links/:linkId/remove — the link goes, the file stays. */
+export const unlinkEvidence = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const a = await access(req);
+    if (!a.ok) { fail(res, a); return; }
+    if (a.side !== 'Client' || !a.manager) { send(res, { status: 403, code: 'CLIENT_DECIDES', message: 'The organisation links its own evidence.' }); return; }
+    const link = await prisma.evidenceLink.findFirst({ where: { id: str(req.params.linkId), tenantId: a.e.tenantId, projectId: a.e.id } });
+    if (!link) { notFound(res, 'Link'); return; }
+    // An answer's files are its history; replacing the answer is the way to change them.
+    if (link.targetType === 'Request') { send(res, { status: 409, code: 'ANSWER_LINK', message: 'A file of an answer stays with it. Replace the answer instead.' }); return; }
+    await prisma.$transaction(async (tx) => {
+      const moved = await tx.evidenceLink.updateMany({ where: { id: link.id, removedAt: null }, data: { removedAt: new Date(), removedById: a.userId } });
+      if (moved.count === 0) throw new Refused(409, 'ALREADY_REMOVED', 'That link was already removed.');
+      await writeAudit(tx, {
+        tenantId: a.e.tenantId, actorId: a.userId, action: 'EVIDENCE_UNLINKED', subjectType: 'EvidenceLink', subjectId: link.id,
+        payload: { projectRef: a.e.ref, itemKind: link.itemKind, itemId: link.itemId, targetType: link.targetType, targetId: link.targetId },
+      });
+    });
+    res.json({ status: 'success' });
+  } catch (error: any) {
+    if (error instanceof Refused) { res.status(error.status).json({ status: 'error', code: error.code, message: error.message }); return; }
+    console.error('[Evidence Unlink Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to remove the link' });
+  }
+};
+
+/**
+ * GET /api/engagements/:projectId/evidence-choices — what the organisation can
+ * answer with: evidence files it already holds, newest first and paged, and
+ * the task files of this engagement.
+ */
+export const evidenceChoices = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const a = await access(req);
+    if (!a.ok) { fail(res, a); return; }
+    if (a.side !== 'Client') { notFound(res); return; }
+    const search = str(req.query.search).trim();
+    const where = {
+      tenantId: a.e.tenantId,
+      ...(search ? { OR: [{ title: { contains: search, mode: 'insensitive' as const } }, { fileName: { contains: search, mode: 'insensitive' as const } }] } : {}),
+    };
+    const page = readPage(req.query as Record<string, unknown>, 50);
+    const [total, items, taskFiles] = await Promise.all([
+      prisma.evidenceItem.count({ where }),
+      prisma.evidenceItem.findMany({
+        where, orderBy: [{ uploadedAt: 'desc' }, { id: 'asc' }], skip: page.skip, take: page.take,
+        select: { id: true, title: true, fileName: true, classification: true, uploadedAt: true, sha256: true },
+      }),
+      prisma.projectEvidence.findMany({
+        where: { projectId: a.e.id, withdrawnAt: null }, orderBy: { uploadedAt: 'desc' },
+        select: { id: true, ref: true, title: true, fileName: true, classification: true, uploadedAt: true, sha256: true, task: { select: { ref: true } } },
+      }),
+    ]);
+    res.json({ status: 'success', paging: pageInfo(total, page), items, taskFiles });
+  } catch (error: any) {
+    console.error('[Evidence Choices Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load your evidence' });
   }
 };
 
