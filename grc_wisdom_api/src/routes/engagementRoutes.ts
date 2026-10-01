@@ -21,7 +21,7 @@ import { listRecords, getRecord, reportCopyFile, firmTeam, setAllocation } from 
 import { createFollowOn, setPreviousInScope } from '../controllers/engagementFollowOnController';
 import {
   listRequests, getRequest, myRequests, raiseRequest, answerRequest, declineRequest, withdrawRequest, reviewRequest,
-  reassignRequest, moveRequestDue, requestFile, linkEvidence, unlinkEvidence, evidenceChoices,
+  reassignRequest, moveRequestDue, recordRequestBlocker, requestFile, linkEvidence, unlinkEvidence, evidenceChoices,
 } from '../controllers/engagementRequestController';
 
 /**
@@ -106,6 +106,7 @@ router.post('/:projectId/requests/:requestId/review', requireCapability(CAP.EXEC
 router.post('/:projectId/requests/:requestId/withdraw', requireCapability(CAP.EXECUTE_PROJECT_WORK), withdrawRequest);
 router.patch('/:projectId/requests/:requestId/assignee', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), reassignRequest);
 router.patch('/:projectId/requests/:requestId/due', requireCapability(CAP.MANAGE_PROJECT), moveRequestDue);
+router.post('/:projectId/requests/:requestId/blocker', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), recordRequestBlocker);
 router.get('/:projectId/evidence-choices', evidenceChoices);
 router.post('/:projectId/evidence-links', requireCapability(CAP.MANAGE_PROJECT), linkEvidence);
 router.post('/:projectId/evidence-links/:linkId/remove', requireCapability(CAP.MANAGE_PROJECT), unlinkEvidence);

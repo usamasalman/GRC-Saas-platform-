@@ -5,6 +5,7 @@ import { observe } from './jobReporting';
 import { DAY_MS, WARNING_DAYS, noticeDue } from './engagementRules';
 import { pruneShadow } from './engagementShadow';
 import { enforcementStates } from './engagementEnforcement';
+import { requestNotices } from './engagementRequestJob';
 
 /**
  * Access-window notices (consulting engagement, sprint 5).
@@ -25,7 +26,9 @@ export const ENGAGEMENT_ACCESS_JOB = 'JOB-ENGAGEMENT-ACCESS';
 const BATCH = 200;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export async function runEngagementAccessScan(now: Date = new Date()): Promise<{ warned: number; ended: number; closeWarned: number; closeEnded: number; pruned: number }> {
+export async function runEngagementAccessScan(now: Date = new Date()): Promise<{
+  warned: number; ended: number; closeWarned: number; closeEnded: number; requestReminders: number; requestsDue: number; pruned: number;
+}> {
   let warned = 0;
   let ended = 0;
   let cursor: string | undefined;
@@ -65,11 +68,13 @@ export async function runEngagementAccessScan(now: Date = new Date()): Promise<{
     cursor = batch[batch.length - 1].id;
   }
   const { closeWarned, closeEnded } = await closeWindowNotices(now);
+  const { requestReminders, requestsDue } = await requestNotices(now);
   const pruned = await pruneShadow(now);
-  if (warned + ended + closeWarned + closeEnded + pruned > 0) {
-    console.log(`[Engagement access] ${warned} ending soon, ${ended} ended, ${closeWarned + closeEnded} after-close notice(s), ${pruned} shadow row(s) pruned`);
+  if (warned + ended + closeWarned + closeEnded + requestReminders + requestsDue + pruned > 0) {
+    console.log(`[Engagement access] ${warned} ending soon, ${ended} ended, ${closeWarned + closeEnded} after-close notice(s), `
+      + `${requestReminders + requestsDue} request notice(s), ${pruned} shadow row(s) pruned`);
   }
-  return { warned, ended, closeWarned, closeEnded, pruned };
+  return { warned, ended, closeWarned, closeEnded, requestReminders, requestsDue, pruned };
 }
 
 type Due = {

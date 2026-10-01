@@ -19,6 +19,7 @@ import {
   resolveTarget, answerClassifications, acceptedClauseIds,
 } from '../services/engagementRequests';
 import { createRequests } from '../services/engagementRequestStore';
+import { nextImpedimentRef } from './projectImpedimentController';
 import {
   str, send, notFound, loadEngagement, clientSide, flagFor, HELD_READ_ONLY, Engagement,
 } from './engagementController';
@@ -149,6 +150,27 @@ export const listRequests = async (req: AuthenticatedRequest, res: Response): Pr
     if (!a.ok) { fail(res, a); return; }
     const status = str(req.query.status);
     const now = new Date();
+    if (str(req.query.overdue) === '1') {
+      // Every request waiting past its due day, the hold days not counted.
+      const [rows, holds] = await Promise.all([
+        prisma.informationRequest.findMany({
+          where: { projectId: a.e.id, status: { in: AWAITING_ANSWER }, dueDate: { lt: now } }, orderBy: [{ dueDate: 'asc' }, { id: 'asc' }], select: SELECT,
+        }),
+        holdsOf(a.e.id),
+      ]);
+      const overdue = rows.map((r) => decorate(r, holds, now)).filter((r) => r.overdueDays > 0);
+      const blocked = new Set((await prisma.projectImpediment.findMany({
+        where: { informationRequestId: { in: overdue.map((r) => r.id) }, resolvedAt: null }, select: { informationRequestId: true },
+      })).map((b) => b.informationRequestId));
+      res.json({
+        status: 'success', side: a.side,
+        requests: overdue.map((r) => ({ ...r, blockerRecorded: blocked.has(r.id) })),
+        can: {
+          recordBlocker: !running(a.e) && ((a.side === 'Provider' && a.firm.acts && a.firm.role === 'Lead') || (a.side === 'Client' && a.manager)),
+        },
+      });
+      return;
+    }
     const where = { projectId: a.e.id, ...(status ? { status } : {}) };
     const page = readPage(req.query as Record<string, unknown>, 50);
     const [total, rows, holds, counts, bound] = await Promise.all([
@@ -173,6 +195,7 @@ export const listRequests = async (req: AuthenticatedRequest, res: Response): Pr
       requests: rows.map((r) => decorate(r, holds, now)),
       can: {
         raise: firmCan('request'), review: firmCan('review'),
+        recordBlocker: (a.side === 'Provider' && a.firm.acts && a.firm.role === 'Lead') || (a.side === 'Client' && a.manager),
         manage: a.side === 'Client' && a.manager,
       },
     });
@@ -249,6 +272,8 @@ export const getRequest = async (req: AuthenticatedRequest, res: Response): Prom
         moveDue: a.side === 'Client' && live && a.manager && !isEnded(a.e.status),
         review: a.side === 'Provider' && r.status === 'Answered' && !firmMay(a, 'review'),
         withdraw: a.side === 'Provider' && live && !firmMay(a, 'request') && (r.raisedById === a.userId || a.firm.role === 'Lead'),
+        recordBlocker: AWAITING_ANSWER.includes(r.status) && overdueDays(r.dueDate, holds, now) > 0 && blockers.every((b) => b.resolvedAt)
+          && !running(a.e) && ((a.side === 'Provider' && a.firm.acts && a.firm.role === 'Lead') || (a.side === 'Client' && a.manager)),
         link: a.side === 'Client' && a.manager,
       },
     });
@@ -779,6 +804,59 @@ export const moveRequestDue = async (req: AuthenticatedRequest, res: Response): 
   } catch (error: any) {
     console.error('[Request Due Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to move the due date' });
+  }
+};
+
+/**
+ * POST /api/engagements/:projectId/requests/:requestId/blocker — an overdue
+ * request recorded as a blocker owed by the organisation, by the firm's Lead
+ * or the project manager. Never done by itself: an overdue request is only
+ * shown until someone records it.
+ */
+export const recordRequestBlocker = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const a = await access(req);
+    if (!a.ok) { fail(res, a); return; }
+    const lead = a.side === 'Provider' && a.firm.acts && a.firm.role === 'Lead';
+    const pm = a.side === 'Client' && a.manager;
+    if (!lead && !pm) { send(res, { status: 403, code: 'LEAD_OR_PM', message: 'The firm\'s Lead or the project manager records an overdue request as a blocker.' }); return; }
+    { const s = running(a.e); if (s) { fail(res, s); return; } }
+    const r = await loadRequest(a.e.id, str(req.params.requestId));
+    if (!r) { notFound(res, 'Request'); return; }
+    const days = AWAITING_ANSWER.includes(r.status) ? overdueDays(r.dueDate, await holdsOf(a.e.id)) : 0;
+    if (days <= 0) { send(res, { status: 409, code: 'NOT_OVERDUE', message: `${r.ref} is not overdue.` }); return; }
+    const open = await prisma.projectImpediment.findFirst({ where: { informationRequestId: r.id, resolvedAt: null }, select: { ref: true } });
+    if (open) { send(res, { status: 409, code: 'ALREADY_RECORDED', message: `${open.ref} already records it.` }); return; }
+    const task = r.targetType === 'Task' && r.targetId
+      ? await prisma.projectTask.findFirst({ where: { id: r.targetId, projectId: a.e.id }, select: { id: true, phaseId: true, assigneeId: true } })
+      : null;
+    const ref = await nextImpedimentRef(a.e.id);
+    const now = new Date();
+    const imp = await prisma.$transaction(async (tx) => {
+      const row = await tx.projectImpediment.create({
+        data: {
+          projectId: a.e.id, taskId: task?.id ?? null, phaseId: task?.phaseId ?? null, ref, kind: 'Blocker',
+          category: 'ClientDependency', owingSide: 'Client', severity: 'Medium',
+          title: `${r.ref} overdue: ${r.title}`.slice(0, 300),
+          description: `Asked ${r.raisedAt.toISOString().slice(0, 10)}, due ${r.dueDate.toISOString().slice(0, 10)}, ${days} day(s) overdue when recorded.`,
+          raisedById: a.userId, raisedAt: now, informationRequestId: r.id,
+        },
+        select: { id: true, ref: true },
+      });
+      await requestTrails(tx, {
+        e: a.e, actorId: a.userId, action: 'PROJECT_BLOCKER_RAISED', subjectType: 'ProjectImpediment', subjectId: row.id,
+        payload: { impedimentId: row.id, impediment: row.ref, fromRequest: r.ref, owingSide: 'Client', overdueDays: days },
+      });
+      await notify(tx, [...new Set([a.e.managerId, a.e.ownerId, r.assigneeId, task?.assigneeId].filter(Boolean) as string[])].map((rid) => ({
+        tenantId: a.e.tenantId, recipientId: rid, actorId: a.userId, event: 'PROJECT_BLOCKER_RAISED', subjectType: 'ProjectImpediment', subjectId: row.id,
+        title: `${row.ref}: ${r.ref} overdue on ${a.e.name}`, body: 'Recorded as a blocker owed by the organisation.', link: 'project-delivery',
+      })));
+      return row;
+    });
+    res.status(201).json({ status: 'success', impediment: imp });
+  } catch (error: any) {
+    console.error('[Request Blocker Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to record the blocker' });
   }
 };
 

@@ -39,11 +39,13 @@ async function nextRef(projectId: string): Promise<string> {
   const count = await prisma.projectImpediment.count({ where: { projectId } });
   return `IMP-${String(count + 1).padStart(4, '0')}`;
 }
+/** The same numbering for a blocker recorded from an overdue request (sprint 8). */
+export const nextImpedimentRef = nextRef;
 
 const SELECT = {
   id: true, ref: true, kind: true, category: true, owingSide: true, severity: true,
   title: true, description: true, impactDays: true, expectedClearDate: true,
-  raisedAt: true, resolvedAt: true, resolutionNote: true, carriedFromId: true,
+  raisedAt: true, resolvedAt: true, resolutionNote: true, carriedFromId: true, informationRequestId: true,
   raisedBy: { select: { id: true, name: true } },
   resolvedBy: { select: { id: true, name: true } },
   task: { select: { id: true, ref: true, name: true, status: true } },
