@@ -7,6 +7,7 @@ import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResol
 import { projectWhere, canWriteProject, sideOf } from '../services/projectAccess';
 import { enforcedClientsFor } from '../services/engagementEnforcement';
 import { validWindowDays, windowDaysOf, keepsAfterClose } from '../services/engagementAfterClose';
+import { keepEngagementRecord } from '../services/engagementRecord';
 import { canReadEngagement } from '../services/projectGuard';
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
@@ -1384,12 +1385,13 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
         },
       });
       // The delivery firm's trail records that its engagement ended, and
-      // until when it may still read it.
+      // until when it may still read it; its own record is kept for good.
       if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
         await writeAudit(tx, {
           tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
           payload: { ref: existing.ref, clientTenantId: existing.tenantId, afterCloseDays: days, firmReadsUntil: until },
         });
+        await keepEngagementRecord(tx, { projectId: id, actorId, now, outcome });
       }
       return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
     });
