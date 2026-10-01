@@ -15,16 +15,18 @@ import { migrationProposals, migrateEngagement } from '../controllers/engagement
 import {
   enforcementReadiness, markShadow, scheduleEnforcement, rollbackEnforcement, myEnforcementStatus, confirmEnforcement,
 } from '../controllers/engagementEnforcementController';
+import { externalAccess, confirmAccessReview, sharedWith } from '../controllers/engagementAccessController';
 
 /**
- * Consulting engagements (sprints 4 and 5): invitations, the relationship, the
- * firm's people, the delivery style, access windows, the resume proposal and
- * the guard's shadow counts.
+ * Consulting engagements (sprints 4 to 6): invitations, the relationship, the
+ * firm's people, the delivery style, access windows, the resume proposal, the
+ * guard's shadow counts, scope, the shared registers, the migration of
+ * engagements set up the old way, enforcement and external access.
  *
- * Every route but /feature and /shadow/summary refuses unless the "Consulting
- * Engagements" flag is on for the organisation and the firm involved. Which
- * side may act is decided per request in the controller; the capability here
- * is the floor.
+ * Every per-engagement route refuses unless the "Consulting Engagements" flag
+ * is on for the organisation and the firm involved. Which side may act is
+ * decided per request in the controller; the capability here is the floor,
+ * and the platform's routes also need the platform's own tenant.
  */
 const router = Router();
 router.use(requireAuth);
@@ -33,6 +35,8 @@ router.use(rejectIfMustChangePassword);
 router.get('/feature', featureState);
 router.get('/mine', myEngagements);
 router.get('/migration', requireCapability(CAP.MANAGE_PROJECT), migrationProposals);
+router.get('/external-access', requireCapability(CAP.MANAGE_PROJECT), externalAccess);
+router.get('/shared-with', sharedWith);
 router.get('/shadow/summary', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), shadowSummary);
 router.patch('/shadow/:id/disposition', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), markShadow);
 router.get('/enforcement/readiness', requirePlatformTenant, requireCapability(CAP.GOVERN_FLAG), enforcementReadiness);
@@ -67,6 +71,7 @@ router.get('/:projectId/documents/:documentId/file', fileSharedDocument);
 router.patch('/:projectId/document-access', requireCapability(CAP.MANAGE_PROJECT), setDocumentAccess);
 router.get('/:projectId/risks', listSharedRisks);
 router.get('/:projectId/assets', listSharedAssets);
+router.post('/:projectId/access-review', requireCapability(CAP.MANAGE_PROJECT), confirmAccessReview);
 router.post('/:projectId/migrate', requireCapability(CAP.MANAGE_PROJECT), migrateEngagement);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
