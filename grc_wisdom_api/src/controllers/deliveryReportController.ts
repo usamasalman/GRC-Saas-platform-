@@ -24,6 +24,7 @@ import {
 } from '../services/deliveryReportData';
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
 import { readinessScope } from '../services/projectStandards';
+import { acceptedClauseIds } from '../services/engagementRequests';
 import {
   criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
 } from '../services/projectDependency';
@@ -1233,6 +1234,10 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
     })
     : [];
 
+  // Sprint 8: clauses with evidence the delivery firm accepted, a figure of
+  // its own beside the two above, never folded into them.
+  const accepted = scope.standardIds.length ? await acceptedClauseIds(e.id, scope.standardIds) : [];
+
   const gaps = unmappedClauses(
     allClauses.map((c) => ({
       id: c.id, ref: c.ref, title: c.title, standardCode: c.standard.code,
@@ -1267,6 +1272,15 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
           value: 'A clause the plan MAPS TO is an intention. A clause whose every '
             + 'mapped task is finished is something you can defend. Only the '
             + 'second figure is evidence of anything.',
+        },
+        {
+          label: 'Clauses with evidence the firm accepted',
+          value: scope.stated ? String(accepted.length) : '—',
+        },
+        {
+          label: 'What that figure is',
+          value: 'Answers to the firm\'s requests that it reviewed and accepted. It counts toward '
+            + 'readiness only: it finishes no task, verifies nothing and validates no control.',
         },
         {
           label: 'Clauses in scope with no task at all',
