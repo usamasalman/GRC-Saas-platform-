@@ -203,7 +203,9 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"',
       'Decide how long the firm may read a closed engagement with "Window after close", then "Extend or shorten" or "Revoke now" once it has closed; decide "Report copies" for the firm',
       'Carry on with the same firm from a closed engagement with "Start a follow-on"; tasks and blockers still open are marked "Carried over"',
-      'In the firm\'s portal, keep every closed engagement in "Completed engagements" and balance people on "Firm team"'
+      'In the firm\'s portal, keep every closed engagement in "Completed engagements" and balance people on "Firm team"',
+      'Ask the organisation for evidence, a document, a dataset or a clarification with "Raise a request" or "Import requests" on the "Requests" tab; answer with "Answer" and review with "Review"',
+      'Ask for more than the scope shares with "Ask for a scope change"; the organisation decides with "Approve change", and a second person approves the new version'
     ],
     howToUse: [
       {
@@ -288,6 +290,24 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'The firm\'s records and its team',
         instruction: 'In the firm\'s portal, "Completed engagements" lists every engagement the firm delivered that has closed. "Open record" shows it as it stood at close: the dates, the team, planned against actual for every phase and task, and the delay ledger; "Download copy" fetches a report copy the client allowed. While the window after close is open, "Open engagement (read-only)" opens the engagement itself. "Firm team" adds up each person\'s allocation across the firm\'s open engagements and by client: "not stated" is counted apart and "Over 100%" is flagged. The firm\'s Lead changes it with "Set allocation".',
         tip: 'The record holds none of the client\'s documents, evidence, risks or assets, and stays the firm\'s after the window ends.'
+      },
+      {
+        step: 15,
+        title: 'Requests from the firm',
+        instruction: 'On the "Requests" tab the firm\'s Lead and Consultants click "Raise a request": what they need (evidence, a document, a dataset or a clarification), what would satisfy it, what it is about (the engagement, or a task, clause, control or register by its reference), the period it should cover, the due date and whom to ask. They can ask only for what the scope shares, propose only people the organisation put on the engagement, and set a due date inside their own access dates. Reviewers see requests and raise none. "Import requests" takes the template from "Download the template"; "Check the file" checks every row, and "Import all" creates them only when every row is ready.',
+        tip: 'Something outside the scope cannot be requested: "Ask for a scope change" instead. If the organisation agrees with "Approve change", a second person of the organisation approves the new scope version on the "Scope" tab, and only then is your request raised and anything more shared. A rejected change stays in the history. "Export" gives the list as a spreadsheet.'
+      },
+      {
+        step: 16,
+        title: 'Answering a request',
+        instruction: 'The person asked, or the project manager, opens the request and clicks "Answer": "Upload a file", "Link evidence you hold", "Link a published document", "Link a record" or "Answer in words". Only what the scope shares can be linked, at or below its classification ceiling. A file you already hold is offered back to link instead of being stored twice ("Link the existing file"). "Decline" says no with a reason; "Hand to a colleague" passes it on and the project manager is told; the project manager can "Move due date" with a reason. The person asked is reminded three days before the due date, and the project manager is told on the day.',
+        tip: 'Answers are your organisation\'s. Every file is hashed when it is stored; the firm sees it only through the request, while its access is open, and downloads it only where you allow downloads. Replacing an answer keeps the earlier one, with its hash, in the history. "Link to a task or control" uses the same file again without copying it; "Remove link" removes the link and never the file. Requests waiting on you are listed under "Asked of you" in My Work.'
+      },
+      {
+        step: 17,
+        title: 'Reviewing answers, and overdue requests',
+        instruction: 'The firm clicks "Review". Evidence is judged on four tests (Relevant, Complete, Covers the period, Authentic and traceable), each Pass, Fail or "Not applicable"; a Fail needs a note, and anything that fails is "Returned" with what is missing. Otherwise it is "Accepted". Accepted evidence counts toward the engagement\'s readiness ("Clauses with evidence the firm accepted") and never verifies a task or validates a control: that stays with the organisation.',
+        tip: 'Past its due date a request shows how many days it is overdue, here and under "Overdue requests" on the Delays tab, for information only. It becomes a delay owed by the organisation only when the firm\'s Lead or the project manager clicks "Record as blocker". During a hold nothing is sent and the overdue days stop; a request whose due date fell in the hold is marked "Due during the hold".'
       }
     ],
     proTips: [

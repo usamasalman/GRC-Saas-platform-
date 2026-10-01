@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../../api/apiClient';
+import AskedOfYou from './AskedOfYou';
 import { S, pill, ghostBtn, StatStrip, apiError } from '../../iam/iamStyles';
 import { calendarDate } from '../../../utils/calendarDate';
 import PagingBar, { type PageInfo } from '../../../components/PagingBar';
@@ -171,6 +172,9 @@ const MyWork: React.FC<{ onOpenProject?: (projectId: string) => void }> = ({ onO
       </div>
 
       {error && <div style={S.error}>{error}</div>}
+
+      {/* Sprint 8: what consulting firms are waiting on you for. */}
+      <AskedOfYou onOpenProject={onOpenProject} />
 
       {summary && (
         // Two totals, never one. "You have 11 open items" is useless when six of

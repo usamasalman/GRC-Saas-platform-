@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import OverdueRequests from './OverdueRequests';
 import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
 
@@ -167,6 +168,9 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
   return (
     <div>
       {error && <div style={S.error}>{error}</div>}
+
+      {/* Sprint 8: information requests past their due day, recorded only on purpose. */}
+      <OverdueRequests projectId={projectId} onRecorded={load} />
 
       {/* ── Who owes the days ─────────────────────────────────────────── */}
       {summary && (

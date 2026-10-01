@@ -25,6 +25,8 @@ const EngagementOverview: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [project, setProject] = useState<any>(null);
   const [engagement, setEngagement] = useState<any>(null);
   const [binding, setBinding] = useState<any>(null);
+  // Sprint 8: the requests' counts and the readiness figure from accepted evidence.
+  const [requests, setRequests] = useState<any>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -32,8 +34,10 @@ const EngagementOverview: React.FC<{ projectId: string }> = ({ projectId }) => {
       apiClient.get(`/api/projects/${projectId}`),
       apiClient.get(`/api/engagements/${projectId}`),
       apiClient.get(`/api/engagements/${projectId}/scope`).catch(() => null),
+      apiClient.get(`/api/engagements/${projectId}/requests`, { params: { pageSize: 1 } }).catch(() => null),
     ])
-      .then(([p, e, s]) => {
+      .then(([p, e, s, r]) => {
+        setRequests(r?.data?.summary || null);
         setProject(p.data?.project || null);
         setEngagement(e.data || null);
         setBinding((s?.data?.versions || []).find((v: any) => v.status === 'Binding') || null);
@@ -85,6 +89,18 @@ const EngagementOverview: React.FC<{ projectId: string }> = ({ projectId }) => {
           <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>No scope yet: the firm sees the engagement itself and none of the registers.</div>
         )}
       </Card>
+      {requests && (
+        <Card title="Requests">
+          <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+            <div>
+              Open {requests.Open ?? 0} · answered {requests.Answered ?? 0} · returned {requests.Returned ?? 0} · accepted {requests.Accepted ?? 0}
+              {requests.overdue > 0 && <span style={{ color: 'var(--danger)' }}> · {requests.overdue} overdue</span>}
+            </div>
+            <div>Clauses with evidence the firm accepted: {requests.acceptedClauses ?? 0}</div>
+            <div style={{ color: 'var(--ink-muted)' }}>Counts toward readiness only; verifying stays with the organisation.</div>
+          </div>
+        </Card>
+      )}
       <Card title="People from the firm">
         {people.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Nobody approved yet.</div>
