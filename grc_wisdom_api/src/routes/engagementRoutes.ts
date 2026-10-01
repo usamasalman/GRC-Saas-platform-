@@ -23,6 +23,7 @@ import {
   listRequests, getRequest, myRequests, raiseRequest, answerRequest, declineRequest, withdrawRequest, reviewRequest,
   reassignRequest, moveRequestDue, recordRequestBlocker, requestFile, linkEvidence, unlinkEvidence, evidenceChoices,
 } from '../controllers/engagementRequestController';
+import { requestTemplate, previewRequestImport, importRequests, exportRequests } from '../controllers/engagementRequestImportController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -97,6 +98,10 @@ router.patch('/:projectId/previous-in-scope', requireCapability(CAP.MANAGE_PROJE
 // organisation's assignee answers with project work, its managers decide.
 // Who may do what beyond that floor is decided per request in the controller.
 router.get('/:projectId/requests', listRequests);
+router.get('/:projectId/requests/export', exportRequests);
+router.get('/:projectId/requests/import/template', requestTemplate);
+router.post('/:projectId/requests/import/preview', requireCapability(CAP.EXECUTE_PROJECT_WORK), previewRequestImport);
+router.post('/:projectId/requests/import', requireCapability(CAP.EXECUTE_PROJECT_WORK), importRequests);
 router.post('/:projectId/requests', requireCapability(CAP.EXECUTE_PROJECT_WORK), raiseRequest);
 router.get('/:projectId/requests/:requestId', getRequest);
 router.get('/:projectId/requests/:requestId/files/:linkId', requestFile);

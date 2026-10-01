@@ -194,7 +194,7 @@ export const listRequests = async (req: AuthenticatedRequest, res: Response): Pr
       summary,
       requests: rows.map((r) => decorate(r, holds, now)),
       can: {
-        raise: firmCan('request'), review: firmCan('review'),
+        raise: firmCan('request'), import: firmCan('request'), review: firmCan('review'),
         recordBlocker: (a.side === 'Provider' && a.firm.acts && a.firm.role === 'Lead') || (a.side === 'Client' && a.manager),
         manage: a.side === 'Client' && a.manager,
       },
