@@ -106,6 +106,7 @@ model Tenant {
   relationshipsAsFirm    ProviderRelationship[] @relation("RelationshipFirm")
   invitationsSent        EngagementInvitation[] @relation("InvitationClient")
   invitationsReceived    EngagementInvitation[] @relation("InvitationFirm")
+  enforcementConfirmations EnforcementConfirmation[]
 }
 
 model User {
@@ -266,6 +267,15 @@ model User {
   projectHoldFirmAccessSet       ProjectHold[]   @relation("HoldFirmAccessSetter")
   projectHoldWindowsSettled      ProjectHold[]   @relation("HoldWindowsSettler")
   projectMemberExtensionRequests ProjectMember[] @relation("MemberExtensionRequester")
+  // Consulting engagement, sprint 6.
+  projectsMigrated               Project[]       @relation("ProjectMigrator")
+  relationshipsMigrated          ProviderRelationship[] @relation("RelationshipMigrator")
+  scopeVersionsDrafted           EngagementScopeVersion[] @relation("ScopeDrafter")
+  scopeVersionsApproved          EngagementScopeVersion[] @relation("ScopeApprover")
+  engagementAccessReviews        EngagementAccessReview[] @relation("AccessReviewer")
+  shadowDispositions             EngagementShadowRefusal[] @relation("ShadowDisposer")
+  enforcementConfirmations       EnforcementConfirmation[] @relation("EnforcementConfirmer")
+  documentAccessSettings         Project[]       @relation("DocumentAccessSetter")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3165,6 +3175,19 @@ model Project {
   /// changed only by the organisation. Null: not a consulting engagement,
   /// and a firm named on it the old way reads it as before (sprint 4).
   deliveryStyle              String?
+  /// What the delivery firm may do with shared documents: View (in the
+  /// reader only) or Download. Null reads as View (sprint 6).
+  documentAccess             String?
+  documentAccessSetAt        DateTime?
+  documentAccessSetById      String?
+  documentAccessSetBy        User?     @relation("DocumentAccessSetter", fields: [documentAccessSetById], references: [id], onDelete: SetNull)
+  /// Named a firm the old way and moved onto approved members by the
+  /// organisation (sprint 6). Its rules bind once enforcement is on.
+  migratedAt                 DateTime?
+  migratedById               String?
+  migratedBy                 User?     @relation("ProjectMigrator", fields: [migratedById], references: [id], onDelete: SetNull)
+  scopeVersions              EngagementScopeVersion[]
+  accessReviews              EngagementAccessReview[]
   invitations                EngagementInvitation[]
   shadowRefusals             EngagementShadowRefusal[]
 
@@ -3221,6 +3244,13 @@ model EngagementShadowRefusal {
   firstSeenAt    DateTime @default(now())
   lastSeenAt     DateTime @default(now())
   count          Int      @default(1)
+  /// KeepRefusing (the rule is right) or RuleFixed (the rule was wrong and
+  /// has been fixed). Null is unexplained (sprint 6).
+  disposition     String?
+  dispositionNote String?
+  dispositionAt   DateTime?
+  dispositionById String?
+  dispositionBy   User?    @relation("ShadowDisposer", fields: [dispositionById], references: [id], onDelete: SetNull)
 
   @@unique([projectId, rule, route])
   @@index([clientTenantId, lastSeenAt])
@@ -3243,6 +3273,11 @@ model ProviderRelationship {
   establishedAt        DateTime @default(now())
   /// The invitation whose acceptance made it.
   establishedByInvitationId String?
+  /// Made when the organisation migrated an engagement named the old way,
+  /// accepted on its behalf with no invitation (sprint 6).
+  migratedAt           DateTime?
+  migratedById         String?
+  migratedBy           User?    @relation("RelationshipMigrator", fields: [migratedById], references: [id], onDelete: SetNull)
 
   @@unique([clientTenantId, firmTenantId])
   @@index([firmTenantId])
@@ -3455,6 +3490,9 @@ model ProjectMember {
   extensionRequestedAt   DateTime?
   extensionRequestedById String?
   extensionRequestedBy   User?     @relation("MemberExtensionRequester", fields: [extensionRequestedById], references: [id], onDelete: SetNull)
+  /// Invitation (nominated and approved) or Migration (proposed from the
+  /// team of an engagement named the old way). Null before sprint 6.
+  origin                 String?
 
   /// Removed members are deactivated rather than deleted, so historical
   /// assignment stays answerable after someone leaves the project.
@@ -4201,10 +4239,80 @@ model FeatureFlagOverride {
   /// True turns the flag on for this organisation, false holds it off.
   enabled   Boolean
   note      String?
+  /// When an "on" override starts to count; null means at once. Lets the
+  /// platform give notice before enforcement starts (sprint 6).
+  effectiveFrom DateTime?
 
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   @@unique([flagId, tenantId])
   @@index([tenantId])
+}
+
+/// What an engagement shares with its delivery firm, versioned like risk
+/// appetite (consulting engagement, sprint 6): drafted, approved by a second
+/// person of the organisation, then binding until a newer version is
+/// approved. Rules, not lists: the records visible are worked out on each
+/// request from the entities, frameworks, services, ceiling and dates.
+model EngagementScopeVersion {
+  id                    String    @id @default(uuid())
+  projectId             String
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version               Int
+  /// Draft | Binding | Superseded
+  status                String    @default("Draft")
+  /// JSON arrays: organisations in the client's own hierarchy; Standard ids;
+  /// registers (Documents, Controls, Risks, Assets, Vendors).
+  entityIds             String    @default("[]")
+  frameworkIds          String    @default("[]")
+  services              String    @default("[]")
+  /// The highest document or asset classification the firm may see.
+  classificationCeiling String    @default("Internal")
+  validFrom             DateTime?
+  validTo               DateTime?
+  note                  String?
+  /// Drafted, or Migration (version 1 of an engagement named the old way).
+  origin                String    @default("Drafted")
+  draftedById           String
+  draftedBy             User      @relation("ScopeDrafter", fields: [draftedById], references: [id], onDelete: Cascade)
+  draftedAt             DateTime  @default(now())
+  approvedById          String?
+  approvedBy            User?     @relation("ScopeApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt            DateTime?
+  supersededAt          DateTime?
+
+  @@unique([projectId, version])
+  @@index([projectId, status])
+}
+
+/// The organisation's periodic confirmation of who from outside can see an
+/// engagement and what (sprint 6).
+model EngagementAccessReview {
+  id           String   @id @default(uuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Confirmed
+  outcome      String
+  note         String?
+  reviewedById String
+  reviewedBy   User     @relation("AccessReviewer", fields: [reviewedById], references: [id], onDelete: Cascade)
+  reviewedAt   DateTime @default(now())
+
+  @@index([projectId, reviewedAt])
+}
+
+/// The organisation's administrator confirming it is ready for its consulting
+/// rules to be enforced (sprint 6). The platform switches enforcement on only
+/// after this, on the Feature Flags screen.
+model EnforcementConfirmation {
+  id             String   @id @default(uuid())
+  clientTenantId String
+  clientTenant   Tenant   @relation(fields: [clientTenantId], references: [id], onDelete: Cascade)
+  confirmedById  String
+  confirmedBy    User     @relation("EnforcementConfirmer", fields: [confirmedById], references: [id], onDelete: Cascade)
+  confirmedAt    DateTime @default(now())
+  note           String?
+
+  @@index([clientTenantId, confirmedAt])
 }
