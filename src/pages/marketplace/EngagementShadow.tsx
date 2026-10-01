@@ -80,7 +80,7 @@ const EngagementShadow: React.FC = () => {
         <strong style={{ fontSize: 14, color: 'var(--ink)' }}>Engagement guard in shadow</strong>
         <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', maxWidth: 640 }}>
           Requests from delivery firms that the consulting rules would have refused, counted but let through.
-          Switch an organisation to enforcing with a "Consulting Engagements" override once its count is understood.
+          Each one is explained, and an organisation switched to enforcement, under Consulting enforcement by organisation below.
           IDs only; kept {retention} days after last seen.
         </span>
         <button style={{ ...ghostBtn, marginLeft: 'auto', fontSize: 12, padding: '4px 10px' }} onClick={load}>↻ Refresh</button>

@@ -21,6 +21,9 @@ const { prisma } = require('../../dist/db');
  */
 const HANDLED_403 = {
   '/api/retention/queue': 'RetentionSchedules hides the disposition queue for roles without retention (queueReadable=false)',
+  // Consulting engagement, sprint 6: both sit on the organisation's External access tab.
+  '/api/engagements/enforcement/status': 'ExternalAccess renders EnforcementStatus only for can(CAP.ADD_USER), and a refusal hides it (setR(null))',
+  '/api/engagements/migration': 'External access opens only for can(MAY.MANAGE_PROJECT) (orgPortal in DeliveryProjects), and a refusal shows no migration section (setRows([]))',
 };
 const SLOW_MS = 3000;
 

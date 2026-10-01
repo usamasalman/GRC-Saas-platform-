@@ -72,6 +72,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const panel = q.read(path.join(dir, 'EngagementPanel.tsx'));
   const shadow = q.read(path.join(q.WEB_SRC, 'pages', 'marketplace', 'EngagementShadow.tsx'));
   const flags = q.read(path.join(q.WEB_SRC, 'pages', 'marketplace', 'FeatureFlagsManager.tsx'));
+  // The enforcement checklist sits on the same screen since sprint 6.
+  const readiness = q.read(path.join(q.WEB_SRC, 'pages', 'marketplace', 'EnforcementReadiness.tsx'));
   const callers = {
     'PATCH /api/projects/:id with holdFirmAccess': /\{ status: 'OnHold', reason, holdFirmAccess \}/.test(lifecycle),
     'PATCH /api/projects/:id/hold-access': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}\/hold-access`/.test(team),
@@ -98,8 +100,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // The guide quotes the screens' labels; each has to be on a screen.
   const guide = q.read(path.join(q.WEB_SRC, 'data', 'userGuideData.ts')).replace(/\r\n/g, '\n');
   const section = (name) => (guide.split(new RegExp(`\\n  '${name}': \\{`))[1] || '').split(/\n  \},\n/)[0];
+  // With the workspace page itself, whose tab names the guide quotes too (sprint 6).
   const screens = require('fs').readdirSync(dir).filter((f) => f.endsWith('.tsx'))
-    .map((f) => q.read(path.join(dir, f))).join('\n');
+    .map((f) => q.read(path.join(dir, f))).join('\n') + q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'DeliveryProjects.tsx'));
   const needed = ['Firm can view (read-only)', 'Firm has no access', 'Change hold access', 'Access after the hold',
     'Leave end dates as they are', 'Rebaseline the plan', 'Change access', 'Grant more time', 'Decline request', 'Request more time'];
   const project = section('project-delivery');
@@ -108,7 +111,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const flagSection = section('feature-flags');
   const flagQuoted = [...flagSection.matchAll(/"([^"]+)"/g)].map((m) => m[1])
     .filter((l) => !['Consulting Engagements', 'would have refused N times'].includes(l));
-  const flagAbsent = flagQuoted.filter((l) => !(shadow + flags).includes(l));
+  const flagAbsent = flagQuoted.filter((l) => !(shadow + flags + readiness).includes(l));
   v.record('engagement-s5:the guide describes holds, windows and the shadow with labels that are on screen',
     needed.every((l) => quoted.includes(l)) && absent.length === 0
       && flagQuoted.includes('Engagement guard in shadow') && flagAbsent.length === 0,

@@ -13,6 +13,16 @@ import ProjectLifecycle from './project/ProjectLifecycle';
 import ProjectGantt from './project/ProjectGantt';
 import TemplateLibrary from './project/TemplateLibrary';
 import InvitationsInbox from './project/InvitationsInbox';
+import EngagementOverview from './project/EngagementOverview';
+import EngagementScope from './project/EngagementScope';
+import EngagementDocuments from './project/EngagementDocuments';
+import EngagementRisksAssets from './project/EngagementRisksAssets';
+import ClientEngagements from './project/ClientEngagements';
+import PartnerHome from './project/PartnerHome';
+import ExternalAccess from './project/ExternalAccess';
+import { STYLE_LABEL } from './project/EngagementPanel';
+import { MAY, can } from '../../components/Can';
+import { calendarDate } from '../../utils/calendarDate';
 import apiClient from '../../api/apiClient';
 
 /**
@@ -26,7 +36,18 @@ import apiClient from '../../api/apiClient';
  * change this file beyond one more entry.
  */
 
-type TabKey = 'portfolio' | 'templates' | 'invitations' | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+type TabKey = 'home' | 'engagements' | 'access' | 'portfolio' | 'templates' | 'invitations'
+  | 'overview' | 'scope' | 'documents' | 'registers'
+  | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
+
+/** The signed-in person's portal, as the shell stored it; unknown reads as the organisation's. */
+function portalOf(): string {
+  try { return String(JSON.parse(localStorage.getItem('grc_user_json') || '{}')?.portal || ''); } catch { return ''; }
+}
+/** Portals of organisations that deliver for others (the delivery firm types). */
+const FIRM_PORTALS = ['partner', 'franchise'];
+/** Tabs that are not one engagement's workspace. */
+const OUTSIDE_WORKSPACE: TabKey[] = ['home', 'engagements', 'access', 'portfolio', 'new', 'templates', 'invitations'];
 
 interface Selected { id: string; ref: string; name: string; }
 
@@ -42,6 +63,23 @@ const DeliveryProjects: React.FC = () => {
   useEffect(() => {
     apiClient.get('/api/engagements/feature').then((r) => setConsulting(Boolean(r.data?.enabled))).catch(() => setConsulting(false));
   }, []);
+  // Sprint 6: the firm's Home and Client engagements, the organisation's
+  // External access, and the workspace tabs of a consulting engagement.
+  const portal = portalOf();
+  const firmPortal = FIRM_PORTALS.includes(portal);
+  const orgPortal = portal !== 'partner' && can(MAY.MANAGE_PROJECT);
+  const [engagement, setEngagement] = useState<any>(null);
+  useEffect(() => {
+    setEngagement(null);
+    if (!selected || !consulting) return;
+    apiClient.get(`/api/engagements/${selected.id}`)
+      .then((r) => setEngagement(r.data?.engagement?.deliveryStyle ? r.data : null))
+      .catch(() => setEngagement(null));
+  }, [selected, consulting, version]);
+  const consultingTabs = Boolean(engagement);
+  const mine = engagement?.me ? (engagement.members || []).find((m: any) => m.id === engagement.me.memberId) : null;
+  // Firm-side people open a consulting engagement on its Overview.
+  const openFromFirm = (p: Selected) => { setSelected(p); setWizardFor(null); setTab('overview'); };
 
   const open = (project: Selected, fromTemplate = false) => {
     setSelected(project);
@@ -64,7 +102,13 @@ const DeliveryProjects: React.FC = () => {
 
   return (
     <div style={{ ...S.page, background: 'transparent', padding: 0, minHeight: 0 }}>
-      <div style={{ borderBottom: '1px solid var(--line)', marginBottom: 20, display: 'flex', alignItems: 'center' }}>
+      <div style={{ borderBottom: '1px solid var(--line)', marginBottom: 20, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+        {consulting && firmPortal && (
+          <>
+            <button style={tabStyle(tab === 'home')} onClick={() => setTab('home')}>Home</button>
+            <button style={tabStyle(tab === 'engagements')} onClick={() => setTab('engagements')}>Client engagements</button>
+          </>
+        )}
         <button style={tabStyle(tab === 'portfolio')} onClick={() => setTab('portfolio')}>
           Portfolio
         </button>
@@ -75,6 +119,15 @@ const DeliveryProjects: React.FC = () => {
           <button style={tabStyle(tab === 'invitations')} onClick={() => setTab('invitations')}>
             Invitations
           </button>
+        )}
+        {consulting && orgPortal && (
+          <button style={tabStyle(tab === 'access')} onClick={() => setTab('access')}>External access</button>
+        )}
+        {consultingTabs && (
+          <>
+            <button style={tabStyle(tab === 'overview')} onClick={() => setTab('overview')}>Overview</button>
+            <button style={tabStyle(tab === 'scope')} onClick={() => setTab('scope')}>Scope</button>
+          </>
         )}
         <button
           style={{ ...tabStyle(tab === 'plan'), opacity: selected ? 1 : 0.45 }}
@@ -92,6 +145,12 @@ const DeliveryProjects: React.FC = () => {
         >
           Gantt
         </button>
+        {consultingTabs && (
+          <>
+            <button style={tabStyle(tab === 'documents')} onClick={() => setTab('documents')}>Documents</button>
+            <button style={tabStyle(tab === 'registers')} onClick={() => setTab('registers')}>Risks and assets</button>
+          </>
+        )}
         <button
           style={{ ...tabStyle(tab === 'team'), opacity: selected ? 1 : 0.45 }}
           onClick={() => selected && setTab('team')}
@@ -146,7 +205,20 @@ const DeliveryProjects: React.FC = () => {
       {/* The open engagement and its lifecycle, on a row of its own so the
           status, the hold reason and the four decisions wrap on a narrow
           screen instead of running off the tab bar. */}
-      {tab !== 'portfolio' && tab !== 'new' && tab !== 'templates' && tab !== 'invitations' && selected && (
+      {/* Inside a firm's workspace a bar names the client, the engagement, the
+          delivery style and when access ends, so moving to another client is
+          always a deliberate switch (sprint 6). */}
+      {engagement?.side === 'Provider' && selected && !OUTSIDE_WORKSPACE.includes(tab) && (
+        <div style={{ ...S.card, padding: '8px 14px', marginBottom: 14, display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
+          <span>Client: <strong>{engagement.engagement.client}</strong></span>
+          <span>Engagement: <strong>{engagement.engagement.ref}</strong> · {engagement.engagement.name}</span>
+          <span>{STYLE_LABEL[engagement.engagement.deliveryStyle] || engagement.engagement.deliveryStyle}</span>
+          <span style={{ marginLeft: 'auto' }}>
+            {mine?.accessTo ? `Your access ends ${calendarDate(mine.accessTo, { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+          </span>
+        </div>
+      )}
+      {!OUTSIDE_WORKSPACE.includes(tab) && selected && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '-8px 0 18px' }}>
           <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
             <span style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>{selected.ref}</span> · {selected.name}
@@ -160,6 +232,13 @@ const DeliveryProjects: React.FC = () => {
         <ProjectPortfolio onOpen={open} onCreate={() => setTab('new')} />
       )}
       {tab === 'templates' && <TemplateLibrary />}
+      {tab === 'home' && consulting && <PartnerHome onOpen={openFromFirm} onInvitations={() => setTab('invitations')} />}
+      {tab === 'engagements' && consulting && <ClientEngagements onOpen={openFromFirm} />}
+      {tab === 'access' && consulting && <ExternalAccess />}
+      {tab === 'overview' && selected && consultingTabs && <EngagementOverview key={`${selected.id}-${version}`} projectId={selected.id} />}
+      {tab === 'scope' && selected && consultingTabs && <EngagementScope key={`${selected.id}-${version}`} projectId={selected.id} />}
+      {tab === 'documents' && selected && consultingTabs && <EngagementDocuments key={`${selected.id}-${version}`} projectId={selected.id} />}
+      {tab === 'registers' && selected && consultingTabs && <EngagementRisksAssets key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'invitations' && consulting && <InvitationsInbox />}
       {tab === 'new' && (
         <NewProject

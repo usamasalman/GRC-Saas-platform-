@@ -1,4 +1,5 @@
 import Icon from '../../components/Icon';
+import { SharedWith, useSharedWith } from '../../components/SharedWith';
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 import DocumentDetail from './DocumentDetail';
@@ -26,6 +27,8 @@ interface DocumentItem {
 
 export default function DocumentLibrary() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  // Which of these a consulting engagement shares, and with whom (sprint 6).
+  const sharedDocs = useSharedWith('Document', documents.map((d) => d.id));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -448,6 +451,7 @@ export default function DocumentLibrary() {
                   <td style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--info)', fontFamily: 'monospace' }}>{doc.code}</td>
                   <td style={{ padding: '14px 18px', color: 'var(--ink)', fontWeight: 500 }}>
                     {doc.title}
+                    <SharedWith firms={sharedDocs[doc.id]} />
                     {doc.isLockedOut && (
                       <span style={{ marginLeft: '8px', background: 'rgba(239, 68, 68, 0.2)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.4)', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}>
                         <Icon name="lock" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Locked

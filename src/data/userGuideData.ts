@@ -121,6 +121,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'Open a document and use the Governs tab to link the controls it mandates, the risks it treats and the framework clauses it satisfies (e.g. ISO 27001, NCA ECC). Those links are what let the clause be reported as addressed.',
       'Published documents can be assigned for mandatory employee acknowledgement in one click.'
     ],
@@ -195,7 +196,11 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
       'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"',
       'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates',
-      'Set how long each of the firm\'s people has access with "Change access"; answer their "Request more time" with "Grant more time" or "Decline request"'
+      'Set how long each of the firm\'s people has access with "Change access"; answer their "Request more time" with "Grant more time" or "Decline request"',
+      'Agree what the firm sees with "Draft a new scope version" on the "Scope" tab; someone else approves it with "Approve scope"',
+      'See what is shared on the "Documents" and "Risks and assets" tabs, and set "Change document access" to view only or download',
+      'Review who from outside sees what on "External access": "Revoke" a person or "Confirm access"; move engagements set up the old way with "Migrate engagement"',
+      'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"'
     ],
     howToUse: [
       {
@@ -237,8 +242,31 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 7,
         title: 'Access dates of the firm\'s people',
-        instruction: 'Each approved person has access to the end of their "Access to" date, checked on every request. Click "Change access" beside a person on the Team tab to move the date, with a reason; they are told. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold.',
+        instruction: 'Each approved person has access from their "Access from" date to the end of their "Access to" date, both checked on every request; before the start they see only the engagement card. Click "Change access" beside a person on the Team tab to move either date, with a reason; they are told, and a start before their approval counts from the approval. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold.',
         tip: 'Extending brings back access that had ended ("Access ended"), never access that was removed: a removed person must be nominated and approved again.'
+      },
+      {
+        step: 8,
+        title: 'Share by scope',
+        instruction: 'On a consulting engagement open the "Scope" tab and click "Draft a new scope version": tick the organisations, frameworks and registers to share, set the classification ceiling and the dates, and save. Someone other than the person who drafted it clicks "Approve scope"; it then binds, and the version before it is kept as the basis of the work done under it. The firm sees the binding version and never a draft.',
+        tip: 'Audit Programme and Billing are never shared. A record outside the scope answers as not found to the firm, and the attempt is written to your audit trail. Shared records are marked Shared with and the firm\'s name in your registers.'
+      },
+      {
+        step: 9,
+        title: 'Documents, risks and assets',
+        instruction: 'The "Documents" tab lists the shared part of your library: "Read" opens one, and "Download" appears for the firm only where you allow it. "Change document access" switches the engagement between view only and download, with a reason. The "Risks and assets" tab shows the shared registers with your official scores.',
+        tip: 'Every open and download is on the document\'s Access tab. The firm plans its own tasks; on a consultant-led engagement its Lead also assigns yours, and a task\'s weight stays yours to set.'
+      },
+      {
+        step: 10,
+        title: 'External access and engagements set up the old way',
+        instruction: 'Open "External access" to see every outside person by engagement, with their role, dates and last activity: "Revoke" ends a person\'s access, and "Confirm access" records your review. Engagements that named a firm the old way are listed there: tick who keeps access and their role, choose the delivery style and click "Migrate engagement". Your administrator then confirms with "Confirm we are ready".',
+        tip: 'Until your rules are enforced, firms on those engagements work as before and what the rules would refuse is counted. The platform enforces them only after your confirmation, with seven days\' notice to the firms, and can return you to counting at once.'
+      },
+      {
+        step: 11,
+        title: 'For the delivery firm',
+        instruction: 'In the firm\'s portal, "Home" shows your engagements across clients, access ending soon and your overdue tasks, and "Client engagements" has a card for each. Before your access starts you see the card only, with "Access starts on" and its date; the firm\'s Lead can still "Set up your team". "Open workspace" opens the engagement under a bar naming the client, the engagement, the delivery style and when your access ends.'
       }
     ],
     proTips: [
@@ -1007,6 +1035,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'The "Criticality vs protection" tab plots every asset on criticality against how well it is defended. The top-left corner is the register\'s worst quarter: assets whose loss would hurt most, with nothing verified protecting them.',
       '"Exposed, unprotected" on the header counts assets carrying open risk with no control linked at all. It is the single most actionable number on the screen.',
       'The "How the numbers are derived" tab publishes every formula the platform uses with the standard it comes from. When an assessor asks how a score was reached, the product answers rather than a consultant.',
@@ -1063,6 +1092,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'Measurement criteria and board appetite both live on the Risk Appetite tab, and both are versioned. Revising either drafts a new version while the current one keeps binding, so there is never a window with no ceiling — and the superseded version is retained as the basis for every decision taken while it applied.',
       'Use "What was in force on a given date?" to answer the question an assessor actually asks: an acceptance taken last March was judged against the tolerance that applied then, not against today’s. Every acceptance also stores the exact appetite version and score it was judged at.',
       'Approving new criteria re-bands the whole register, so the platform tells you how many risks change rating before you commit and records that in the audit trail. It is a governance event, not a settings change.',
@@ -1322,7 +1352,13 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         step: 3,
         title: 'Read the engagement guard in shadow',
         instruction: 'Under the flags, "Engagement guard in shadow" lists, per organisation and rule, how many times the consulting rules would have refused a delivery firm\'s request ("would have refused N times"), on how many engagements, and when first and last seen. Click "Routes" for where.',
-        tip: 'Counted, never enforced: switch an organisation to enforcing with a "Consulting Engagements" override once its count is understood. IDs only; rows not seen for 90 days are deleted.'
+        tip: 'Counted, never enforced, until the organisation is switched to enforcement below. IDs only; rows not seen for 90 days are deleted.'
+      },
+      {
+        step: 4,
+        title: 'Switch an organisation to enforcement',
+        instruction: 'In "Consulting enforcement by organisation" choose the organisation. Each rule and route the guard would refuse needs "Explain": "Correct, keep refusing" or "Rule fixed". When every check passes (all explained, no unexplained refusal for 14 days with real firm activity, nothing left to migrate, and the organisation\'s administrator has confirmed), click "Schedule enforcement" with a date at least seven days ahead and a note; the firms\' Leads are told at once.',
+        tip: 'Zero refusals is not the test: a refusal can be the rule working. "Back to shadow mode" returns the organisation to counting at once. The override has no effect where consulting is off, and the list says so.'
       }
     ],
     proTips: [

@@ -212,9 +212,9 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
                 <td style={{ ...S.td, fontSize: 12 }}>
                   {m.memberStatus === 'Approved' ? `${calendarDate(m.accessFrom)} → ${calendarDate(m.accessTo)}` : 'None'}
                   {m.memberStatus === 'Approved' && m.active && !m.accessOpen && (
-                    <span style={{ ...pill('var(--danger)', 'var(--danger-line)'), marginLeft: 6 }}>
-                      Access ended
-                    </span>
+                    m.accessFrom && new Date(m.accessFrom) > new Date()
+                      ? <span style={{ ...pill('var(--warning)', 'var(--warning-line)'), marginLeft: 6 }}>Starts {calendarDate(m.accessFrom)}</span>
+                      : <span style={{ ...pill('var(--danger)', 'var(--danger-line)'), marginLeft: 6 }}>Access ended</span>
                   )}
                   {m.extensionRequestedTo && (
                     <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
@@ -364,15 +364,21 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void }> =
       {dialog?.kind === 'window' && (
         <FormDialog
           title={`${dialog.m.extensionRequestedTo ? 'Grant more time to' : 'Change access for'} ${dialog.m.user.name}?`}
-          intro={<>Their access lasts to the end of the date you set. Extending brings back access that had ended; it never brings back someone who was removed. Recorded on both organisations' trails, and they are told.</>}
+          intro={<>Their access runs from its start to the end of the date you set. Extending brings back access that had ended; it never brings back someone who was removed. A start before their approval counts from the approval. Recorded on both organisations' trails, and they are told.</>}
           submitLabel="Save access"
           busy={busy}
           fields={[
+            { name: 'from', label: 'Access from', type: 'date', initial: day(dialog.m.accessFrom),
+              help: 'Bring it forward to let them in sooner; before the start they see only the engagement card.' },
             { name: 'to', label: 'Access to', type: 'date', required: true, initial: day(dialog.m.extensionRequestedTo || dialog.m.accessTo) },
             { name: 'reason', label: 'Why', type: 'textarea', required: true },
           ]}
           validate={(v) => (v.reason.trim().length < 10 ? 'Say why, in at least 10 characters.' : null)}
-          onSubmit={(v) => act(() => apiClient.patch(`/api/engagements/${projectId}/members/${dialog.m.id}/window`, { accessTo: v.to, reason: v.reason.trim() }))}
+          onSubmit={(v) => act(() => apiClient.patch(`/api/engagements/${projectId}/members/${dialog.m.id}/window`, {
+            accessTo: v.to, reason: v.reason.trim(),
+            // Sent only when moved, so an unchanged start stays exactly as approved.
+            ...(v.from && v.from !== day(dialog.m.accessFrom) ? { accessFrom: v.from } : {}),
+          }))}
           onCancel={() => setDialog(null)}
         />
       )}

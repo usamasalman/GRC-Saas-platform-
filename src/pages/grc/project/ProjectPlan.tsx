@@ -368,6 +368,29 @@ const ProjectPlan: React.FC<{
     priorities: [], sides: [],
   });
 
+  // The delivery firm plans too on a consulting engagement (sprint 6): its own
+  // tasks, and the organisation's only when consultant-led. Its people are the
+  // engagement's team, not its own whole firm, and weight stays the
+  // organisation's; the server refuses anything else either way.
+  const [firmPlan, setFirmPlan] = useState<{ deliveryStyle: string; team: { id: string; name: string; side: string }[] } | null>(null);
+  useEffect(() => {
+    apiClient.get(`/api/projects/${projectId}`)
+      .then(async (res) => {
+        const p = res.data?.project;
+        if (p?.side !== 'Provider' || !p.deliveryStyle) { setFirmPlan(null); return; }
+        const m = await apiClient.get(`/api/projects/${projectId}/members`);
+        setFirmPlan({
+          deliveryStyle: p.deliveryStyle,
+          team: (m.data?.members || []).filter((x: any) => x.active).map((x: any) => ({ id: x.userId, name: x.userName, side: x.side })),
+        });
+      })
+      .catch(() => setFirmPlan(null));
+  }, [projectId]);
+  const consultantLed = firmPlan?.deliveryStyle === 'ConsultantLed';
+  const assignable = firmPlan
+    ? firmPlan.team.filter((t) => t.side === 'Provider' || consultantLed)
+    : people;
+
   useEffect(() => {
     apiClient.get('/api/auth/tenant-users')
       .then((res) => setPeople(res.data?.users || []))
@@ -428,7 +451,7 @@ const ProjectPlan: React.FC<{
       await apiClient.post(`/api/projects/phases/${taskForPhase.id}/tasks`, {
         name: values.name,
         description: values.description || undefined,
-        assigneeId: (people.find((p) => p.name === values.assignee) || {}).id,
+        assigneeId: (assignable.find((p) => p.name === values.assignee) || {}).id,
         priority: values.priority || undefined,
         side: values.side || undefined,
         department: values.department || undefined,
@@ -436,7 +459,7 @@ const ProjectPlan: React.FC<{
         dueDate: values.dueDate || undefined,
         // Blank means "the server's default", not zero: a task weighted zero
         // contributes nothing to the rollup, which is a different intention.
-        weight: values.weight === '' ? undefined : Number(values.weight),
+        weight: firmPlan || !values.weight ? undefined : Number(values.weight),
       });
       setTaskForPhase(null);
       await load();
@@ -1493,7 +1516,7 @@ const ProjectPlan: React.FC<{
               // Blank first, and blank by default: a task nobody has been given
               // is a normal state, and defaulting to whoever happens to head the
               // list would assign work to them without anyone choosing it.
-              options: ['', ...people.map((p) => p.name)],
+              options: ['', ...assignable.map((p) => p.name)],
             },
             // Offered from the server's own lists rather than a copy here: it
             // answers 400 for anything outside them.
@@ -1508,17 +1531,20 @@ const ProjectPlan: React.FC<{
               name: 'side',
               label: 'Side',
               type: 'select',
-              options: vocab.sides,
-              help: 'Which organisation owes this piece of work.',
+              // The firm's own work first; the organisation's only when consultant-led.
+              options: firmPlan ? (consultantLed ? ['Provider', 'Client'] : ['Provider']) : vocab.sides,
+              help: firmPlan && !consultantLed
+                ? 'This engagement is client-led: the firm plans its own tasks.'
+                : 'Which organisation owes this piece of work.',
             },
             { name: 'dueDate', label: 'Due', type: 'date' },
-            {
+            ...(firmPlan ? [] : [{
               name: 'weight',
               label: 'Weight',
-              type: 'number',
+              type: 'number' as const,
               help: 'How much this task counts toward the phase. Leave blank for the default — a '
                 + 'weight of zero means it contributes nothing, which is a different intention.',
-            },
+            }]),
           ]}
           onSubmit={(v) => saveTask(v)}
           onCancel={() => setTaskForPhase(null)}
