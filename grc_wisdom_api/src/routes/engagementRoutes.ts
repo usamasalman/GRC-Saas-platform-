@@ -24,6 +24,7 @@ import {
   reassignRequest, moveRequestDue, recordRequestBlocker, requestFile, linkEvidence, unlinkEvidence, evidenceChoices,
 } from '../controllers/engagementRequestController';
 import { requestTemplate, previewRequestImport, importRequests, exportRequests } from '../controllers/engagementRequestImportController';
+import { listScopeChanges, askScopeChange, approveScopeChange, rejectScopeChange } from '../controllers/engagementScopeChangeController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -31,7 +32,7 @@ import { requestTemplate, previewRequestImport, importRequests, exportRequests }
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
  * after close, report copies, the firm's records, its team and follow-ons,
- * and (sprint 8) information requests and evidence links.
+ * and (sprint 8) information requests, evidence links and scope changes.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -115,6 +116,10 @@ router.post('/:projectId/requests/:requestId/blocker', requireAnyCapability(CAP.
 router.get('/:projectId/evidence-choices', evidenceChoices);
 router.post('/:projectId/evidence-links', requireCapability(CAP.MANAGE_PROJECT), linkEvidence);
 router.post('/:projectId/evidence-links/:linkId/remove', requireCapability(CAP.MANAGE_PROJECT), unlinkEvidence);
+router.get('/:projectId/scope-changes', listScopeChanges);
+router.post('/:projectId/scope-changes', requireCapability(CAP.EXECUTE_PROJECT_WORK), askScopeChange);
+router.post('/:projectId/scope-changes/:id/approve', requireCapability(CAP.MANAGE_PROJECT), approveScopeChange);
+router.post('/:projectId/scope-changes/:id/reject', requireCapability(CAP.MANAGE_PROJECT), rejectScopeChange);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
 
 export default router;

@@ -11,6 +11,7 @@ import { DAY_MS } from '../services/engagementRules';
 import {
   str, Conflict, send, notFound, loadEngagement, clientSide, flagFor, bothTrails, Engagement,
 } from './engagementController';
+import { scopeVersionBound, scopeVersionDiscarded } from './engagementScopeChangeController';
 
 /**
  * An engagement's scope (consulting engagement, sprint 6): what the
@@ -203,6 +204,9 @@ export const approveScope = async (req: AuthenticatedRequest, res: Response): Pr
         body: `${e.tenant?.name} approved what is shared with you. See the Scope tab.`,
         link: 'project-delivery',
       })));
+      // A version drafted from a scope change: the change is approved, and the
+      // request that waited for it is raised (sprint 8).
+      await scopeVersionBound(tx, { e, versionId: draft.id, actorId });
     });
     res.json({ status: 'success', version: draft.version });
   } catch (error: any) {
@@ -232,6 +236,8 @@ export const discardScope = async (req: AuthenticatedRequest, res: Response): Pr
       await bothTrails(tx, {
         e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_SCOPE_DISCARDED', payload: { version: row.version, reason },
       });
+      // A discarded draft of a scope change rejects the change; both stay in the history (sprint 8).
+      await scopeVersionDiscarded(tx, { e, versionId: row.id, actorId, reason });
       return row.version;
     });
     res.json({ status: 'success', version });
