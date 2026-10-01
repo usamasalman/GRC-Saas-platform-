@@ -6,6 +6,7 @@ import { notify } from '../services/notificationService';
 import { noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { ENFORCEMENT_FLAG, CONSULTING_FLAG, featureStates, flagOnFor } from '../services/featureFlags';
 import { DAY_MS, WARNING_DAYS } from '../services/engagementRules';
+import { ENDED_STATUSES, windowDaysOf } from '../services/engagementAfterClose';
 
 /**
  * When an organisation's consulting rules can be enforced, and switching it
@@ -204,6 +205,27 @@ export const scheduleEnforcement = async (req: AuthenticatedRequest, res: Respon
     const day = effectiveFrom.toISOString().slice(0, 10);
     await prisma.$transaction(async (tx) => {
       await setEnforcement(tx, { actorId, actorTenantId: str(req.user!.tenantId), clientTenantId, enabled: true, effectiveFrom, note });
+      // Closed engagements never migrated keep their old access until now;
+      // from enforcement they get the window after close, counted from the
+      // later of their close and the day enforcement starts (sprint 7).
+      const oldClosed = await tx.project.findMany({
+        where: { tenantId: clientTenantId, deliveryStyle: null, providerTenantId: { not: null }, status: { in: ENDED_STATUSES } },
+        select: { id: true, ref: true, actualEndDate: true, closeWindowDays: true, closeAccessUntil: true },
+      });
+      const stamped: string[] = [];
+      for (const p of oldClosed) {
+        const from = Math.max(p.actualEndDate?.getTime() ?? 0, effectiveFrom.getTime());
+        const until = new Date(from + windowDaysOf(p) * DAY_MS);
+        if (p.closeAccessUntil && p.closeAccessUntil >= until) continue;
+        await tx.project.update({ where: { id: p.id }, data: { closeAccessUntil: until, closeWarnedAt: null, closeEndNoticeAt: null } });
+        stamped.push(p.ref);
+      }
+      if (stamped.length > 0) {
+        await writeAudit(tx, {
+          tenantId: clientTenantId, actorId, action: 'ENGAGEMENT_CLOSE_WINDOWS_SET', subjectType: 'Tenant', subjectId: clientTenantId,
+          payload: { engagements: stamped, from: effectiveFrom, cause: 'enforcement scheduled' },
+        });
+      }
       const leads = await firmLeads(tx, clientTenantId);
       await notify(tx, leads.map((l) => ({
         tenantId: l.project.providerTenantId, recipientId: l.userId, actorId, event: 'ENGAGEMENT_ENFORCEMENT_SCHEDULED',
