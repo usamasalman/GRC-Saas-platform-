@@ -8,6 +8,7 @@ import {
   assignSchedule,
   dispositionQueue,
   disposeDocument,
+  disposeVersion,
 } from '../controllers/retentionController';
 
 const router = Router();
@@ -34,5 +35,7 @@ router.get('/queue', requireCapability(CAP.RETENTION_HOLD), dispositionQueue);
 // on a record is the same decision as disposing of it next month.
 router.put('/documents/:id/schedule', requireCapability(CAP.RETENTION_HOLD), assignSchedule);
 router.post('/documents/:id/dispose', requireCapability(CAP.RETENTION_HOLD), disposeDocument);
+// A version a next version replaced, on its own date.
+router.post('/versions/:versionId/dispose', requireCapability(CAP.RETENTION_HOLD), disposeVersion);
 
 export default router;
