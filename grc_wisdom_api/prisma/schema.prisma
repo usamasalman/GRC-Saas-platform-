@@ -1708,6 +1708,8 @@ model Document {
   @@index([tenantId, disposalDueAt])
 
   versions      DocumentVersion[]
+  /// The one open next version of a published document, or empty.
+  openVersionId String?  @unique
   approvals     ApprovalQueue[]
   acknowledgements Acknowledgement[]
   acknowledgementRequests AcknowledgementRequest[]
@@ -1926,6 +1928,47 @@ model DocumentVersion {
   createdById   String?
   createdAt     DateTime @default(now())
   editors       DocumentVersionEditor[]
+  // ── Next versions of a published document ─────────────────────────────────
+  // Null on the rows the original flow writes (a draft document's own
+  // versions). On a next version: Draft | InReview | Approved | Returned |
+  // Published | Discarded; on the version it replaced: Superseded.
+  state            String?
+  /// Where it started: the live version and the hash of its text and file.
+  baseVersion      String?
+  baseHash         String?
+  /// Who started it. Not an editor: starting copies the live text unchanged.
+  startedById      String?
+  /// Why it was started: a note, or the suggestions it came from.
+  startReason      String?
+  /// Proposed for the document, applied only when this version is published.
+  proposedTitle          String?
+  proposedClassification String?
+  proposedCategory       String?
+  proposedAudienceKind   String?
+  proposedAudienceValue  String?
+  /// JSON: { add: [{ controlId | riskId | clauseId, note }], remove: [linkId] }.
+  proposedLinks          String?
+  /// Its own check-out, so editing it never touches the live document.
+  checkedOutById   String?
+  checkedOutAt     DateTime?
+  submittedAt      DateTime?
+  publishedAt      DateTime?
+  publishedById    String?
+  /// Replaced as the version in force: when, and by which version.
+  supersededAt     DateTime?
+  supersededBy     String?
+  discardedAt      DateTime?
+  discardedById    String?
+  discardReason    String?
+  /// Retention of a superseded version, counted from the day it was replaced.
+  disposalDueAt    DateTime?
+  disposedAt       DateTime?
+  disposedById     String?
+  disposalReason   String?
+  approvals        ApprovalQueue[]
+
+  @@index([documentId, state])
+  @@index([disposalDueAt])
 }
 
 /// Everybody who wrote this version, not only the person who checked it in.
@@ -1979,6 +2022,9 @@ model AcknowledgementRequest {
   requestedById String
   requestedBy   User     @relation("AcknowledgementRequester", fields: [requestedById], references: [id], onDelete: Cascade)
   dueAt         DateTime?
+  /// Closed because the version it asked about was replaced before it was signed.
+  supersededAt  DateTime?
+  supersededBy  String?
 
   /// Publishing the same version twice must not ask anybody twice.
   @@unique([documentId, version, userId])
@@ -2077,6 +2123,11 @@ model ApprovalQueue {
   sessionInfo   String?  // Session/network info at signing time
   reviewedAt    DateTime?
   createdAt     DateTime @default(now())
+  /// The next version being approved; empty for the document's own flow.
+  versionId     String?
+  version       DocumentVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId])
 }
 
 model Acknowledgement {
@@ -4506,8 +4557,10 @@ model RequestAnswer {
   /// Upload | Evidence | Document | Record | Text
   kind         String
   text         String?
-  /// A published document of the organisation's, shared by the scope.
+  /// A published document of the organisation's, shared by the scope, and
+  /// the version in force when it was linked.
   documentId   String?
+  documentVersion String?
   /// A record already shared by the scope: its register and id.
   register     String?
   recordId     String?
