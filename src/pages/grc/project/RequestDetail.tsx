@@ -135,7 +135,17 @@ const RequestDetail: React.FC<{ projectId: string; requestId: string; onClose: (
               {ans.replacedAt && <span style={{ color: 'var(--ink-muted)' }}> · replaced {fmt(ans.replacedAt)}</span>}
             </div>
             {ans.text && <div style={{ fontSize: 12.5, marginTop: 2 }}>{ans.text}</div>}
-            {ans.recordLabel && <div style={{ fontSize: 12.5, marginTop: 2 }}>{ans.register ? `${ans.register}: ` : 'Document: '}{ans.recordLabel}</div>}
+            {ans.recordLabel && (
+              <div style={{ fontSize: 12.5, marginTop: 2 }}>
+                {ans.register ? `${ans.register}: ` : 'Document: '}{ans.recordLabel}
+                {ans.documentVersion && (
+                  <span style={{ color: 'var(--ink-muted)' }}>
+                    {' '}· linked while v{ans.documentVersion} was in force
+                    {ans.document?.version && ans.document.version !== ans.documentVersion ? ` (now v${ans.document.version})` : ''}
+                  </span>
+                )}
+              </div>
+            )}
             {ans.files.map((f: any) => (
               <div key={f.linkId} style={{ fontSize: 12, marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>{f.fileName} · {f.classification} · SHA-256 {short(f.sha256)}</span>

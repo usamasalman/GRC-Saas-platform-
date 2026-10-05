@@ -216,7 +216,7 @@ export const getRequest = async (req: AuthenticatedRequest, res: Response): Prom
       prisma.requestAnswer.findMany({
         where: { requestId: r.id }, orderBy: { version: 'desc' },
         select: {
-          id: true, version: true, kind: true, text: true, documentId: true, register: true, recordId: true, recordLabel: true,
+          id: true, version: true, kind: true, text: true, documentId: true, documentVersion: true, register: true, recordId: true, recordLabel: true,
           answeredAt: true, replacedAt: true, answeredBy: { select: { name: true } },
         },
       }),
@@ -483,7 +483,7 @@ export const answerRequest = async (req: AuthenticatedRequest, res: Response): P
     // What the answer points at, checked before anything is written.
     let upload: { bytes: Buffer; fileName: string; title: string; classification: string; sha256: string } | null = null;
     let item: { itemKind: string; itemId: string } | null = null;
-    let answerData: { documentId?: string; register?: string; recordId?: string; recordLabel?: string } = {};
+    let answerData: { documentId?: string; documentVersion?: string; register?: string; recordId?: string; recordLabel?: string } = {};
     if (kind === 'Upload') {
       const fileName = str(b.fileName).trim();
       if (!fileName || !b.fileData) { send(res, { status: 400, message: 'Choose the file to upload.' }); return; }
@@ -532,14 +532,15 @@ export const answerRequest = async (req: AuthenticatedRequest, res: Response): P
       const reg = registerScope(scope, 'Documents');
       const doc = await prisma.document.findFirst({
         where: { id: str(b.documentId), status: 'PUBLISHED', ...(reg ? { tenantId: { in: reg.tenantIds } } : { tenantId: a.e.tenantId }) },
-        select: { id: true, code: true, title: true, classification: true },
+        select: { id: true, code: true, title: true, classification: true, version: true, publishedVersion: true },
       });
       if (!doc) { send(res, { status: 404, message: 'Link a published document of your organisation.' }); return; }
       if (!reg || !reg.classifications.includes(doc.classification)) {
         send(res, { status: 409, code: 'OUT_OF_SCOPE', message: 'That document is not shared by this engagement\'s scope. A scope change adds it.' });
         return;
       }
-      answerData = { documentId: doc.id, recordLabel: `${doc.code} · ${doc.title}` };
+      // The version in force when it was linked: a later version does not rewrite what was answered.
+      answerData = { documentId: doc.id, documentVersion: doc.publishedVersion || doc.version, recordLabel: `${doc.code} · ${doc.title}` };
     } else if (kind === 'Record') {
       const register = str(b.register);
       if (register !== 'Risks' && register !== 'Assets') { send(res, { status: 400, message: 'Link a record from the risks or assets register.' }); return; }
