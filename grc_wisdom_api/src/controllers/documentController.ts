@@ -1,7 +1,5 @@
 import { Response } from 'express';
 import bcrypt from 'bcrypt';
-import fs from 'fs';
-import path from 'path';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { readPage, pageInfo } from '../utils/paging';
@@ -25,6 +23,11 @@ import {
   viewerFor, audienceMembership, decideRead, loadReadable,
   recordAccess, recordingIsMandatory, NOT_FOUND_MESSAGE,
 } from '../services/documentReadGuard';
+import {
+  storeDocumentFile, resolveDocumentFile, hashDocumentFile, removeDocumentFile,
+  isStoredDocumentFile, StoredDocumentFile,
+} from '../services/documentFiles';
+import { EvidenceRefusal } from '../services/projectEvidence';
 
 const SUBJECT_DOCUMENT = 'Document';
 
@@ -63,11 +66,6 @@ async function editorsOfCurrentVersion(
   });
 }
 
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function isFrozenByLegalHold(doc: { legalHoldAt?: Date | null }): boolean {
@@ -82,35 +80,37 @@ function isFrozenByLegalHold(doc: { legalHoldAt?: Date | null }): boolean {
  */
 function discardUpload(uploaded: { fileUrl: string } | null) {
   if (!uploaded) return;
-  try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(uploaded.fileUrl))); } catch { /* already gone */ }
+  try { removeDocumentFile(uploaded.fileUrl); } catch { /* already gone */ }
 }
 
-function processFileUpload(fileData?: string, fileName?: string, fileType?: string) {
-  if (!fileData || !fileName) return null;
-  try {
-    const matches = fileData.match(/^data:(.+);base64,(.+)$/);
-    let buffer: Buffer;
-    let mime = fileType || 'application/octet-stream';
-    if (matches && matches.length === 3) {
-      mime = matches[1];
-      buffer = Buffer.from(matches[2], 'base64');
-    } else {
-      buffer = Buffer.from(fileData, 'base64');
-    }
-    const safeName = `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-    const filePath = path.join(UPLOADS_DIR, safeName);
-    fs.writeFileSync(filePath, buffer);
-    return {
-      fileUrl: `/uploads/${safeName}`,
-      fileName,
-      fileSize: buffer.length,
-      fileType: mime,
-    };
-  } catch (err) {
-    console.error('[File Processing Error]:', err);
-    return null;
-  }
+type FileOutcome = { uploaded: StoredDocumentFile | null } | { refusal: EvidenceRefusal };
+
+/**
+ * The file on a create, an edit or a check-in, through the checks and the store
+ * delivery evidence uses (services/documentFiles). `uploaded` is null when the
+ * request carries no file. A refused file is answered before anything is
+ * written, and a file that cannot be written is an error rather than a document
+ * quietly saved without it — which is what swallowing the failure here used to
+ * produce.
+ *
+ * The caller's `fileType` is deliberately not a parameter: the stored type is
+ * read from the bytes.
+ */
+function processFileUpload(fileData?: unknown, fileName?: unknown): FileOutcome {
+  if (!fileData || !fileName) return { uploaded: null };
+  const result = storeDocumentFile(String(fileData), String(fileName));
+  return result.ok ? { uploaded: result.file } : { refusal: result.refusal };
 }
+
+function refuseFile(res: Response, refusal: EvidenceRefusal): void {
+  res.status(400).json({ status: 'error', code: refusal.code, message: refusal.message });
+}
+
+/** What an audit entry records about a stored file, so its hash is on the chain. */
+const fileAuditFields = (uploaded: StoredDocumentFile | null) => (uploaded ? {
+  fileName: uploaded.fileName, bytes: uploaded.fileSize,
+  fileType: uploaded.fileType, sha256: uploaded.fileHash,
+} : {});
 
 // ─── List / Get ─────────────────────────────────────────────────────────────
 
@@ -274,7 +274,7 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
   try {
     const tenantId = req.user!.tenantId;
     const userId = req.user!.id;
-    const { code, title, category, classification, content, fileData, fileName, fileType } = req.body;
+    const { code, title, category, classification, content, fileData, fileName } = req.body;
 
     if (!code || !title || !category || !classification || !content) {
       res.status(400).json({ status: 'error', message: 'code, title, category, classification, and content are required' });
@@ -287,7 +287,9 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const uploaded = processFileUpload(fileData, fileName, fileType);
+    const upload = processFileUpload(fileData, fileName);
+    if ('refusal' in upload) { refuseFile(res, upload.refusal); return; }
+    const { uploaded } = upload;
 
     const document = await prisma.$transaction(async (tx) => {
       // Within the storage the organisation's package allows (QA-031).
@@ -317,7 +319,7 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
           ...(uploaded && {
             fileUrl: uploaded.fileUrl, fileName: uploaded.fileName,
             fileSize: uploaded.fileSize, fileType: uploaded.fileType,
-            fileHash: generateHash(fileData || content),
+            fileHash: uploaded.fileHash,
           }),
         },
       });
@@ -325,7 +327,7 @@ export const createDocument = async (req: AuthenticatedRequest, res: Response): 
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_CREATED',
         subjectType: SUBJECT_DOCUMENT, subjectId: doc.id,
-        payload: { documentId: doc.id, code, title, classification },
+        payload: { documentId: doc.id, code, title, classification, ...fileAuditFields(uploaded) },
       });
       return doc;
     });
@@ -348,7 +350,7 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
     const tenantId = req.user!.tenantId;
     const userId = req.user!.id;
     const id = req.params.id as string;
-    const { title, category, classification, content, fileData, fileName, fileType } = req.body;
+    const { title, category, classification, content, fileData, fileName } = req.body;
 
     const doc = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
@@ -365,7 +367,9 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const uploaded = processFileUpload(fileData, fileName, fileType);
+    const upload = processFileUpload(fileData, fileName);
+    if ('refusal' in upload) { refuseFile(res, upload.refusal); return; }
+    const { uploaded } = upload;
 
     const updated = await prisma.$transaction(async (tx) => {
       if (uploaded) {
@@ -407,7 +411,7 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
               ...(uploaded && {
                 fileUrl: uploaded.fileUrl, fileName: uploaded.fileName,
                 fileSize: uploaded.fileSize, fileType: uploaded.fileType,
-                fileHash: generateHash(fileData || content || doc.content),
+                fileHash: uploaded.fileHash,
               }),
             },
           });
@@ -419,7 +423,7 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
               ...(uploaded ? {
                 fileUrl: uploaded.fileUrl, fileName: uploaded.fileName,
                 fileSize: uploaded.fileSize, fileType: uploaded.fileType,
-                fileHash: generateHash(fileData || content || doc.content),
+                fileHash: uploaded.fileHash,
               } : {}),
             },
           });
@@ -429,7 +433,7 @@ export const updateDocument = async (req: AuthenticatedRequest, res: Response): 
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_UPDATED',
         subjectType: SUBJECT_DOCUMENT, subjectId: id,
-        payload: { documentId: id },
+        payload: { documentId: id, ...fileAuditFields(uploaded) },
       });
       return u;
     });
@@ -495,7 +499,7 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
     const tenantId = req.user!.tenantId;
     const userId = req.user!.id;
     const id = req.params.id as string;
-    const { content, summary, changeType, fileData, fileName, fileType } = req.body;
+    const { content, summary, changeType, fileData, fileName } = req.body;
 
     const doc: any = await prisma.document.findFirst({ where: { id, tenantId } });
     if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
@@ -510,8 +514,15 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
 
     const [major, minor] = String(doc.version).split('.').map(Number);
     const newVersion = changeType === 'Major' ? `${major + 1}.0` : `${major}.${minor + 1}`;
-    const uploaded = processFileUpload(fileData, fileName, fileType);
-    const contentHash = generateHash(fileData || content || doc.content);
+    const upload = processFileUpload(fileData, fileName);
+    if ('refusal' in upload) { refuseFile(res, upload.refusal); return; }
+    const { uploaded } = upload;
+    // The hash of the bytes this version points at: the new file, or the one
+    // carried forward from the version before. Only a version with no file at
+    // all records the hash of its text body, as it always has.
+    const contentHash = uploaded?.fileHash
+      ?? hashDocumentFile(doc.fileUrl)
+      ?? generateHash(content || doc.content);
 
     const updated = await prisma.$transaction(async (tx) => {
       if (uploaded) {
@@ -552,7 +563,7 @@ export const checkinDocument = async (req: AuthenticatedRequest, res: Response):
       await writeAudit(tx, {
         tenantId, actorId: userId, action: 'DOCUMENT_CHECKED_IN',
         subjectType: SUBJECT_DOCUMENT, subjectId: id,
-        payload: { documentId: id, newVersion, contentHash },
+        payload: { documentId: id, newVersion, contentHash, ...fileAuditFields(uploaded) },
       });
       return u;
     });
@@ -615,13 +626,22 @@ export const downloadDocument = async (req: AuthenticatedRequest, res: Response)
     });
     if (!doc) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
 
-    if (doc.fileUrl && typeof doc.fileUrl === 'string' && doc.fileUrl.startsWith('/uploads/')) {
-      const fileNameOnly = doc.fileUrl.replace('/uploads/', '');
-      const fullPath = path.join(UPLOADS_DIR, fileNameOnly);
-      if (fs.existsSync(fullPath)) {
-        res.download(fullPath, doc.fileName || `${doc.code}_v${doc.version}`);
-        return;
+    // A file in the store, or one written to uploads/ before the library moved
+    // there; both resolve here, and neither is reachable any other way.
+    const fullPath = resolveDocumentFile(doc.fileUrl);
+    if (fullPath) {
+      if (isStoredDocumentFile(doc.fileUrl)) {
+        // A storage key has no extension to infer a type from, so the type
+        // read from the bytes at upload is the one served. A file from uploads/
+        // is still typed by its extension, exactly as before.
+        res.setHeader('Content-Type', doc.fileType || 'application/octet-stream');
       }
+      // As delivery evidence is served: never sniffed into something active,
+      // never run if it is opened directly.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.download(fullPath, doc.fileName || `${doc.code}_v${doc.version}`);
+      return;
     }
 
     const exportContent = `================================================================================

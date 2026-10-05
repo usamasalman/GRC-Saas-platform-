@@ -20,6 +20,11 @@ import crypto from 'crypto';
  *
  * That handler pattern is not new either: documentController.downloadDocument
  * already does exactly this correctly. The static mount simply bypasses it.
+ *
+ * The static mount has since been removed, and the document library now writes
+ * its new files here too, through services/documentFiles — the same checks,
+ * the same opaque keys, the same hash of the bytes. Files it wrote to uploads/
+ * before that stay there and are still served from there.
  */
 
 /** Sibling of uploads/, never served statically. */
@@ -63,9 +68,10 @@ export function decodeUpload(fileData: string): Buffer {
  * Write the bytes and return what was actually stored.
  *
  * The hash is of the BYTES ON DISK, so it can be recomputed later by re-reading
- * the file and compared. The document module hashes the base64 string it was
- * sent instead, which produces a value that looks like an integrity check and
- * cannot be verified against anything afterwards.
+ * the file and compared. The document module used to hash the base64 string it
+ * was sent instead, which produces a value that looks like an integrity check
+ * and cannot be verified against anything afterwards; its older versions still
+ * carry such values.
  *
  * `wx` is deliberate: an exclusive open fails rather than overwriting. The
  * existing upload path uses plain writeFileSync on a timestamp-derived name, so

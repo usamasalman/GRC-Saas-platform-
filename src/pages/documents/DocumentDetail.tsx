@@ -33,6 +33,22 @@ function browserCanRender(mime: string | null, fileName?: string): boolean {
   return !!fileName && RENDERABLE_EXT.test(fileName);
 }
 
+/**
+ * The type to give the frame's blob.
+ *
+ * The server types an uploaded file from its bytes, and plain text has no
+ * signature, so a .txt or .csv arrives as application/octet-stream — and a
+ * frame handed octet-stream offers a download instead of showing it. For
+ * display only, those two are typed as plain text, which a frame shows and
+ * never runs. Nothing else is retyped.
+ */
+const PLAIN_TEXT_EXT = /\.(txt|csv)$/i;
+
+function frameMime(served: string, fileName?: string): string {
+  if (/octet-stream/i.test(served) && !!fileName && PLAIN_TEXT_EXT.test(fileName)) return 'text/plain';
+  return served;
+}
+
 /** The format in the words on the file card, for a message a person can act on. */
 function describeFormat(mime: string | null, fileName?: string): string {
   const ext = (fileName?.match(/\.([a-z0-9]+)$/i)?.[1] || '').toUpperCase();
@@ -195,7 +211,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
         setReach(res.data.access || null);
 
         // Fetch PDF Blob URL if an uploaded file exists or if doc has content
-        loadPdfBlob(doc.id, doc.fileType);
+        loadPdfBlob(doc.id, doc.fileType, doc.fileName);
       }
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed to load document details');
@@ -204,7 +220,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
     }
   };
 
-  const loadPdfBlob = async (id: string, fileType?: string) => {
+  const loadPdfBlob = async (id: string, fileType?: string, fileName?: string) => {
     setPdfLoading(true);
     setPreviewError(null);
     setPreviewMime(null);
@@ -215,7 +231,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
       const response = await apiClient.get(`/api/documents/${id}/download?disposition=preview`, {
         responseType: 'blob',
       });
-      const mime = (response.headers['content-type'] as string) || fileType || '';
+      const mime = frameMime((response.headers['content-type'] as string) || fileType || '', fileName);
       const blob = new Blob([response.data], { type: mime });
       setPreviewMime(mime);
       setPdfBlobUrl(window.URL.createObjectURL(blob));

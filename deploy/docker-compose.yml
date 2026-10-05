@@ -46,11 +46,13 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     volumes:
       # Uploaded evidence and documents. Without this they are written to the
-      # container filesystem and vanish on the next deploy.
+      # container filesystem and vanish on the next deploy. Library documents
+      # uploaded before they moved to the store below are still read from here.
       - uploads:/app/uploads
-      # Delivery evidence. A separate volume from uploads because it is a
-      # separate store with different rules: nothing here is ever served
-      # statically, and every read goes through an authenticated handler.
+      # Delivery evidence, branding logos and, since they moved here, library
+      # documents. A separate volume from uploads because it is a separate
+      # store with different rules: nothing here is ever served statically,
+      # and every read goes through an authenticated handler. Back up both.
       - evidence:/app/evidence-store
     networks:
       default:
