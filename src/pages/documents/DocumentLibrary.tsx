@@ -567,7 +567,7 @@ export default function DocumentLibrary() {
                               : doc.status === 'APPROVED'
                                 ? 'Approved and waiting to be published. Changing it now would change what was approved.'
                                 : doc.status === 'PUBLISHED'
-                                  ? 'Published records are not edited in place — raise the next version instead.'
+                                  ? 'Published records are not edited in place — open the document and start its next version.'
                                   : `Editing is closed while this document is ${doc.status}.`
                           }
                         >

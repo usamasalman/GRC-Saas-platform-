@@ -118,9 +118,19 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Submit for Sign-Off',
         instruction: 'Click "Submit for Approval" to route the document to the designated Compliance Approver.',
         tip: 'Once approved, the document is sealed with a cryptographic SHA-256 hash in the audit log.'
+      },
+      {
+        step: 4,
+        title: 'Revise a Published Document',
+        instruction: 'Open the published document, go to the "Next version" tab and click "Start next version". Choose Minor (1.0 becomes 1.1) or Major (2.0) and say why. Check it out, edit, check it in, then "Submit for approval" with what changed and why. Once approved, "Publish version" makes it the version in force.',
+        tip: 'The published version stays in force for every reader until the next one is published. The replaced version is kept on the Version History tab, marked superseded and not in force.'
       }
     ],
     proTips: [
+      'Only one next version is open at a time. The owner can "Discard this version"; it is kept as discarded and the published version is untouched.',
+      'A minor version keeps everyone\'s acknowledgement of the same major version; a major version asks the whole audience again.',
+      'Title, classification, category, audience and the controls, risks and clauses it governs are proposed on the next version and change only when it is published.',
+      'To go back to an earlier wording, use "Start next version from this text" on a superseded version in Version History. History only moves forward.',
       'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'Open a document and use the Governs tab to link the controls it mandates, the risks it treats and the framework clauses it satisfies (e.g. ISO 27001, NCA ECC). Those links are what let the clause be reported as addressed.',
       'Published documents can be assigned for mandatory employee acknowledgement in one click.'
@@ -157,8 +167,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Perform Content & Diff Inspection',
-        instruction: 'Click "Review" on any item to read the document and its author notes before approving or returning it.',
-        tip: 'SOD engine prevents authors from approving their own submissions.'
+        instruction: 'Click "Read" on any item to open the document before approving or returning it. For the next version of a published document, the Version column says "next version" and "Read" opens its Next version tab, where it can be compared with the version in force.',
+        tip: 'SOD engine prevents authors from approving their own submissions. Anyone who edited a next version cannot approve it, nor can the document\'s owner.'
       },
       {
         step: 3,

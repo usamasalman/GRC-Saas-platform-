@@ -65,6 +65,8 @@ const RetentionSchedules: React.FC = () => {
   const [meta, setMeta] = useState<any>(null);
   const [queue, setQueue] = useState<any[]>([]);
   const [held, setHeld] = useState<any[]>([]);
+  // Versions a next version replaced, each on its own date.
+  const [versions, setVersions] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [queueReadable, setQueueReadable] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,7 @@ const RetentionSchedules: React.FC = () => {
       setQueue(q.data?.queue || []);
       setQueuePaging(q.data?.paging || null);
       setHeld(q.data?.held || []);
+      setVersions(q.data?.versions || []);
       setSummary(q.data?.summary || null);
       setQueueReadable(true);
     } catch {
@@ -137,7 +140,9 @@ const RetentionSchedules: React.FC = () => {
     setError('');
     try {
       const res = await apiClient.post(
-        `/api/retention/documents/${disposing.id}/dispose`,
+        disposing.versionNumber
+          ? `/api/retention/versions/${disposing.id}/dispose`
+          : `/api/retention/documents/${disposing.id}/dispose`,
         { reason },
       );
       if (res.data?.warning) setError(res.data.warning);
@@ -169,8 +174,8 @@ const RetentionSchedules: React.FC = () => {
       type: 'select' as const,
       required: true,
       initial: s?.trigger || 'Published',
-      options: (meta?.triggers || ['Published', 'Archived', 'Created']) as readonly string[],
-      help: 'A document that has not reached this point yet has no disposal date.',
+      options: (meta?.triggers || ['Published', 'Archived', 'Created', 'Superseded']) as readonly string[],
+      help: 'A document that has not reached this point yet has no disposal date. Every version a next version replaced is kept for this period from the day it was replaced; Superseded disposes of nothing else.',
     },
     {
       name: 'reviewWindowDays',
@@ -189,8 +194,13 @@ const RetentionSchedules: React.FC = () => {
         key={d.id}
         style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '11px 13px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 12.5 }}
       >
-        <span style={{ fontWeight: 600, color: 'var(--ink)', minWidth: 110 }}>{d.code}</span>
-        <span style={{ color: 'var(--ink)', flex: 1 }}>{d.title}</span>
+        <span style={{ fontWeight: 600, color: 'var(--ink)', minWidth: 110 }}>{d.code}{d.versionNumber ? ` v${d.versionNumber}` : ''}</span>
+        <span style={{ color: 'var(--ink)', flex: 1 }}>
+          {d.title}
+          {d.versionNumber && d.supersededAt && (
+            <span style={{ color: 'var(--ink-muted)' }}> · replaced by v{d.supersededBy} on {calendarDate(d.supersededAt)}</span>
+          )}
+        </span>
         <span style={pill(fg, br)}>{STATE_WORD[d.state] || d.state}</span>
         <span style={{ color: 'var(--ink-muted)', minWidth: 150, textAlign: 'right' }}>
           {d.state === 'Held'
@@ -234,9 +244,10 @@ const RetentionSchedules: React.FC = () => {
       {summary && (
         <StatStrip
           items={[
-            ['Due now', summary.due],
-            ['Due soon', summary.dueSoon],
-            ['On legal hold', summary.held],
+            // Documents and the superseded versions on their own dates, together.
+            ['Due now', summary.due + versions.filter((v) => v.state === 'Due').length],
+            ['Due soon', summary.dueSoon + versions.filter((v) => v.state === 'DueSoon').length],
+            ['On legal hold', summary.held + versions.filter((v) => v.state === 'Held').length],
             ['Disposed', summary.disposed],
           ]}
         />
@@ -295,9 +306,11 @@ const RetentionSchedules: React.FC = () => {
           <div style={{ color: 'var(--ink-muted)', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>
             {summary?.noSchedulesDefined
               ? 'No retention schedule has been defined, so no document has a disposal date. An empty queue here does not mean everything is up to date.'
-              : summary?.notScheduled
-                ? `${summary.notScheduled} document${summary.notScheduled === 1 ? ' is' : 's are'} on no schedule and will never appear here.`
-                : 'Every scheduled document is still inside its retention period.'}
+              : versions.length > 0
+                ? 'No document is due. Superseded versions with their own dates are listed below.'
+                : summary?.notScheduled
+                  ? `${summary.notScheduled} document${summary.notScheduled === 1 ? ' is' : 's are'} on no schedule and will never appear here.`
+                  : 'Every scheduled document is still inside its retention period.'}
           </div>
         </div>
       ) : (
@@ -305,6 +318,21 @@ const RetentionSchedules: React.FC = () => {
           {queue.map((d) => row(d, true))}
           <PagingBar paging={queuePaging} onPage={setQueuePage} noun="documents due" disabled={loading} />
         </div>
+      )}
+
+      {queueReadable && versions.length > 0 && (
+        <>
+          <h2 style={H2}>Superseded versions</h2>
+          <p style={{ ...SUB, marginTop: 0 }}>
+            Versions a next version replaced. Each is kept for its schedule's period from the day
+            it was replaced, then disposed of on its own: its text and file are destroyed, and its
+            number, dates, hash, approvals and acknowledgements remain. A legal hold on the
+            document holds every version of it.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {versions.map((d) => row(d, true))}
+          </div>
+        </>
       )}
 
       {queueReadable && held.length > 0 && (
@@ -338,12 +366,14 @@ const RetentionSchedules: React.FC = () => {
 
       {disposing && (
         <ReasonDialog
-          title={`Dispose of ${disposing.code}`}
-          message={
-            `This destroys the content of "${disposing.title}" and removes its stored file. `
-            + 'The approval, acknowledgement and access history remain, and the disposal is '
-            + 'recorded against the schedule it was carried out under. It cannot be undone.'
-          }
+          title={`Dispose of ${disposing.code}${disposing.versionNumber ? ` v${disposing.versionNumber}` : ''}`}
+          message={disposing.versionNumber
+            ? `This destroys the text and file of version ${disposing.versionNumber} of "${disposing.title}". `
+              + 'Its number, dates, hash, approvals and acknowledgements remain, and the version in force '
+              + 'is not touched. It cannot be undone.'
+            : `This destroys the content of "${disposing.title}" and removes its stored file. `
+              + 'The approval, acknowledgement and access history remain, and the disposal is '
+              + 'recorded against the schedule it was carried out under. It cannot be undone.'}
           label="Why this record is being destroyed"
           confirmLabel={busy ? 'Disposing…' : 'Dispose'}
           busy={busy}
