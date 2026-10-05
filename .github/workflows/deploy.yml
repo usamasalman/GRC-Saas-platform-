@@ -100,6 +100,7 @@ jobs:
         working-directory: grc_wisdom_api
         run: |
           node scripts/verify/uploads-not-public-test.js
+          node scripts/verify/document-preview-markup-test.js
           node scripts/verify/no-native-dialogs-test.js
           node scripts/verify/routes-reachable-test.js
           node scripts/verify/record-deletion-test.js

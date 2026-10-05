@@ -123,6 +123,40 @@ export function resolveDocumentFile(fileUrl: unknown): string | null {
   return null;
 }
 
+/** The first bytes of a file on disk: as many as sniffMime looks at. */
+function headOf(full: string): number[] {
+  const fd = fs.openSync(full, 'r');
+  try {
+    const buf = Buffer.alloc(8);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    return Array.from(buf.subarray(0, read));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * The Content-Type a document's file is served as. Never its extension's.
+ *
+ * A stored file is served as the type read from its bytes when it was written.
+ * A file in uploads/ predates that and went out as whatever its extension
+ * said, and the old upload path took any extension — so an .html or .svg put
+ * there then went out as text/html or image/svg+xml. The reader pane frames
+ * what it is sent as a blob in the app's own origin, which made such a file
+ * stored XSS against whoever opened it: an approver, typically.
+ *
+ * An old file is typed from its bytes now, by the same sniffMime a new one
+ * goes through, read at download because the row's own type was the caller's.
+ * Markup has no signature there, so it goes out as application/octet-stream:
+ * downloadable, never displayed. The row and the file stay as they are.
+ */
+export function servedTypeOf(fileUrl: unknown, fileType: unknown, full: string): string {
+  if (isStoredDocumentFile(fileUrl)) {
+    return typeof fileType === 'string' && fileType ? fileType : 'application/octet-stream';
+  }
+  return sniffMime(headOf(full), path.basename(full));
+}
+
 /**
  * SHA-256 of a document's file as it is on disk now, or null without one.
  *

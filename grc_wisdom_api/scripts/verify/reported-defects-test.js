@@ -195,16 +195,16 @@ const ok = (cond, what) => { checks += 1; assert.ok(cond, what); };
 // ─── 3. The reader shows the file, or says why it cannot ────────────────────
 {
   ok(
-    /function browserCanRender\(/.test(detail),
+    /function frameType\(/.test(detail),
     'the reader decides whether a browser frame can display this format',
   );
   ok(
-    /RENDERABLE_MIME/.test(detail) && /RENDERABLE_EXT/.test(detail),
+    /const FRAME_TYPES\b/.test(detail) && /const FRAME_TYPES_BY_EXT\b/.test(detail),
     'on the served content type, falling back to the extension when the server '
-    + 'says only octet-stream',
+    + 'says only octet-stream — and never HTML or SVG (document-preview-markup-test)',
   );
   ok(
-    /pdfBlobUrl && browserCanRender\(previewMime, document\.fileName\)/.test(detail),
+    /pdfBlobUrl && frameAs \?/.test(detail),
     'THE PACKET: the frame renders only what a frame can render. An XLSX in an '
     + 'iframe is an empty box under a heading claiming to be reading it',
   );

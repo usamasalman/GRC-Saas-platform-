@@ -25,7 +25,7 @@ import {
 } from '../services/documentReadGuard';
 import {
   storeDocumentFile, resolveDocumentFile, hashDocumentFile, removeDocumentFile,
-  isStoredDocumentFile, StoredDocumentFile,
+  servedTypeOf, StoredDocumentFile,
 } from '../services/documentFiles';
 import { EvidenceRefusal } from '../services/projectEvidence';
 
@@ -630,12 +630,10 @@ export const downloadDocument = async (req: AuthenticatedRequest, res: Response)
     // there; both resolve here, and neither is reachable any other way.
     const fullPath = resolveDocumentFile(doc.fileUrl);
     if (fullPath) {
-      if (isStoredDocumentFile(doc.fileUrl)) {
-        // A storage key has no extension to infer a type from, so the type
-        // read from the bytes at upload is the one served. A file from uploads/
-        // is still typed by its extension, exactly as before.
-        res.setHeader('Content-Type', doc.fileType || 'application/octet-stream');
-      }
+      // Always set here, so res.download never types a file by its extension:
+      // an .html or .svg left in uploads/ from before uploads were checked
+      // would go out as a page that runs script (servedTypeOf).
+      res.setHeader('Content-Type', servedTypeOf(doc.fileUrl, doc.fileType, fullPath));
       // As delivery evidence is served: never sniffed into something active,
       // never run if it is opened directly.
       res.setHeader('X-Content-Type-Options', 'nosniff');
