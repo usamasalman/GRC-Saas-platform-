@@ -25,6 +25,9 @@ import {
   viewerFor, audienceMembership, decideRead, loadReadable,
   recordAccess, recordingIsMandatory, NOT_FOUND_MESSAGE,
 } from '../services/documentReadGuard';
+import { hasCapability, CAP } from '../services/capabilityEngine';
+import { sameMajor, isOpenState } from '../services/documentVersions';
+import { approveVersion, rejectVersion, VersionRefused } from './documentVersionController';
 
 const SUBJECT_DOCUMENT = 'Document';
 
@@ -145,7 +148,10 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
       include: {
         owner: { select: { id: true, name: true, email: true, role: true } },
         approvals: {
-          include: { approver: { select: { id: true, name: true, email: true } } },
+          include: {
+            approver: { select: { id: true, name: true, email: true } },
+            version: { select: { versionNumber: true, state: true } },
+          },
           orderBy: { sequenceOrder: 'asc' },
         },
         _count: { select: { versions: true, acknowledgements: true } },
@@ -176,8 +182,10 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
     // rather than guessing and being rejected.
     const enriched = visible.map((d) => {
       const mine = d.approvals.find((a) => a.approverId === userId && a.status === 'PENDING');
+      // A next version's approvals are a sequence of their own.
       const blockedBy = mine
-        ? d.approvals.find((a) => a.status === 'PENDING' && a.sequenceOrder < mine.sequenceOrder)
+        ? d.approvals.find((a) => a.status === 'PENDING' && a.versionId === mine.versionId
+          && a.sequenceOrder < mine.sequenceOrder)
         : undefined;
       return {
         ...d,
@@ -187,6 +195,8 @@ export const listDocuments = async (req: AuthenticatedRequest, res: Response): P
               sequenceOrder: mine.sequenceOrder,
               canSignNow: !blockedBy,
               waitingOn: blockedBy ? blockedBy.approver.name : null,
+              versionId: mine.versionId,
+              versionNumber: mine.version?.versionNumber ?? null,
             }
           : null,
       };
@@ -239,7 +249,10 @@ export const getDocument = async (req: AuthenticatedRequest, res: Response): Pro
         owner: { select: { id: true, name: true, email: true, role: true } },
         versions: { orderBy: { createdAt: 'desc' } },
         approvals: {
-          include: { approver: { select: { id: true, name: true, email: true, role: true } } },
+          include: {
+            approver: { select: { id: true, name: true, email: true, role: true } },
+            version: { select: { versionNumber: true, state: true } },
+          },
           orderBy: { sequenceOrder: 'asc' },
         },
         acknowledgements: {
@@ -249,9 +262,38 @@ export const getDocument = async (req: AuthenticatedRequest, res: Response): Pro
       },
     });
     if (!document) { res.status(404).json({ status: 'error', message: NOT_FOUND_MESSAGE }); return; }
+
+    // A next version that was never in force (open, or discarded) is not the
+    // policy, so its text goes only to the people who write or sign it; a
+    // reader of the live document sees that it exists, not what it says.
+    const notInForce = (state: string | null) => isOpenState(state) || state === 'Discarded';
+    const seesDrafts = document.ownerId === userId
+      || document.approvals.some((a) => a.versionId && a.approverId === userId)
+      || await hasCapability(userId, CAP.VERSION_DOCUMENT)
+      || await hasCapability(userId, CAP.SIGN_DOCUMENT);
+    const versions = document.versions.map((v) => (notInForce(v.state) && !seesDrafts
+      ? { ...v, content: null, fileUrl: null, proposedLinks: null }
+      : v));
+    const open = document.openVersionId ? document.versions.find((v) => v.id === document.openVersionId) : undefined;
+    // The current round of approvals: rows stamped with the version's last submission.
+    const openApprovals = open && open.submittedAt
+      ? document.approvals.filter((a) => a.versionId === open.id && a.createdAt.getTime() >= open.submittedAt!.getTime())
+      : [];
+
     res.json({
       status: 'success',
-      document,
+      document: { ...document, versions },
+      // "Version 1.1 in draft · In review, 2 of 3 approved"
+      openVersion: open
+        ? {
+            id: open.id,
+            versionNumber: open.versionNumber,
+            changeType: open.changeType,
+            state: open.state,
+            approved: openApprovals.filter((a) => a.status === 'APPROVED').length,
+            approvers: openApprovals.filter((a) => a.status !== 'WITHDRAWN').length,
+          }
+        : null,
       access: {
         basis: gate.verdict.basis,
         reason: gate.verdict.reason,
@@ -893,9 +935,30 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
       return;
     }
 
+    // A next version of a published document signs its own text, against its
+    // own editors and its own sequence; the live document is not touched.
+    if (approval.versionId) {
+      const signed = await approveVersion({
+        doc,
+        approval: { id: approval.id, sequenceOrder: approval.sequenceOrder, versionId: approval.versionId },
+        userId, userRole, decision,
+        ip: req.ip || 'unknown',
+        userAgent: String(req.headers['user-agent'] || 'unknown'),
+      });
+      res.json({
+        status: 'success',
+        message: signed.allApproved
+          ? `Version ${signed.version} fully approved and ready to publish`
+          : 'Approval recorded. Waiting on further approvers.',
+        signatureHash: signed.signatureHash,
+        allApproved: signed.allApproved,
+      });
+      return;
+    }
+
     // Enforce sequenceOrder: earlier approvers must decide first.
     const earlierPending = await prisma.approvalQueue.findFirst({
-      where: { documentId: id, status: 'PENDING', sequenceOrder: { lt: approval.sequenceOrder } },
+      where: { documentId: id, versionId: null, status: 'PENDING', sequenceOrder: { lt: approval.sequenceOrder } },
     });
     if (earlierPending) {
       res.status(409).json({ status: 'error', message: 'An earlier approver in the sequence must decide first' });
@@ -937,7 +1000,7 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
         },
       });
       const remainingPending = await tx.approvalQueue.count({
-        where: { documentId: id, status: 'PENDING' },
+        where: { documentId: id, versionId: null, status: 'PENDING' },
       });
       const done = remainingPending === 0;
       if (done) {
@@ -963,6 +1026,10 @@ export const approveDocument = async (req: AuthenticatedRequest, res: Response):
     // SoD violations are a first-class 403 handled by the global error middleware.
     if (error instanceof SodViolation) throw error;
     if (error?.status === 403 && error?.code === 'SELF_APPROVAL') throw error;
+    if (error instanceof VersionRefused) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Approve Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to approve document' });
   }
@@ -985,6 +1052,19 @@ export const rejectDocument = async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
+    // A next version goes back to Returned; the live document stays in force.
+    if (approval.versionId) {
+      const doc = await prisma.document.findFirst({ where: { id, tenantId } });
+      if (!doc) { res.status(404).json({ status: 'error', message: 'Document not found' }); return; }
+      if (isFrozenByLegalHold(doc)) {
+        res.status(423).json({ status: 'error', message: 'Document is under legal hold; its next version cannot be returned' });
+        return;
+      }
+      const number = await rejectVersion({ doc, approval: { id: approval.id, versionId: approval.versionId }, userId, reason });
+      res.json({ status: 'success', message: `Version ${number} returned to its author; the published version stays in force` });
+      return;
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.approvalQueue.update({
         where: { id: approval.id },
@@ -1000,6 +1080,10 @@ export const rejectDocument = async (req: AuthenticatedRequest, res: Response): 
 
     res.json({ status: 'success', message: 'Document rejected and returned to author' });
   } catch (error: any) {
+    if (error instanceof VersionRefused) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Reject Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to reject document' });
   }
@@ -1188,6 +1272,13 @@ export const archiveDocument = async (req: AuthenticatedRequest, res: Response):
       res.status(423).json({ status: 'error', message: 'Document is under legal hold and cannot be archived' });
       return;
     }
+    if (doc.openVersionId) {
+      res.status(409).json({
+        status: 'error', code: 'VERSION_OPEN',
+        message: 'This document has an open next version. Discard it before archiving the document.',
+      });
+      return;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.document.update({
@@ -1366,18 +1457,27 @@ export const getAcknowledgements = async (req: AuthenticatedRequest, res: Respon
 
     const live = doc.publishedVersion || doc.version;
 
-    const [requests, signatures] = await Promise.all([
+    // A signature counts for every version of the same major number: whoever
+    // acknowledged 1.0 has acknowledged 1.1. A Major version starts again. A
+    // request closed because its version was replaced before it was signed is
+    // no longer owed; it was reissued for the version in force.
+    const [allRequests, allSignatures] = await Promise.all([
       prisma.acknowledgementRequest.findMany({
-        where: { documentId: id, version: live },
+        where: { documentId: id, supersededAt: null },
         include: { user: { select: { id: true, name: true, email: true, role: true, department: true } } },
         orderBy: { requestedAt: 'asc' },
       }),
       prisma.acknowledgement.findMany({
-        where: { documentId: id, version: live },
+        where: { documentId: id },
         include: { user: { select: { id: true, name: true, email: true, role: true } } },
         orderBy: { completedAt: 'desc' },
       }),
     ]);
+    const signatures = allSignatures.filter((a) => sameMajor(a.version, live));
+    // One request per person: the latest they were sent within this major version.
+    const latest = new Map<string, (typeof allRequests)[number]>();
+    for (const r of allRequests) if (sameMajor(r.version, live)) latest.set(r.userId, r);
+    const requests = [...latest.values()];
 
     const signedIds = new Set(signatures.map((a) => a.userId));
     const outstanding = requests.filter((r) => !signedIds.has(r.userId));
@@ -1432,7 +1532,8 @@ export const myAcknowledgements = async (
     const userId = req.user!.id;
     const tenantId = req.user!.tenantId;
 
-    const where = { userId, document: { tenantId } };
+    // A request closed because its version was replaced is no longer owed.
+    const where = { userId, supersededAt: null, document: { tenantId } };
     const page = readPage(req.query as Record<string, unknown>, 200);
     const [requests, all] = await Promise.all([prisma.acknowledgementRequest.findMany({
       where,
@@ -1456,7 +1557,9 @@ export const myAcknowledgements = async (
       where: { userId, documentId: { in: [...new Set(all.map((r) => r.documentId))] } },
       select: { documentId: true, version: true, completedAt: true },
     });
-    const signedKey = new Set(signed.map((a) => `${a.documentId}@${a.version ?? ''}`));
+    // A signature covers its whole major version, as coverage counts it.
+    const signedFor = (r: { documentId: string; version: string }) =>
+      signed.some((a) => a.documentId === r.documentId && sameMajor(a.version, r.version));
 
     const rows = requests.map((r) => ({
       documentId: r.documentId,
@@ -1464,13 +1567,13 @@ export const myAcknowledgements = async (
       requestedAt: r.requestedAt,
       dueAt: r.dueAt,
       // The field the screen declared and nobody ever set.
-      acknowledgedByMe: signedKey.has(`${r.documentId}@${r.version}`),
+      acknowledgedByMe: signedFor(r),
       document: r.document,
     }));
 
     res.json({
       status: 'success',
-      outstanding: all.filter((r) => !signedKey.has(`${r.documentId}@${r.version}`)).length,
+      outstanding: all.filter((r) => !signedFor(r)).length,
       paging: pageInfo(all.length, page),
       requests: rows,
     });

@@ -32,6 +32,17 @@ import {
   releaseLegalHold,
   forceReleaseCheckout,
 } from '../controllers/documentController';
+import {
+  startNextVersion,
+  getNextVersion,
+  updateNextVersion,
+  checkoutNextVersion,
+  checkinNextVersion,
+  submitNextVersion,
+  publishNextVersion,
+  discardNextVersion,
+  downloadVersion,
+} from '../controllers/documentVersionController';
 
 const router = Router();
 
@@ -106,6 +117,20 @@ router.get('/:id/acknowledgements', getAcknowledgements);
 router.get('/:id/links', listDocumentLinks);
 router.post('/:id/links', requireCapability(CAP.VERSION_DOCUMENT), addDocumentLinks);
 router.delete('/links/:linkId', requireCapability(CAP.VERSION_DOCUMENT), removeDocumentLink);
+
+// The next version of a published document. Writing it is authoring; publishing
+// it is signing. Reading it is narrowed in the handler to the people who write
+// or sign it, and approving or returning it goes through /approve and /reject.
+router.get('/:id/next-version', getNextVersion);
+router.post('/:id/next-version', requireCapability(CAP.VERSION_DOCUMENT), startNextVersion);
+router.patch('/:id/next-version', requireCapability(CAP.VERSION_DOCUMENT), updateNextVersion);
+router.post('/:id/next-version/checkout', requireCapability(CAP.VERSION_DOCUMENT), checkoutNextVersion);
+router.post('/:id/next-version/checkin', requireCapability(CAP.VERSION_DOCUMENT), checkinNextVersion);
+router.post('/:id/next-version/submit', requireCapability(CAP.VERSION_DOCUMENT), submitNextVersion);
+router.post('/:id/next-version/publish', requireCapability(CAP.SIGN_DOCUMENT), publishNextVersion);
+router.post('/:id/next-version/discard', requireCapability(CAP.VERSION_DOCUMENT), discardNextVersion);
+// One version as it was; a replaced one printed as not in force.
+router.get('/:id/versions/:versionId/download', downloadVersion);
 
 
 export default router;
