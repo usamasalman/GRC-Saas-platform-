@@ -149,7 +149,11 @@ const DocumentReviewPanel: React.FC<{ projectId: string; documentId: string }> =
           {s.currentWording && <div style={{ marginTop: 3, color: 'var(--danger)', textDecoration: 'line-through' }}>{s.currentWording}</div>}
           <div style={{ marginTop: 3, color: 'var(--success)', whiteSpace: 'pre-wrap' }}>{s.proposedWording}</div>
           <div style={{ marginTop: 3, color: 'var(--ink-muted)' }}>Why: {s.reason}</div>
-          {s.wordingAppliedAt && <div style={{ marginTop: 3, color: 'var(--ink-muted)' }}>Wording taken into the draft.</div>}
+          {s.wordingAppliedAt && (s.status === 'Pulled' || s.status === 'Accepted') && <div style={{ marginTop: 3, color: 'var(--ink-muted)' }}>Wording taken into the draft.</div>}
+          {/* Declined or superseded after its words went into the draft: they stay there until someone edits them out. */}
+          {s.wordingAppliedAt && (s.status === 'Declined' || s.status === 'Superseded') && (
+            <div style={{ marginTop: 3, color: 'var(--warning)' }}>Its wording was taken into the next version's draft and is still there; edit the draft by hand if it should not stay.</div>
+          )}
           {canDecide && (s.status === 'Open' || s.status === 'Pulled') && (
             <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
               {s.status === 'Open' && suggestions.can?.pull && (
