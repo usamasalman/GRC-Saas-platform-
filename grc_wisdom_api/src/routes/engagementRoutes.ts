@@ -34,6 +34,10 @@ import {
 import {
   getAssessment, assessClause, listContext, addContextEntry, decideContextEntry,
 } from '../controllers/engagementAssessmentController';
+import {
+  listChallenges, raiseChallenge, decideChallenges, withdrawChallenge, myChallenges,
+  listProposals, proposeRecord, decideProposal, draftAppetite,
+} from '../controllers/engagementChallengeController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -43,7 +47,8 @@ import {
  * after close, report copies, the firm's records, its team and follow-ons,
  * (sprint 8) information requests, evidence links and scope changes, and
  * (sprint 9) threads, document reviews and suggestions, and (sprint 10) the
- * gap assessment and the context register.
+ * gap assessment and the context register, and (sprint 11) challenges,
+ * proposals and drafts of risk appetite.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -71,6 +76,8 @@ router.get('/records/:id', requireCapability(CAP.MANAGE_PROJECT), getRecord);
 router.get('/report-copies/:id/file', requireCapability(CAP.MANAGE_PROJECT), reportCopyFile);
 router.get('/firm-team', requireCapability(CAP.MANAGE_PROJECT), firmTeam);
 router.get('/requests/mine', myRequests);
+// Sprint 11: challenges to the scores of what the caller owns, for My Work.
+router.get('/challenges/mine', myChallenges);
 
 router.get('/invitations', listInvitations);
 router.post('/invitations', requireCapability(CAP.MANAGE_PROJECT), inviteFirm);
@@ -159,5 +166,17 @@ router.post('/:projectId/assessment', requireAnyCapability(CAP.EXECUTE_PROJECT_W
 router.get('/:projectId/context', listContext);
 router.post('/:projectId/context', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), addContextEntry);
 router.post('/:projectId/context/:entryId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideContextEntry);
+
+// Sprint 11: challenges to the shared register's scores, decided by each
+// record's owner (who assesses risk, works controls, or runs the project);
+// proposed risks and assets; and the firm's drafts of risk appetite.
+router.get('/:projectId/challenges', listChallenges);
+router.post('/:projectId/challenges', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), raiseChallenge);
+router.post('/:projectId/challenges/decide', requireAnyCapability(CAP.ASSESS_RISK, CAP.MANAGE_IMPLEMENTATION, CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideChallenges);
+router.post('/:projectId/challenges/:challengeId/withdraw', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), withdrawChallenge);
+router.get('/:projectId/proposals', listProposals);
+router.post('/:projectId/proposals', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), proposeRecord);
+router.post('/:projectId/proposals/:proposalId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideProposal);
+router.post('/:projectId/appetite-drafts', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), draftAppetite);
 
 export default router;
