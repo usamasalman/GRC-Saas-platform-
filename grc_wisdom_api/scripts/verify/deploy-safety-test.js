@@ -276,6 +276,46 @@ for (const d of dirs) {
     'and creates the shared network if it is missing, rather than failing or touching it otherwise');
 }
 
+// ─── A deploy never pulls, recreates or restarts Caddy (QA-037) ─────────────
+//
+// Even with their routes in sites/, deploys kept taking the other projects
+// down: they pulled the floating caddy:2-alpine tag and `compose up` recreated
+// Caddy whenever a new release was out, the Caddyfile was copied over the live
+// one before it was checked, and a failed reload fell back to a restart. Every
+// one of those drops every site on the server.
+{
+  const workflow = read(ROOT, '.github', 'workflows', 'deploy.yml');
+  const at = workflow.indexOf('- name: Pull the new images and restart');
+  ok(at > 0, 'the deploy job has its server step');
+  const step = workflow.slice(at, workflow.indexOf('- name:', at + 1));
+  const script = step.replace(/^\s*#[^\n]*$/gm, '');
+
+  ok(/target:\s*"~\/grcwisdom\/\.incoming"/.test(workflow),
+    'the config is uploaded beside the live files, not over them, so nothing Caddy reads changes unchecked');
+  const pulled = (script.match(/for svc in ([^;\n]+); do\s*\n\s*pull_with_backoff/) || [])[1] || '';
+  ok(pulled.trim() === 'api web' && !/compose pull\s+(caddy|db)\b/.test(script),
+    'only the api and web images are pulled: pulling the floating caddy and postgres tags upgraded them');
+  const ups = script.match(/docker compose up\b[^\n]*/g) || [];
+  ok(ups.length === 2 && ups.every((u) => /--no-recreate/.test(u) || /--no-deps\b.*\bapi web\s*$/.test(u)),
+    'every compose up either leaves running containers alone or replaces only api and web');
+  ok(!/force-recreate|compose\s+(restart|down|stop)\b/.test(script),
+    'the deploy never recreates, restarts or stops a container by hand: Caddy carries every site on the server');
+  ok(script.indexOf('config -q') > 0
+    && script.indexOf('config -q') < script.indexOf('cp .incoming/docker-compose.yml docker-compose.yml'),
+    'the new compose file is loaded with the server\'s .env before it replaces the live one');
+
+  const check = script.slice(script.indexOf('check_caddyfile() {'), script.indexOf('\n            }\n', script.indexOf('check_caddyfile() {')));
+  ok(/caddy validate --config \/etc\/caddy\/Caddyfile\.next/.test(check) && /comm -23/.test(check) && /exit 1/.test(check),
+    'a new Caddyfile is validated by the running Caddy and refused if it would stop serving a site served now');
+  const unchanged = script.indexOf('if cmp -s .incoming/Caddyfile Caddyfile; then');
+  ok(unchanged > 0, 'an unchanged Caddyfile leaves Caddy exactly as it is');
+  const swap = script.slice(unchanged);
+  ok(swap.indexOf('check_caddyfile') > 0 && swap.indexOf('check_caddyfile') < swap.indexOf('cat .incoming/Caddyfile > Caddyfile'),
+    'a changed one is checked before it goes over the live file');
+  ok(/caddy reload --config \/etc\/caddy\/Caddyfile\.next/.test(swap) && /cat Caddyfile\.prev > Caddyfile/.test(swap),
+    'the reload loads the file that was checked, and a refused reload puts the old file back');
+}
+
 console.log(
   `deploy-safety: ${checks} assertions passed (${dirs.length} migrations checked)`,
 );
