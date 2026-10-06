@@ -38,6 +38,10 @@ import {
   listChallenges, raiseChallenge, decideChallenges, withdrawChallenge, myChallenges,
   listProposals, proposeRecord, decideProposal, draftAppetite,
 } from '../controllers/engagementChallengeController';
+import {
+  getReadiness, setRecordsPeriod, giveOpinion, signOffReadiness,
+  listReviews as listManagementReviews, prepareReview, updateReview, recordReview, addReviewAction,
+} from '../controllers/engagementReadinessController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -47,8 +51,9 @@ import {
  * after close, report copies, the firm's records, its team and follow-ons,
  * (sprint 8) information requests, evidence links and scope changes, and
  * (sprint 9) threads, document reviews and suggestions, and (sprint 10) the
- * gap assessment and the context register, and (sprint 11) challenges,
- * proposals and drafts of risk appetite.
+ * gap assessment and the context register, (sprint 11) challenges,
+ * proposals and drafts of risk appetite, and (sprint 12) readiness and
+ * management reviews.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -178,5 +183,19 @@ router.get('/:projectId/proposals', listProposals);
 router.post('/:projectId/proposals', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), proposeRecord);
 router.post('/:projectId/proposals/:proposalId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideProposal);
 router.post('/:projectId/appetite-drafts', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), draftAppetite);
+
+// Sprint 12: readiness, computed and never written; the records period, set
+// by the organisation; the firm's Lead's opinion and the sponsor's sign-off;
+// and management reviews (9.3), prepared by either side and recorded by the
+// organisation. The controller decides which side and which person.
+router.get('/:projectId/readiness', getReadiness);
+router.patch('/:projectId/records-period', requireCapability(CAP.MANAGE_PROJECT), setRecordsPeriod);
+router.post('/:projectId/readiness/opinion', requireCapability(CAP.EXECUTE_PROJECT_WORK), giveOpinion);
+router.post('/:projectId/readiness/sign-off', requireCapability(CAP.MANAGE_PROJECT), signOffReadiness);
+router.get('/:projectId/management-reviews', listManagementReviews);
+router.post('/:projectId/management-reviews', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), prepareReview);
+router.patch('/:projectId/management-reviews/:reviewId', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), updateReview);
+router.post('/:projectId/management-reviews/:reviewId/record', requireCapability(CAP.MANAGE_PROJECT), recordReview);
+router.post('/:projectId/management-reviews/:reviewId/actions', requireCapability(CAP.MANAGE_PROJECT), addReviewAction);
 
 export default router;
