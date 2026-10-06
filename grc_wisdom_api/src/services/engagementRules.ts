@@ -54,13 +54,14 @@ export const invitationExpiry = (from: Date): Date => new Date(from.getTime() + 
  * stay with the organisation's own people whatever the role, and what the
  * organisation has shared with the firm limits every role further (sprint 6).
  */
-export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan' | 'request' | 'review';
+export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan' | 'request' | 'review' | 'docreview' | 'suggest';
 
 const MAY: Record<EngagementRole, readonly EngagementAction[]> = {
-  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan', 'request', 'review'],
+  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan', 'request', 'review', 'docreview', 'suggest'],
   // A Consultant plans their own tasks only (sprint 6, planRefusal below).
-  Consultant: ['read', 'work', 'plan', 'request', 'review'],
-  Reviewer: ['read'],
+  Consultant: ['read', 'work', 'plan', 'request', 'review', 'suggest'],
+  // A Reviewer reviews the organisation's documents (sprint 9) and changes nothing.
+  Reviewer: ['read', 'docreview'],
 };
 
 export function roleMay(role: string | null | undefined, action: EngagementAction): boolean {
@@ -76,6 +77,8 @@ const WORDS: Record<EngagementAction, string> = {
   plan: 'plan tasks on this engagement',
   request: 'raise requests on this engagement; the firm\'s Lead and Consultants do',
   review: 'review answers on this engagement; the firm\'s Lead and Consultants do',
+  docreview: 'review the organisation\'s documents; the firm\'s Lead and Reviewers do',
+  suggest: 'suggest wording for the organisation\'s documents; the firm\'s Lead and Consultants do',
 };
 
 export function roleRefusal(role: string | null | undefined, action: EngagementAction) {

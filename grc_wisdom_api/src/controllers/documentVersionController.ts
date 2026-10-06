@@ -108,31 +108,55 @@ export const startNextVersion = async (req: AuthenticatedRequest, res: Response)
     const doc = await loadDoc(req);
     if (!doc) { send(res, 404, 'NOT_FOUND', 'Document not found'); return; }
     if (!(await mayManage(doc, userId))) { send(res, 403, 'NOT_PERMITTED', 'The owner, or someone who versions documents, starts a next version.'); return; }
-    if (doc.status !== 'PUBLISHED') {
-      send(res, 409, 'NOT_PUBLISHED', `Only a published document has a next version; this one is ${doc.status}. Edit it as it is.`); return;
-    }
-    if (frozen(doc)) { send(res, 423, 'LEGAL_HOLD', 'This document is under legal hold. Nothing about it can change until the hold is released.'); return; }
-    if (doc.openVersionId) { send(res, 409, 'VERSION_OPEN', 'This document already has an open next version. Work on that one, or discard it first.'); return; }
-    const changeType = str(req.body?.changeType || 'Minor');
-    if (!(CHANGE_TYPES as readonly string[]).includes(changeType)) { send(res, 400, 'BAD_CHANGE_TYPE', 'A next version is Minor or Major.'); return; }
-    const reason = str(req.body?.reason).trim();
-    if (!noteIsEnough(reason)) { send(res, 400, 'REASON_REQUIRED', `Say why it is being revised — at least ${MIN_NOTE} characters.`); return; }
-    let source: { versionNumber: string; content: string | null; fileUrl: string | null; fileName: string | null; fileSize: number | null; fileType: string | null } = { ...doc, versionNumber: doc.version };
-    const fromVersionId = str(req.body?.fromVersionId).trim();
-    if (fromVersionId) {
-      const earlier = await prisma.documentVersion.findFirst({
-        where: { id: fromVersionId, documentId: doc.id, state: 'Superseded', disposedAt: null },
-        select: { versionNumber: true, content: true, fileUrl: true, fileName: true, fileSize: true, fileType: true },
-      });
-      if (!earlier) { send(res, 404, 'NOT_FOUND', 'Start from a superseded version of this document that has not been disposed of.'); return; }
-      source = earlier;
-    }
+    const version = await beginNextVersion({
+      doc, userId, changeType: req.body?.changeType, reason: req.body?.reason, fromVersionId: req.body?.fromVersionId,
+    });
+    res.status(201).json({ status: 'success', version });
+  } catch (error: any) {
+    if (error instanceof Refused) { send(res, error.status, error.code, error.message); return; }
+    console.error('[Next Version Start Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to start the next version' });
+  }
+};
 
-    const number = nextNumber(doc.version, changeType);
-    const baseHash = versionHash(doc.content, doc.fileUrl);
-    const startHash = versionHash(source.content, source.fileUrl);
-    const why = fromVersionId ? `From v${source.versionNumber}: ${reason}` : reason;
-    const version = await prisma.$transaction(async (tx) => {
+/**
+ * Starts a next version, in one transaction with whatever the caller adds to
+ * it (a suggestion pulled in as its source). Throws Refused with the reason.
+ * Who may start it is the caller's decision: the document's owner or someone
+ * who versions documents here; the engagement's project manager for a
+ * suggestion.
+ */
+export async function beginNextVersion(args: {
+  doc: Doc; userId: string; changeType: unknown; reason: unknown; fromVersionId?: unknown;
+  within?: (tx: any, row: { id: string; versionNumber: string }) => Promise<void>;
+}): Promise<{ id: string; versionNumber: string }> {
+  const { doc, userId } = args;
+  if (doc.status !== 'PUBLISHED') {
+    throw new Refused(409, 'NOT_PUBLISHED', `Only a published document has a next version; this one is ${doc.status}. Edit it as it is.`);
+  }
+  if (frozen(doc)) throw new Refused(423, 'LEGAL_HOLD', 'This document is under legal hold. Nothing about it can change until the hold is released.');
+  if (doc.openVersionId) throw new Refused(409, 'VERSION_OPEN', 'This document already has an open next version. Work on that one, or discard it first.');
+  const changeType = str(args.changeType || 'Minor');
+  if (!(CHANGE_TYPES as readonly string[]).includes(changeType)) throw new Refused(400, 'BAD_CHANGE_TYPE', 'A next version is Minor or Major.');
+  const reason = str(args.reason).trim();
+  if (!noteIsEnough(reason)) throw new Refused(400, 'REASON_REQUIRED', `Say why it is being revised — at least ${MIN_NOTE} characters.`);
+  let source: { versionNumber: string; content: string | null; fileUrl: string | null; fileName: string | null; fileSize: number | null; fileType: string | null } = { ...doc, versionNumber: doc.version };
+  const fromVersionId = str(args.fromVersionId).trim();
+  if (fromVersionId) {
+    const earlier = await prisma.documentVersion.findFirst({
+      where: { id: fromVersionId, documentId: doc.id, state: 'Superseded', disposedAt: null },
+      select: { versionNumber: true, content: true, fileUrl: true, fileName: true, fileSize: true, fileType: true },
+    });
+    if (!earlier) throw new Refused(404, 'NOT_FOUND', 'Start from a superseded version of this document that has not been disposed of.');
+    source = earlier;
+  }
+
+  const number = nextNumber(doc.version, changeType);
+  const baseHash = versionHash(doc.content, doc.fileUrl);
+  const startHash = versionHash(source.content, source.fileUrl);
+  const why = fromVersionId ? `From v${source.versionNumber}: ${reason}` : reason;
+  try {
+    return await prisma.$transaction(async (tx) => {
       const row = await tx.documentVersion.create({
         data: {
           documentId: doc.id, versionNumber: number, changeType, state: 'Draft',
@@ -153,17 +177,15 @@ export const startNextVersion = async (req: AuthenticatedRequest, res: Response)
           startedFrom: fromVersionId ? { version: source.versionNumber, hash: startHash } : null,
         },
       });
+      if (args.within) await args.within(tx, row);
       return row;
     });
-    res.status(201).json({ status: 'success', version });
   } catch (error: any) {
-    if (error instanceof Refused) { send(res, error.status, error.code, error.message); return; }
     // The one-open-version index: two starts at the same moment.
-    if (error?.code === 'P2002') { send(res, 409, 'VERSION_OPEN', 'Someone has just started a next version of this document.'); return; }
-    console.error('[Next Version Start Error]:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to start the next version' });
+    if (error?.code === 'P2002') throw new Refused(409, 'VERSION_OPEN', 'Someone has just started a next version of this document.');
+    throw error;
   }
-};
+}
 
 // ─── Read ───────────────────────────────────────────────────────────────────
 
@@ -191,7 +213,7 @@ export const getNextVersion = async (req: AuthenticatedRequest, res: Response): 
       });
       return;
     }
-    const [approvals, previous, everyoneWhoSigns, holder, starter] = await Promise.all([
+    const [approvals, previous, everyoneWhoSigns, holder, starter, suggestions] = await Promise.all([
       prisma.approvalQueue.findMany({
         where: { versionId: v.id }, orderBy: { sequenceOrder: 'asc' },
         select: { id: true, approverId: true, status: true, sequenceOrder: true, decision: true, reason: true, reviewedAt: true, createdAt: true, approver: { select: { name: true } } },
@@ -206,6 +228,14 @@ export const getNextVersion = async (req: AuthenticatedRequest, res: Response): 
       signers(doc.tenantId),
       v.checkedOutById ? prisma.user.findUnique({ where: { id: v.checkedOutById }, select: { name: true } }) : null,
       v.startedById ? prisma.user.findUnique({ where: { id: v.startedById }, select: { name: true } }) : null,
+      // Suggestions from engagements pulled into this version: its sources.
+      prisma.documentSuggestion.findMany({
+        where: { versionId: v.id }, orderBy: { createdAt: 'asc' },
+        select: {
+          id: true, ref: true, section: true, currentWording: true, proposedWording: true, reason: true, documentVersion: true,
+          wordingAppliedAt: true, projectId: true, author: { select: { name: true } }, project: { select: { ref: true, name: true } },
+        },
+      }),
     ]);
     const editors = versionEditorIds({ createdById: v.createdById, editors: v.editors });
     const changes = readLinkChanges(v.proposedLinks);
@@ -237,6 +267,7 @@ export const getNextVersion = async (req: AuthenticatedRequest, res: Response): 
         editors: v.editors.map((e) => ({ userId: e.userId, name: e.user.name, via: e.via, editedAt: e.editedAt })),
         checkedOutBy: holder?.name ?? null,
         startedBy: starter?.name ?? null,
+        suggestions,
         liveMoved: versionHash(doc.content, doc.fileUrl) !== v.baseHash,
       },
       approvals,
@@ -706,6 +737,34 @@ export const publishNextVersion = async (req: AuthenticatedRequest, res: Respons
         title: `The master of ${c.code} has a new version, v${v.versionNumber}`,
         body: 'Adopting it is your decision: start a next version of your copy if it should follow.', link: 'documents',
       })));
+      const pulled = await tx.documentSuggestion.findMany({
+        where: { versionId: v.id, status: 'Pulled' },
+        select: { id: true, ref: true, projectId: true, authorId: true, author: { select: { tenantId: true } }, project: { select: { ref: true, providerTenantId: true } } },
+      });
+      if (pulled.length) {
+        await tx.documentSuggestion.updateMany({
+          where: { id: { in: pulled.map((p) => p.id) } },
+          data: { status: 'Accepted', acceptedInto: v.versionNumber, decidedAt: now, decidedById: userId },
+        });
+        await writeAudit(tx, {
+          tenantId: doc.tenantId, actorId: userId, action: 'ENGAGEMENT_SUGGESTIONS_ACCEPTED', subjectType: SUBJECT, subjectId: doc.id,
+          payload: { code: doc.code, version: v.versionNumber, suggestions: pulled.map((p) => `${p.project.ref}/${p.ref}`) },
+        });
+        // Each firm's trail names its own suggestions only.
+        const firms = new Map<string, string[]>();
+        for (const p of pulled) if (p.project.providerTenantId) firms.set(p.project.providerTenantId, [...(firms.get(p.project.providerTenantId) ?? []), `${p.project.ref}/${p.ref}`]);
+        for (const [firmTenantId, refs] of firms) {
+          await writeAudit(tx, {
+            tenantId: firmTenantId, actorId: userId, action: 'ENGAGEMENT_SUGGESTIONS_ACCEPTED', subjectType: SUBJECT, subjectId: doc.id,
+            payload: { code: doc.code, version: v.versionNumber, clientTenantId: doc.tenantId, suggestions: refs },
+          });
+        }
+        await notify(tx, pulled.map((p) => ({
+          tenantId: p.author.tenantId, recipientId: p.authorId, actorId: userId, event: 'ENGAGEMENT_SUGGESTION_ACCEPTED',
+          subjectType: 'DocumentSuggestion', subjectId: p.id,
+          title: `${p.ref} accepted into ${doc.code} v${v.versionNumber}`, body: 'Your suggestion is in the published version.', link: 'delivery',
+        })));
+      }
       return { asked: acks.ask.length, superseded: acks.supersede.length };
     });
     res.json({
@@ -751,6 +810,11 @@ export const discardNextVersion = async (req: AuthenticatedRequest, res: Respons
       if (moved.count === 0) throw new Refused(409, 'NOT_OPEN', 'That version is no longer open.');
       await tx.approvalQueue.updateMany({ where: { versionId: v.id, status: 'PENDING' }, data: { status: 'WITHDRAWN', reason: 'Version discarded', reviewedAt: new Date() } });
       await tx.document.update({ where: { id: doc.id }, data: { openVersionId: null } });
+      // Suggestions pulled into it are open again, to pull into the next one.
+      await tx.documentSuggestion.updateMany({
+        where: { versionId: v.id, status: 'Pulled' },
+        data: { status: 'Open', versionId: null, pulledAt: null, pulledById: null, wordingAppliedAt: null },
+      });
       await writeAudit(tx, {
         tenantId: doc.tenantId, actorId: userId, action: 'DOCUMENT_VERSION_DISCARDED', subjectType: SUBJECT, subjectId: doc.id,
         payload: { code: doc.code, version: v.versionNumber, state: v.state, reason },

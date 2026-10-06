@@ -28,6 +28,9 @@ import { listScopeChanges, askScopeChange, approveScopeChange, rejectScopeChange
 import {
   listThreads, threadSubjects, startThread, getThread, addPost, retractPost, setThreadStatus, convertThread,
 } from '../controllers/engagementDiscussionController';
+import {
+  listReviews, reviewDocument, listSuggestions, suggestWording, pullSuggestion, applySuggestion, decideSuggestion,
+} from '../controllers/engagementDocumentReviewController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -36,7 +39,7 @@ import {
  * engagements set up the old way, enforcement, external access, the window
  * after close, report copies, the firm's records, its team and follow-ons,
  * (sprint 8) information requests, evidence links and scope changes, and
- * (sprint 9) threads.
+ * (sprint 9) threads, document reviews and suggestions.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -136,5 +139,13 @@ router.post('/:projectId/threads/:threadId/posts', requireAnyCapability(CAP.EXEC
 router.post('/:projectId/threads/:threadId/posts/:postId/retract', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), retractPost);
 router.post('/:projectId/threads/:threadId/status', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), setThreadStatus);
 router.post('/:projectId/threads/:threadId/convert', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), convertThread);
+// Document review and suggestions, on documents the scope shares.
+router.get('/:projectId/documents/:documentId/reviews', listReviews);
+router.post('/:projectId/documents/:documentId/reviews', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), reviewDocument);
+router.get('/:projectId/documents/:documentId/suggestions', listSuggestions);
+router.post('/:projectId/documents/:documentId/suggestions', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), suggestWording);
+router.post('/:projectId/suggestions/:suggestionId/pull', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), pullSuggestion);
+router.post('/:projectId/suggestions/:suggestionId/apply', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), applySuggestion);
+router.post('/:projectId/suggestions/:suggestionId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideSuggestion);
 
 export default router;
