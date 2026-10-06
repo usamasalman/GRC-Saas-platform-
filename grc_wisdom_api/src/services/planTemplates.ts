@@ -195,6 +195,30 @@ export function themeOf(ref: string): string {
   return m ? `${m[1]}${m[2]}${m[3]}` : ref;
 }
 
+// ─── Which framework a template is written for ─────────────────────────────
+
+/**
+ * A framework code as a person means it: letters and digits only, any case.
+ * The platform's ISO 27001 template names ISO27001, and a library written by
+ * hand holds ISO-27001, "ISO 27001" or iso27001; to the template they are one
+ * framework, and matching the string exactly mapped no task to any clause on
+ * the very framework the template was written for (QA-035).
+ */
+export const frameworkKey = (code: string): string => code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/**
+ * The framework among these that a template's code names: the exact code if
+ * one is there, otherwise one with the same key, the first by code so the
+ * choice does not depend on the order rows came back in. Null when none is.
+ */
+export function pickFramework<T extends { code: string }>(candidates: readonly T[], templateCode: string): T | null {
+  const exact = candidates.find((c) => c.code === templateCode);
+  if (exact) return exact;
+  const key = frameworkKey(templateCode);
+  const near = candidates.filter((c) => frameworkKey(c.code) === key).sort((a, b) => a.code.localeCompare(b.code));
+  return near[0] ?? null;
+}
+
 // ─── A template becomes a dated plan ────────────────────────────────────────
 
 export interface TemplateForPlan {
