@@ -48,6 +48,8 @@ const RECORD_OF = [
   // A delivery firm's own record of a closed engagement, and its report copies: the firm's alone.
   [/^\/api\/engagements\/records\/:id/, (out) => prisma.engagementRecord.findFirst({ where: { firmTenantId: out.tenantId }, select: { id: true } })],
   [/^\/api\/engagements\/report-copies\/:id/, (out) => prisma.engagementReportCopy.findFirst({ where: { firmTenantId: out.tenantId }, select: { id: true } })],
+  // A certification body's access to an engagement: the body's alone, not even the inviting organisation's.
+  [/^\/api\/certification\/:accessId/, (out) => prisma.certificationAccess.findFirst({ where: { bodyTenantId: out.tenantId }, select: { id: true } })],
   // A firm's or organisation's own template; the platform's are read by everyone.
   [/^\/api\/plan-templates\/:id/, (out) => prisma.planTemplate.findFirst({ where: { ...out, level: { not: 'Platform' } }, select: { id: true } })],
 ];
@@ -119,6 +121,16 @@ const NOT_A_RECORD = {
       },
     });
   }
+
+  // A certification body invited to OmniOps' probe project (sprint 13): the
+  // body reads its access; OmniOps, which invited it, and everyone else do not.
+  const body = await prisma.tenant.create({ data: { name: `QA isolation certification body ${Date.now()}`, type: 'AUDITOR' } });
+  await prisma.certificationAccess.create({
+    data: {
+      projectId: project.project.id, bodyTenantId: body.id, status: 'Accepted', invitedById: omniGrc.user.id,
+      accessFrom: new Date(Date.now() - 86_400_000), accessTo: new Date(Date.now() + 30 * 86_400_000),
+    },
+  });
 
   // ── Isolation ────────────────────────────────────────────────────────────
   const routes = q.routeTable().filter((r) => r.method === 'GET' && (r.path.match(/:\w+/g) || []).length === 1);
