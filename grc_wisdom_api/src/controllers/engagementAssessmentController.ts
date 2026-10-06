@@ -207,7 +207,7 @@ export const assessClause = async (req: AuthenticatedRequest, res: Response): Pr
         const leads = [...new Set([a.e.managerId, a.e.ownerId].filter(Boolean) as string[])];
         await notify(tx, leads.map((recipientId) => ({
           tenantId: a.e.tenantId, recipientId, actorId: a.userId, event: 'ENGAGEMENT_GAP_RAISED', subjectType: 'Issue', subjectId: issue!.id,
-          title: `${issue!.ref}: gap on ${clause.standard.code} ${clause.ref}`, body: checked.justification.slice(0, 300), link: 'issues',
+          title: `${issue!.ref}: gap on ${clause.standard.code} ${clause.ref}`, body: checked.justification.slice(0, 300), link: 'audits',
         })));
       }
       return { id: row.id, gap: issue ? { id: issue.id, ref: issue.ref, raised: issue.id !== openGap?.id } : null };
@@ -306,7 +306,7 @@ export const addContextEntry = async (req: AuthenticatedRequest, res: Response):
         const leads = [...new Set([a.e.managerId, a.e.ownerId].filter(Boolean) as string[])];
         await notify(tx, leads.map((recipientId) => ({
           tenantId: a.e.tenantId, recipientId, actorId: a.userId, event: 'ENGAGEMENT_CONTEXT_PROPOSED', subjectType: 'ContextEntry', subjectId: row.id,
-          title: `${ref}: the firm proposes ${f.kind === 'Issue' ? 'a context issue' : 'an interested party'}`, body: f.title, link: 'delivery',
+          title: `${ref}: the firm proposes ${f.kind === 'Issue' ? 'a context issue' : 'an interested party'}`, body: f.title, link: 'project-delivery',
         })));
       }
       return row;
@@ -348,7 +348,7 @@ export const decideContextEntry = async (req: AuthenticatedRequest, res: Respons
       });
       await notify(tx, [{
         tenantId: entry.createdBy.tenantId, recipientId: entry.createdById, actorId: a.userId, event: 'ENGAGEMENT_CONTEXT_DECIDED',
-        subjectType: 'ContextEntry', subjectId: entry.id, title: `${entry.ref} ${decision.toLowerCase()}`, body: note, link: 'delivery',
+        subjectType: 'ContextEntry', subjectId: entry.id, title: `${entry.ref} ${decision.toLowerCase()}`, body: note, link: 'project-delivery',
       }]);
     });
     res.json({ status: 'success' });

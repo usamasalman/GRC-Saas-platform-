@@ -181,7 +181,7 @@ async function tellReaders(tx: any, a: Ok, thread: { id: string; ref: string; ti
   const tenantOf = new Map<string, string>(people.map((p: { id: string; tenantId: string }) => [p.id, p.tenantId]));
   await notify(tx, rows.filter((r) => tenantOf.has(r.id)).map((r) => ({
     tenantId: tenantOf.get(r.id)!, recipientId: r.id, actorId: a.userId, event: r.event,
-    subjectType: 'DiscussionThread', subjectId: thread.id, title: r.title, body: `${a.e.ref} · ${a.e.name}`, link: 'delivery',
+    subjectType: 'DiscussionThread', subjectId: thread.id, title: r.title, body: `${a.e.ref} · ${a.e.name}`, link: 'project-delivery',
   })));
 }
 

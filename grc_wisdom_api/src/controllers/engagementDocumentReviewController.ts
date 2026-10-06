@@ -156,7 +156,7 @@ export const reviewDocument = async (req: AuthenticatedRequest, res: Response): 
         const leads = organisationLeads(a, doc);
         await notify(tx, leads.map((recipientId) => ({
           tenantId: a.e.tenantId, recipientId, actorId: a.userId, event: 'ENGAGEMENT_DOCUMENT_REVIEWED', subjectType: 'Document', subjectId: doc.id,
-          title: `${doc.code} v${live(doc)}: ${OUTCOME_LABEL[checked.outcome]}`, body: checked.note ?? '', link: 'delivery',
+          title: `${doc.code} v${live(doc)}: ${OUTCOME_LABEL[checked.outcome]}`, body: checked.note ?? '', link: 'project-delivery',
         })));
       }
       return r;
@@ -243,7 +243,7 @@ export const suggestWording = async (req: AuthenticatedRequest, res: Response): 
       });
       await notify(tx, organisationLeads(a, doc).map((recipientId) => ({
         tenantId: a.e.tenantId, recipientId, actorId: a.userId, event: 'ENGAGEMENT_SUGGESTION_MADE', subjectType: 'Document', subjectId: doc.id,
-        title: `${ref}: suggested wording for ${doc.code} v${live(doc)}`, body: checked.section, link: 'delivery',
+        title: `${ref}: suggested wording for ${doc.code} v${live(doc)}`, body: checked.section, link: 'project-delivery',
       })));
       return s;
     });
@@ -302,7 +302,7 @@ export const pullSuggestion = async (req: AuthenticatedRequest, res: Response): 
       await notify(tx, [{
         tenantId: s.author.tenantId, recipientId: s.authorId, actorId: a.userId, event: 'ENGAGEMENT_SUGGESTION_PULLED',
         subjectType: 'DocumentSuggestion', subjectId: s.id, title: `${s.ref} is in the next version of ${doc.code} (v${versionNumber})`,
-        body: `${a.e.ref} · ${a.e.name}`, link: 'delivery',
+        body: `${a.e.ref} · ${a.e.name}`, link: 'project-delivery',
       }]);
     };
     if (!doc.openVersionId) {
@@ -403,7 +403,7 @@ export const decideSuggestion = async (req: AuthenticatedRequest, res: Response)
       });
       await notify(tx, [{
         tenantId: s.author.tenantId, recipientId: s.authorId, actorId: a.userId, event: 'ENGAGEMENT_SUGGESTION_DECIDED',
-        subjectType: 'DocumentSuggestion', subjectId: s.id, title: `${s.ref} ${outcome.toLowerCase()} on ${doc.code}`, body: reason, link: 'delivery',
+        subjectType: 'DocumentSuggestion', subjectId: s.id, title: `${s.ref} ${outcome.toLowerCase()} on ${doc.code}`, body: reason, link: 'project-delivery',
       }]);
     });
     res.json({ status: 'success' });

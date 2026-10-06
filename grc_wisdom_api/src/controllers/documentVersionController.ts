@@ -503,7 +503,7 @@ export const submitNextVersion = async (req: AuthenticatedRequest, res: Response
       });
       await notify(tx, approvers.map((recipientId) => ({
         tenantId: doc.tenantId, recipientId, actorId: userId, event: 'DOCUMENT_VERSION_SUBMITTED', subjectType: SUBJECT, subjectId: doc.id,
-        title: `Approve ${doc.code} v${v.versionNumber}`, body: summary, link: 'approvals',
+        title: `Approve ${doc.code} v${v.versionNumber}`, body: summary, link: 'tasks',
       })));
     });
     res.json({ status: 'success', message: `Version ${v.versionNumber} submitted to ${approvers.length} approver(s).` });
@@ -735,7 +735,7 @@ export const publishNextVersion = async (req: AuthenticatedRequest, res: Respons
       await notify(tx, copies.map((c) => ({
         tenantId: c.tenantId, recipientId: c.ownerId, actorId: userId, event: 'DOCUMENT_MASTER_REVISED', subjectType: SUBJECT, subjectId: c.id,
         title: `The master of ${c.code} has a new version, v${v.versionNumber}`,
-        body: 'Adopting it is your decision: start a next version of your copy if it should follow.', link: 'documents',
+        body: 'Adopting it is your decision: start a next version of your copy if it should follow.', link: 'library',
       })));
       const pulled = await tx.documentSuggestion.findMany({
         where: { versionId: v.id, status: 'Pulled' },
@@ -762,7 +762,7 @@ export const publishNextVersion = async (req: AuthenticatedRequest, res: Respons
         await notify(tx, pulled.map((p) => ({
           tenantId: p.author.tenantId, recipientId: p.authorId, actorId: userId, event: 'ENGAGEMENT_SUGGESTION_ACCEPTED',
           subjectType: 'DocumentSuggestion', subjectId: p.id,
-          title: `${p.ref} accepted into ${doc.code} v${v.versionNumber}`, body: 'Your suggestion is in the published version.', link: 'delivery',
+          title: `${p.ref} accepted into ${doc.code} v${v.versionNumber}`, body: 'Your suggestion is in the published version.', link: 'project-delivery',
         })));
       }
       return { asked: acks.ask.length, superseded: acks.supersede.length };

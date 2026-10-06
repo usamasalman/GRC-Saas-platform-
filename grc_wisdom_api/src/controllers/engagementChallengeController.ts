@@ -323,7 +323,7 @@ export const decideChallenges = async (req: AuthenticatedRequest, res: Response)
         await notify(tx, [{
           tenantId: c.raisedBy.tenantId, recipientId: c.raisedById, actorId: a.userId, event: 'ENGAGEMENT_CHALLENGE_DECIDED',
           subjectType: 'RegisterChallenge', subjectId: c.id, title: `${c.ref} ${STATUS_OF[checked.decision].toLowerCase()} on ${c.risk?.ref ?? c.asset?.ref}`,
-          body: checked.reason ?? '', link: 'delivery',
+          body: checked.reason ?? '', link: 'project-delivery',
         }]);
       }
     });
@@ -439,7 +439,7 @@ export const proposeRecord = async (req: AuthenticatedRequest, res: Response): P
       const leads = [...new Set([a.e.managerId, a.e.ownerId].filter(Boolean) as string[])];
       await notify(tx, leads.map((recipientId) => ({
         tenantId: a.e.tenantId, recipientId, actorId: a.userId, event: 'ENGAGEMENT_RECORD_PROPOSED', subjectType: 'RegisterProposal', subjectId: row.id,
-        title: `${ref}: the firm proposes a ${kind.toLowerCase()}`, body: v.title, link: 'delivery',
+        title: `${ref}: the firm proposes a ${kind.toLowerCase()}`, body: v.title, link: 'project-delivery',
       })));
       return row;
     });
@@ -511,7 +511,7 @@ export const decideProposal = async (req: AuthenticatedRequest, res: Response): 
       await bothTrails(tx, a, { action: decision === 'Accepted' ? 'ENGAGEMENT_PROPOSAL_ACCEPTED' : 'ENGAGEMENT_PROPOSAL_REJECTED', subjectType: 'RegisterProposal', subjectId: p.id, payload: { ref: p.ref, became: made?.ref ?? null, note: note || null } });
       await notify(tx, [{
         tenantId: p.proposedBy.tenantId, recipientId: p.proposedById, actorId: a.userId, event: 'ENGAGEMENT_PROPOSAL_DECIDED', subjectType: 'RegisterProposal', subjectId: p.id,
-        title: `${p.ref} ${decision.toLowerCase()}${made ? `: now ${made.ref}` : ''}`, body: note, link: 'delivery',
+        title: `${p.ref} ${decision.toLowerCase()}${made ? `: now ${made.ref}` : ''}`, body: note, link: 'project-delivery',
       }]);
       return made;
     });
