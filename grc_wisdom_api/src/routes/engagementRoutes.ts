@@ -25,6 +25,9 @@ import {
 } from '../controllers/engagementRequestController';
 import { requestTemplate, previewRequestImport, importRequests, exportRequests } from '../controllers/engagementRequestImportController';
 import { listScopeChanges, askScopeChange, approveScopeChange, rejectScopeChange } from '../controllers/engagementScopeChangeController';
+import {
+  listThreads, threadSubjects, startThread, getThread, addPost, retractPost, setThreadStatus, convertThread,
+} from '../controllers/engagementDiscussionController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -32,7 +35,8 @@ import { listScopeChanges, askScopeChange, approveScopeChange, rejectScopeChange
  * guard's shadow counts, scope, the shared registers, the migration of
  * engagements set up the old way, enforcement, external access, the window
  * after close, report copies, the firm's records, its team and follow-ons,
- * and (sprint 8) information requests, evidence links and scope changes.
+ * (sprint 8) information requests, evidence links and scope changes, and
+ * (sprint 9) threads.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -121,5 +125,16 @@ router.post('/:projectId/scope-changes', requireCapability(CAP.EXECUTE_PROJECT_W
 router.post('/:projectId/scope-changes/:id/approve', requireCapability(CAP.MANAGE_PROJECT), approveScopeChange);
 router.post('/:projectId/scope-changes/:id/reject', requireCapability(CAP.MANAGE_PROJECT), rejectScopeChange);
 router.patch('/:projectId/delivery-style', requireCapability(CAP.MANAGE_PROJECT), changeDeliveryStyle);
+
+// Sprint 9: threads. Each side reads its own and the shared ones; writing is
+// project work on either side, and the controller decides who may do what.
+router.get('/:projectId/threads', listThreads);
+router.get('/:projectId/threads/subjects', threadSubjects);
+router.post('/:projectId/threads', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), startThread);
+router.get('/:projectId/threads/:threadId', getThread);
+router.post('/:projectId/threads/:threadId/posts', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), addPost);
+router.post('/:projectId/threads/:threadId/posts/:postId/retract', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), retractPost);
+router.post('/:projectId/threads/:threadId/status', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), setThreadStatus);
+router.post('/:projectId/threads/:threadId/convert', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), convertThread);
 
 export default router;
