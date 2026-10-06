@@ -6,7 +6,7 @@ import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
 import { firmAccess, FirmAccess } from '../services/engagementFirmAccess';
 import { bindingScope, registerScope, Scope, ScopeService } from '../services/engagementScope';
-import { accessOpen } from '../services/engagementRules';
+import { accessOpen, roleMay } from '../services/engagementRules';
 import { isEnded } from '../services/engagementAfterClose';
 import {
   SCOPED_SUBJECTS, SubjectType, Side, visibilitiesFor, sideReads, checkThreadStart, checkPost, decisionRefusal,
@@ -59,6 +59,27 @@ function writeRefusal(a: Ok): { status: number; code?: string; message: string }
     return { status: 403, code: 'OUTSIDE_ACCESS', message: 'Your access to this engagement is not open today.' };
   }
   return null;
+}
+
+/**
+ * Whether the caller may turn a thread into a gap: whoever may assess a
+ * clause (the organisation, or the firm's Lead and Consultants), on an
+ * engagement whose scope names an entity and a framework to assess.
+ */
+const mayRaiseGap = (a: Ok): boolean => Boolean(a.scope?.entityIds?.length && a.scope?.frameworkIds?.length)
+  && (a.side === 'Client' || roleMay(a.firm.role, 'assess'));
+
+/**
+ * A gap of this engagement: raised by its assessment, or carried into it from
+ * the engagement before and linked by its current assessment (sprint 7).
+ */
+async function gapOf(projectId: string, issueId: string): Promise<{ id: string; label: string } | null> {
+  const carried = await prisma.clauseAssessment.count({ where: { projectId, issueId } });
+  const gap = await prisma.issue.findFirst({
+    where: { id: issueId, source: 'ConsultingGap', ...(carried ? {} : { projectId }) },
+    select: { id: true, ref: true, title: true },
+  });
+  return gap && { id: gap.id, label: `${gap.ref} ${gap.title}` };
 }
 
 const SERVICE: Record<string, ScopeService> = { Document: 'Documents', Risk: 'Risks', Asset: 'Assets' };
@@ -345,7 +366,10 @@ export const getThread = async (req: AuthenticatedRequest, res: Response): Promi
         post: writable, decide: writable && decides,
         resolve: !writeRefusal(a) && t.status !== 'Converted' && (t.createdById === a.userId || decides),
         convert: writable && t.status === 'Open',
-        convertTo: a.side === 'Client' ? ['Task'] : (a.firm.role === 'Reviewer' ? [] : ['Request']),
+        convertTo: [
+          ...(a.side === 'Client' ? ['Task'] : (a.firm.role === 'Reviewer' ? [] : ['Request'])),
+          ...(mayRaiseGap(a) ? ['Gap'] : []),
+        ],
       },
     });
   } catch (error: any) {
@@ -450,11 +474,11 @@ export const setThreadStatus = async (req: AuthenticatedRequest, res: Response):
 };
 
 /**
- * POST /api/engagements/:projectId/threads/:threadId/convert { type: Task | Request, id }
+ * POST /api/engagements/:projectId/threads/:threadId/convert { type: Task | Request | Gap, id }
  *
- * The task or request is made through the route that already makes it, with
- * all of that route's rules; this links the thread to it and closes the
- * discussion there.
+ * The task, request or gap is made through the route that already makes it,
+ * with all of that route's rules (a gap by assessing its clause); this links
+ * the thread to it and closes the discussion there.
  */
 export const convertThread = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -465,11 +489,17 @@ export const convertThread = async (req: AuthenticatedRequest, res: Response): P
     const refusal = writeRefusal(a) || postingRefusal(t);
     if (refusal) { send(res, refusal); return; }
     const type = str(req.body?.type);
-    if (!(CONVERT_TARGETS as readonly string[]).includes(type)) { send(res, { status: 400, message: 'A thread becomes a Task or a Request.' }); return; }
+    if (!(CONVERT_TARGETS as readonly string[]).includes(type)) { send(res, { status: 400, message: 'A thread becomes a Task, a Request or a Gap.' }); return; }
+    if (type === 'Gap' && !mayRaiseGap(a)) {
+      send(res, { status: 403, code: 'ENGAGEMENT_ROLE', message: 'Only someone who may assess a clause in this engagement\'s scope turns a thread into a gap.' });
+      return;
+    }
     const id = str(req.body?.id);
     const target = type === 'Task'
       ? await prisma.projectTask.findFirst({ where: { id, projectId: a.e.id }, select: { id: true, ref: true, name: true } }).then((x) => x && { id: x.id, label: `${x.ref} ${x.name}` })
-      : await prisma.informationRequest.findFirst({ where: { id, projectId: a.e.id }, select: { id: true, ref: true, title: true } }).then((x) => x && { id: x.id, label: `${x.ref} ${x.title}` });
+      : type === 'Request'
+        ? await prisma.informationRequest.findFirst({ where: { id, projectId: a.e.id }, select: { id: true, ref: true, title: true } }).then((x) => x && { id: x.id, label: `${x.ref} ${x.title}` })
+        : await gapOf(a.e.id, id);
     if (!target) { notFound(res, type); return; }
     await prisma.$transaction(async (tx) => {
       const done = await tx.discussionThread.updateMany({

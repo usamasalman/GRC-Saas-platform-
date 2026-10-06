@@ -13,8 +13,9 @@
  * so a discussion cannot be rewritten after someone has acted on it. A
  * Decision is recorded only in an Engagement thread, by the organisation's
  * project manager or owner, or by the firm's Lead. People are named only if
- * they can read the thread. A thread becomes a task or a request through the
- * routes that already create them, and is then linked to what it became.
+ * they can read the thread. A thread becomes a task, a request or a gap
+ * through the routes that already create them (a gap through the gap
+ * assessment, sprint 10), and is then linked to what it became.
  *
  * Pure, so every rule here runs without a database.
  */
@@ -27,7 +28,7 @@ export type SubjectType = (typeof SUBJECT_TYPES)[number];
 export const SCOPED_SUBJECTS: readonly SubjectType[] = ['Document', 'Risk', 'Asset'];
 export const POST_KINDS = ['Comment', 'Question', 'Decision', 'ReviewNote'] as const;
 export type PostKind = (typeof POST_KINDS)[number];
-export const CONVERT_TARGETS = ['Task', 'Request'] as const;
+export const CONVERT_TARGETS = ['Task', 'Request', 'Gap'] as const;
 export type Side = 'Client' | 'Provider';
 
 export const MAX_TITLE = 200;

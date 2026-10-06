@@ -12,6 +12,8 @@
  *     owner or the firm's Lead; only people who can read a thread are named;
  *   - a thread on a shared record needs the scope to share it; a thread
  *     becomes a task (or a request) through the usual route and is linked;
+ *     it becomes a gap through the assessment, by whoever may assess, and
+ *     only one of this engagement's gaps;
  *   - the firm's Lead and Reviewers review a shared document, with comments
  *     anchored to words really in it or to a page;
  *   - a suggestion on a published policy becomes its next draft: started
@@ -87,6 +89,8 @@ const stamp = Date.now().toString(36);
   const callers = {
     'threads: list, subjects, start': /apiClient\.get\(base, \{ params/.test(threads) && threads.includes('`${base}/subjects`') && /apiClient\.post\(base, \{ \.\.\.v/.test(threads),
     'a thread: read, post, retract, status, convert': threads.includes('apiClient.get(url)') && ['posts`', 'retract`', 'status`', 'convert`'].every((x) => threads.includes(x)),
+    'a thread becomes a gap: assess the clause, then convert': threads.includes('`/api/engagements/${projectId}/assessment`')
+      && threads.includes("{ type: 'Gap', id: made.gap.id }"),
     'reviews and suggestions': panel.includes('/documents/${documentId}/reviews`') && panel.includes('/documents/${documentId}/suggestions`')
       && ['pull`', 'apply`', 'decide`'].every((x) => panel.includes(`/suggestions/\${s.id}/${x}`) || panel.includes(`/suggestions/\${deciding.s.id}/${x}`)),
     'mounted': host.includes('<EngagementDiscussions') && docs.includes('<DocumentReviewPanel'),
@@ -105,7 +109,7 @@ const stamp = Date.now().toString(36);
   const section = (name) => (guide.split(new RegExp(`\\n  '?${name}'?: \\{`))[1] || '').split(/\n  \},\n/)[0];
   const screens = [threads, panel, docs, host].join('\n');
   const needed = ['Discussions', 'Start a thread', 'Both sides', 'Organisation only', 'Firm only', 'Review note', 'Retract', 'Decision',
-    'Convert to a task', 'Convert to a request', 'Review this version', 'Changes requested', 'Not fit for purpose', 'Add an anchored comment',
+    'Convert to a task', 'Convert to a request', 'Convert to a gap', 'Review this version', 'Changes requested', 'Not fit for purpose', 'Add an anchored comment',
     'Suggest wording', 'Start next version from this suggestion', 'Add to the open next version', 'Take the wording into the draft',
     'Accepted into', 'Decline', 'Mark superseded', 'made on'];
   const quoted = [...section('project-delivery').matchAll(/"([^"]+)"/g)].map((m) => m[1]);
@@ -251,6 +255,31 @@ const stamp = Date.now().toString(36);
       && converted.status === 200 && convertedView?.status === 'Converted' && convertedView?.convertedToLabel?.includes('Name the access reviewer')
       && postConverted.status === 409 && postConverted.json?.code === 'CONVERTED' && afterConvert.status === 201,
     `firm outside ${outsideDoc.status}; client shared outside ${clientOutside.status}; client internal ${clientInternalOutside.status}; on policy ${onPolicy.status}; convert ${converted.status} ${converted.json?.message || ''}; post after ${postConverted.status}`);
+
+  // ── A thread becomes a gap through the assessment ────────────────────────
+  const gapThread = await T(consultant)('POST', '', { visibility: 'Engagement', title: 'Access reviews leave no record', kind: 'Comment', body: 'Nothing shows the quarterly reviews happened.' });
+  const gid = gapThread.json?.thread?.id;
+  const offered = async (who) => (await T(who)('GET', `/${gid}`)).json?.can?.convertTo || [];
+  const offers = { consultant: await offered(consultant), reviewer: await offered(reviewer), client: await offered(client) };
+  const clause = await prisma.standardClause.findFirst({ where: { standardId: iso.id, ref: { startsWith: 'A.5' } }, orderBy: { ref: 'asc' }, select: { id: true } });
+  const assessed = await as(consultant)('POST', `/api/engagements/${pid}/assessment`, {
+    tenantId: omni.id, clauseId: clause?.id, result: 'Partial', justification: 'Quarterly access reviews are not evidenced.', gapType: 'Evidence',
+  });
+  const gap = assessed.json?.assessment?.gap;
+  const elsewhere = await prisma.issue.findFirst({ where: { tenantId: omni.id, NOT: [{ source: 'ConsultingGap' }] }, select: { id: true } });
+  const reviewerToGap = await T(reviewer)('POST', `/${gid}/convert`, { type: 'Gap', id: gap?.id });
+  const otherIssue = await T(consultant)('POST', `/${gid}/convert`, { type: 'Gap', id: elsewhere?.id });
+  const toGap = await T(consultant)('POST', `/${gid}/convert`, { type: 'Gap', id: gap?.id });
+  const gapView = (await T(client)('GET', `/${gid}`)).json?.thread;
+  const gapTrail = await prisma.auditLog.count({ where: { subjectId: gid, action: 'ENGAGEMENT_THREAD_CONVERTED' } });
+  v.record('engagement-s9:a thread becomes a gap through the assessment and is linked to it; only those who may assess convert, and only to this engagement\'s gaps',
+    gapThread.status === 201 && offers.consultant.includes('Gap') && offers.consultant.includes('Request') && !offers.reviewer.includes('Gap')
+      && offers.client.includes('Gap') && offers.client.includes('Task')
+      && assessed.status === 201 && Boolean(gap?.id) && reviewerToGap.status === 403 && reviewerToGap.json?.code === 'ENGAGEMENT_ROLE'
+      && (!elsewhere || otherIssue.status === 404) && toGap.status === 200 && toGap.json?.convertedTo?.type === 'Gap'
+      && gapView?.status === 'Converted' && gapView?.convertedToType === 'Gap' && gapView?.convertedToLabel?.startsWith(gap?.ref || '?') && gapTrail === 2,
+    `start ${gapThread.status}; offers ${JSON.stringify(offers)}; assess ${assessed.status} gap ${gap?.ref}; reviewer ${reviewerToGap.status} ${reviewerToGap.json?.code || ''}; `
+      + `other issue ${otherIssue.status}; convert ${toGap.status} ${toGap.json?.message || ''}; view ${gapView?.status} ${gapView?.convertedToLabel}; trail ${gapTrail}`);
 
   // ── Document review ──────────────────────────────────────────────────────
   const D = (who, rest, body) => as(who)(body === undefined ? 'GET' : 'POST', `/api/engagements/${pid}/documents/${policy.id}${rest}`, body);

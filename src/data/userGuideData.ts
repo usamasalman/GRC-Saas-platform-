@@ -323,7 +323,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         step: 18,
         title: 'Discussions',
         instruction: 'Open the "Discussions" tab and click "Start a thread": choose what it is about (the engagement, a task, a request, or a document, risk or asset the scope shares) and who reads it: "Both sides", "Organisation only" or "Firm only". Who reads a thread is fixed once it starts. Reply with a Comment, Question or "Review note"; tick people under "Name:" to tell them, and only people who can read the thread are offered.',
-        tip: 'Posts are never edited: "Retract" keeps the words, struck through, with your reason. A "Decision" is recorded only in a thread both sides read, by the project manager or owner, or by the firm\'s Lead. "Convert to a task" (organisation) or "Convert to a request" (firm) makes it through the usual form and links the thread to it.'
+        tip: 'Posts are never edited: "Retract" keeps the words, struck through, with your reason. A "Decision" is recorded only in a thread both sides read, by the project manager or owner, or by the firm\'s Lead. "Convert to a task" (organisation) or "Convert to a request" (firm) makes it through the usual form and links the thread to it; "Convert to a gap" (whoever may assess, on either side) assesses the clause as the Assessment tab does, raising its gap or keeping the one still open, and links the thread to it.'
       },
       {
         step: 19,

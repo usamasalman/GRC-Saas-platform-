@@ -8,8 +8,8 @@ import { S, ghostBtn, primaryBtn, linkBtn, pill, apiError } from '../../iam/iamS
  *
  * Each side sees the Engagement threads and its own internal ones; who reads
  * a thread is chosen when it starts and never widened. Posts are not edited:
- * a retraction keeps the words, marked. A thread becomes a task or a request
- * through the forms that make them, and is linked to what it became.
+ * a retraction keeps the words, marked. A thread becomes a task, a request or
+ * a gap through the forms that make them, and is linked to what it became.
  */
 
 const VIS_LABEL: Record<string, string> = { Engagement: 'Both sides', ClientInternal: 'Organisation only', FirmInternal: 'Firm only' };
@@ -18,6 +18,7 @@ const VIS_TONE: Record<string, [string, string]> = {
 };
 const KIND_LABEL: Record<string, string> = { Comment: 'Comment', Question: 'Question', Decision: 'Decision', ReviewNote: 'Review note' };
 const SUBJECTS = ['Engagement', 'Task', 'Request', 'Document', 'Risk', 'Asset'];
+const CONVERT_LABEL: Record<string, string> = { Task: 'Convert to a task', Request: 'Convert to a request', Gap: 'Convert to a gap' };
 const small: React.CSSProperties = { ...ghostBtn, padding: '3px 10px', fontSize: 11.5 };
 const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: 'var(--ink-muted)', margin: '8px 0 3px' };
 const when = (d: string) => new Date(d).toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -155,7 +156,7 @@ const ThreadView: React.FC<{ projectId: string; base: string; threadId: string; 
   const [body, setBody] = useState('');
   const [named, setNamed] = useState<string[]>([]);
   const [retracting, setRetracting] = useState<any>(null);
-  const [converting, setConverting] = useState(false);
+  const [converting, setConverting] = useState<string | null>(null);
   const url = `${base}/${threadId}`;
 
   const load = useCallback(async () => {
@@ -181,7 +182,9 @@ const ThreadView: React.FC<{ projectId: string; base: string; threadId: string; 
             {t.status === 'Resolved' ? 'Reopen' : 'Mark resolved'}
           </button>
         )}
-        {data.can.convert && data.can.convertTo.length > 0 && <button style={small} disabled={busy} onClick={() => setConverting(true)}>{data.can.convertTo[0] === 'Task' ? 'Convert to a task' : 'Convert to a request'}</button>}
+        {data.can.convert && data.can.convertTo.map((to: string) => (
+          <button key={to} style={small} disabled={busy} onClick={() => setConverting(to)}>{CONVERT_LABEL[to]}</button>
+        ))}
       </div>
       {problem && <div role="alert" style={{ ...S.error, marginBottom: 8 }}>{problem}</div>}
       <div style={{ maxHeight: 360, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 6 }}>
@@ -239,9 +242,13 @@ const ThreadView: React.FC<{ projectId: string; base: string; threadId: string; 
           onCancel={() => setRetracting(null)}
         />
       )}
-      {converting && (
-        <ConvertThread projectId={projectId} thread={t} to={data.can.convertTo[0]} url={url}
-          onCancel={() => setConverting(false)} onDone={async () => { setConverting(false); await load(); }} />
+      {converting === 'Gap' && (
+        <ConvertToGap projectId={projectId} thread={t} url={url}
+          onCancel={() => setConverting(null)} onDone={async () => { setConverting(null); await load(); }} />
+      )}
+      {(converting === 'Task' || converting === 'Request') && (
+        <ConvertThread projectId={projectId} thread={t} to={converting} url={url}
+          onCancel={() => setConverting(null)} onDone={async () => { setConverting(null); await load(); }} />
       )}
     </DialogShell>
   );
@@ -306,6 +313,83 @@ const ConvertThread: React.FC<{ projectId: string; thread: any; to: 'Task' | 'Re
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
         <button style={ghostBtn} onClick={onCancel} disabled={busy}>Cancel</button>
         <button style={primaryBtn(busy)} disabled={busy || !v.name.trim() || !v.due || (to === 'Task' && !v.phaseId)} onClick={make}>Make it and link</button>
+      </div>
+    </DialogShell>
+  );
+};
+
+/**
+ * Raises the gap through the gap assessment, exactly as assessing the clause
+ * would, then links the thread to it. A clause whose gap is still open keeps
+ * that gap rather than getting a second one.
+ */
+const ConvertToGap: React.FC<{ projectId: string; thread: any; url: string; onCancel: () => void; onDone: () => void }> = ({
+  projectId, thread, url, onCancel, onDone,
+}) => {
+  const base = `/api/engagements/${projectId}/assessment`;
+  const [opts, setOpts] = useState<any>(null);
+  const [where, setWhere] = useState({ tenantId: '', standardId: '' });
+  const [v, setV] = useState({ clauseId: '', result: 'Partial', gapType: 'Implementation', justification: thread.title as string });
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  useEffect(() => {
+    apiClient.get(base, { params: { tenantId: where.tenantId || undefined, standardId: where.standardId || undefined } })
+      .then((r) => setOpts(r.data))
+      .catch((err) => setProblem(apiError(err, 'Could not load the clauses to assess.')));
+  }, [base, where.tenantId, where.standardId]);
+  const clause = (opts?.clauses || []).find((c: any) => c.id === v.clauseId);
+  const make = async () => {
+    setBusy(true); setProblem('');
+    try {
+      const made = (await apiClient.post(base, {
+        tenantId: where.tenantId || opts.tenantId, clauseId: v.clauseId, result: v.result, justification: v.justification.trim(), gapType: v.gapType,
+      })).data.assessment;
+      if (!made?.gap?.id) throw new Error('No gap was raised for that clause.');
+      await apiClient.post(`${url}/convert`, { type: 'Gap', id: made.gap.id });
+      onDone();
+    } catch (err) {
+      setProblem(apiError(err, 'The gap could not be raised.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ready = Boolean(v.clauseId) && v.justification.trim().length >= 10;
+  return (
+    <DialogShell title={`Convert ${thread.ref} to a gap`} onClose={busy ? () => undefined : onCancel} width={560}>
+      {problem && <div role="alert" style={{ ...S.error, marginBottom: 8 }}>{problem}</div>}
+      <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+        This assesses the clause as the Assessment tab does; the result it replaces stays in the clause's history.
+      </div>
+      <label style={label} htmlFor="cg-entity">Entity</label>
+      <select id="cg-entity" style={S.input} value={where.tenantId || opts?.tenantId || ''} onChange={(e) => { setWhere({ ...where, tenantId: e.target.value }); setV({ ...v, clauseId: '' }); }}>
+        {(opts?.entities || []).map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </select>
+      <label style={label} htmlFor="cg-framework">Framework</label>
+      <select id="cg-framework" style={S.input} value={where.standardId || opts?.standardId || ''} onChange={(e) => { setWhere({ ...where, standardId: e.target.value }); setV({ ...v, clauseId: '' }); }}>
+        {(opts?.frameworks || []).map((x: any) => <option key={x.id} value={x.id}>{x.code}</option>)}
+      </select>
+      <label style={label} htmlFor="cg-clause">Clause</label>
+      <select id="cg-clause" style={S.input} value={v.clauseId} onChange={(e) => setV({ ...v, clauseId: e.target.value })}>
+        <option value="">Choose…</option>
+        {(opts?.clauses || []).map((c: any) => <option key={c.id} value={c.id}>{c.ref} {c.title} ({c.resultLabel})</option>)}
+      </select>
+      <label style={label} htmlFor="cg-result">Result</label>
+      <select id="cg-result" style={S.input} value={v.result} onChange={(e) => setV({ ...v, result: e.target.value })}>
+        <option value="Partial">Partial</option>
+        <option value="Missing">Missing</option>
+      </select>
+      <label style={label} htmlFor="cg-type">What is missing</label>
+      <select id="cg-type" style={S.input} value={v.gapType} onChange={(e) => setV({ ...v, gapType: e.target.value })}>
+        {['Documentation', 'Implementation', 'Evidence', 'Competence'].map((g) => <option key={g} value={g}>{g}</option>)}
+      </select>
+      {clause?.gap && clause.gap.status !== 'Closed' && (
+        <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 4 }}>The open gap {clause.gap.ref} carries on; the thread is linked to it.</div>
+      )}
+      <label style={label} htmlFor="cg-why">Why</label>
+      <textarea id="cg-why" style={{ ...S.input, minHeight: 70 }} value={v.justification} onChange={(e) => setV({ ...v, justification: e.target.value })} />
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+        <button style={ghostBtn} onClick={onCancel} disabled={busy}>Cancel</button>
+        <button style={primaryBtn(busy || !ready)} disabled={busy || !ready} onClick={make}>Raise the gap and link</button>
       </div>
     </DialogShell>
   );
