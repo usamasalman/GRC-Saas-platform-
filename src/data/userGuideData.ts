@@ -354,6 +354,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Readiness and management review',
         instruction: 'Open the "Readiness" tab and choose the entity and framework. Every clause shows six checks, each computed from what is held: documented, implemented, evidenced (accepted and not stale), gaps closed, risks treated, and the records period; six make it "Ready", four or five "Nearly ready", fewer "Not ready". Nobody types readiness in. The project manager or owner uses "Set the records period" (how many months of operating evidence a control needs for Stage 2; three unless you say otherwise, with a reason). The firm\'s Lead uses "Give readiness opinion" beside the figures, and the engagement\'s owner, as sponsor, uses "Sign off readiness"; both keep the figures as they stood. Under Management reviews (9.3), the firm uses "Prepare a management review" and the organisation "Start a management review": the date, who attended, what was considered for each 9.3.2 input and the decisions. The project manager uses "Record the review" once nothing is missing; the stat "Management review (9.3)" then shows it satisfied for twelve months. A recorded review does not change, but "Add an action" links each decided action to the issue or engagement task that carries it, by its reference.',
         tip: 'The Reports tab issues the Readiness report with the same figures, clause by clause. A control with five weeks of evidence is not ready for Stage 2 under a three-month records period, however good the evidence; the tooltip on the "Records period" column shows how many days each control\'s evidence spans.'
+      },
+      {
+        step: 24,
+        title: 'The certification body and the audit pack',
+        instruction: 'Open the "Certification" tab (the organisation sees it; the firm does not). The project manager or owner uses "Invite the certification body": an auditor organisation the platform operator has added, read-only, from a first to a last day of access, at most 180 days. If the body\'s people share a company mail domain with the delivery firm\'s, the invitation is held with that warning; going ahead needs "Confirm and invite" with the reason it is acceptable, which is kept on the record. "Freeze the audit pack" issues the Statement of Applicability, the traceability report and the readiness report, stores each and records its hash; nothing later changes what the body reads. Use "Revoke access" to end the body\'s access early, with a reason. The body\'s questions and evidence requests appear below: use "Answer". A nonconformity is not answered: the project manager or owner uses "Record as an issue", which raises an issue of your own with source External audit, answered and closed in Issues & CAP like any other.',
+        tip: 'The body reads only the frozen pack and its own questions, and only inside its days; every attempt outside them, and every report it downloads, is on your audit trail. For an internal audit (9.2) run by a firm, create the engagement with the type Internal audit: if that firm delivered work on the same framework for you before, the invitation warns that it would be auditing its own work, and "Confirm and invite" needs the reason it is acceptable.'
       }
     ],
     proTips: [
@@ -364,6 +370,49 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       { id: 'my-work', title: 'My Work' },
       { id: 'standards', title: 'Standards' },
       { id: 'logs', title: 'Immutable Audit Log' }
+    ]
+  },
+
+  certification: {
+    id: 'certification',
+    title: 'Certification Audits',
+    category: 'Assurance & Governance',
+    icon: 'audit',
+    badge: 'Certification Body',
+    summary: 'The certification body\'s own page: the engagements an organisation has invited it to audit, read-only and only for the days the organisation set. It reads the frozen audit pack and asks the organisation; it changes nothing in the organisation\'s records.',
+    roles: ['External Auditor'],
+    capabilities: ['plan-and-execute-an-audit'],
+    keyActions: [
+      'Answer an invitation with "Accept" or "Decline"',
+      'Open the frozen audit pack with "Open the audit pack" and "Download" each report',
+      'Ask a question, ask for evidence, or raise a nonconformity against a clause with "Ask the organisation"'
+    ],
+    howToUse: [
+      {
+        step: 1,
+        title: 'Answer the invitation',
+        instruction: 'Each invitation names the organisation, the engagement and the first and last day of access. Use "Accept" to take it or "Decline" to refuse it.',
+        tip: 'Nothing is readable before you accept, and nothing after the last day.'
+      },
+      {
+        step: 2,
+        title: 'Read the frozen audit pack',
+        instruction: 'Use "Open the audit pack" on an accepted engagement inside its days. Each pack lists the Statement of Applicability, the traceability report and the readiness report as the organisation froze them, each with its reference and hash; use "Download" to read one.',
+        tip: 'A report is served only if its stored bytes still match the hash recorded when it was frozen, and each download is on the organisation\'s audit trail.'
+      },
+      {
+        step: 3,
+        title: 'Ask, ask for evidence, or raise a nonconformity',
+        instruction: 'Use "Ask the organisation" and choose a question, an evidence request or a nonconformity; a nonconformity names the clause it is against. The organisation answers questions and records a nonconformity as an issue of its own.',
+        tip: 'The certificate is your decision; the platform records none.'
+      }
+    ],
+    proTips: [
+      'The organisation can revoke your access early; the engagement then disappears from this page.',
+      'You see only your own questions, never the organisation\'s registers.'
+    ],
+    relatedTabs: [
+      { id: 'library', title: 'Assurance Evidence' }
     ]
   },
 

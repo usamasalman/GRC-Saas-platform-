@@ -69,7 +69,7 @@ const tone = (s: string) => pill(...(STATE_TONE[s] || ['var(--ink-muted)', 'var(
 
 type Dialog =
   | null
-  | { kind: 'invite' } | { kind: 'revoke'; inv: Invitation } | { kind: 'style' }
+  | { kind: 'invite'; warnings?: string[]; draft?: Record<string, string> } | { kind: 'revoke'; inv: Invitation } | { kind: 'style' }
   | { kind: 'approve'; m: Member } | { kind: 'reject'; m: Member } | { kind: 'remove'; m: Member }
   | { kind: 'nominate' }
   | { kind: 'window'; m: Member } | { kind: 'extend'; m: Member } | { kind: 'declineExt'; m: Member }
@@ -113,6 +113,29 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
     } catch (err) {
       setDialog(null);
       setError(apiError(err, 'That could not be done.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // An internal audit by a firm that implemented the same framework is an
+  // independence warning (sprint 13): shown in the dialog, and sent again with
+  // the reason it is acceptable.
+  const invite = async (v: Record<string, string>, warnings?: string[]) => {
+    setBusy(true);
+    setError('');
+    try {
+      await apiClient.post('/api/engagements/invitations', {
+        projectId, firmTenantId: v.firm, deliveryStyle: v.style, reportCopies: v.copies === 'Yes', message: v.message?.trim() || undefined,
+        ...(warnings ? { confirmed: true, independenceReason: v.reason?.trim() } : {}),
+      });
+      setDialog(null);
+      await load();
+      onChanged?.();
+    } catch (err: any) {
+      const r = err?.response?.data;
+      if (r?.code === 'INDEPENDENCE_WARNING') setDialog({ kind: 'invite', warnings: r.warnings || [], draft: v });
+      else { setDialog(null); setError(apiError(err, 'That could not be done.')); }
     } finally {
       setBusy(false);
     }
@@ -296,23 +319,26 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
 
       {dialog?.kind === 'invite' && (
         <FormDialog
+          key={dialog.warnings ? 'confirm' : 'invite'}
           title={`Invite a firm to deliver ${e.ref}?`}
-          intro={<>The invitation goes to the firm's organisation and expires in 14 days. Until it is accepted the firm sees only the invitation, and after that only the people you approve can open the engagement.</>}
-          submitLabel="Send invitation"
+          intro={dialog.warnings
+            ? <>Independence: {dialog.warnings.join(' ')} You may still go ahead; say why it is acceptable. It is kept on the invitation and on your trail.</>
+            : <>The invitation goes to the firm's organisation and expires in 14 days. Until it is accepted the firm sees only the invitation, and after that only the people you approve can open the engagement.</>}
+          submitLabel={dialog.warnings ? 'Confirm and invite' : 'Send invitation'}
           busy={busy}
           fields={[
             { name: 'firm', label: 'Firm', type: 'select', required: true, options: firms.map((f) => f.id),
-              optionLabels: Object.fromEntries(firms.map((f) => [f.id, f.name])) },
-            { name: 'style', label: 'Delivery style', type: 'select', options: ['ClientLed', 'ConsultantLed'], optionLabels: STYLE_LABEL,
+              optionLabels: Object.fromEntries(firms.map((f) => [f.id, f.name])), initial: dialog.draft?.firm },
+            { name: 'style', label: 'Delivery style', type: 'select', options: ['ClientLed', 'ConsultantLed'], optionLabels: STYLE_LABEL, initial: dialog.draft?.style,
               help: 'Client-led keeps your records yours: the consultant proposes and you decide. Only you can change it later.' },
-            { name: 'copies', label: 'Firm keeps copies of issued reports', type: 'select', options: ['No', 'Yes'],
+            { name: 'copies', label: 'Firm keeps copies of issued reports', type: 'select', options: ['No', 'Yes'], initial: dialog.draft?.copies,
               help: 'Yes: the firm keeps a copy of each report you issue, in its own records, for good. You can change it until close.' },
-            { name: 'message', label: 'Message to the firm', type: 'textarea' },
+            { name: 'message', label: 'Message to the firm', type: 'textarea', initial: dialog.draft?.message },
+            ...(dialog.warnings ? [{ name: 'reason', label: 'Why it is acceptable', type: 'textarea' as const, required: true }] : []),
           ]}
-          validate={(v) => (v.firm ? null : 'Choose a firm. Only firms with consulting switched on are listed.')}
-          onSubmit={(v) => act(() => apiClient.post('/api/engagements/invitations', {
-            projectId, firmTenantId: v.firm, deliveryStyle: v.style, reportCopies: v.copies === 'Yes', message: v.message?.trim() || undefined,
-          }))}
+          validate={(v) => (!v.firm ? 'Choose a firm. Only firms with consulting switched on are listed.'
+            : dialog.warnings && (v.reason || '').trim().length < 20 ? 'Say why it is acceptable, in at least 20 characters.' : null)}
+          onSubmit={(v) => invite(v, dialog.warnings)}
           onCancel={() => setDialog(null)}
         />
       )}

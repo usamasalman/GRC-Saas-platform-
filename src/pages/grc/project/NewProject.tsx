@@ -37,7 +37,8 @@ interface Props {
   onCancel: () => void;
 }
 
-const TYPES = ['Readiness', 'Certification', 'Remediation', 'Implementation', 'Assessment'];
+const TYPES = ['Readiness', 'Certification', 'Remediation', 'Implementation', 'Assessment', 'InternalAudit'];
+const TYPE_LABEL: Record<string, string> = { InternalAudit: 'Internal audit' };
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 
 const POLICIES: { value: string; label: string; help: string }[] = [
@@ -281,7 +282,7 @@ const NewProject: React.FC<Props> = ({ onCreated, onCancel }) => {
             <span style={label}>Type</span>
             <select style={field} value={form.projectType}
                     onChange={(e) => set('projectType', e.target.value)}>
-              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t] ?? t}</option>)}
             </select>
           </div>
 
