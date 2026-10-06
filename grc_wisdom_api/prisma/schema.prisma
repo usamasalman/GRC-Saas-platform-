@@ -113,6 +113,8 @@ model Tenant {
   evidenceItems            EvidenceItem[]
   // Sprint 10: context of the organisation and interested parties.
   contextEntries           ContextEntry[]
+  // Sprint 12: management reviews (9.3).
+  managementReviews        ManagementReview[]
 }
 
 model User {
@@ -313,6 +315,11 @@ model User {
   registerProposalsDecided       RegisterProposal[]   @relation("RegisterProposalDecider")
   challengesRaised               RegisterChallenge[]  @relation("ChallengeRaiser")
   challengesDecided              RegisterChallenge[]  @relation("ChallengeDecider")
+  // Consulting engagement, sprint 12: readiness and management review.
+  readinessOpinions              ReadinessOpinion[]   @relation("OpinionGiver")
+  readinessSignOffs              ReadinessSignOff[]   @relation("SponsorSigner")
+  managementReviewsPrepared      ManagementReview[]   @relation("ReviewPreparer")
+  managementReviewsRecorded      ManagementReview[]   @relation("ReviewRecorder")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3328,6 +3335,12 @@ model Project {
   contextProposals           ContextEntry[]
   registerProposals          RegisterProposal[]
   registerChallenges         RegisterChallenge[]
+  readinessOpinions          ReadinessOpinion[]
+  readinessSignOffs          ReadinessSignOff[]
+  managementReviews          ManagementReview[]
+  /// How many months of operating evidence a control needs to be ready for
+  /// Stage 2 (sprint 12). Empty means three.
+  recordsPeriodMonths        Int?
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -5034,4 +5047,88 @@ model RegisterChallenge {
   @@index([projectId, status])
   @@index([riskId, status])
   @@index([assetId, status])
+}
+
+// ─── Consulting engagement, sprint 12: readiness and management review ───────
+
+/// The firm's opinion of readiness, beside the computed figures and never
+/// changing them. The figures as they stood when it was given are kept with it.
+model ReadinessOpinion {
+  id         String   @id @default(uuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Ready | ReadyWithConditions | NotReady
+  verdict    String
+  opinion    String
+  conditions String?
+  /// JSON: the computed readiness when the opinion was given.
+  figures    String
+  givenById  String
+  givenBy    User     @relation("OpinionGiver", fields: [givenById], references: [id], onDelete: Cascade)
+  givenAt    DateTime @default(now())
+
+  @@index([projectId, givenAt])
+}
+
+/// The sponsor's sign-off that the organisation goes to the certification
+/// audit, on the figures and the opinion as they stood.
+model ReadinessSignOff {
+  id         String   @id @default(uuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  opinionId  String?
+  note       String
+  figures    String
+  signedById String
+  signedBy   User     @relation("SponsorSigner", fields: [signedById], references: [id], onDelete: Cascade)
+  signedAt   DateTime @default(now())
+
+  @@index([projectId, signedAt])
+}
+
+/// A management review (ISO 27001 9.3). The organisation's record: the firm
+/// may prepare it as a draft; only the organisation records it, and only once
+/// every 9.3.2 input is considered and the decisions are written.
+model ManagementReview {
+  id           String                   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projectId    String?
+  project      Project?                 @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// MR-0001, per organisation.
+  ref          String
+  heldOn       DateTime?
+  /// JSON: the names of the people who attended.
+  attendees    String                   @default("[]")
+  /// JSON: what was considered for each 9.3.2 input.
+  inputs       String                   @default("{}")
+  decisions    String?
+  /// Draft | Recorded
+  status       String                   @default("Draft")
+  preparedById String
+  preparedBy   User                     @relation("ReviewPreparer", fields: [preparedById], references: [id], onDelete: Cascade)
+  preparedAt   DateTime                 @default(now())
+  recordedById String?
+  recordedBy   User?                    @relation("ReviewRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  recordedAt   DateTime?
+  actions      ManagementReviewAction[]
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, status])
+  @@index([projectId])
+}
+
+/// An action decided at a management review, linked to the issue or task that carries it.
+model ManagementReviewAction {
+  id          String           @id @default(uuid())
+  reviewId    String
+  review      ManagementReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  description String
+  issueId     String?
+  taskId      String?
+  /// What it is linked to, as it was named when linked.
+  linkLabel   String?
+  createdAt   DateTime         @default(now())
+
+  @@index([reviewId])
 }
