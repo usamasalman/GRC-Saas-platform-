@@ -15,7 +15,7 @@ import { renderXlsx } from '../services/renderXlsx';
 import { brandingFor, logoBytesFor } from './brandingController';
 import { effectiveMarking, selectSections } from '../services/tenantBranding';
 import { documentHash, snapshotOf, documentRefFor } from '../services/reportIssue';
-import { putEvidence } from '../services/evidenceStore';
+import { putEvidence, StoredFile } from '../services/evidenceStore';
 import {
   statusFigures, attentionLists, verificationRows, verificationIntegrity,
   unmappedClauses, taskCounts, attribute, slippage, clauseCoverage,
@@ -1539,21 +1539,191 @@ const REPORTS: Record<string, { name: string; key: string }> = {
   readiness: { name: 'Readiness Report', key: 'delivery-readiness' },
 };
 
+/** What producing a report gives back: the bytes and their register row, or why not. */
+type Produced =
+  | {
+    ok: true; buf: Buffer; fileName: string; format: ReportFormat; documentRef: string;
+    issueNumber: number; reportIssueId: string; stored: StoredFile | null;
+  }
+  | { ok: false; status: number; code?: string; message: string };
+
+/** The engagement as the reports read it (for the audit pack, sprint 13). */
+export const loadReportEngagement = (projectId: string) => loadEngagement(projectId);
+
 /**
- * Build, record and send one delivery report.
+ * Build and record one delivery report; with `keep`, store its bytes too.
  *
  * The record is written whether or not the caller asked for a formal issue: a
  * plain export is a disclosure — somebody now holds a copy of the client's
  * unremediated weaknesses — and a register with no row for it cannot answer who
- * has one.
+ * has one. The audit pack (sprint 13) keeps the bytes as issued, so what a
+ * certification body reads is exactly what was frozen.
  */
+export async function produceReport(args: {
+  e: Engagement; kind: string; format: ReportFormat; userId: string; issued: boolean;
+  phaseId?: string; sections?: string[]; marking?: string | null; keep?: boolean;
+}): Promise<Produced> {
+  const { e, kind, format, issued } = args;
+  const meta = REPORTS[kind];
+  if (!meta) {
+    return { ok: false, status: 404, code: 'UNKNOWN_REPORT', message: `report must be one of: ${Object.keys(REPORTS).join(', ')}` };
+  }
+
+  const now = new Date();
+  let sections: ReportSection[] | null;
+
+  if (kind === 'phase') {
+    if (!args.phaseId) return { ok: false, status: 400, code: 'PHASE_REQUIRED', message: 'A phase report needs ?phaseId=' };
+    sections = phaseSections(e, args.phaseId, now);
+    if (!sections) return { ok: false, status: 404, message: 'Phase not found on this engagement' };
+  } else if (kind === 'status') sections = statusSections(e, now);
+  else if (kind === 'audit') sections = auditSections(e, now);
+  else if (kind === 'delay') sections = delaySections(e, now);
+  else if (kind === 'soa') sections = await soaSections(e, now);
+  else if (kind === 'readiness') sections = await readinessSections(e, now);
+  else sections = await evidenceSections(e, now);
+
+  // The report is issued in the CLIENT's name even when a consultant pressed
+  // the button — see chromeFor in reportController for the reasoning.
+  const [branding, logo, user] = await Promise.all([
+    brandingFor(e.tenantId),
+    logoBytesFor(e.tenantId),
+    prisma.user.findUnique({
+      where: { id: args.userId }, select: { name: true, email: true },
+    }),
+  ]);
+  const r = branding?.resolved;
+
+  const issueNumber = issued
+    ? await prisma.reportIssue.count({
+      where: { tenantId: e.tenantId, reportKey: meta.key, projectId: e.id, issued: true },
+    }) + 1
+    : 0;
+
+  const provenance: Provenance = {
+    reportName: meta.name,
+    tenantName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
+    generatedBy: `${user?.name ?? 'Unknown'} <${user?.email ?? ''}>`,
+    scopeKind: 'Engagement',
+    subjectRef: `${e.ref} — ${e.name}`,
+    subjectStatus: e.status,
+  };
+
+  const document: ReportDocument = {
+    provenance,
+    sections: selectSections(sections, args.sections),
+    chrome: {
+      displayName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
+      brandColour: r?.brandColour ?? '#0F7A5A',
+      textColour: r?.textColour ?? '#0F7A5A',
+      marking: effectiveMarking(r?.marking ?? 'Confidential', args.marking ?? null),
+      footerText: r?.footerText ?? null,
+      logo,
+      documentRef: documentRefFor(meta.key, now, issued ? issueNumber : null),
+      generatedAt: now,
+    },
+  };
+
+  const buf = format === 'pdf' ? await renderPdf(document)
+    : format === 'docx' ? await renderDocx(document)
+      : await renderXlsx(document);
+
+  const hash = documentHash(document);
+  const snapshot = snapshotOf({
+    reported: e.reportedProgress,
+    verified: e.verifiedProgress,
+    status: e.status,
+    health: e.health,
+    policy: e.verificationPolicy,
+    baselineVersion: e.baselineVersion,
+    daysLost: attribute(e.impediments as any, now).totalDays,
+  });
+
+  const fileName = fileNameFor(meta.name, format, e.ref);
+  // The delivery firm's own copy (consulting engagement, sprint 7), when the
+  // organisation allows it: the bytes as issued, kept in the firm's tenant
+  // for good. An export that is not an issue is never copied.
+  const firmCopy = issued && e.reportCopiesAllowed === true && e.providerTenantId && e.providerTenantId !== e.tenantId
+    ? putEvidence(buf) : null;
+  // The organisation's own stored copy, for the audit pack.
+  const kept = args.keep ? putEvidence(buf) : null;
+
+  const row = await prisma.$transaction(async (tx) => {
+    const issue = await tx.reportIssue.create({
+      data: {
+        tenantId: e.tenantId,
+        reportKey: meta.key,
+        reportName: meta.name,
+        projectId: e.id,
+        documentRef: document.chrome!.documentRef,
+        issueNumber,
+        format,
+        marking: document.chrome!.marking,
+        fileName,
+        fileBytes: buf.length,
+        documentHash: hash,
+        issued,
+        snapshot,
+        issuedById: args.userId,
+        issuedAt: now,
+      },
+      select: { id: true },
+    });
+
+    // Into the WORM chain as well, so the queryable-but-mutable register is
+    // notarised by the immutable-but-unqueryable log.
+    await writeAudit(tx, {
+      tenantId: e.tenantId,
+      actorId: args.userId,
+      action: issued ? 'DELIVERY_REPORT_ISSUED' : 'DELIVERY_REPORT_EXPORTED',
+      subjectType: 'Project',
+      subjectId: e.id,
+      payload: {
+        projectRef: e.ref, report: meta.key, format,
+        documentRef: document.chrome!.documentRef,
+        documentHash: hash, issueNumber, marking: document.chrome!.marking,
+        ...(firmCopy ? { firmCopy: true } : {}),
+        ...(kept ? { stored: { sha256: kept.sha256 } } : {}),
+      },
+    });
+
+    if (firmCopy) {
+      const copy = await tx.engagementReportCopy.create({
+        data: {
+          firmTenantId: e.providerTenantId!, projectId: e.id, clientTenantId: e.tenantId, clientName: e.tenant?.name ?? 'Unknown',
+          projectRef: e.ref, reportKey: meta.key, reportName: meta.name,
+          documentRef: document.chrome!.documentRef, issueNumber, format, fileName,
+          storageKey: firmCopy.storageKey, sha256: firmCopy.sha256, byteLength: firmCopy.byteLength, issuedAt: now,
+        },
+        select: { id: true },
+      });
+      await writeAudit(tx, {
+        tenantId: e.providerTenantId!,
+        actorId: args.userId,
+        action: 'ENGAGEMENT_REPORT_COPY_KEPT',
+        subjectType: 'EngagementReportCopy',
+        subjectId: copy.id,
+        payload: {
+          projectRef: e.ref, clientTenantId: e.tenantId, report: meta.key, format,
+          documentRef: document.chrome!.documentRef, sha256: firmCopy.sha256,
+        },
+      });
+    }
+    return issue;
+  });
+
+  return {
+    ok: true, buf, fileName, format, documentRef: document.chrome!.documentRef, issueNumber, reportIssueId: row.id, stored: kept,
+  };
+}
+
+/** Build, record and send one delivery report. */
 export const exportDeliveryReport = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {
   try {
     const kind = str(req.params.kind);
-    const meta = REPORTS[kind];
-    if (!meta) {
+    if (!REPORTS[kind]) {
       res.status(404).json({
         status: 'error',
         code: 'UNKNOWN_REPORT',
@@ -1573,166 +1743,21 @@ export const exportDeliveryReport = async (
     const e = await loadEngagement(guarded.id);
     if (!e) { notFound(res); return; }
 
-    const now = new Date();
-    let sections: ReportSection[] | null;
-
-    if (kind === 'phase') {
-      const phaseId = str(req.query.phaseId);
-      if (!phaseId) {
-        res.status(400).json({
-          status: 'error',
-          code: 'PHASE_REQUIRED',
-          message: 'A phase report needs ?phaseId=',
-        });
-        return;
-      }
-      sections = phaseSections(e, phaseId, now);
-      if (!sections) {
-        res.status(404).json({ status: 'error', message: 'Phase not found on this engagement' });
-        return;
-      }
-    } else if (kind === 'status') sections = statusSections(e, now);
-    else if (kind === 'audit') sections = auditSections(e, now);
-    else if (kind === 'delay') sections = delaySections(e, now);
-    else if (kind === 'soa') sections = await soaSections(e, now);
-    else if (kind === 'readiness') sections = await readinessSections(e, now);
-    else sections = await evidenceSections(e, now);
-
-    // The report is issued in the CLIENT's name even when a consultant pressed
-    // the button — see chromeFor in reportController for the reasoning.
-    const [branding, logo, user] = await Promise.all([
-      brandingFor(e.tenantId),
-      logoBytesFor(e.tenantId),
-      prisma.user.findUnique({
-        where: { id: str(req.user!.id) }, select: { name: true, email: true },
-      }),
-    ]);
-    const r = branding?.resolved;
-
-    const issued = str(req.query.issue) === 'true';
-    const issueNumber = issued
-      ? await prisma.reportIssue.count({
-        where: { tenantId: e.tenantId, reportKey: meta.key, projectId: e.id, issued: true },
-      }) + 1
-      : 0;
-
-    const provenance: Provenance = {
-      reportName: meta.name,
-      tenantName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
-      generatedBy: `${user?.name ?? 'Unknown'} <${user?.email ?? ''}>`,
-      scopeKind: 'Engagement',
-      subjectRef: `${e.ref} — ${e.name}`,
-      subjectStatus: e.status,
-    };
-
-    const document: ReportDocument = {
-      provenance,
-      sections: selectSections(
-        sections,
-        req.query.sections ? String(req.query.sections).split(',') : undefined,
-      ),
-      chrome: {
-        displayName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
-        brandColour: r?.brandColour ?? '#0F7A5A',
-        textColour: r?.textColour ?? '#0F7A5A',
-        marking: effectiveMarking(
-          r?.marking ?? 'Confidential',
-          req.query.marking ? String(req.query.marking) : null,
-        ),
-        footerText: r?.footerText ?? null,
-        logo,
-        documentRef: documentRefFor(meta.key, now, issued ? issueNumber : null),
-        generatedAt: now,
-      },
-    };
-
-    const buf = format === 'pdf' ? await renderPdf(document)
-      : format === 'docx' ? await renderDocx(document)
-        : await renderXlsx(document);
-
-    const hash = documentHash(document);
-    const snapshot = snapshotOf({
-      reported: e.reportedProgress,
-      verified: e.verifiedProgress,
-      status: e.status,
-      health: e.health,
-      policy: e.verificationPolicy,
-      baselineVersion: e.baselineVersion,
-      daysLost: attribute(e.impediments as any, now).totalDays,
+    const out = await produceReport({
+      e, kind, format, userId: str(req.user!.id), issued: str(req.query.issue) === 'true',
+      phaseId: str(req.query.phaseId) || undefined,
+      sections: req.query.sections ? String(req.query.sections).split(',') : undefined,
+      marking: req.query.marking ? String(req.query.marking) : null,
     });
+    if (!out.ok) {
+      res.status(out.status).json({ status: 'error', ...(out.code ? { code: out.code } : {}), message: out.message });
+      return;
+    }
 
-    const fileName = fileNameFor(meta.name, format, e.ref);
-    // The delivery firm's own copy (consulting engagement, sprint 7), when the
-    // organisation allows it: the bytes as issued, kept in the firm's tenant
-    // for good. An export that is not an issue is never copied.
-    const firmCopy = issued && e.reportCopiesAllowed === true && e.providerTenantId && e.providerTenantId !== e.tenantId
-      ? putEvidence(buf) : null;
-
-    await prisma.$transaction(async (tx) => {
-      await tx.reportIssue.create({
-        data: {
-          tenantId: e.tenantId,
-          reportKey: meta.key,
-          reportName: meta.name,
-          projectId: e.id,
-          documentRef: document.chrome!.documentRef,
-          issueNumber,
-          format,
-          marking: document.chrome!.marking,
-          fileName,
-          fileBytes: buf.length,
-          documentHash: hash,
-          issued,
-          snapshot,
-          issuedById: str(req.user!.id),
-          issuedAt: now,
-        },
-      });
-
-      // Into the WORM chain as well, so the queryable-but-mutable register is
-      // notarised by the immutable-but-unqueryable log.
-      await writeAudit(tx, {
-        tenantId: e.tenantId,
-        actorId: str(req.user!.id),
-        action: issued ? 'DELIVERY_REPORT_ISSUED' : 'DELIVERY_REPORT_EXPORTED',
-        subjectType: 'Project',
-        subjectId: e.id,
-        payload: {
-          projectRef: e.ref, report: meta.key, format,
-          documentRef: document.chrome!.documentRef,
-          documentHash: hash, issueNumber, marking: document.chrome!.marking,
-          ...(firmCopy ? { firmCopy: true } : {}),
-        },
-      });
-
-      if (firmCopy) {
-        const copy = await tx.engagementReportCopy.create({
-          data: {
-            firmTenantId: e.providerTenantId!, projectId: e.id, clientTenantId: e.tenantId, clientName: e.tenant?.name ?? 'Unknown',
-            projectRef: e.ref, reportKey: meta.key, reportName: meta.name,
-            documentRef: document.chrome!.documentRef, issueNumber, format, fileName,
-            storageKey: firmCopy.storageKey, sha256: firmCopy.sha256, byteLength: firmCopy.byteLength, issuedAt: now,
-          },
-          select: { id: true },
-        });
-        await writeAudit(tx, {
-          tenantId: e.providerTenantId!,
-          actorId: str(req.user!.id),
-          action: 'ENGAGEMENT_REPORT_COPY_KEPT',
-          subjectType: 'EngagementReportCopy',
-          subjectId: copy.id,
-          payload: {
-            projectRef: e.ref, clientTenantId: e.tenantId, report: meta.key, format,
-            documentRef: document.chrome!.documentRef, sha256: firmCopy.sha256,
-          },
-        });
-      }
-    });
-
-    res.setHeader('Content-Type', MIME[format]);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('X-Document-Ref', document.chrome!.documentRef);
-    res.send(buf);
+    res.setHeader('Content-Type', MIME[out.format]);
+    res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+    res.setHeader('X-Document-Ref', out.documentRef);
+    res.send(out.buf);
   } catch (error: any) {
     console.error('[Delivery Report Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the report' });
