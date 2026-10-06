@@ -25,6 +25,8 @@ import {
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
 import { readinessScope } from '../services/projectStandards';
 import { acceptedClauseIds } from '../services/engagementRequests';
+import { bindingScope } from '../services/engagementScope';
+import { soaLine, soaClauses, byClauseRef, summarise } from '../services/gapAssessment';
 import {
   criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
 } from '../services/projectDependency';
@@ -1383,12 +1385,92 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
 
 // ─── Dispatch ───────────────────────────────────────────────────────────────
 
+/**
+ * The Statement of Applicability (sprint 10), read off the current clause
+ * assessments of the frameworks and entities the binding scope names. A
+ * clause not applicable prints why; every other clause how far it is
+ * implemented, and its open gap; a clause nobody has assessed says so rather
+ * than being guessed. Issued, it carries a number like every other report.
+ */
+async function soaSections(e: Engagement, now: Date): Promise<ReportSection[]> {
+  const scope = await bindingScope(e.id);
+  const entityIds = scope?.entityIds ?? [];
+  const frameworkIds = scope?.frameworkIds ?? [];
+  const head: ReportSection = {
+    kind: 'fields',
+    title: 'Statement of Applicability',
+    fields: [
+      { label: 'Engagement', value: `${e.ref} — ${e.name}` },
+      { label: 'Client', value: e.tenant?.name ?? '—' },
+      { label: 'Basis', value: `The current clause assessments on ${now.toISOString().slice(0, 10)}. A clause nobody has assessed is printed "Not assessed": this statement does not guess.` },
+    ],
+  };
+  if (!entityIds.length || !frameworkIds.length) {
+    head.fields.push({ label: 'Scope', value: 'No binding scope names both frameworks and entities, so there is nothing to state.' });
+    return [head];
+  }
+  const [entities, standards, current] = await Promise.all([
+    prisma.tenant.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.standard.findMany({
+      where: { id: { in: frameworkIds } }, orderBy: { code: 'asc' },
+      select: { id: true, code: true, title: true, clauses: { select: { id: true, ref: true, title: true } } },
+    }),
+    prisma.clauseAssessment.findMany({
+      where: { projectId: e.id, supersededAt: null, tenantId: { in: entityIds } },
+      select: { tenantId: true, clauseId: true, result: true, justification: true, issueId: true },
+    }),
+  ]);
+  const issueIds = current.map((c) => c.issueId).filter(Boolean) as string[];
+  const issues = issueIds.length ? await prisma.issue.findMany({ where: { id: { in: issueIds } }, select: { id: true, ref: true, status: true } }) : [];
+  const sections: ReportSection[] = [head];
+  for (const std of standards) {
+    for (const ent of entities) {
+      const listed = soaClauses(std.clauses).sort(byClauseRef);
+      const rows = listed.map((c) => {
+        const a = current.find((x) => x.tenantId === ent.id && x.clauseId === c.id) ?? null;
+        const line = soaLine(a);
+        const gap = a?.issueId ? issues.find((i) => i.id === a.issueId) : undefined;
+        return {
+          clause: c.ref, title: c.title, applicable: line.applicable, status: line.status, justification: line.justification,
+          gap: gap ? `${gap.ref} (${gap.status})` : '—', result: a?.result ?? null,
+        };
+      });
+      const n = summarise(rows);
+      sections.push({
+        kind: 'fields',
+        title: `${std.code} — ${ent.name}`,
+        fields: [
+          { label: 'Clauses listed', value: String(rows.length) },
+          { label: 'Implemented', value: String(n.Conformant) },
+          { label: 'Partially implemented', value: String(n.Partial) },
+          { label: 'Not implemented', value: String(n.Missing) },
+          { label: 'Not applicable', value: String(n.NotApplicable) },
+          { label: 'Not assessed', value: String(n.NotAssessed) },
+        ],
+      });
+      sections.push({
+        kind: 'table',
+        title: `${std.code} — ${ent.name}: clauses`,
+        columns: [
+          { header: 'Clause', key: 'clause', width: 10 }, { header: 'Title', key: 'title', width: 32 },
+          { header: 'Applicable', key: 'applicable', width: 11 }, { header: 'Implementation', key: 'status', width: 18 },
+          { header: 'Justification', key: 'justification', width: 40 }, { header: 'Gap', key: 'gap', width: 18 },
+        ],
+        rows: rows.map(({ result, ...r }) => r),
+      });
+    }
+  }
+  return sections;
+}
+
 const REPORTS: Record<string, { name: string; key: string }> = {
   status: { name: 'Engagement Status Report', key: 'delivery-status' },
   phase: { name: 'Phase Delivery Report', key: 'delivery-phase' },
   audit: { name: 'Delivery Audit Report', key: 'delivery-audit' },
   delay: { name: 'Delay and Impediment Report', key: 'delivery-delay' },
   evidence: { name: 'Evidence and Traceability Report', key: 'delivery-evidence' },
+  // Sprint 10: read off the engagement's current clause assessments.
+  soa: { name: 'Statement of Applicability', key: 'delivery-soa' },
 };
 
 /**
@@ -1446,6 +1528,7 @@ export const exportDeliveryReport = async (
     } else if (kind === 'status') sections = statusSections(e, now);
     else if (kind === 'audit') sections = auditSections(e, now);
     else if (kind === 'delay') sections = delaySections(e, now);
+    else if (kind === 'soa') sections = await soaSections(e, now);
     else sections = await evidenceSections(e, now);
 
     // The report is issued in the CLIENT's name even when a consultant pressed
