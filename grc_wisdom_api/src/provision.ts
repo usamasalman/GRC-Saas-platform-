@@ -7,6 +7,7 @@ import RBAC from './utils/rbacData.json';
 import { MODULE_CATALOGUE, FEATURE_FLAG_CATALOGUE } from './utils/platformCatalogue';
 import { PLATFORM_PLAN_TEMPLATES } from './utils/planTemplateCatalogue';
 import { checkTemplateBody } from './services/planTemplates';
+import { publishPlatformLibrary } from './services/platformLibrary';
 
 /**
  * Provisioning — what a production database needs before anyone can log in.
@@ -437,6 +438,12 @@ async function main(): Promise<void> {
 
   const tenant = await provisionControlPlaneTenant();
   console.log(`  control plane:  ${tenant.name}`);
+
+  // Frameworks and controls the platform wrote before QA-031 were filed under
+  // its own organisation and invisible to the customers they were enabled for.
+  const library = await publishPlatformLibrary(prisma as any);
+  console.log(`  library:        ${library.standards.length} framework(s), ${library.controls.length} control(s) published`
+    + (library.skipped.length ? `; left private, code already in the library: ${library.skipped.map((s) => `${s.kind} ${s.code}`).join(', ')}` : ''));
 
   await provisionAdmin(tenant);
 
