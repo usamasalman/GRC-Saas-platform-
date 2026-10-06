@@ -37,7 +37,11 @@ interface Invitation {
   invitedBy: { name: string } | null; respondedBy: { name: string } | null;
 }
 interface Engagement extends AfterCloseData {
-  engagement: AfterCloseData['engagement'] & { deliveryStyle: string | null; client: string; firm: string | null };
+  engagement: AfterCloseData['engagement'] & {
+    deliveryStyle: string | null; client: string; firm: string | null;
+    // Sprint 5: the engagement's own window, which every person's sits inside.
+    accessWindow: { from: string; to: string } | null;
+  };
   side: 'Client' | 'Provider';
   relationship: { establishedAt: string } | null;
   invitations: Invitation[];
@@ -46,7 +50,7 @@ interface Engagement extends AfterCloseData {
   hold: { startedAt: string; firmAccess: string | null } | null;
   can: {
     invite: boolean; decide: boolean; changeStyle: boolean; nominate: boolean;
-    changeWindows: boolean; requestExtension: boolean; requestForTeam: boolean;
+    changeWindows: boolean; changeEngagementWindow: boolean; requestExtension: boolean; requestForTeam: boolean;
     setAllocation: boolean;
   } & AfterCloseData['can'];
 }
@@ -73,6 +77,7 @@ type Dialog =
   | { kind: 'approve'; m: Member } | { kind: 'reject'; m: Member } | { kind: 'remove'; m: Member }
   | { kind: 'nominate' }
   | { kind: 'window'; m: Member } | { kind: 'extend'; m: Member } | { kind: 'declineExt'; m: Member }
+  | { kind: 'engagementWindow' }
   | { kind: 'allocation'; m: Member };
 
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
@@ -221,6 +226,18 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
 
       {e.firm && (
         <EngagementAfterClose projectId={projectId} data={data} onOpenProject={onOpenProject} onChanged={() => { load(); onChanged?.(); }} />
+      )}
+
+      {e.firm && (
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--line-soft)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--ink-muted)' }}>Engagement access</span>
+          <span>{e.accessWindow ? `${calendarDate(e.accessWindow.from)} → ${calendarDate(e.accessWindow.to)}` : 'Set when the first person is approved'}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Every person's access sits inside it.</span>
+          {data.can.changeEngagementWindow && (
+            <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }} disabled={busy}
+              onClick={() => setDialog({ kind: 'engagementWindow' })}>Change engagement access</button>
+          )}
+        </div>
       )}
 
       {(members.length > 0 || past.length > 0) && (
@@ -380,7 +397,7 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
             { name: 'role', label: 'Role', type: 'select', options: ['Lead', 'Consultant', 'Reviewer'], initial: dialog.m.engagementRole,
               help: ROLE_HELP[dialog.m.engagementRole] },
             { name: 'from', label: 'Access from', type: 'date' },
-            { name: 'to', label: 'Access to', type: 'date', help: 'Left empty: from the engagement start (or today) to 30 days after its target end.' },
+            { name: 'to', label: 'Access to', type: 'date', help: 'Left empty: the engagement\'s access window, or its start (or today) to 30 days after its target end. Dates past the engagement\'s window widen it.' },
           ]}
           onSubmit={(v) => act(() => apiClient.post(`/api/engagements/${projectId}/members/${dialog.m.id}/approve`, {
             engagementRole: v.role, accessFrom: v.from || undefined, accessTo: v.to || undefined,
@@ -415,7 +432,7 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
       {dialog?.kind === 'window' && (
         <FormDialog
           title={`${dialog.m.extensionRequestedTo ? 'Grant more time to' : 'Change access for'} ${dialog.m.user.name}?`}
-          intro={<>Their access runs from its start to the end of the date you set. Extending brings back access that had ended; it never brings back someone who was removed. A start before their approval counts from the approval. Recorded on both organisations' trails, and they are told.</>}
+          intro={<>Their access runs from its start to the end of the date you set. Extending brings back access that had ended; it never brings back someone who was removed. A start before their approval counts from the approval. Dates past the engagement's access window widen it. Recorded on both organisations' trails, and they are told.</>}
           submitLabel="Save access"
           busy={busy}
           fields={[
@@ -429,6 +446,26 @@ const EngagementPanel: React.FC<{ projectId: string; onChanged?: () => void; onO
             accessTo: v.to, reason: v.reason.trim(),
             // Sent only when moved, so an unchanged start stays exactly as approved.
             ...(v.from && v.from !== day(dialog.m.accessFrom) ? { accessFrom: v.from } : {}),
+          }))}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'engagementWindow' && (
+        <FormDialog
+          title={`Change the access window for ${e.ref}?`}
+          intro={<>Every approved person's access sits inside these dates. Ending it earlier brings anyone whose access runs past it back inside it, each recorded on both organisations' trails and told. Ending it later gives nobody more time: each person's dates are their own. The firm's Lead is told.</>}
+          submitLabel="Save engagement access"
+          busy={busy}
+          fields={[
+            { name: 'from', label: 'Access from', type: 'date', initial: e.accessWindow?.from || '' },
+            { name: 'to', label: 'Access to', type: 'date', required: true, initial: e.accessWindow?.to || '' },
+            { name: 'reason', label: 'Why', type: 'textarea', required: true },
+          ]}
+          validate={(v) => (!v.to ? 'Give the date access ends.'
+            : v.from && v.to < v.from ? 'The end must be on or after the start.'
+              : v.reason.trim().length < 10 ? 'Say why, in at least 10 characters.' : null)}
+          onSubmit={(v) => act(() => apiClient.patch(`/api/engagements/${projectId}/window`, {
+            accessFrom: v.from || undefined, accessTo: v.to, reason: v.reason.trim(),
           }))}
           onCancel={() => setDialog(null)}
         />

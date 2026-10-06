@@ -12,6 +12,7 @@ import { CONSULTING_FLAG, featureRefusal, featureStates, isFeatureOn } from '../
 import {
   DEFAULT_DELIVERY_STYLE, invitationState, invitationExpiry, isDeliveryStyle, isEngagementRole,
   roleMay, roleRefusal, accessOpen, startAtApproval,
+  engagementWindowFor, widenToHold, narrowToEngagement, startOfDayUtc,
 } from '../services/engagementRules';
 import { SHADOW_RULES, SHADOW_RETENTION_DAYS } from '../services/engagementShadow';
 import { DEFAULT_CLOSE_WINDOW_DAYS, closeWindowEnd } from '../services/engagementAfterClose';
@@ -51,6 +52,7 @@ const notFound = (res: Response, what = 'Engagement') => send(res, { status: 404
 const ENGAGEMENT_SELECT = {
   id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true, projectType: true,
   startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
+  engagementAccessFrom: true, engagementAccessTo: true,
   actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true, reportCopiesAllowed: true,
   previousProjectId: true, previousInScope: true,
   tenant: { select: { name: true } },
@@ -526,6 +528,9 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         client: e.tenant?.name, firm: e.providerTenant?.name ?? null,
         // Sprint 6: whether shared documents can be downloaded, and whether it was migrated.
         documentAccess: e.documentAccess === 'Download' ? 'Download' : 'View', migrated: Boolean(e.migratedAt),
+        // Sprint 5: the engagement's own window, which every person's sits inside.
+        accessWindow: e.engagementAccessFrom && e.engagementAccessTo
+          ? { from: isoDay(e.engagementAccessFrom), to: isoDay(e.engagementAccessTo) } : null,
         // Sprint 7: the window after close, the report-copy terms, the follow-on link.
         afterClose: {
           days: e.closeWindowDays ?? DEFAULT_CLOSE_WINDOW_DAYS, closedAt: e.actualEndDate,
@@ -549,6 +554,7 @@ export const getEngagement = async (req: AuthenticatedRequest, res: Response): P
         changeStyle: isClient && e.deliveryStyle !== null,
         nominate: isFirm && !held && live(mine) && roleMay(mine?.engagementRole, 'nominate'),
         changeWindows: isClient && !['Closed', 'Cancelled'].includes(e.status),
+        changeEngagementWindow: isClient && Boolean(e.providerTenantId) && !['Closed', 'Cancelled'].includes(e.status),
         // Anyone approved asks for themselves; the Lead asks for the team.
         requestExtension: asking && mine!.memberStatus === 'Approved',
         requestForTeam: asking && roleMay(mine?.engagementRole, 'nominate'),
@@ -662,13 +668,13 @@ export const approvePerson = async (req: AuthenticatedRequest, res: Response): P
     const b = req.body || {};
     const role = str(b.engagementRole || m.engagementRole);
     if (!isEngagementRole(role)) { send(res, { status: 400, message: 'engagementRole must be Lead, Consultant or Reviewer.' }); return; }
-    // The engagement's window by default: its start to 30 days after its
-    // target end, as the design sets it. A start before the approval is the
-    // approval itself: nobody's access is backdated (sprint 6).
+    // The engagement's window by default: the one it has, or its start to 30
+    // days after its target end, as the design sets it. A start before the
+    // approval is the approval itself: nobody's access is backdated (sprint 6).
     const approvedAt = new Date();
-    const asked = b.accessFrom ? new Date(b.accessFrom) : e.startDate;
+    const asked = b.accessFrom ? new Date(b.accessFrom) : (e.engagementAccessFrom ?? e.startDate);
     const from = Number.isNaN(asked.getTime()) ? asked : startAtApproval(asked, approvedAt);
-    const to = b.accessTo ? new Date(b.accessTo) : new Date(e.targetEndDate.getTime() + 30 * 86_400_000);
+    const to = b.accessTo ? new Date(b.accessTo) : (e.engagementAccessTo ?? new Date(e.targetEndDate.getTime() + 30 * 86_400_000));
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) {
       send(res, { status: 400, message: 'Give an access window whose end is after its start.' }); return;
     }
@@ -693,6 +699,7 @@ export const approvePerson = async (req: AuthenticatedRequest, res: Response): P
         e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_PERSON_APPROVED',
         payload: { memberId: m.id, person: m.user.name, engagementRole: role, accessFrom: from, accessTo: to },
       });
+      await holdInsideEngagement(tx, e, actorId, { name: m.user.name, accessFrom: from, accessTo: to }, 'approval');
       await notify(tx, {
         tenantId: e.providerTenantId || e.tenantId, recipientId: m.userId, actorId, event: 'ENGAGEMENT_PERSON_APPROVED',
         subjectType: 'Project', subjectId: e.id,
@@ -851,6 +858,130 @@ const NOT_APPROVED = {
     + 'until the firm nominates them again and you approve them.',
 };
 
+const windowOf = (w: { from: Date; to: Date } | null) => (w ? { accessFrom: isoDay(w.from), accessTo: isoDay(w.to) } : null);
+
+/**
+ * Keeps every approved person's window inside the engagement's own (sprint
+ * 5), in the transaction that gives a person dates. An engagement with no
+ * window yet gets the design's default, widened to hold everyone approved;
+ * one that has a window widens to hold this person, since only the
+ * organisation sets either and it has just set these dates. Narrowing is the
+ * other direction, and only changeEngagementWindow does it. So a person's
+ * window never sits outside the engagement's, and the guard that checks a
+ * person's window on every request needs to check nothing else.
+ */
+async function holdInsideEngagement(
+  tx: any, e: Engagement, actorId: string,
+  person: { name: string; accessFrom: Date | null; accessTo: Date | null }, step: 'approval' | 'change' | 'resume',
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`engagement:${e.id}`}))`;
+  const p = await tx.project.findUniqueOrThrow({
+    where: { id: e.id }, select: { startDate: true, targetEndDate: true, engagementAccessFrom: true, engagementAccessTo: true },
+  });
+  const before = p.engagementAccessFrom && p.engagementAccessTo ? { from: p.engagementAccessFrom, to: p.engagementAccessTo } : null;
+  const after = before
+    ? widenToHold(before, person)
+    : engagementWindowFor(p, [
+      ...(await tx.projectMember.findMany({
+        where: { projectId: e.id, side: 'Provider', memberStatus: 'Approved', active: true }, select: { accessFrom: true, accessTo: true },
+      })),
+      person,
+    ]);
+  if (before && before.from.getTime() === after.from.getTime() && before.to.getTime() === after.to.getTime()) return;
+  await tx.project.update({ where: { id: e.id }, data: { engagementAccessFrom: after.from, engagementAccessTo: after.to } });
+  await bothTrails(tx, {
+    e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_WINDOW_CHANGED',
+    payload: { cause: before ? 'widened' : 'default', step, person: person.name, from: windowOf(before), to: windowOf(after) },
+  });
+}
+
+/**
+ * PATCH /api/engagements/:projectId/window { accessFrom?, accessTo, reason } —
+ * the organisation sets the engagement's own access window (sprint 5). Every
+ * approved person's window is pulled inside it: an end past the new end comes
+ * back to it and a start before the new start moves up to it, each on both
+ * trails and told to the person. Extending it gives nobody more time: each
+ * person's dates are their own, changed one by one.
+ */
+export const changeEngagementWindow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const e = await loadEngagement(str(req.params.projectId));
+    if (!e || !(await clientSide(req, e))) {
+      if (e && e.providerTenantId === req.user!.tenantId) {
+        send(res, { status: 403, code: 'CLIENT_DECIDES', message: 'Only the organisation sets the engagement\'s access window. Ask it for more time.' });
+        return;
+      }
+      notFound(res); return;
+    }
+    const refusal = await flagFor(e);
+    if (refusal) { send(res, refusal); return; }
+    if (!e.providerTenantId || e.providerTenantId === e.tenantId) { send(res, { status: 409, code: 'NO_FIRM', message: 'No firm delivers this engagement.' }); return; }
+    if (e.status === 'Closed' || e.status === 'Cancelled') {
+      send(res, { status: 409, code: 'ENGAGEMENT_ENDED', message: 'This engagement has ended; what the firm reads now is the window after close.' });
+      return;
+    }
+    const to = parseDay(req.body?.accessTo);
+    if (!to) { send(res, { status: 400, message: 'Give the date the engagement\'s access ends.' }); return; }
+    const askedFrom = req.body?.accessFrom ? parseDay(req.body.accessFrom) : null;
+    if (req.body?.accessFrom && !askedFrom) { send(res, { status: 400, message: 'Give a valid start date.' }); return; }
+    const window = { from: startOfDayUtc(askedFrom ?? e.engagementAccessFrom ?? e.startDate), to: startOfDayUtc(to) };
+    if (window.to < window.from) { send(res, { status: 400, message: 'Give an end date on or after the start.' }); return; }
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) { send(res, { status: 400, code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.` }); return; }
+    const actorId = str(req.user!.id);
+
+    const narrowed = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`engagement:${e.id}`}))`;
+      const now = await tx.project.findUniqueOrThrow({ where: { id: e.id }, select: { engagementAccessFrom: true, engagementAccessTo: true } });
+      const before = now.engagementAccessFrom && now.engagementAccessTo ? { from: now.engagementAccessFrom, to: now.engagementAccessTo } : null;
+      await tx.project.update({ where: { id: e.id }, data: { engagementAccessFrom: window.from, engagementAccessTo: window.to } });
+      const people = await tx.projectMember.findMany({
+        where: { projectId: e.id, side: 'Provider', memberStatus: 'Approved', active: true }, select: WINDOW_SELECT,
+      });
+      const pulled: string[] = [];
+      for (const m of people) {
+        const inside = narrowToEngagement(window, m);
+        if (!inside) continue;
+        await tx.projectMember.update({
+          where: { id: m.id }, data: { accessFrom: inside.accessFrom, accessTo: inside.accessTo, accessWarnedAt: null, accessEndNoticeAt: null },
+        });
+        await bothTrails(tx, {
+          e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
+          payload: {
+            memberId: m.id, person: m.user.name, cause: 'engagement', reason,
+            from: { accessFrom: isoDay(m.accessFrom), accessTo: isoDay(m.accessTo) },
+            to: { accessFrom: isoDay(inside.accessFrom), accessTo: isoDay(inside.accessTo) },
+          },
+        });
+        await notify(tx, {
+          tenantId: e.providerTenantId || e.tenantId, recipientId: m.userId, actorId, event: 'ENGAGEMENT_ACCESS_CHANGED',
+          subjectType: 'Project', subjectId: e.id,
+          title: `Your access to ${e.ref} now runs from ${isoDay(inside.accessFrom)} to ${isoDay(inside.accessTo)}`,
+          body: `${e.tenant?.name} changed the engagement's access window: ${reason}`,
+          link: 'project-delivery',
+        });
+        pulled.push(m.user.name);
+      }
+      await bothTrails(tx, {
+        e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_WINDOW_CHANGED',
+        payload: { cause: 'organisation', reason, from: windowOf(before), to: windowOf(window), narrowed: pulled },
+      });
+      const leads = people.filter((m) => m.engagementRole === 'Lead').map((m) => m.userId);
+      await notify(tx, leads.map((recipientId) => ({
+        tenantId: e.providerTenantId!, recipientId, actorId, event: 'ENGAGEMENT_WINDOW_CHANGED', subjectType: 'Project', subjectId: e.id,
+        title: `${e.tenant?.name} set ${e.ref}'s access window to ${isoDay(window.from)} – ${isoDay(window.to)}`,
+        body: pulled.length ? `${reason}. Access brought inside it for ${pulled.join(', ')}.` : reason,
+        link: 'project-delivery',
+      })));
+      return pulled;
+    });
+    res.json({ status: 'success', window: windowOf(window), narrowed });
+  } catch (error: any) {
+    console.error('[Engagement Window Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to change the engagement\'s access window' });
+  }
+};
+
 /**
  * PATCH /api/engagements/:projectId/members/:memberId/window — the
  * organisation extends or shortens one person's access, and may move its
@@ -894,6 +1025,7 @@ export const changeAccessWindow = async (req: AuthenticatedRequest, res: Respons
         },
       });
       if (moved.count === 0) throw new Conflict('NOT_APPROVED', NOT_APPROVED.message);
+      await holdInsideEngagement(tx, e, actorId, { name: m.user.name, accessFrom: startMoved ? from : m.accessFrom, accessTo: to }, 'change');
       await bothTrails(tx, {
         e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
         payload: {
@@ -1066,6 +1198,9 @@ export const getResumeProposal = async (req: AuthenticatedRequest, res: Response
       status: 'success',
       proposal: {
         holds: holds.length, startedAt: holds[0].startedAt, endedAt: holds[holds.length - 1].endedAt, days,
+        // The engagement's own window, given the same days (sprint 5).
+        engagement: e.engagementAccessTo
+          ? { currentEnd: e.engagementAccessTo, proposedEnd: new Date(e.engagementAccessTo.getTime() + days * DAY) } : null,
         people: people.map((p) => ({
           memberId: p.id, name: p.user.name, engagementRole: p.engagementRole,
           currentEnd: p.accessTo, proposedEnd: new Date(p.accessTo.getTime() + days * DAY),
@@ -1099,6 +1234,8 @@ export const settleResumeProposal = async (req: AuthenticatedRequest, res: Respo
       if (changes.some((x) => x.memberId === str(c.memberId))) { send(res, { status: 400, message: 'Each person once.' }); return; }
       changes.push({ memberId: str(c.memberId), accessTo: to });
     }
+    const engagementTo = req.body?.engagementAccessTo ? parseDay(req.body.engagementAccessTo) : null;
+    if (req.body?.engagementAccessTo && !engagementTo) { send(res, { status: 400, message: 'Give a valid end date for the engagement\'s access.' }); return; }
     const actorId = str(req.user!.id);
     const result = await prisma.$transaction(async (tx) => {
       const holds = await pendingHolds(tx, e.id);
@@ -1109,6 +1246,25 @@ export const settleResumeProposal = async (req: AuthenticatedRequest, res: Respo
       });
       if (settled.count !== holds.length) throw new Conflict('ALREADY_SETTLED', 'Someone has just confirmed this. Reload it.');
       const days = holdDays(holds);
+      // The engagement's own window first, so the people's new dates sit inside it.
+      if (engagementTo) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`engagement:${e.id}`}))`;
+        const w = await tx.project.findUniqueOrThrow({ where: { id: e.id }, select: { engagementAccessFrom: true, engagementAccessTo: true } });
+        if (w.engagementAccessFrom && w.engagementAccessTo) {
+          const end = startOfDayUtc(engagementTo);
+          if (end < w.engagementAccessTo) throw new Conflict('NOT_LATER', 'A resume only moves the engagement\'s access end later.');
+          if (end > w.engagementAccessTo) {
+            await tx.project.update({ where: { id: e.id }, data: { engagementAccessTo: end } });
+            await bothTrails(tx, {
+              e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_WINDOW_CHANGED',
+              payload: {
+                cause: 'resume', holdDays: days,
+                from: windowOf({ from: w.engagementAccessFrom, to: w.engagementAccessTo }), to: windowOf({ from: w.engagementAccessFrom, to: end }),
+              },
+            });
+          }
+        }
+      }
       const offered = new Map<string, any>((await heldPeople(tx, e.id, holds)).map((p: any) => [p.id, p]));
       let applied = 0;
       for (const c of changes) {
@@ -1122,6 +1278,7 @@ export const settleResumeProposal = async (req: AuthenticatedRequest, res: Respo
         await tx.projectMember.update({
           where: { id: m.id }, data: { accessTo: c.accessTo, accessWarnedAt: null, accessEndNoticeAt: null },
         });
+        await holdInsideEngagement(tx, e, actorId, { name: m.user.name, accessFrom: m.accessFrom, accessTo: c.accessTo }, 'resume');
         await bothTrails(tx, {
           e, firmTenantId: e.providerTenantId, actorId, action: 'ENGAGEMENT_ACCESS_WINDOW_CHANGED',
           payload: {

@@ -128,6 +128,52 @@ export function startAtApproval(requested: Date, approvedAt: Date): Date {
   return requested.getTime() < approvedAt.getTime() ? approvedAt : requested;
 }
 
+// ─── The engagement's own window (sprint 5) ─────────────────────────────────
+
+/** The design's engagement window runs to this many days after the target end. */
+export const ENGAGEMENT_WINDOW_TAIL_DAYS = 30;
+
+export const startOfDayUtc = (d: Date): Date => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+export interface EngagementWindow { from: Date; to: Date }
+type PersonWindow = { accessFrom: Date | null; accessTo: Date | null };
+
+/**
+ * The window an engagement gets when it has none yet: its start to 30 days
+ * after its target end, as the design sets it, widened to hold everyone
+ * already approved, so setting it never takes access away from anybody.
+ * Dates are whole UTC days; the end counts in full, as a person's does.
+ */
+export function engagementWindowFor(
+  e: { startDate: Date; targetEndDate: Date },
+  people: readonly PersonWindow[],
+): EngagementWindow {
+  let from = startOfDayUtc(e.startDate);
+  let to = startOfDayUtc(new Date(e.targetEndDate.getTime() + ENGAGEMENT_WINDOW_TAIL_DAYS * DAY_MS));
+  for (const p of people) ({ from, to } = widenToHold({ from, to }, p));
+  return { from, to };
+}
+
+/** The engagement's window, widened as little as needed to hold one person's. */
+export function widenToHold(w: EngagementWindow, p: PersonWindow): EngagementWindow {
+  const from = p.accessFrom && startOfDayUtc(p.accessFrom) < w.from ? startOfDayUtc(p.accessFrom) : w.from;
+  const to = p.accessTo && startOfDayUtc(p.accessTo) > w.to ? startOfDayUtc(p.accessTo) : w.to;
+  return { from, to };
+}
+
+/**
+ * A person's window pulled inside the engagement's, or null when it already
+ * is. Only ever narrows: an end past the engagement's comes back to it, a
+ * start before it moves up to it. A window left with its end before its start
+ * is simply shut, as one that has ended is.
+ */
+export function narrowToEngagement(w: EngagementWindow, p: PersonWindow): PersonWindow | null {
+  const to = !p.accessTo || startOfDayUtc(p.accessTo) > w.to ? w.to : p.accessTo;
+  const from = !p.accessFrom || startOfDayUtc(p.accessFrom) < w.from ? w.from : p.accessFrom;
+  const same = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
+  return same(to, p.accessTo) && same(from, p.accessFrom) ? null : { accessFrom: from, accessTo: to };
+}
+
 /** The notice due for a person's end date now, if any; each is sent once per date. */
 export function noticeDue(
   m: { accessTo: Date | null; accessWarnedAt: Date | null; accessEndNoticeAt: Date | null },

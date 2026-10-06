@@ -3292,6 +3292,14 @@ model Project {
   /// changed only by the organisation. Null: not a consulting engagement,
   /// and a firm named on it the old way reads it as before (sprint 4).
   deliveryStyle              String?
+  /// The engagement's own access window (sprint 5): every approved firm
+  /// person's window sits inside it, so narrowing it cuts everyone at once.
+  /// Null until the first person is approved, which gives it the design's
+  /// default (start to 30 days after the target end); only the organisation
+  /// changes it, and a person it gives dates beyond it widens it. Whole UTC
+  /// days; the end counts in full.
+  engagementAccessFrom       DateTime?
+  engagementAccessTo         DateTime?
   /// What the delivery firm may do with shared documents: View (in the
   /// reader only) or Download. Null reads as View (sprint 6).
   documentAccess             String?

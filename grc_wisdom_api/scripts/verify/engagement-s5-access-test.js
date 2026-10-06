@@ -16,6 +16,11 @@
  *     more time and only the organisation grants or declines it;
  *   - notices go once at seven days and once at the end, to the person, the
  *     firm's Lead and the project manager, and none while on hold;
+ *   - the engagement has its own window, which every person's sits inside:
+ *     the first approval sets it, only the organisation changes it, ending it
+ *     earlier pulls everyone in (each on both trails and told), ending it
+ *     later gives nobody more time, a person given dates past it widens it,
+ *     and on resume it is offered the hold's days and only ever moves later;
  *   - on an engagement named the old way, what the guard would refuse is
  *     counted per engagement, rule and route with first and last seen, IDs
  *     only, shown to the platform alone, and deleted after 90 days;
@@ -26,7 +31,9 @@
 const path = require('path');
 const q = require('./qa/lib');
 const { prisma } = require('../../dist/db');
-const { accessOpen, noticeDue } = require('../../dist/services/engagementRules');
+const {
+  accessOpen, noticeDue, engagementWindowFor, widenToHold, narrowToEngagement,
+} = require('../../dist/services/engagementRules');
 const { routeOf } = require('../../dist/services/requestContext');
 const { runEngagementAccessScan } = require('../../dist/services/engagementAccessJob');
 const { pruneShadow } = require('../../dist/services/engagementShadow');
@@ -58,6 +65,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       && noticeDue({ accessTo: d('2026-10-09'), accessWarnedAt: now, accessEndNoticeAt: null }, now) === 'ended'
       && noticeDue({ accessTo: d('2026-10-09'), accessWarnedAt: now, accessEndNoticeAt: now }, now) === null,
     'noticeDue');
+  const iso = (x) => x && x.toISOString().slice(0, 10);
+  const w = engagementWindowFor({ startDate: d('2026-10-01'), targetEndDate: d('2026-12-31') }, [
+    { accessFrom: d('2026-10-05'), accessTo: d('2027-02-15') }, { accessFrom: null, accessTo: d('2026-11-01') },
+  ]);
+  const wider = widenToHold({ from: d('2026-10-01'), to: d('2027-01-30') }, { accessFrom: d('2026-09-20'), accessTo: d('2027-01-10') });
+  const pulled = narrowToEngagement({ from: d('2026-10-01'), to: d('2026-11-30') }, { accessFrom: d('2026-09-15'), accessTo: d('2027-01-31') });
+  v.record('engagement-s5:the engagement\'s window defaults to its start to 30 days after its target end, widens to hold a person, and narrowing pulls a person in',
+    iso(w.from) === '2026-10-01' && iso(w.to) === '2027-02-15'
+      && iso(engagementWindowFor({ startDate: d('2026-10-01'), targetEndDate: d('2026-12-31') }, []).to) === '2027-01-30'
+      && iso(wider.from) === '2026-09-20' && iso(wider.to) === '2027-01-30'
+      && iso(pulled.accessFrom) === '2026-10-01' && iso(pulled.accessTo) === '2026-11-30'
+      && narrowToEngagement({ from: d('2026-10-01'), to: d('2026-11-30') }, { accessFrom: d('2026-10-02'), accessTo: d('2026-11-30') }) === null,
+    'engagementWindowFor / widenToHold / narrowToEngagement');
   v.record('engagement-s5:a shadow row names the route, never a record or what was asked',
     routeOf('get', '/api/projects/5f0c2c1e-8a3b-4c1d-9e2f-0a1b2c3d4e5f/tasks?search=secret') === 'GET /api/projects/:id/tasks',
     routeOf('get', '/api/projects/5f0c2c1e-8a3b-4c1d-9e2f-0a1b2c3d4e5f/tasks?search=secret'));
@@ -78,7 +98,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     'PATCH /api/projects/:id with holdFirmAccess': /\{ status: 'OnHold', reason, holdFirmAccess \}/.test(lifecycle),
     'PATCH /api/projects/:id/hold-access': /apiClient\.patch\(`\/api\/projects\/\$\{projectId\}\/hold-access`/.test(team),
     'GET and POST .../resume-proposal': /apiClient\.get\(`\/api\/engagements\/\$\{projectId\}\/resume-proposal`\)/.test(proposal)
-      && /apiClient\.post\(`\/api\/engagements\/\$\{projectId\}\/resume-proposal`, \{ changes \}\)/.test(proposal),
+      && /apiClient\.post\(`\/api\/engagements\/\$\{projectId\}\/resume-proposal`, \{ changes, \.\.\.\(engagementAccessTo \? \{ engagementAccessTo \}/.test(proposal),
+    'PATCH .../window, the engagement\'s own': /apiClient\.patch\(`\/api\/engagements\/\$\{projectId\}\/window`, \{/.test(panel),
     'the proposal in the project header': /<ResumeProposal\b/.test(lifecycle),
     'PATCH .../members/:memberId/window': /\/members\/\$\{dialog\.m\.id\}\/window`/.test(panel),
     'POST .../extension-request': /\/members\/\$\{dialog\.m\.id\}\/extension-request`/.test(panel),
@@ -104,7 +125,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const screens = require('fs').readdirSync(dir).filter((f) => f.endsWith('.tsx'))
     .map((f) => q.read(path.join(dir, f))).join('\n') + q.read(path.join(q.WEB_SRC, 'pages', 'grc', 'DeliveryProjects.tsx'));
   const needed = ['Firm can view (read-only)', 'Firm has no access', 'Change hold access', 'Access after the hold',
-    'Leave end dates as they are', 'Rebaseline the plan', 'Change access', 'Grant more time', 'Decline request', 'Request more time'];
+    'Leave end dates as they are', 'Rebaseline the plan', 'Change access', 'Grant more time', 'Decline request', 'Request more time',
+    'Engagement access', 'Change engagement access'];
   const project = section('project-delivery');
   const quoted = [...project.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const absent = quoted.filter((l) => !screens.includes(l));
@@ -327,6 +349,53 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     endNotices.consultant === 1 && endNotices.lead === 1 && endNotices.pm === 1
       && onBoth(endedTrail, 1) && endedTrail.every((t) => t.actorId === null) && (await reads(consultant, pid)) === 404,
     `${JSON.stringify(endNotices)}; on the trails ${endedTrail.length}`);
+
+  // ── The engagement's own window: everyone's sits inside it ───────────────
+  const at = (x) => (x ? plus(x, 0) : null);
+  const E = async () => prisma.project.findUnique({ where: { id: pid }, select: { engagementAccessFrom: true, engagementAccessTo: true } });
+  const windowTrail = async () => trailOn(pid, 'ENGAGEMENT_WINDOW_CHANGED');
+  const setByDefault = (await windowTrail()).some((t) => t.payload?.cause === 'default' && t.payload?.step === 'approval');
+  await windowOf(ids.consultant, { accessTo: day(40), reason: 'Back for the Stage 1 audit' });
+  await windowOf(ids.lead, { accessTo: day(40), reason: 'The Lead stays for the Stage 1 audit' });
+  const firmSets = await as(lead)('PATCH', `/api/engagements/${pid}/window`, { accessTo: day(100), reason: 'We would like longer on this' });
+  const noReason = await c('PATCH', `/api/engagements/${pid}/window`, { accessTo: day(20), reason: 'short' });
+  const narrowed = await c('PATCH', `/api/engagements/${pid}/window`, { accessTo: day(20), reason: 'The contract ends earlier than planned' });
+  const pulledIn = { lead: (await memberOf(lead)).accessTo, consultant: (await memberOf(consultant)).accessTo, window: (await E()).engagementAccessTo };
+  const pulledTrail = (await trailOn(pid, 'ENGAGEMENT_ACCESS_WINDOW_CHANGED')).filter((t) => t.payload?.cause === 'engagement');
+  const leadToldWindow = await prisma.notification.count({ where: { recipientId: lead.user.id, subjectId: pid, event: 'ENGAGEMENT_WINDOW_CHANGED' } });
+  const later = await c('PATCH', `/api/engagements/${pid}/window`, { accessTo: day(70), reason: 'The board extended the contract' });
+  const stillTwenty = (await memberOf(consultant)).accessTo;
+  const pastIt = await windowOf(ids.consultant, { accessTo: day(80), reason: 'Stays on for the Stage 2 audit' });
+  const widened = (await E()).engagementAccessTo;
+  const shown = (await c('GET', `/api/engagements/${pid}`)).json?.engagement?.accessWindow;
+  const causes = (await windowTrail()).map((t) => t.payload?.cause);
+  v.record('engagement-s5:the engagement has its own window: the first approval sets it, narrowing it pulls everyone in, only the organisation sets it, and a person given dates past it widens it',
+    setByDefault && firmSets.status === 403 && noReason.status === 400
+      && narrowed.status === 200 && (narrowed.json?.narrowed || []).length === 2
+      && at(pulledIn.lead) === day(20) && at(pulledIn.consultant) === day(20) && at(pulledIn.window) === day(20)
+      && onBoth(pulledTrail, 2) && leadToldWindow >= 1 && causes.includes('organisation')
+      && later.status === 200 && at(stillTwenty) === day(20)
+      && pastIt.status === 200 && at(widened) === day(80) && shown?.to === day(80) && causes.includes('widened'),
+    `default at approval ${setByDefault}; firm ${firmSets.status}; no reason ${noReason.status}; narrow ${narrowed.status} ${JSON.stringify(narrowed.json?.narrowed)}; `
+      + `after: lead ${at(pulledIn.lead)}, consultant ${at(pulledIn.consultant)}, window ${at(pulledIn.window)}; pulled on each trail ${pulledTrail.length}; `
+      + `Lead told ${leadToldWindow}; later ${later.status}, consultant still ${at(stillTwenty)}; past it ${pastIt.status} → window ${at(widened)}, shown ${shown?.to}; causes ${causes.join(',')}`);
+
+  // On resume the engagement's window is offered the hold's days too, and only moves later.
+  await c('PATCH', `/api/projects/${pid}`, { status: 'OnHold', reason: 'Waiting for the auditor to confirm dates', holdFirmAccess: 'View' });
+  const openHold = await prisma.projectHold.findFirst({ where: { projectId: pid, endedAt: null } });
+  await prisma.projectHold.update({ where: { id: openHold.id }, data: { startedAt: new Date(Date.now() - 5 * DAY) } });
+  await c('PATCH', `/api/projects/${pid}`, { status: 'Active', reason: 'The auditor confirmed the dates' });
+  const offer = (await c('GET', `/api/engagements/${pid}/resume-proposal`)).json?.proposal;
+  const earlier = await c('POST', `/api/engagements/${pid}/resume-proposal`, { changes: [], engagementAccessTo: day(10) });
+  const withEngagement = await c('POST', `/api/engagements/${pid}/resume-proposal`, { changes: [], engagementAccessTo: offer?.engagement?.proposedEnd?.slice(0, 10) });
+  const afterResume = (await E()).engagementAccessTo;
+  v.record('engagement-s5:on resume the engagement\'s window is offered the hold\'s days, and only ever moves later',
+    offer?.days === 5 && at(offer?.engagement?.currentEnd) === day(80) && at(offer?.engagement?.proposedEnd) === day(85)
+      && earlier.status === 409 && earlier.json?.code === 'NOT_LATER'
+      && withEngagement.status === 200 && at(afterResume) === day(85)
+      && (await windowTrail()).some((t) => t.payload?.cause === 'resume' && t.payload?.holdDays === 5),
+    `offer ${offer?.days} days, engagement ${JSON.stringify(offer?.engagement)}; earlier ${earlier.status} ${earlier.json?.code || ''}; `
+      + `confirm ${withEngagement.status} → ${at(afterResume)}`);
 
   // ── The guard in shadow, on an engagement named the old way ──────────────
   const flag = await prisma.featureFlag.findUnique({ where: { key: FLAG }, select: { id: true } });

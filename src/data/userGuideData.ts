@@ -207,6 +207,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"',
       'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates',
       'Set how long each of the firm\'s people has access with "Change access"; answer their "Request more time" with "Grant more time" or "Decline request"',
+      'Set the engagement\'s own access window with "Change engagement access": every person\'s access sits inside it, so ending it earlier ends everyone\'s',
       'Agree what the firm sees with "Draft a new scope version" on the "Scope" tab; someone else approves it with "Approve scope"',
       'See what is shared on the "Documents" and "Risks and assets" tabs, and set "Change document access" to view only or download',
       'Review who from outside sees what on "External access": "Revoke" a person or "Confirm access"; move engagements set up the old way with "Migrate engagement"',
@@ -228,7 +229,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         step: 2,
         title: 'Hold and resume',
         instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it. While it lasts, work is paused (no task status or progress, evidence, verification or blocker is recorded) but the plan can still be adjusted. "Resume" closes the interval with its own reason and leaves the agreed baseline as it was. When a firm delivers the engagement, choose "Firm can view (read-only)" or "Firm has no access" as you put it on hold; the firm changes nothing either way.',
-        tip: 'The header shows since when the project has been on hold and why. "Change hold access" on the Team tab switches between the two during the hold, with a reason, and on resume the firm\'s people get back exactly the access they had. After a consulting engagement resumes, "Access after the hold" lists each person\'s current and proposed end date, all ticked: untick or edit, then confirm once, or "Leave end dates as they are". The target end is not moved; "Rebaseline the plan" is on the same screen.'
+        tip: 'The header shows since when the project has been on hold and why. "Change hold access" on the Team tab switches between the two during the hold, with a reason, and on resume the firm\'s people get back exactly the access they had. After a consulting engagement resumes, "Access after the hold" lists each person\'s current and proposed end date, all ticked: untick or edit, then confirm once, or "Leave end dates as they are". The engagement\'s own access window is offered the same days on the same screen. The target end is not moved; "Rebaseline the plan" is on the same screen.'
       },
       {
         step: 3,
@@ -257,7 +258,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 7,
         title: 'Access dates of the firm\'s people',
-        instruction: 'Each approved person has access from their "Access from" date to the end of their "Access to" date, both checked on every request; before the start they see only the engagement card. Click "Change access" beside a person on the Team tab to move either date, with a reason; they are told, and a start before their approval counts from the approval. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold.',
+        instruction: 'Each approved person has access from their "Access from" date to the end of their "Access to" date, both checked on every request; before the start they see only the engagement card. Click "Change access" beside a person on the Team tab to move either date, with a reason; they are told, and a start before their approval counts from the approval. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold. Every person\'s dates sit inside the engagement\'s own access window, shown as "Engagement access" on the Team tab: the first approval sets it to the engagement\'s start to 30 days after its target end, and dates you give a person beyond it widen it. "Change engagement access" sets it with a reason; ending it earlier brings everyone whose access runs past it back inside it, each recorded and told, while ending it later gives nobody more time.',
         tip: 'Extending brings back access that had ended ("Access ended"), never access that was removed: a removed person must be nominated and approved again.'
       },
       {

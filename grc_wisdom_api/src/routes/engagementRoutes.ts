@@ -4,7 +4,7 @@ import { requireCapability, requireAnyCapability, CAP } from '../services/capabi
 import {
   featureState, listInvitations, inviteFirm, revokeInvitation, acceptInvitation, declineInvitation,
   getEngagement, nominatePerson, approvePerson, rejectPerson, removePerson, changeDeliveryStyle,
-  changeAccessWindow, requestExtension, declineExtension, getResumeProposal, settleResumeProposal, shadowSummary,
+  changeAccessWindow, changeEngagementWindow, requestExtension, declineExtension, getResumeProposal, settleResumeProposal, shadowSummary,
 } from '../controllers/engagementController';
 import { myEngagements } from '../controllers/engagementPortalController';
 import { getScope, draftScope, approveScope, discardScope } from '../controllers/engagementScopeController';
@@ -99,6 +99,7 @@ router.post('/:projectId/members/:memberId/approve', requireCapability(CAP.MANAG
 router.post('/:projectId/members/:memberId/reject', requireCapability(CAP.MANAGE_PROJECT), rejectPerson);
 router.post('/:projectId/members/:memberId/remove', requireCapability(CAP.MANAGE_PROJECT), removePerson);
 router.patch('/:projectId/members/:memberId/window', requireCapability(CAP.MANAGE_PROJECT), changeAccessWindow);
+router.patch('/:projectId/window', requireCapability(CAP.MANAGE_PROJECT), changeEngagementWindow);
 router.patch('/:projectId/members/:memberId/allocation', requireCapability(CAP.EXECUTE_PROJECT_WORK), setAllocation);
 router.post('/:projectId/members/:memberId/extension-request', requireCapability(CAP.EXECUTE_PROJECT_WORK), requestExtension);
 router.post('/:projectId/members/:memberId/extension-request/decline', requireCapability(CAP.MANAGE_PROJECT), declineExtension);
