@@ -37,7 +37,11 @@ export const createControl = async (req: AuthenticatedRequest, res: Response): P
       });
       return;
     }
-    const owningTenantId = wantsLibrary ? null : req.user!.tenantId;
+    // Written by the platform, a control goes to the shared library, as a
+    // framework does since QA-031: the screen never asks, and one filed under
+    // the platform's own organisation is invisible to every customer, along
+    // with the clauses it was mapped for them to meet (QA-034).
+    const owningTenantId = wantsLibrary || scope.kind === 'PLATFORM' ? null : req.user!.tenantId;
 
     const cleanCode = String(code).trim().toUpperCase();
     const clash = await prisma.control.findFirst({ where: { tenantId: owningTenantId, code: cleanCode } });
@@ -105,7 +109,8 @@ export const cloneControl = async (req: AuthenticatedRequest, res: Response): Pr
     });
     if (!source) { res.status(404).json({ status: 'error', message: 'Control not found in your scope' }); return; }
 
-    const target = req.user!.tenantId;
+    // A copy the platform makes is library content too (QA-034).
+    const target = scope.kind === 'PLATFORM' ? null : req.user!.tenantId;
     const newCode = String(code || `${source.code}-LOCAL`).trim().toUpperCase();
     const clash = await prisma.control.findFirst({ where: { tenantId: target, code: newCode } });
     if (clash) {
@@ -141,7 +146,8 @@ export const cloneControl = async (req: AuthenticatedRequest, res: Response): Pr
         });
       }
       await writeAudit(tx, {
-        tenantId: target, actorId: req.user!.id, action: 'CONTROL_CLONED',
+        // On the copier's own trail: a library copy has no organisation of its own.
+        tenantId: req.user!.tenantId, actorId: req.user!.id, action: 'CONTROL_CLONED',
         subjectType: SUBJ_CONTROL, subjectId: ctrl.id,
         payload: { from: source.code, to: newCode, carriedMappings: reachable.length },
       });
