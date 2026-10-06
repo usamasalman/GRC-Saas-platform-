@@ -381,6 +381,10 @@ jobs:
       # the deploy pulled new images into an old topology and the two silently
       # drifted apart. .env is deliberately NOT copied: it holds the secrets and
       # the host-specific ports, and belongs only to the machine.
+      #
+      # It lands in ~/grcwisdom/.incoming, not over the live files: Caddy is the
+      # entrance for every project on the server (deploy/SHARED-PROXY.md), so
+      # nothing it reads is replaced until it has been checked, below.
       - name: Ship the stack config
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -389,7 +393,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           source: "deploy/docker-compose.yml,deploy/Caddyfile"
-          target: "~/grcwisdom"
+          target: "~/grcwisdom/.incoming"
           strip_components: 1
           overwrite: true
 
@@ -431,6 +435,73 @@ jobs:
             export GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
             export TAG=${{ github.sha }}
 
+            # ── Caddy is shared: a deploy may change GRC Wisdom, never the others ──
+            #
+            # This Caddy is the entrance for every project on the server
+            # (deploy/SHARED-PROXY.md). Deploys used to take the other projects'
+            # sites down (QA-037): they pulled the floating caddy:2-alpine tag and
+            # recreated the container whenever a new Caddy came out, which drops
+            # every site and any network attached to it by hand; they copied the
+            # Caddyfile over the live one before checking it; and a reload that
+            # failed fell back to restarting Caddy.
+            #
+            # Now Caddy (and Postgres) are only started if they are not running —
+            # never pulled, recreated or restarted by a deploy — and the
+            # Caddyfile is swapped only when it changed, cannot drop a site that
+            # is served now, and the running Caddy has validated it. Anything
+            # else stops the deploy with every site still up.
+
+            # The host names in a Caddy JSON config, one per line. Both sides of
+            # the comparison below come from Caddy itself, so this never has to
+            # understand Caddyfile syntax.
+            site_hosts() {
+              { grep -o '"host":\[[^]]*\]' || true; } \
+                | sed 's/^"host":\[//; s/\]$//' | tr ',' '\n' | tr -d '"' | sort -u
+            }
+
+            # Refuses (exit 1) a new Caddyfile that the running Caddy does not
+            # accept, or that would stop serving a site it serves now. Changes
+            # nothing either way. Run inside the running container, so the new
+            # file is read exactly as a reload would read it: with this
+            # server's SITE_ADDRESS and the site files Caddy can see.
+            check_caddyfile() {
+              docker compose exec -T caddy sh -c 'cat > /etc/caddy/Caddyfile.next' < .incoming/Caddyfile
+              if ! docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile.next --adapter caddyfile; then
+                echo "::error::The new Caddyfile did not validate. Caddy has NOT been changed"
+                echo "and every site is still up. The error is in deploy/Caddyfile or in a"
+                echo "file in ~/grcwisdom/sites (the message above names it)."
+                exit 1
+              fi
+              if ! docker compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/ > .incoming/running.json; then
+                echo "::error::Could not read the configuration Caddy is running, so the new"
+                echo "Caddyfile cannot be checked against it. Caddy has NOT been changed."
+                exit 1
+              fi
+              site_hosts < .incoming/running.json > .incoming/hosts.now
+              docker compose exec -T caddy caddy adapt --config /etc/caddy/Caddyfile.next --adapter caddyfile \
+                | site_hosts > .incoming/hosts.next
+              local dropped
+              dropped=$(comm -23 .incoming/hosts.now .incoming/hosts.next | tr '\n' ' ')
+              if [ -n "$dropped" ]; then
+                echo "::error::The new Caddyfile would stop serving: $dropped"
+                echo "Caddy has NOT been changed and every site is still up. Caddy serves"
+                echo "these now, but neither deploy/Caddyfile nor ~/grcwisdom/sites/*.caddy"
+                echo "has them. Move each one into a file in ~/grcwisdom/sites/"
+                echo "(deploy/SHARED-PROXY.md, step 4), then re-run this deploy."
+                exit 1
+              fi
+            }
+
+            # Everything is checked before anything changes.
+            if ! docker compose --project-directory . -f .incoming/docker-compose.yml config -q; then
+              echo "::error::The new docker-compose.yml does not load with this server's .env. Nothing was changed."
+              exit 1
+            fi
+            if [ -n "$(docker compose ps -q caddy 2>/dev/null)" ] && [ -f Caddyfile ] \
+               && ! cmp -s .incoming/Caddyfile Caddyfile; then
+              check_caddyfile
+            fi
+
             # Pull with a real backoff, one service at a time.
             #
             # The previous form was `pull || (sleep 3 && pull) || (sleep 5 && pull)`,
@@ -452,7 +523,7 @@ jobs:
             # for the path to recover, hence the backoff.
             #
             # Per-service so that a failure on the API image does not discard a
-            # finished pull of web, caddy and postgres.
+            # finished pull of web.
             pull_with_backoff() {
               local svc="$1" delay=5 attempt
               for attempt in 1 2 3 4 5; do
@@ -473,9 +544,20 @@ jobs:
               return 1
             }
 
-            for svc in db caddy api web; do
+            # Only this application's images. caddy:2-alpine and
+            # postgres:16-alpine are floating tags, and pulling them is what
+            # turned an ordinary deploy into a Caddy or Postgres upgrade — and a
+            # recreated container — whenever a new release happened to be out.
+            # Those are upgraded on purpose (deploy/SHARED-PROXY.md), not here.
+            for svc in api web; do
               pull_with_backoff "$svc"
             done
+
+            # The checked config goes live. Copying the compose file changes
+            # nothing that is running; a missing Caddyfile means a first deploy,
+            # with no Caddy yet and nothing to protect.
+            cp .incoming/docker-compose.yml docker-compose.yml
+            [ -f Caddyfile ] || cp .incoming/Caddyfile Caddyfile
 
             # This used to run `systemctl stop/disable apache2 nginx` to clear
             # port 80. That is destructive on a shared host: this VPS runs a
@@ -495,12 +577,29 @@ jobs:
             docker network inspect caddy-edge >/dev/null 2>&1 || docker network create caddy-edge
             mkdir -p ~/grcwisdom/sites
 
-            if ! docker compose up -d --remove-orphans; then
+            # Postgres and Caddy are started if they are not running and left
+            # alone if they are: --no-recreate keeps the running container even
+            # when its image or its definition in docker-compose.yml changed.
+            # Then only api and web are replaced, and --no-deps keeps compose
+            # from touching anything else on the way.
+            if ! docker compose up -d --no-recreate db caddy; then
               echo "compose up failed. If this is a port clash, set HTTP_PORT and"
               echo "HTTPS_PORT in ~/grcwisdom/.env to free ports. Currently bound:"
               sudo ss -tlnp | grep -E ':(80|443)\s' || true
               exit 1
             fi
+            docker compose up -d --no-deps --remove-orphans api web
+
+            # A change to the db or caddy service in docker-compose.yml is
+            # therefore not applied by a deploy. Say so, rather than let the
+            # repository and the server drift apart unnoticed.
+            for svc in db caddy; do
+              want=$(docker compose config --hash "$svc" 2>/dev/null | awk '{print $2}' || true)
+              have=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.config-hash" }}' "$(docker compose ps -q "$svc")" 2>/dev/null || true)
+              if [ -n "$want" ] && [ -n "$have" ] && [ "$want" != "$have" ]; then
+                echo "::warning::The $svc service in docker-compose.yml changed and is NOT applied: deploys never recreate $svc. Apply it on purpose, at a quiet moment (deploy/SHARED-PROXY.md, Upgrading Caddy or Postgres)."
+              fi
+            done
 
             # Wait for API container to initialize before provisioning reference data
             echo "Waiting for API container to initialize..."
@@ -516,38 +615,34 @@ jobs:
             # capabilities and system roles — it never touches tenant data.
             docker compose exec -T api npm run provision
 
-            # The Caddyfile is bind-mounted, and this job now copies a fresh one
-            # up on every deploy. Changing a mounted file does not restart the
-            # container and does not reload the config, so without this the
-            # server keeps running whatever it parsed the last time it started.
+            # The Caddyfile is bind-mounted, and changing a mounted file does not
+            # reload Caddy. So when — and only when — the new one differs from
+            # the live one, it is checked again against what Caddy serves at this
+            # moment, written over the live file in place (the container sees
+            # the same file, and a restart later loads the same config), and
+            # loaded with a graceful reload: in-flight requests finish and no
+            # site drops.
             #
-            # Validate first: an invalid Caddyfile that gets reloaded is rejected
-            # and the old config stays live, but validating separately turns a
-            # syntax error into a clear message here rather than a puzzling
-            # "reload failed" further down.
-            echo "Reloading Caddy configuration..."
-            if ! docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
-              echo "FAILED: the Caddyfile did not validate. Caddy is still running"
-              echo "the previous configuration, so every site it serves stays up. The"
-              echo "error is in deploy/Caddyfile or in one of the other projects' files"
-              echo "in ~/grcwisdom/sites (the message above names the file)."
-              exit 1
-            fi
-
-            # A reload is graceful — in-flight requests finish and nothing is
-            # dropped. It goes through Caddy's admin API, so it fails if that is
-            # disabled or the container is in a bad state.
-            #
-            # Restarting is the fallback rather than an error. A config that
-            # validated but was never applied is the worst outcome: the deploy
-            # reports success while the server runs yesterday's routing, which is
-            # precisely the class of failure that cost us an afternoon.
-            if docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile; then
-              echo "Caddy reloaded gracefully"
+            # The reload loads the very file check_caddyfile validated. If it is
+            # refused anyway, the live file is put back and the deploy fails.
+            # Caddy is never restarted here: a refused reload leaves the old
+            # configuration running, which keeps every site up, while a restart
+            # takes every site down — including the other projects'.
+            if cmp -s .incoming/Caddyfile Caddyfile; then
+              echo "Caddyfile unchanged: Caddy left exactly as it is."
             else
-              echo "Graceful reload failed — restarting the container so the new"
-              echo "configuration is definitely applied."
-              docker compose restart caddy
+              check_caddyfile
+              cp Caddyfile Caddyfile.prev
+              cat .incoming/Caddyfile > Caddyfile
+              if docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile.next --adapter caddyfile; then
+                echo "Caddy reloaded gracefully with the new Caddyfile; every site kept serving."
+              else
+                cat Caddyfile.prev > Caddyfile
+                echo "::error::Caddy refused the reload. The previous Caddyfile is back in place"
+                echo "and Caddy is still running it, so every site is up; the GRC Wisdom"
+                echo "routing change is NOT applied. The message above says why."
+                exit 1
+              fi
             fi
 
             docker image prune -f
