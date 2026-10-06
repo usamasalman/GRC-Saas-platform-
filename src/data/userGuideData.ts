@@ -342,6 +342,12 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Context and interested parties',
         instruction: 'Open the "Context" tab. The organisation clicks "Record an entry": an "Issue (4.1)" or an "Interested party (4.2)" with what it requires, internal or external, where it comes from and how relevant it is. The firm clicks "Propose an entry" instead, and sees only its own proposals.',
         tip: 'A proposal counts for nothing until the project manager or owner clicks "Accept"; "Reject" needs a reason the firm sees. The figures above the register count accepted entries only ("Proposed, not counted").'
+      },
+      {
+        step: 22,
+        title: 'Risk and asset challenges',
+        instruction: 'Open the "Challenges" tab: the whole shared risk or asset register beside the firm\'s challenges. The firm clicks "Challenge" on a row and gives the scores it would give (likelihood and impact for a risk, confidentiality, integrity and availability for an asset) and why; "Withdraw" takes one back. The owner of the record decides: "Adopt", "Keep" (with the reason the scores stand) or "Adjust" (to scores the owner chooses), one row at a time or with "Adopt selected" and "Keep selected". Owners also find them in My Work under "Challenges to decide".',
+        tip: 'Nothing reads a challenge until it is decided: the dashboard, the tolerance count, acceptance and reports use the register\'s own scores. A risk is challenged on its inherent scores and its residual follows from its verified controls; the row shows what adopting would do to the residual and the tolerance band. The firm can also "Propose a risk" or "Propose an asset" (in no figure until the project manager clicks "Accept into the register") and "Draft risk appetite", which the organisation approves on its Risk Appetite screen; whoever drafts a statement cannot approve it.'
       }
     ],
     proTips: [

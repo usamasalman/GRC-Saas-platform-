@@ -26,6 +26,7 @@ import EngagementRequests from './project/EngagementRequests';
 import EngagementDiscussions from './project/EngagementDiscussions';
 import EngagementAssessment from './project/EngagementAssessment';
 import EngagementContext from './project/EngagementContext';
+import EngagementChallenges from './project/EngagementChallenges';
 import { STYLE_LABEL } from './project/EngagementPanel';
 import { MAY, can } from '../../components/Can';
 import { calendarDate } from '../../utils/calendarDate';
@@ -43,7 +44,7 @@ import apiClient from '../../api/apiClient';
  */
 
 type TabKey = 'home' | 'engagements' | 'completed' | 'firmteam' | 'access' | 'portfolio' | 'templates' | 'invitations'
-  | 'overview' | 'scope' | 'documents' | 'registers' | 'requests' | 'discussions' | 'assessment' | 'context'
+  | 'overview' | 'scope' | 'documents' | 'registers' | 'requests' | 'discussions' | 'assessment' | 'context' | 'challenges'
   | 'plan' | 'gantt' | 'team' | 'verification' | 'impediments' | 'evidence' | 'reports' | 'timeline' | 'new';
 
 /** The signed-in person's portal, as the shell stored it; unknown reads as the organisation's. */
@@ -167,6 +168,7 @@ const DeliveryProjects: React.FC = () => {
             <button style={tabStyle(tab === 'discussions')} onClick={() => setTab('discussions')}>Discussions</button>
             <button style={tabStyle(tab === 'assessment')} onClick={() => setTab('assessment')}>Assessment</button>
             <button style={tabStyle(tab === 'context')} onClick={() => setTab('context')}>Context</button>
+            <button style={tabStyle(tab === 'challenges')} onClick={() => setTab('challenges')}>Challenges</button>
           </>
         )}
         <button
@@ -263,6 +265,7 @@ const DeliveryProjects: React.FC = () => {
       {tab === 'discussions' && selected && consultingTabs && <EngagementDiscussions key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'assessment' && selected && consultingTabs && <EngagementAssessment key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'context' && selected && consultingTabs && <EngagementContext key={`${selected.id}-${version}`} projectId={selected.id} />}
+      {tab === 'challenges' && selected && consultingTabs && <EngagementChallenges key={`${selected.id}-${version}`} projectId={selected.id} />}
       {tab === 'invitations' && consulting && <InvitationsInbox />}
       {tab === 'new' && (
         <NewProject
