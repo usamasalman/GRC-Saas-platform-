@@ -84,7 +84,7 @@ export interface TemplateBody {
 }
 
 const LIMITS = { phases: 30, tasksPerPhase: 100, days: 365, weight: 100, clauses: 50, text: 200 };
-const ENGAGEMENT_TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment'];
+const ENGAGEMENT_TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment', 'InternalAudit'];
 
 const text = (v: unknown, max = LIMITS.text): string | null => {
   const s = String(v ?? '').trim();

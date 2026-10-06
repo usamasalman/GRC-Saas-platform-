@@ -15,6 +15,7 @@ import {
 } from '../services/engagementRules';
 import { SHADOW_RULES, SHADOW_RETENTION_DAYS } from '../services/engagementShadow';
 import { DEFAULT_CLOSE_WINDOW_DAYS, closeWindowEnd } from '../services/engagementAfterClose';
+import { implementationOverlap, confirmationRefusal } from '../services/certificationAccess';
 
 /**
  * Consulting engagements: the invitation, the relationship, the firm's people
@@ -48,7 +49,7 @@ const send = (res: Response, r: { status: number; code?: string; message: string
 const notFound = (res: Response, what = 'Engagement') => send(res, { status: 404, message: `${what} not found` });
 
 const ENGAGEMENT_SELECT = {
-  id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true,
+  id: true, ref: true, name: true, status: true, tenantId: true, providerTenantId: true, deliveryStyle: true, projectType: true,
   startDate: true, targetEndDate: true, ownerId: true, managerId: true, migratedAt: true, documentAccess: true,
   actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, closeWindowSetAt: true, reportCopiesAllowed: true,
   previousProjectId: true, previousInScope: true,
@@ -192,6 +193,26 @@ export const listInvitations = async (req: AuthenticatedRequest, res: Response):
  * To the firm's organisation, for 14 days, with the delivery style offered
  * (Client-led unless the organisation chooses otherwise).
  */
+/**
+ * Independence for an internal audit (sprint 13): the firm is auditing its
+ * own work when it delivered tasks on an earlier engagement of this
+ * organisation that covered a framework this audit covers.
+ */
+async function independenceWarnings(e: Engagement, firmTenantId: string): Promise<string[]> {
+  if (e.projectType !== 'InternalAudit') return [];
+  const now = (await prisma.projectStandard.findMany({ where: { projectId: e.id }, select: { standardId: true } })).map((s) => s.standardId);
+  const earlier = await prisma.project.findMany({
+    where: { tenantId: e.tenantId, providerTenantId: firmTenantId, id: { not: e.id }, projectType: { not: 'InternalAudit' } },
+    select: { id: true, standards: { select: { standardId: true } } }, take: 200,
+  });
+  const overlapping = earlier.filter((p) => p.standards.some((s) => now.includes(s.standardId)));
+  const deliveredTasks = overlapping.length
+    ? await prisma.projectTask.count({ where: { projectId: { in: overlapping.map((p) => p.id) }, side: 'Provider', status: { in: ['Done', 'Verified'] } } })
+    : 0;
+  const warning = implementationOverlap({ frameworksBefore: overlapping.flatMap((p) => p.standards.map((s) => s.standardId)), frameworksNow: now, deliveredTasks });
+  return warning ? [warning] : [];
+}
+
 export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const b = req.body || {};
@@ -225,6 +246,15 @@ export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Prom
       { tenantId: e.tenantId, who: e.tenant?.name || 'your organisation' }, { tenantId: firm.id, who: firm.name },
     ]);
     if (refusal) { send(res, refusal); return; }
+    // Going ahead despite an independence warning needs a confirmation and the
+    // reason, both kept on the invitation and its trail entry.
+    const independence = await independenceWarnings(e, firm.id);
+    const unconfirmed = confirmationRefusal(independence, b.confirmed, b.independenceReason);
+    if (unconfirmed) {
+      res.status(unconfirmed.status).json({ status: 'error', code: unconfirmed.code, message: unconfirmed.message, warnings: independence });
+      return;
+    }
+    const independenceReason = independence.length ? str(b.independenceReason).trim().slice(0, 2000) : null;
     const message = b.message ? str(b.message).trim().slice(0, 2000) : null;
     const actorId = str(req.user!.id);
     const now = new Date();
@@ -241,6 +271,7 @@ export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Prom
         data: {
           projectId: e.id, clientTenantId: e.tenantId, firmTenantId: firm.id, deliveryStyle: style, message,
           invitedById: actorId, invitedAt: now, expiresAt: invitationExpiry(now),
+          independenceWarnings: independence.length ? JSON.stringify(independence) : null, independenceReason,
         },
       });
       await tx.project.update({
@@ -249,7 +280,10 @@ export const inviteFirm = async (req: AuthenticatedRequest, res: Response): Prom
       });
       await bothTrails(tx, {
         e, firmTenantId: firm.id, actorId, action: 'ENGAGEMENT_FIRM_INVITED',
-        payload: { invitationId: inv.id, firmTenantId: firm.id, firm: firm.name, deliveryStyle: style, reportCopies, expiresAt: inv.expiresAt },
+        payload: {
+          invitationId: inv.id, firmTenantId: firm.id, firm: firm.name, deliveryStyle: style, reportCopies, expiresAt: inv.expiresAt,
+          ...(independence.length ? { independenceWarnings: independence, independenceReason } : {}),
+        },
         firmPayload: { invitationId: inv.id, client: e.tenant?.name, deliveryStyle: style, reportCopies, expiresAt: inv.expiresAt },
       });
       await notify(tx, (await firmAdmins(firm.id)).map((recipientId) => ({

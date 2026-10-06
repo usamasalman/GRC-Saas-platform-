@@ -39,7 +39,8 @@ const str = (v: unknown): string => String(v ?? '');
 const STATUSES = ['Draft', 'Active', 'OnHold', 'Closed', 'Cancelled'] as const;
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 const HEALTH = ['Green', 'Amber', 'Red'] as const;
-const TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment'] as const;
+// InternalAudit (sprint 13): an internal audit (9.2) run by a firm, with the independence warning on inviting it.
+const TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment', 'InternalAudit'] as const;
 
 /** The status read before the transaction was no longer the status inside it. */
 class StatusChanged extends Error {}
