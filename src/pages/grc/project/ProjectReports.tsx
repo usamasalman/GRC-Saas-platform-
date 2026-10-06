@@ -74,6 +74,13 @@ const REPORTS: { kind: string; name: string; reader: string }[] = [
     reader: 'For the certification body. Read off the current clause assessments: each '
       + 'control applicable or not, why, how far it is implemented, and its open gap.',
   },
+  {
+    kind: 'readiness',
+    name: 'Readiness',
+    reader: 'For the sponsor and the certification body. Each clause\'s six checks and its '
+      + 'readiness, computed from the records held; the records period, the management '
+      + 'review, and the firm\'s opinion beside them.',
+  },
 ];
 
 const FORMATS = ['pdf', 'docx', 'xlsx'];
