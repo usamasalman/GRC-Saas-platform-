@@ -320,6 +320,11 @@ model User {
   readinessSignOffs              ReadinessSignOff[]   @relation("SponsorSigner")
   managementReviewsPrepared      ManagementReview[]   @relation("ReviewPreparer")
   managementReviewsRecorded      ManagementReview[]   @relation("ReviewRecorder")
+  // Consulting engagement, sprint 13: the certification body.
+  certificationInvites           CertificationAccess[] @relation("CertificationInviter")
+  auditPacksFrozen               AuditPack[]           @relation("AuditPackFreezer")
+  auditorQuestionsAsked          AuditorQuestion[]     @relation("AuditorAsker")
+  auditorQuestionsAnswered       AuditorQuestion[]     @relation("AuditorAnswerer")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -3338,6 +3343,9 @@ model Project {
   readinessOpinions          ReadinessOpinion[]
   readinessSignOffs          ReadinessSignOff[]
   managementReviews          ManagementReview[]
+  certificationAccess        CertificationAccess[]
+  auditPacks                 AuditPack[]
+  auditorQuestions           AuditorQuestion[]
   /// How many months of operating evidence a control needs to be ready for
   /// Stage 2 (sprint 12). Empty means three.
   recordsPeriodMonths        Int?
@@ -3465,6 +3473,9 @@ model EngagementInvitation {
   revokedBy      User?     @relation("InvitationRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
   revokedAt      DateTime?
   revokeReason   String?
+  /// Sprint 13: what independence warnings the organisation saw, and why it went ahead.
+  independenceWarnings String?
+  independenceReason   String?
 
   @@index([projectId, status])
   @@index([firmTenantId, status])
@@ -5131,4 +5142,98 @@ model ManagementReviewAction {
   createdAt   DateTime         @default(now())
 
   @@index([reviewId])
+}
+
+// ─── Consulting engagement, sprint 13: the certification body ────────────────
+
+/// A certification body's read-only, time-boxed access to an engagement,
+/// invited by the organisation. It reads the frozen audit pack and asks
+/// questions; it changes nothing.
+model CertificationAccess {
+  id                 String    @id @default(uuid())
+  projectId          String
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The auditor organisation (tenant type AUDITOR).
+  bodyTenantId       String
+  /// Invited | Accepted | Declined | Revoked
+  status             String    @default("Invited")
+  accessFrom         DateTime
+  accessTo           DateTime
+  invitedById        String
+  invitedBy          User      @relation("CertificationInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  invitedAt          DateTime  @default(now())
+  respondedById      String?
+  respondedAt        DateTime?
+  revokedById        String?
+  revokedAt          DateTime?
+  revokeReason       String?
+  /// JSON: the relatedness warnings seen when invited, and why the organisation went ahead.
+  warnings           String    @default("[]")
+  confirmationReason String?
+
+  @@index([projectId, status])
+  @@index([bodyTenantId])
+}
+
+/// The audit pack, frozen: the reports as issued and stored at that moment.
+model AuditPack {
+  id         String          @id @default(uuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// PACK-001, per engagement.
+  ref        String
+  frozenById String
+  frozenBy   User            @relation("AuditPackFreezer", fields: [frozenById], references: [id], onDelete: Cascade)
+  frozenAt   DateTime        @default(now())
+  items      AuditPackItem[]
+
+  @@unique([projectId, ref])
+}
+
+/// One issued report in a pack, its stored bytes and their hash.
+model AuditPackItem {
+  id            String    @id @default(uuid())
+  packId        String
+  pack          AuditPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  reportIssueId String
+  kind          String
+  name          String
+  documentRef   String
+  issueNumber   Int
+  storageKey    String
+  sha256        String
+  fileName      String
+
+  @@index([packId])
+}
+
+/// A question, an evidence request or a nonconformity from the certification
+/// body, answered by the organisation; a nonconformity it records as an
+/// Issue with source ExternalAudit.
+model AuditorQuestion {
+  id           String    @id @default(uuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  accessId     String
+  /// AQ-0001, per engagement.
+  ref          String
+  /// Question | EvidenceRequest | Nonconformity
+  kind         String
+  text         String
+  /// For a nonconformity: the clause and the finding.
+  clauseRef    String?
+  askedById    String
+  askedBy      User      @relation("AuditorAsker", fields: [askedById], references: [id], onDelete: Cascade)
+  askedAt      DateTime  @default(now())
+  /// Open | Answered | Recorded
+  status       String    @default("Open")
+  answer       String?
+  answeredById String?
+  answeredBy   User?     @relation("AuditorAnswerer", fields: [answeredById], references: [id], onDelete: SetNull)
+  answeredAt   DateTime?
+  /// The Issue a nonconformity became.
+  issueId      String?
+
+  @@unique([projectId, ref])
+  @@index([projectId, status])
 }
