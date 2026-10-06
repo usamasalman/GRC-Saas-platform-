@@ -70,9 +70,16 @@ const PackagePanel: React.FC<{ focus?: 'frameworks' | 'users' | 'storage' }> = (
                 {r.show(r.used)} {r.limit === null ? '· limit not set' : `of ${r.show(r.limit)}`}
               </div>
               {r.limit !== null && (
-                <div style={{ height: 4, borderRadius: 2, background: 'var(--line)' }}>
-                  <div style={{ width: `${pct}%`, height: 4, borderRadius: 2, background: full ? 'var(--warning)' : 'var(--success)' }} />
-                </div>
+                <>
+                  <div style={{ height: 4, borderRadius: 2, background: 'var(--line)' }}>
+                    <div style={{ width: `${pct}%`, height: 4, borderRadius: 2, background: full ? 'var(--warning)' : 'var(--success)' }} />
+                  </div>
+                  {/* What is left, not only what is used: the question a
+                      customer asks before asking for another framework. */}
+                  <div style={{ fontSize: 11, color: full ? 'var(--warning)' : 'var(--ink-muted)', marginTop: 4 }}>
+                    {full ? 'None left: the platform can raise the package' : `${r.show(r.limit - r.used)} left`}
+                  </div>
+                </>
               )}
             </div>
           );

@@ -941,7 +941,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
     roles: ['Compliance Manager', 'CISO', 'Internal Auditor'],
     capabilities: ['ENABLE_STANDARD', 'VIEW_CLAUSES'],
     keyActions: [
-      'Enable regulatory standards for the active tenant with 1 click',
+      'See the frameworks the platform has enabled for your organisation, and how many your package has left',
       'Inspect domain and clause hierarchies (e.g. A.5 Organizational Controls)',
       'Track clause-to-control implementation coverage percentages',
       'Compare standard requirements across overlapping frameworks'
@@ -955,9 +955,9 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       },
       {
         step: 2,
-        title: 'Enable for Active Tenant',
-        instruction: 'Click "Enable Standard" to activate the framework. All clauses become available for control mapping.',
-        tip: 'Enabling a standard populates the compliance gap analysis dashboard.'
+        title: 'Enabled by the platform, within your package',
+        instruction: 'The platform enables a framework for your organisation; its clauses then become available for mapping controls and for engagements. The package panel above the list shows how many frameworks your package allows, how many are used across your organisation and its branches, and how many are left.',
+        tip: 'Need another framework? Ask the platform. Past your package it is refused, with the package named, until the package is raised.'
       },
       {
         step: 3,
@@ -990,7 +990,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Create custom organizational policies and frameworks with custom codes',
       'Add multi-level clause hierarchies (Domain -> Sub-clause -> Requirement)',
       'Upload and stage external framework files with AI extraction review',
-      'Map organizational controls to standard clauses with validation checks'
+      'Map organizational controls to standard clauses with validation checks',
+      'Written by the platform, frameworks and controls go to the shared library, marked Published and Library, so every organisation they are enabled for can see them'
     ],
     howToUse: [
       {
