@@ -92,15 +92,23 @@ export async function computeReadiness(projectId: string, tenantId: string, stan
   const clauses = (await prisma.standardClause.findMany({ where: { standardId }, select: { id: true, ref: true, title: true } })).sort(byClauseRef);
   const clauseIds = clauses.map((c) => c.id);
   const fresh = monthsBefore(now, EVIDENCE_FRESH_MONTHS);
-  const [docLinks, controlLinks, assessments, gaps, accepted, reviews, appetites] = await Promise.all([
+  const [docLinks, controlLinks, assessments, ownGaps, accepted, reviews, appetites] = await Promise.all([
     prisma.documentLink.findMany({ where: { clauseId: { in: clauseIds }, document: { tenantId, status: 'PUBLISHED' } }, select: { clauseId: true, document: { select: { code: true } } } }),
     prisma.controlClauseLink.findMany({ where: { clauseId: { in: clauseIds } }, select: { clauseId: true, controlId: true } }),
-    prisma.clauseAssessment.findMany({ where: { projectId, tenantId, clauseId: { in: clauseIds }, supersededAt: null }, select: { clauseId: true, result: true } }),
-    prisma.issue.findMany({ where: { projectId, tenantId, source: 'ConsultingGap', clauseId: { in: clauseIds }, status: { notIn: ['Closed'] } }, select: { clauseId: true, ref: true } }),
+    prisma.clauseAssessment.findMany({ where: { projectId, tenantId, clauseId: { in: clauseIds }, supersededAt: null }, select: { clauseId: true, result: true, issueId: true } }),
+    prisma.issue.findMany({ where: { projectId, tenantId, source: 'ConsultingGap', clauseId: { in: clauseIds }, status: { notIn: ['Closed'] } }, select: { id: true, clauseId: true, ref: true } }),
     prisma.informationRequest.findMany({ where: { projectId, status: 'Accepted', closedAt: { gte: fresh }, targetType: { in: ['Clause', 'Control', 'Task'] } }, select: { targetType: true, targetId: true } }),
     prisma.managementReview.findMany({ where: { tenantId, status: 'Recorded' }, select: { heldOn: true, attendees: true, inputs: true, decisions: true, status: true } }),
     prisma.riskAppetite.findMany({ where: { tenantId, status: 'Approved', effectiveTo: null }, select: { category: true, appetiteThreshold: true, toleranceThreshold: true } }),
   ]);
+  // A gap carried over from the engagement before (sprint 7) was raised
+  // there; this engagement's current assessment of the clause links it.
+  const carriedIds = [...new Set(assessments.map((x) => x.issueId).filter((id): id is string => Boolean(id) && !ownGaps.some((g) => g.id === id)))];
+  const carriedGaps = carriedIds.length ? await prisma.issue.findMany({
+    where: { id: { in: carriedIds }, tenantId, source: 'ConsultingGap', clauseId: { in: clauseIds }, status: { notIn: ['Closed'] } },
+    select: { id: true, clauseId: true, ref: true },
+  }) : [];
+  const gaps = [...ownGaps, ...carriedGaps];
   const controlIds = [...new Set(controlLinks.map((l) => l.controlId))];
   const implementations = controlIds.length ? await prisma.controlImplementation.findMany({
     where: { tenantId, controlId: { in: controlIds } },

@@ -212,7 +212,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       'Review who from outside sees what on "External access": "Revoke" a person or "Confirm access"; move engagements set up the old way with "Migrate engagement"',
       'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"',
       'Decide how long the firm may read a closed engagement with "Window after close", then "Extend or shorten" or "Revoke now" once it has closed; decide "Report copies" for the firm',
-      'Carry on with the same firm from a closed engagement with "Start a follow-on"; tasks and blockers still open are marked "Carried over"',
+      'Carry on with the same firm from a closed engagement with "Start a follow-on"; tasks, blockers and gaps still open are marked "Carried over"',
       'In the firm\'s portal, keep every closed engagement in "Completed engagements" and balance people on "Firm team"',
       'Ask the organisation for evidence, a document, a dataset or a clarification with "Raise a request" or "Import requests" on the "Requests" tab; answer with "Answer" and review with "Review"',
       'Ask for more than the scope shares with "Ask for a scope change"; the organisation decides with "Approve change", and a second person approves the new version'
@@ -292,7 +292,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 13,
         title: 'A follow-on engagement',
-        instruction: 'On a closed engagement click "Start a follow-on": name it, give its start (and target end, or keep the length of the one before) and say whether the engagement before is in scope. It is created as a draft with the same firm. The plan comes across with its dates moved and none of its progress; tasks and blockers still open are marked "Carried over"; the scope comes across as a draft for you to approve; and the firm\'s people are nominated again, each waiting for your approval.',
+        instruction: 'On a closed engagement click "Start a follow-on": name it, give its start (and target end, or keep the length of the one before) and say whether the engagement before is in scope. It is created as a draft with the same firm. The plan comes across with its dates moved and none of its progress; tasks and blockers still open are marked "Carried over"; so are the gaps still open, on the Assessment tab, each the same gap in your issue register with its corrective action plan, still counted by readiness until someone independent closes it; the scope comes across as a draft for you to approve; and the firm\'s people are nominated again, each waiting for your approval.',
         tip: 'With the engagement before in scope, the firm\'s approved people on the follow-on may read it, read-only, while the follow-on runs, even after its own window has ended. "Change what the firm reads before" switches it, with a reason.'
       },
       {

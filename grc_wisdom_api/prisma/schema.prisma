@@ -4925,6 +4925,10 @@ model ClauseAssessment {
   side          String
   assessedAt    DateTime       @default(now())
   supersededAt  DateTime?
+  /// Set on a follow-on engagement's copy of the assessment it carried over
+  /// with an open gap: the assessment it came from, on the engagement before.
+  /// The gap itself is the same Issue, linked, never copied (sprint 7).
+  carriedFromId String?
 
   @@index([projectId, tenantId, clauseId, supersededAt])
 }

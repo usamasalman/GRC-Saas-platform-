@@ -83,7 +83,10 @@ const EngagementAssessment: React.FC<{ projectId: string }> = ({ projectId }) =>
                     {c.assessedBy && <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{c.assessedBy} ({c.assessedSide === 'Client' ? 'organisation' : 'firm'}){c.times > 1 ? ` · assessed ${c.times} times` : ''}</div>}
                   </td>
                   <td style={{ ...S.td, fontSize: 12, maxWidth: 360 }}>{c.justification || '—'}{c.gapType && <div style={{ color: 'var(--ink-muted)' }}>Missing: {c.gapType.toLowerCase()}</div>}</td>
-                  <td style={S.td}>{c.gap ? `${c.gap.ref} · ${c.gap.status}` : '—'}</td>
+                  <td style={S.td}>
+                    {c.gap ? `${c.gap.ref} · ${c.gap.status}` : '—'}
+                    {c.carried && <span style={{ color: 'var(--brand)' }}> · Carried over</span>}
+                  </td>
                   <td style={{ ...S.td, textAlign: 'right' }}>{data.can?.assess && <button style={{ ...ghostBtn, padding: '3px 10px', fontSize: 11.5 }} onClick={() => setAssessing(c)}>Assess</button>}</td>
                 </tr>
               ))}

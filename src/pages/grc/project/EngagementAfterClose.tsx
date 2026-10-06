@@ -194,7 +194,7 @@ const EngagementAfterClose: React.FC<{
       {dialog === 'followOn' && (
         <FormDialog
           title={`Start a follow-on to ${e.ref}?`}
-          intro={<>A new draft engagement with the same firm. The plan comes across with its dates moved and none of its progress; tasks and blockers still open come across marked "Carried over". The firm's people are nominated again, and each needs your approval before they can open it.</>}
+          intro={<>A new draft engagement with the same firm. The plan comes across with its dates moved and none of its progress; tasks, blockers and gaps still open come across marked "Carried over", each gap with its corrective action plan. The firm's people are nominated again, and each needs your approval before they can open it.</>}
           submitLabel="Start follow-on"
           busy={busy}
           fields={[

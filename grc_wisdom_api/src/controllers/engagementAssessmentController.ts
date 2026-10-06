@@ -113,10 +113,11 @@ export const getAssessment = async (req: AuthenticatedRequest, res: Response): P
         where: { projectId: a.e.id, tenantId, supersededAt: null, clause: { standardId } },
         select: {
           id: true, clauseId: true, result: true, justification: true, gapType: true, issueId: true, side: true, assessedAt: true,
-          assessedBy: { select: { name: true } },
+          carriedFromId: true, assessedBy: { select: { name: true } },
         },
       }),
-      prisma.clauseAssessment.groupBy({ by: ['clauseId'], where: { projectId: a.e.id, tenantId, clause: { standardId } }, _count: { _all: true } }),
+      // Assessed on this engagement: a copy carried from the one before is not an assessment made here.
+      prisma.clauseAssessment.groupBy({ by: ['clauseId'], where: { projectId: a.e.id, tenantId, clause: { standardId }, carriedFromId: null }, _count: { _all: true } }),
     ]);
     const issueIds = current.map((c) => c.issueId).filter(Boolean) as string[];
     const issues = issueIds.length ? await prisma.issue.findMany({ where: { id: { in: issueIds } }, select: { id: true, ref: true, status: true } }) : [];
@@ -131,6 +132,8 @@ export const getAssessment = async (req: AuthenticatedRequest, res: Response): P
         justification: cur?.justification ?? null,
         gapType: cur?.gapType ?? null,
         gap: cur?.issueId ? issues.find((i) => i.id === cur.issueId) ?? null : null,
+        // Carried over from the engagement before, with its open gap (sprint 7).
+        carried: Boolean(cur?.carriedFromId),
         assessedBy: cur?.assessedBy?.name ?? null,
         assessedSide: cur?.side ?? null,
         assessedAt: cur?.assessedAt ?? null,

@@ -16,7 +16,10 @@ import { str, Conflict, send, notFound, loadEngagement, clientSide, flagFor, bot
  * Same relationship, so no invitation. The plan's structure is copied with
  * its dates moved to the new start and none of its progress; the tasks still
  * open at close, and the blockers still open, come across marked "carried
- * over". The firm's people who were approved are nominated again, and the
+ * over", and so do the gaps still open with their corrective action plans:
+ * the same gap in the organisation's register, linked from the follow-on's
+ * assessment of its clause, never a second one (sprint 10). The firm's
+ * people who were approved are nominated again, and the
  * organisation approves each one, with their dates, on the Team tab: nobody
  * from the firm reads the new engagement until then. The scope comes across
  * as a draft for the organisation to approve, never binding by itself.
@@ -120,6 +123,24 @@ export const createFollowOn = async (req: AuthenticatedRequest, res: Response): 
       select: { standardId: true },
     })).map((s) => s.standardId));
     const standards = source.standards.map((s) => s.standardId).filter((id) => enabled.has(id));
+
+    // The gaps still open, each with its corrective action plan, which lives
+    // on the gap. They are carried by linking: the follow-on gets a copy of
+    // the clause's current assessment naming the same Issue, so the register
+    // keeps one gap per clause, reassessing on the follow-on keeps it, and the
+    // follow-on's readiness counts it until someone independent closes it.
+    const assessed = await prisma.clauseAssessment.findMany({
+      where: { projectId: prev.id, supersededAt: null, issueId: { not: null } },
+      select: {
+        id: true, tenantId: true, clauseId: true, result: true, justification: true, gapType: true, issueId: true,
+        assessedById: true, side: true, assessedAt: true,
+      },
+    });
+    const stillOpen = new Set((assessed.length ? await prisma.issue.findMany({
+      where: { id: { in: assessed.map((x) => x.issueId!) }, source: 'ConsultingGap', status: { notIn: ['Closed', 'Cancelled'] } },
+      select: { id: true },
+    }) : []).map((i) => i.id));
+    const openGaps = assessed.filter((x) => stillOpen.has(x.issueId!));
 
     // The scope the firm worked under, offered again as a draft and checked
     // as any draft is, so an entity or framework since gone is not carried.
@@ -254,6 +275,15 @@ export const createFollowOn = async (req: AuthenticatedRequest, res: Response): 
           },
         });
       }
+      if (openGaps.length > 0) {
+        await tx.clauseAssessment.createMany({
+          data: openGaps.map((x) => ({
+            projectId: project.id, tenantId: x.tenantId, clauseId: x.clauseId, result: x.result, justification: x.justification,
+            gapType: x.gapType, issueId: x.issueId, assessedById: x.assessedById, side: x.side, assessedAt: x.assessedAt,
+            carriedFromId: x.id,
+          })),
+        });
+      }
 
       let scopeCopied = false;
       if (scopeDraft?.ok) {
@@ -271,7 +301,7 @@ export const createFollowOn = async (req: AuthenticatedRequest, res: Response): 
 
       const counts = {
         phases: source.phases.length, tasks: taskIds.size, carriedTasks, carriedBlockers: source.impediments.length,
-        nominated: nominated.length, scopeCopied,
+        carriedGaps: openGaps.length, nominated: nominated.length, scopeCopied,
       };
       await bothTrails(tx, {
         e: project, firmTenantId: prev.providerTenantId, actorId, action: 'ENGAGEMENT_FOLLOW_ON_CREATED',

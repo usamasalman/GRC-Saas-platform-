@@ -24,6 +24,9 @@
  *     carries the open tasks and blockers marked as such, nominates the firm's
  *     people again and offers the scope as a draft; with the engagement before
  *     in scope, its approved people read it, read-only;
+ *   - it carries the gaps still open, with their action plans, as the same
+ *     gaps linked from its assessment; its readiness counts them, a closed
+ *     gap stays behind, and no clause gets a second gap;
  *   - an engagement closed the old way is counted in shadow until the client's
  *     rules are enforced; enforcement gives it a window from the later of its
  *     close and the enforcement date;
@@ -78,6 +81,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const team = src('pages', 'grc', 'project', 'FirmTeam.tsx');
   const plan = src('pages', 'grc', 'project', 'ProjectPlan.tsx');
   const delays = src('pages', 'grc', 'project', 'ProjectImpediments.tsx');
+  const assessment = src('pages', 'grc', 'project', 'EngagementAssessment.tsx');
   const host = src('pages', 'grc', 'DeliveryProjects.tsx');
   const callers = {
     'the window set ahead, changed and revoked': /\/api\/engagements\/\$\{projectId\}\/close-window`, \{ days:/.test(after)
@@ -89,7 +93,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       && /\/api\/engagements\/report-copies\/\$\{c\.id\}\/file`/.test(done),
     'firm team and allocation': /'\/api\/engagements\/firm-team'/.test(team) && /\/members\/\$\{editing\.r\.memberId\}\/allocation`/.test(team)
       && /\/members\/\$\{dialog\.m\.id\}\/allocation`/.test(panel),
-    'carried over, on the plan and the delays': /t\.carriedFromTaskId &&/.test(plan) && /i\.carriedFromId &&/.test(delays),
+    'carried over, on the plan, the delays and the assessment': /t\.carriedFromTaskId &&/.test(plan) && /i\.carriedFromId &&/.test(delays)
+      && /c\.carried &&/.test(assessment),
     'the screens mounted': host.includes('<CompletedEngagements') && host.includes('<FirmTeam') && panel.includes('<EngagementAfterClose'),
   };
   const missing = Object.entries(callers).filter(([, ok]) => !ok).map(([k]) => k);
@@ -205,6 +210,31 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const draft = await prisma.engagementScopeVersion.findFirst({ where: { projectId: pid, status: 'Draft' } });
   await as(admin)('POST', `/api/engagements/${pid}/scope/${draft?.id}/approve`);
   await c('POST', `/api/engagements/${pid}/members/${(await memberOf(pid, reviewer)).id}/remove`, { reason: 'Review finished before the close' });
+
+  // An open gap with its action plan and a closed one, as the gap assessment
+  // records them (sprint 10): the Issue linked from the clause's assessment.
+  const iso = await prisma.standard.findFirst({ where: { code: 'ISO27001' }, select: { id: true } });
+  const [openClause, closedClause] = await prisma.standardClause.findMany({
+    where: { standardId: iso.id, ref: { startsWith: 'A.8' } }, orderBy: { ref: 'asc' }, take: 2, select: { id: true, ref: true },
+  });
+  const gapOn = async (clause, n, status) => {
+    const issue = await prisma.issue.create({
+      data: {
+        tenantId: omni.id, ref: `GAP-S7-${stamp}-${n}`, source: 'ConsultingGap', sourceReference: `S7 ISO27001 ${clause.ref}`,
+        title: `Gap: ISO27001 ${clause.ref}`, recommendation: 'Reviews are not recorded.', raisedById: me, status,
+        projectId: pid, clauseId: clause.id, gapType: 'Evidence', capOwnerId: me, capDescription: 'Record the quarterly reviews',
+      },
+    });
+    const row = await prisma.clauseAssessment.create({
+      data: {
+        projectId: pid, tenantId: omni.id, clauseId: clause.id, result: 'Partial', justification: 'Reviews are not recorded.',
+        gapType: 'Evidence', issueId: issue.id, assessedById: lead.user.id, side: 'Provider',
+      },
+    });
+    return { issue, row };
+  };
+  const openGap = await gapOn(openClause, 1, 'Open');
+  await gapOn(closedClause, 2, 'Closed');
 
   // ── Close: the Close dialog's days, the people who keep access, the record ──
   const closeBody = { outcome: 'Closed', closureNote: 'Delivered and accepted by the board' };
@@ -348,6 +378,25 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       && throughFollowOn.lead === 200 && throughFollowOn.follow === 200 && throughFollowOn.consultant === 404
       && outOfScope.status === 200 && afterOut === 404 && onBoth(await trail(fid, 'ENGAGEMENT_PREVIOUS_SCOPE_SET')),
     `before approval ${JSON.stringify(beforeApproval)}; approved ${JSON.stringify(throughFollowOn)}; out of scope ${outOfScope.status} → ${afterOut}`);
+
+  // The gaps still open come across, as the same gaps; a closed one stays behind.
+  const carriedRows = fid ? await prisma.clauseAssessment.findMany({
+    where: { projectId: fid }, select: { clauseId: true, issueId: true, carriedFromId: true, supersededAt: true },
+  }) : [];
+  const { computeReadiness } = require('../../dist/controllers/engagementReadinessController');
+  const readiness = fid ? await computeReadiness(fid, omni.id, iso.id) : null;
+  const openRow = readiness?.clauses?.find((x) => x.id === openClause.id);
+  const closedRow = readiness?.clauses?.find((x) => x.id === closedClause.id);
+  const gapsOnClause = await prisma.issue.count({ where: { tenantId: omni.id, source: 'ConsultingGap', clauseId: openClause.id, projectId: { in: [pid, fid].filter(Boolean) } } });
+  const gapNow = await prisma.issue.findUnique({ where: { id: openGap.issue.id }, select: { status: true, capDescription: true, projectId: true } });
+  v.record('engagement-s7:a follow-on carries the gaps still open, with their action plans, as the same gaps; readiness counts them and nothing is raised twice',
+    followOn.json?.project?.carriedGaps === 1 && carriedRows.length === 1
+      && carriedRows[0].issueId === openGap.issue.id && carriedRows[0].carriedFromId === openGap.row.id && !carriedRows[0].supersededAt
+      && openRow?.checks?.gapsClosed === false && (openRow?.why?.openGaps || []).includes(openGap.issue.ref)
+      && closedRow?.checks?.gapsClosed === true && gapsOnClause === 1
+      && gapNow?.status === 'Open' && gapNow.capDescription === 'Record the quarterly reviews' && gapNow.projectId === pid,
+    `carried ${followOn.json?.project?.carriedGaps}; rows ${JSON.stringify(carriedRows)}; open clause ${JSON.stringify(openRow?.checks)} ${openRow?.why?.openGaps}; `
+      + `closed clause ${closedRow?.checks?.gapsClosed}; gaps on the clause ${gapsOnClause}; gap ${JSON.stringify(gapNow)}`);
 
   // ── Firm team: allocation across open engagements ────────────────────────
   const second = await activeEngagement('S7 second engagement');
