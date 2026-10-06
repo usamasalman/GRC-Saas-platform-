@@ -295,6 +295,13 @@ model User {
   evidenceLinksRemoved           EvidenceLink[]       @relation("EvidenceUnlinker")
   scopeChangesRequested          ScopeChangeRequest[] @relation("ScopeChangeRequester")
   scopeChangesDecided            ScopeChangeRequest[] @relation("ScopeChangeDecider")
+  // Consulting engagement, sprint 9: threads, document reviews, suggestions.
+  threadsStarted                 DiscussionThread[]   @relation("ThreadCreator")
+  postsWritten                   DiscussionPost[]     @relation("PostAuthor")
+  postMentions                   PostMention[]        @relation("MentionedUser")
+  documentReviewsMade            DocumentReview[]     @relation("DocReviewer")
+  suggestionsMade                DocumentSuggestion[] @relation("SuggestionAuthor")
+  suggestionsDecided             DocumentSuggestion[] @relation("SuggestionDecider")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -1717,6 +1724,8 @@ model Document {
   accesses      DocumentAccess[]
   legalHolds    LegalHold[]
   chunks        DocumentChunk[]
+  engagementReviews     DocumentReview[]
+  engagementSuggestions DocumentSuggestion[]
 }
 
 /// A matter that documents are held for.
@@ -1966,6 +1975,8 @@ model DocumentVersion {
   disposedById     String?
   disposalReason   String?
   approvals        ApprovalQueue[]
+  /// Suggestions from an engagement pulled into this next version.
+  suggestions      DocumentSuggestion[]
 
   @@index([documentId, state])
   @@index([disposalDueAt])
@@ -3286,6 +3297,9 @@ model Project {
   scopeChangeRequests        ScopeChangeRequest[]
   invitations                EngagementInvitation[]
   shadowRefusals             EngagementShadowRefusal[]
+  discussionThreads          DiscussionThread[]
+  documentReviews            DocumentReview[]
+  documentSuggestions        DocumentSuggestion[]
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -4682,4 +4696,153 @@ model ScopeChangeRequest {
 
   @@unique([projectId, ref])
   @@index([projectId, status])
+}
+
+// ─── Consulting engagement, sprint 9: threads, document review, suggestions ──
+
+/// A conversation about one thing in an engagement. Who can read it is fixed
+/// when it is started and never widened: Engagement (both sides),
+/// ClientInternal (the organisation only) or FirmInternal (the firm only).
+model DiscussionThread {
+  id               String           @id @default(uuid())
+  projectId        String
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// THR-0001, per engagement.
+  ref              String
+  /// Engagement | Task | Request | Document | Risk | Asset
+  subjectType      String
+  subjectId        String?
+  /// What the subject was called when the thread started.
+  subjectLabel     String?
+  title            String
+  /// Engagement | ClientInternal | FirmInternal
+  visibility       String
+  /// Open | Resolved | Converted
+  status           String           @default("Open")
+  /// What it became, through the existing routes: a Task or a Request of this engagement.
+  convertedToType  String?
+  convertedToId    String?
+  convertedToLabel String?
+  convertedAt      DateTime?
+  convertedById    String?
+  resolvedAt       DateTime?
+  resolvedById     String?
+  createdById      String
+  createdBy        User             @relation("ThreadCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  lastPostAt       DateTime         @default(now())
+  posts            DiscussionPost[]
+
+  @@unique([projectId, ref])
+  @@index([projectId, visibility, lastPostAt])
+  @@index([projectId, subjectType, subjectId])
+}
+
+/// One post. Never edited: a retraction keeps the words and says who and why.
+model DiscussionPost {
+  id            String           @id @default(uuid())
+  threadId      String
+  thread        DiscussionThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  /// Comment | Question | Decision | ReviewNote
+  kind          String
+  body          String
+  authorId      String
+  author        User             @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  /// Client | Provider: the side it was written from.
+  side          String
+  createdAt     DateTime         @default(now())
+  retractedAt   DateTime?
+  retractedById String?
+  retractReason String?
+  mentions      PostMention[]
+
+  @@index([threadId, createdAt])
+}
+
+/// Someone named in a post. Only people who can read the thread are named.
+model PostMention {
+  id     String         @id @default(uuid())
+  postId String
+  post   DiscussionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User           @relation("MentionedUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+/// The firm's review of one version of a shared document.
+model DocumentReview {
+  id              String                  @id @default(uuid())
+  projectId       String
+  project         Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  documentId      String
+  document        Document                @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// The version reviewed.
+  documentVersion String
+  reviewerId      String
+  reviewer        User                    @relation("DocReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  /// Accepted | ChangesRequested | NotFitForPurpose
+  outcome         String
+  note            String?
+  createdAt       DateTime                @default(now())
+  comments        DocumentReviewComment[]
+
+  @@index([projectId, documentId, createdAt])
+}
+
+/// A review comment anchored to the words it is about, or to a page of a file.
+model DocumentReviewComment {
+  id       String         @id @default(uuid())
+  reviewId String
+  review   DocumentReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  quote    String?
+  page     Int?
+  body     String
+
+  @@index([reviewId])
+}
+
+/// Wording the firm proposes for a published version of the organisation's
+/// document. The firm never edits the document: the organisation pulls a
+/// suggestion into its next version, and every suggestion ends with an
+/// outcome the firm can see.
+model DocumentSuggestion {
+  id               String           @id @default(uuid())
+  projectId        String
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// SUG-0001, per engagement.
+  ref              String
+  documentId       String
+  document         Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// The published version it was made on.
+  documentVersion  String
+  /// The section it is about: its heading, or where it is.
+  section          String
+  /// The words it would replace, quoted from that version; empty for a file.
+  currentWording   String?
+  proposedWording  String
+  reason           String
+  authorId         String
+  author           User             @relation("SuggestionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  /// Open | Pulled | Accepted | Declined | Superseded
+  status           String           @default("Open")
+  /// The next version it was pulled into, while that version is open.
+  versionId        String?
+  version          DocumentVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  pulledAt         DateTime?
+  pulledById       String?
+  /// When its wording was taken into that version's text.
+  wordingAppliedAt DateTime?
+  /// The version number it went into when that version was published.
+  acceptedInto     String?
+  decidedAt        DateTime?
+  decidedById      String?
+  decidedBy        User?            @relation("SuggestionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decisionReason   String?
+
+  @@unique([projectId, ref])
+  @@index([documentId, status])
+  @@index([versionId])
 }
