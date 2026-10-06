@@ -225,6 +225,22 @@ const NextVersionPanel: React.FC<Props> = ({ documentId, document, info, links, 
         )}
       </div>
 
+      {v.suggestions?.length > 0 && (
+        <div style={box}>
+          <div style={heading}>Suggestions in this version</div>
+          {v.suggestions.map((s: any) => (
+            <div key={s.id} style={{ fontSize: 12.5, padding: '4px 0' }}>
+              <strong>{s.project?.ref}/{s.ref}</strong> · {s.section} · {s.author?.name}
+              {s.documentVersion !== info.live?.version && <span style={{ color: 'var(--ink-muted)' }}> · made on v{s.documentVersion}</span>}
+              <span style={{ color: 'var(--ink-muted)' }}> · {s.wordingAppliedAt ? 'wording taken into the text' : 'the reason for a change made by hand'}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
+            They are decided on the engagement's Documents tab, and become accepted into v{v.versionNumber} when it is published.
+          </div>
+        </div>
+      )}
+
       {/* The text */}
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>

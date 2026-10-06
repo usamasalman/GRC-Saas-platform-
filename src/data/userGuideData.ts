@@ -318,6 +318,18 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Reviewing answers, and overdue requests',
         instruction: 'The firm clicks "Review". Evidence is judged on four tests (Relevant, Complete, Covers the period, Authentic and traceable), each Pass, Fail or "Not applicable"; a Fail needs a note, and anything that fails is "Returned" with what is missing. Otherwise it is "Accepted". Accepted evidence counts toward the engagement\'s readiness ("Clauses with evidence the firm accepted") and never verifies a task or validates a control: that stays with the organisation.',
         tip: 'Past its due date a request shows how many days it is overdue, here and under "Overdue requests" on the Delays tab, for information only. It becomes a delay owed by the organisation only when the firm\'s Lead or the project manager clicks "Record as blocker". During a hold nothing is sent and the overdue days stop; a request whose due date fell in the hold is marked "Due during the hold".'
+      },
+      {
+        step: 18,
+        title: 'Discussions',
+        instruction: 'Open the "Discussions" tab and click "Start a thread": choose what it is about (the engagement, a task, a request, or a document, risk or asset the scope shares) and who reads it: "Both sides", "Organisation only" or "Firm only". Who reads a thread is fixed once it starts. Reply with a Comment, Question or "Review note"; tick people under "Name:" to tell them, and only people who can read the thread are offered.',
+        tip: 'Posts are never edited: "Retract" keeps the words, struck through, with your reason. A "Decision" is recorded only in a thread both sides read, by the project manager or owner, or by the firm\'s Lead. "Convert to a task" (organisation) or "Convert to a request" (firm) makes it through the usual form and links the thread to it.'
+      },
+      {
+        step: 19,
+        title: 'Document review and suggestions',
+        instruction: 'On the "Documents" tab, "Read" a shared document. The firm\'s Lead and Reviewers click "Review this version" and record "Accepted", "Changes requested" or "Not fit for purpose", with comments anchored to quoted words or a page ("Add an anchored comment"). The firm\'s Lead and Consultants click "Suggest wording" on a published version: the section, the words to replace, the proposed wording and why.',
+        tip: 'The firm never edits the organisation\'s document. Its owner or the project manager clicks "Start next version from this suggestion" (or "Add to the open next version"), then "Take the wording into the draft"; the firm\'s author is then recorded as an editor of that version and cannot approve it. When the version is published the suggestion reads "Accepted into" that version; otherwise "Decline" or "Mark superseded" with a reason. A suggestion made on an earlier version says "made on" it and still counts.'
       }
     ],
     proTips: [

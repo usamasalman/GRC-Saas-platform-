@@ -3,6 +3,7 @@ import apiClient from '../../../api/apiClient';
 import DialogShell from '../../../components/Dialog';
 import FormDialog from '../../../components/FormDialog';
 import { S, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import DocumentReviewPanel from './DocumentReviewPanel';
 
 /**
  * The part of the organisation's document library an engagement shares
@@ -14,6 +15,9 @@ import { S, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
  * Every open and download is on the document's Access tab, as the
  * organisation's own reads are. The organisation sees exactly what the firm
  * sees, and sets view only or download here.
+ *
+ * Under a document's text (sprint 9): the firm's reviews of it and its
+ * suggested wording, and what the organisation made of each.
  */
 
 interface Doc {
@@ -161,7 +165,7 @@ const EngagementDocuments: React.FC<{ projectId: string }> = ({ projectId }) => 
       )}
 
       {open && (
-        <DialogShell title={`${open.code} · ${open.title}`} onClose={() => setOpen(null)} width={760}>
+        <DialogShell title={`${open.code} · ${open.title}`} onClose={() => setOpen(null)} width={860}>
           <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginBottom: 8 }}>
             {open.classification} · {open.status} · v{open.version}{open.owner ? ` · ${open.owner}` : ''}
           </div>
@@ -174,6 +178,7 @@ const EngagementDocuments: React.FC<{ projectId: string }> = ({ projectId }) => 
               ? <button style={ghostBtn} onClick={() => file(open, true)}>Download</button>
               : <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', alignSelf: 'center' }}>View only on this engagement</span>}
           </div>
+          <DocumentReviewPanel projectId={projectId} documentId={open.id} />
         </DialogShell>
       )}
       {changing && meta && (
