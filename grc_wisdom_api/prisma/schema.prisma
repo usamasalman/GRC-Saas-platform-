@@ -308,6 +308,11 @@ model User {
   clauseAssessments              ClauseAssessment[]   @relation("ClauseAssessor")
   contextEntriesMade             ContextEntry[]       @relation("ContextCreator")
   contextEntriesDecided          ContextEntry[]       @relation("ContextDecider")
+  // Consulting engagement, sprint 11: proposals and challenges.
+  registerProposals              RegisterProposal[]   @relation("RegisterProposer")
+  registerProposalsDecided       RegisterProposal[]   @relation("RegisterProposalDecider")
+  challengesRaised               RegisterChallenge[]  @relation("ChallengeRaiser")
+  challengesDecided              RegisterChallenge[]  @relation("ChallengeDecider")
   projectEvidenceUploaded ProjectEvidence[] @relation("ProjectEvidenceUploader")
   projectEvidenceWithdrawn ProjectEvidence[] @relation("ProjectEvidenceWithdrawer")
   taskClauseLinks ProjectTaskClause[] @relation("TaskClauseLinker")
@@ -795,6 +800,8 @@ model Risk {
   snapshots          RiskScoreSnapshot[]
   /// Context entries (4.1, 4.2) that bear on this risk.
   contextLinks       ContextEntryRisk[]
+  /// Challenges to its scores from engagements (sprint 11).
+  challenges         RegisterChallenge[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, status])
@@ -2340,6 +2347,8 @@ model Asset {
   riskLinks      AssetRiskLink[]
   controlLinks   AssetControlLink[]
   issues         Issue[]
+  /// Challenges to its C, I and A from engagements (sprint 11).
+  challenges     RegisterChallenge[]
 
   @@unique([tenantId, ref])
   @@index([tenantId, criticalityTier])
@@ -3317,6 +3326,8 @@ model Project {
   documentSuggestions        DocumentSuggestion[]
   clauseAssessments          ClauseAssessment[]
   contextProposals           ContextEntry[]
+  registerProposals          RegisterProposal[]
+  registerChallenges         RegisterChallenge[]
 
   /// Accountable for the engagement: sets the timeline, answers for delivery.
   ownerId          String
@@ -4941,4 +4952,86 @@ model ContextEntryRisk {
 
   @@id([contextEntryId, riskId])
   @@index([riskId])
+}
+
+// ─── Consulting engagement, sprint 11: proposals and challenges ──────────────
+
+/// A risk or asset the firm thinks the register is missing. Kept apart from
+/// the register, so no figure counts it, until the organisation accepts it
+/// and it becomes an ordinary risk or asset.
+model RegisterProposal {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// PRP-0001, per engagement.
+  ref             String
+  /// The organisation whose register it is proposed for.
+  tenantId        String
+  /// Risk | Asset
+  kind            String
+  title           String
+  description     String?
+  reason          String
+  /// A risk's category, or an asset's type.
+  category        String?
+  likelihood      Int?
+  impact          Int?
+  confidentiality Int?
+  integrity       Int?
+  availability    Int?
+  /// Proposed | Accepted | Rejected
+  status          String   @default("Proposed")
+  proposedById    String
+  proposedBy      User     @relation("RegisterProposer", fields: [proposedById], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  decidedById     String?
+  decidedBy       User?    @relation("RegisterProposalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt       DateTime?
+  decisionNote    String?
+  /// What it became.
+  riskId          String?
+  assetId         String?
+
+  @@unique([projectId, ref])
+  @@index([projectId, status])
+}
+
+/// A challenge to a risk's or an asset's scores. No figure reads it: the
+/// register's own scores stand until the owner adopts or adjusts it.
+model RegisterChallenge {
+  id               String    @id @default(uuid())
+  projectId        String
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// CHL-0001, per engagement.
+  ref              String
+  tenantId         String
+  /// Risk | Asset
+  kind             String
+  riskId           String?
+  risk             Risk?     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  assetId          String?
+  asset            Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  /// JSON: the scores when it was raised, the scores proposed, and after the decision.
+  scoresBefore     String
+  scoresProposed   String
+  scoresAfter      String?
+  reason           String
+  /// What the challenge rests on: an asset, or a control implementation.
+  restingAssetId   String?
+  restingControlId String?
+  restingLabel     String?
+  /// Open | Adopted | Kept | Adjusted | Withdrawn
+  status           String    @default("Open")
+  raisedById       String
+  raisedBy         User      @relation("ChallengeRaiser", fields: [raisedById], references: [id], onDelete: Cascade)
+  raisedAt         DateTime  @default(now())
+  decidedById      String?
+  decidedBy        User?     @relation("ChallengeDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt        DateTime?
+  decisionReason   String?
+
+  @@unique([projectId, ref])
+  @@index([projectId, status])
+  @@index([riskId, status])
+  @@index([assetId, status])
 }
