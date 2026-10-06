@@ -31,6 +31,9 @@ import {
 import {
   listReviews, reviewDocument, listSuggestions, suggestWording, pullSuggestion, applySuggestion, decideSuggestion,
 } from '../controllers/engagementDocumentReviewController';
+import {
+  getAssessment, assessClause, listContext, addContextEntry, decideContextEntry,
+} from '../controllers/engagementAssessmentController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -39,7 +42,8 @@ import {
  * engagements set up the old way, enforcement, external access, the window
  * after close, report copies, the firm's records, its team and follow-ons,
  * (sprint 8) information requests, evidence links and scope changes, and
- * (sprint 9) threads, document reviews and suggestions.
+ * (sprint 9) threads, document reviews and suggestions, and (sprint 10) the
+ * gap assessment and the context register.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -147,5 +151,13 @@ router.post('/:projectId/documents/:documentId/suggestions', requireAnyCapabilit
 router.post('/:projectId/suggestions/:suggestionId/pull', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), pullSuggestion);
 router.post('/:projectId/suggestions/:suggestionId/apply', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), applySuggestion);
 router.post('/:projectId/suggestions/:suggestionId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideSuggestion);
+
+// Sprint 10: the gap assessment of the clauses and entities the scope names,
+// and the organisation's context register, which the firm proposes to.
+router.get('/:projectId/assessment', getAssessment);
+router.post('/:projectId/assessment', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), assessClause);
+router.get('/:projectId/context', listContext);
+router.post('/:projectId/context', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), addContextEntry);
+router.post('/:projectId/context/:entryId/decide', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), decideContextEntry);
 
 export default router;
