@@ -18,7 +18,7 @@ import { assertPackageAllows, PackageLimitError } from '../services/packageLimit
 
 const SUBJECT_TENANT = 'Tenant';
 
-const VALID_TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER'];
+const VALID_TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER', 'AUDITOR'];
 
 // ─── LIST (scope-aware, with counts) ───────────────────────────────────────
 
