@@ -27,6 +27,8 @@ import { readinessScope } from '../services/projectStandards';
 import { acceptedClauseIds } from '../services/engagementRequests';
 import { bindingScope } from '../services/engagementScope';
 import { soaLine, soaClauses, byClauseRef, summarise } from '../services/gapAssessment';
+import { computeReadiness } from './engagementReadinessController';
+import { DIMENSIONS, DIMENSION_LABEL } from '../services/readiness';
 import {
   criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
 } from '../services/projectDependency';
@@ -1463,6 +1465,68 @@ async function soaSections(e: Engagement, now: Date): Promise<ReportSection[]> {
   return sections;
 }
 
+/**
+ * The readiness report (sprint 12): for each framework and entity the scope
+ * names, every clause's six checks and its verdict, the records period, the
+ * management review (9.3), and the firm's latest opinion beside them.
+ */
+async function readinessSections(e: Engagement, now: Date): Promise<ReportSection[]> {
+  const scope = await bindingScope(e.id);
+  const entityIds = scope?.entityIds ?? [];
+  const frameworkIds = scope?.frameworkIds ?? [];
+  const opinion = await prisma.readinessOpinion.findFirst({ where: { projectId: e.id }, orderBy: { givenAt: 'desc' }, select: { verdict: true, opinion: true, conditions: true, givenAt: true, givenBy: { select: { name: true } } } });
+  const head: ReportSection = {
+    kind: 'fields',
+    title: 'Readiness',
+    fields: [
+      { label: 'Engagement', value: `${e.ref} — ${e.name}` },
+      { label: 'Client', value: e.tenant?.name ?? '—' },
+      { label: 'Basis', value: `Computed on ${now.toISOString().slice(0, 10)} from the records held; nobody types readiness in.` },
+      { label: 'The firm\'s opinion', value: opinion ? `${opinion.verdict} (${opinion.givenBy?.name ?? ''}, ${opinion.givenAt.toISOString().slice(0, 10)}): ${opinion.opinion}${opinion.conditions ? ` Conditions: ${opinion.conditions}` : ''}` : 'None given' },
+    ],
+  };
+  if (!entityIds.length || !frameworkIds.length) {
+    head.fields.push({ label: 'Scope', value: 'No binding scope names both frameworks and entities, so there is nothing to compute.' });
+    return [head];
+  }
+  const [entities, standards] = await Promise.all([
+    prisma.tenant.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.standard.findMany({ where: { id: { in: frameworkIds } }, select: { id: true, code: true }, orderBy: { code: 'asc' } }),
+  ]);
+  const sections: ReportSection[] = [head];
+  for (const std of standards) {
+    for (const ent of entities) {
+      const r = await computeReadiness(e.id, ent.id, std.id, now);
+      sections.push({
+        kind: 'fields',
+        title: `${std.code} — ${ent.name}`,
+        fields: [
+          { label: 'Ready', value: String(r.summary.Ready ?? 0) },
+          { label: 'Nearly ready', value: String(r.summary['Nearly ready'] ?? 0) },
+          { label: 'Not ready', value: String(r.summary['Not ready'] ?? 0) },
+          { label: 'Not applicable', value: String(r.summary['Not applicable'] ?? 0) },
+          { label: 'Records period', value: `${r.recordsPeriodMonths} months of operating evidence` },
+          { label: 'Management review (9.3)', value: r.managementReview93 ? 'Recorded within the last twelve months, every input considered' : 'Not yet' },
+        ],
+      });
+      sections.push({
+        kind: 'table',
+        title: `${std.code} — ${ent.name}: clauses`,
+        columns: [
+          { header: 'Clause', key: 'clause', width: 10 }, { header: 'Title', key: 'title', width: 28 },
+          ...DIMENSIONS.map((d) => ({ header: DIMENSION_LABEL[d], key: d, width: 12 })),
+          { header: 'Readiness', key: 'verdict', width: 14 },
+        ],
+        rows: r.clauses.map((c) => ({
+          clause: c.ref, title: c.title, verdict: c.verdict,
+          ...Object.fromEntries(DIMENSIONS.map((d) => [d, c.verdict === 'Not applicable' ? '—' : (c.checks[d] ? 'Yes' : 'No')])),
+        })),
+      });
+    }
+  }
+  return sections;
+}
+
 const REPORTS: Record<string, { name: string; key: string }> = {
   status: { name: 'Engagement Status Report', key: 'delivery-status' },
   phase: { name: 'Phase Delivery Report', key: 'delivery-phase' },
@@ -1471,6 +1535,8 @@ const REPORTS: Record<string, { name: string; key: string }> = {
   evidence: { name: 'Evidence and Traceability Report', key: 'delivery-evidence' },
   // Sprint 10: read off the engagement's current clause assessments.
   soa: { name: 'Statement of Applicability', key: 'delivery-soa' },
+  // Sprint 12: computed per clause from the records held, never typed in.
+  readiness: { name: 'Readiness Report', key: 'delivery-readiness' },
 };
 
 /**
@@ -1529,6 +1595,7 @@ export const exportDeliveryReport = async (
     else if (kind === 'audit') sections = auditSections(e, now);
     else if (kind === 'delay') sections = delaySections(e, now);
     else if (kind === 'soa') sections = await soaSections(e, now);
+    else if (kind === 'readiness') sections = await readinessSections(e, now);
     else sections = await evidenceSections(e, now);
 
     // The report is issued in the CLIENT's name even when a consultant pressed
