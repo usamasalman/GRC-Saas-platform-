@@ -68,6 +68,12 @@ const REPORTS: { kind: string; name: string; reader: string }[] = [
     reader: 'For certification readiness. What each clause is addressed by, and '
       + 'which clauses nothing addresses at all.',
   },
+  {
+    kind: 'soa',
+    name: 'Statement of Applicability',
+    reader: 'For the certification body. Read off the current clause assessments: each '
+      + 'control applicable or not, why, how far it is implemented, and its open gap.',
+  },
 ];
 
 const FORMATS = ['pdf', 'docx', 'xlsx'];

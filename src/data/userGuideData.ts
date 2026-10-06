@@ -330,6 +330,18 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Document review and suggestions',
         instruction: 'On the "Documents" tab, "Read" a shared document. The firm\'s Lead and Reviewers click "Review this version" and record "Accepted", "Changes requested" or "Not fit for purpose", with comments anchored to quoted words or a page ("Add an anchored comment"). The firm\'s Lead and Consultants click "Suggest wording" on a published version: the section, the words to replace, the proposed wording and why.',
         tip: 'The firm never edits the organisation\'s document. Its owner or the project manager clicks "Start next version from this suggestion" (or "Add to the open next version"), then "Take the wording into the draft"; the firm\'s author is then recorded as an editor of that version and cannot approve it. When the version is published the suggestion reads "Accepted into" that version; otherwise "Decline" or "Mark superseded" with a reason. A suggestion made on an earlier version says "made on" it and still counts.'
+      },
+      {
+        step: 20,
+        title: 'Gap assessment and the Statement of Applicability',
+        instruction: 'Open the "Assessment" tab, choose the entity and framework the scope names, and click "Assess" on a clause: "Conformant", "Partial", "Missing" or "Not applicable", always with why. A Partial or Missing clause needs what is missing ("Documentation", "Implementation", "Evidence" or "Competence") and raises a gap in the organisation\'s issue register, which it answers and closes there under the usual rule that whoever closes an issue did not raise, answer or own it.',
+        tip: 'Reassessing replaces the current result and keeps the old one as history, and the row says how many times the clause has been assessed; it never closes a gap. On the Reports tab, "Statement of Applicability" lists each control as applicable or not, why, how far it is implemented and its open gap; "Issue" gives it a number in the report register.'
+      },
+      {
+        step: 21,
+        title: 'Context and interested parties',
+        instruction: 'Open the "Context" tab. The organisation clicks "Record an entry": an "Issue (4.1)" or an "Interested party (4.2)" with what it requires, internal or external, where it comes from and how relevant it is. The firm clicks "Propose an entry" instead, and sees only its own proposals.',
+        tip: 'A proposal counts for nothing until the project manager or owner clicks "Accept"; "Reject" needs a reason the firm sees. The figures above the register count accepted entries only ("Proposed, not counted").'
       }
     ],
     proTips: [
