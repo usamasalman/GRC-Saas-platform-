@@ -42,6 +42,9 @@ import {
   getReadiness, setRecordsPeriod, giveOpinion, signOffReadiness,
   listReviews as listManagementReviews, prepareReview, updateReview, recordReview, addReviewAction,
 } from '../controllers/engagementReadinessController';
+import {
+  getCertification, inviteBody, revokeBody, freezePack, answerQuestion, recordNonconformity,
+} from '../controllers/engagementCertificationController';
 
 /**
  * Consulting engagements (sprints 4 to 7): invitations, the relationship, the
@@ -52,8 +55,8 @@ import {
  * (sprint 8) information requests, evidence links and scope changes, and
  * (sprint 9) threads, document reviews and suggestions, and (sprint 10) the
  * gap assessment and the context register, (sprint 11) challenges,
- * proposals and drafts of risk appetite, and (sprint 12) readiness and
- * management reviews.
+ * proposals and drafts of risk appetite, (sprint 12) readiness and
+ * management reviews, and (sprint 13) the certification body.
  *
  * Every per-engagement route refuses unless the "Consulting Engagements" flag
  * is on for the organisation and the firm involved. Which side may act is
@@ -197,5 +200,16 @@ router.post('/:projectId/management-reviews', requireAnyCapability(CAP.EXECUTE_P
 router.patch('/:projectId/management-reviews/:reviewId', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), updateReview);
 router.post('/:projectId/management-reviews/:reviewId/record', requireCapability(CAP.MANAGE_PROJECT), recordReview);
 router.post('/:projectId/management-reviews/:reviewId/actions', requireCapability(CAP.MANAGE_PROJECT), addReviewAction);
+
+// Sprint 13: the organisation's side of its certification body: inviting it
+// for dated, read-only access, freezing the audit pack it reads, answering
+// its questions and recording its nonconformities as issues. The body's own
+// routes are under /api/certification.
+router.get('/:projectId/certification', getCertification);
+router.post('/:projectId/certification', requireCapability(CAP.MANAGE_PROJECT), inviteBody);
+router.post('/:projectId/certification/packs', requireCapability(CAP.MANAGE_PROJECT), freezePack);
+router.post('/:projectId/certification/:accessId/revoke', requireCapability(CAP.MANAGE_PROJECT), revokeBody);
+router.post('/:projectId/certification/questions/:questionId/answer', requireAnyCapability(CAP.EXECUTE_PROJECT_WORK, CAP.MANAGE_PROJECT), answerQuestion);
+router.post('/:projectId/certification/questions/:questionId/record', requireCapability(CAP.MANAGE_PROJECT), recordNonconformity);
 
 export default router;

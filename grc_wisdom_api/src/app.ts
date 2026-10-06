@@ -24,6 +24,7 @@ import systemRoutes from './routes/systemRoutes';
 import projectRoutes from './routes/projectRoutes';
 import planTemplateRoutes from './routes/planTemplateRoutes';
 import engagementRoutes from './routes/engagementRoutes';
+import certificationRoutes from './routes/certificationRoutes';
 import { requestContext } from './services/requestContext';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { requireCapability, CAP } from './services/capabilityEngine';
@@ -277,6 +278,8 @@ app.use('/api/system', systemRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/plan-templates', planTemplateRoutes);
 app.use('/api/engagements', engagementRoutes);
+// The certification body's own reads and questions (consulting engagement, sprint 13).
+app.use('/api/certification', certificationRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 //
