@@ -3,6 +3,17 @@ import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
+import { ENFORCEMENT_FLAG } from '../services/featureFlags';
+
+/**
+ * Consulting enforcement goes on only through its readiness checklist,
+ * organisation by organisation, with notice to the firms (sprint 6). Off is
+ * always allowed here: it returns an organisation to shadow mode.
+ */
+const USE_CHECKLIST = {
+  status: 'error', code: 'USE_ENFORCEMENT_CHECKLIST',
+  message: 'Consulting enforcement is switched on per organisation from its readiness checklist, below the flags.',
+};
 
 interface GrcModuleItem {
   id: string;
@@ -646,6 +657,7 @@ export const toggleFeatureFlag = async (req: AuthenticatedRequest, res: Response
     }
 
     const nextStatus = flag.status === 'Enabled' ? 'Disabled' : 'Enabled';
+    if (flag.key === ENFORCEMENT_FLAG && nextStatus === 'Enabled') { res.status(409).json(USE_CHECKLIST); return; }
 
     const updated = await prisma.$transaction(async (tx) => {
       const row = await tx.featureFlag.update({
@@ -697,6 +709,8 @@ export const setFlagOverride = async (req: AuthenticatedRequest, res: Response):
       res.status(404).json({ status: 'error', code: 'FLAG_NOT_FOUND', message: 'Feature flag not found' });
       return;
     }
+
+    if (flag.key === ENFORCEMENT_FLAG && !remove && Boolean(enabled)) { res.status(409).json(USE_CHECKLIST); return; }
 
     const targetTenantId = String(tenantId || '');
     const tenant = await prisma.tenant.findUnique({

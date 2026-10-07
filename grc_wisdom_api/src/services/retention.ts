@@ -41,8 +41,16 @@
  * Pure, and with no Prisma import, so every refusal runs without a database.
  */
 
-/** What starts the clock. */
-export const RETENTION_TRIGGERS = ['Published', 'Archived', 'Created'] as const;
+/**
+ * What starts the clock.
+ *
+ * Superseded is for the versions a next version replaced: each one is kept for
+ * the period from the day it stopped being in force, then reviewed on its own.
+ * Every replaced version counts from that day whatever its document's
+ * schedule says; a Superseded schedule is one that disposes of nothing else,
+ * so the version in force is kept for as long as it is in force.
+ */
+export const RETENTION_TRIGGERS = ['Published', 'Archived', 'Created', 'Superseded'] as const;
 export type RetentionTrigger = (typeof RETENTION_TRIGGERS)[number];
 
 /**
@@ -133,6 +141,8 @@ export function triggerMomentFor(
 ): Date | string | null {
   if (trigger === 'Published') return doc.publishedAt ?? null;
   if (trigger === 'Archived') return doc.archivedAt ?? null;
+  // The document in force is never due under it; its replaced versions are.
+  if (trigger === 'Superseded') return null;
   return doc.createdAt ?? null;
 }
 

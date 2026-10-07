@@ -42,6 +42,7 @@ import RiskRegister from './grc/RiskRegister';
 import AuditProgramme from './grc/AuditProgramme';
 import DeliveryProjects from './grc/DeliveryProjects';
 import MyWork from './grc/project/MyWork';
+import CertificationAudits from './grc/CertificationAudits';
 import NotificationBell from '../components/NotificationBell';
 import ReportBranding from './settings/ReportBranding';
 import AssetRegister from './grc/AssetRegister';
@@ -187,7 +188,7 @@ const NAV: Record<string, any[]> = {
     ['People & Support', [['team-directory', '♣', 'Governance Teams'], ['itsm', '?', 'Document Service Desk'], ['knowledge', '◎', 'Knowledge Base']]]
   ],
   auditor: [
-    ['Audit Engagement', [['dashboard', '▦', 'Engagement Dashboard'], ['library', '≡', 'Assurance Evidence']]],
+    ['Audit Engagement', [['dashboard', '▦', 'Engagement Dashboard'], ['certification', '✓', 'Certification Audits'], ['library', '≡', 'Assurance Evidence']]],
     ['Verification', [['logs', '▤', 'Immutable Audit Log'], ['hash-check', '⊛', 'Cryptographic Verification']]],
     ['Support', [['itsm', '?', 'Auditor Support Desk']]]
   ],
@@ -470,6 +471,10 @@ const AppShell = () => {
     }
     if (currentPage === 'project-delivery') {
       return <DeliveryProjects key={`${account.id}-${currentPage}`} />;
+    }
+    // A certification body's audits of its clients' engagements (consulting engagement, sprint 13).
+    if (currentPage === 'certification') {
+      return <CertificationAudits key={`${account.id}-${currentPage}`} />;
     }
     if (currentPage === 'controls') {
       return <ControlLibrary key={`${account.id}-${currentPage}`} />;

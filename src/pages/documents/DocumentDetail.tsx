@@ -3,10 +3,13 @@ import { useState, useEffect, useRef } from 'react';
 import apiClient from '../../api/apiClient';
 import PickManyDialog from '../../components/PickManyDialog';
 import PagingBar, { type PageInfo } from '../../components/PagingBar';
+import NextVersionPanel, { STATE_LABEL, statePill, supersededLabel } from './NextVersionPanel';
 
 interface DocumentDetailProps {
   documentId: string;
   onClose: () => void;
+  /** Where to open: the Approval Queue opens a next version on its own tab. */
+  initialTab?: 'reader' | 'next';
 }
 
 /**
@@ -109,13 +112,51 @@ function describeFormat(mime: string | null, fileName?: string): string {
   return 'This file';
 }
 
-export default function DocumentDetail({ documentId, onClose }: DocumentDetailProps) {
+export default function DocumentDetail({ documentId, onClose, initialTab = 'reader' }: DocumentDetailProps) {
   const [document, setDocument] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<
-    'reader' | 'file' | 'versions' | 'approvals' | 'governs' | 'access'
-  >('reader');
+    'reader' | 'file' | 'versions' | 'approvals' | 'governs' | 'access' | 'next'
+  >(initialTab);
+
+  // The next version of a published document. Everyone who can read the
+  // document sees that one is being prepared; its text and its controls are
+  // for the people who write or sign it, and the server says who they are by
+  // answering the next-version read (404 to anyone else).
+  const [openVersion, setOpenVersion] = useState<any>(null);
+  const [nextInfo, setNextInfo] = useState<any>(null);
+  const [startFrom, setStartFrom] = useState<{ id: string; versionNumber: string } | null>(null);
+  const loadNext = async () => {
+    try {
+      const res = await apiClient.get(`/api/documents/${documentId}/next-version`);
+      setNextInfo(res.data);
+    } catch {
+      setNextInfo(null);
+    }
+  };
+  const nextAvailable = !!nextInfo && (!!nextInfo.version || !!nextInfo.can?.start);
+  const downloadVersion = async (ver: any) => {
+    try {
+      const response = await apiClient.get(`/api/documents/${documentId}/versions/${ver.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: (response.headers['content-type'] as string) || 'text/plain' }));
+      const link = window.document.createElement('a');
+      const header = response.headers['content-disposition'] as string | undefined;
+      link.href = url;
+      link.setAttribute('download', header?.includes('filename=') ? header.split('filename=')[1].replace(/"/g, '') : `${document?.code}_v${ver.versionNumber}.txt`);
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      // A disposed version answers 410 with why; the message arrives as a Blob.
+      let message = 'That version could not be downloaded.';
+      try { const raw = e?.response?.data; if (raw instanceof Blob) message = JSON.parse(await raw.text())?.message || message; } catch { /* not JSON */ }
+      setActionProblem(message);
+    }
+  };
+  // What a download could not do, said on the page rather than in a browser alert.
+  const [actionProblem, setActionProblem] = useState('');
 
   // Who has read this document.
   //
@@ -254,8 +295,9 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   /** The type the frame's blob was given; null means no frame shows this file. */
   const [frameAs, setFrameAs] = useState<string | null>(null);
 
-  const fetchDocumentDetail = async () => {
-    setLoading(true);
+  /** Quiet when refreshing after a next-version action, so the open tab stays put. */
+  const fetchDocumentDetail = async (quiet = false) => {
+    if (!quiet) setLoading(true);
     setError('');
     try {
       const res = await apiClient.get(`/api/documents/${documentId}`);
@@ -263,6 +305,8 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
         const doc = res.data.document;
         setDocument(doc);
         setReach(res.data.access || null);
+        setOpenVersion(res.data.openVersion || null);
+        loadNext();
 
         // Fetch PDF Blob URL if an uploaded file exists or if doc has content
         loadPdfBlob(doc.id, doc.fileType, doc.fileName);
@@ -342,6 +386,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const handleDownload = async () => {
     if (!document) return;
     setDownloading(true);
+    setActionProblem('');
     try {
       const response = await apiClient.get(`/api/documents/${document.id}/download`, {
         responseType: 'blob',
@@ -365,7 +410,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      alert('Failed to download document file');
+      setActionProblem('The file could not be downloaded.');
     } finally {
       setDownloading(false);
     }
@@ -501,6 +546,14 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
           >
             <Icon name="controls" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Governs ({linkSummary?.total ?? 0})
           </button>
+          {nextAvailable && (
+            <button
+              onClick={() => setActiveTab('next')}
+              style={{ padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: activeTab === 'next' ? '2px solid #38bdf8' : '2px solid transparent', color: activeTab === 'next' ? 'var(--info)' : 'var(--ink-muted)', fontWeight: activeTab === 'next' ? 600 : 400, cursor: 'pointer', fontSize: '13px' }}
+            >
+              <Icon name="edit" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Next version{nextInfo?.version ? ` (v${nextInfo.version.versionNumber})` : ''}
+            </button>
+          )}
           {maySeeAccess && (
             <button
               onClick={() => setActiveTab('access')}
@@ -511,13 +564,37 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
           )}
         </nav>
 
+        {openVersion && (
+          <div style={{ margin: '12px 24px 0', padding: '9px 14px', borderRadius: 6, background: 'var(--surface)', border: '1px solid var(--line)', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>
+              <strong>Version {openVersion.versionNumber} in draft</strong>
+              {openVersion.state === 'InReview' && <> · In review, {openVersion.approved} of {openVersion.approvers} approved</>}
+              {openVersion.state === 'Approved' && <> · Approved, ready to publish</>}
+              {openVersion.state === 'Returned' && <> · Returned to its author</>}
+              <span style={{ color: 'var(--ink-muted)' }}> — v{document?.version} stays in force until it is published.</span>
+            </span>
+            {nextAvailable && activeTab !== 'next' && (
+              <button type="button" onClick={() => setActiveTab('next')}
+                style={{ background: 'transparent', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontSize: 12, color: 'var(--info)' }}>
+                Open the next version
+              </button>
+            )}
+          </div>
+        )}
+
+        {actionProblem && (
+          <div role="alert" style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 6, background: 'var(--danger-bg)', border: '1px solid var(--danger-line)', color: 'var(--danger)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{ flex: 1 }}>{actionProblem}</span>
+            <button type="button" onClick={() => setActionProblem('')} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 12 }}>Dismiss</button>
+          </div>
+        )}
+
         {reach?.openAudienceGap && (
           <div style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 6, background: 'var(--warning-bg)', border: '1px solid var(--warning-line)', color: 'var(--warning)', fontSize: 12.5, lineHeight: 1.6 }}>
             Marked <strong>{reach.classification}</strong>, but still readable by everyone in
             the organisation: it was published before audiences were recorded, so there is no
-            list of who it was issued to. Its reach cannot be narrowed while this version is
-            the published one — a published document cannot be edited or re-approved. Every
-            read of it is recorded on the Access tab.
+            list of who it was issued to. Its reach is narrowed by publishing a next version
+            with an audience. Every read of it is recorded on the Access tab.
           </div>
         )}
 
@@ -701,6 +778,18 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
             <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger-line)', color: 'var(--danger)', padding: '16px', borderRadius: '8px' }}>{error}</div>
           ) : (
             <>
+              {activeTab === 'next' && nextInfo && (
+                <NextVersionPanel
+                  documentId={documentId}
+                  document={document}
+                  info={nextInfo}
+                  links={links}
+                  startFrom={startFrom}
+                  onClearStartFrom={() => setStartFrom(null)}
+                  onChanged={() => { fetchDocumentDetail(true); loadLinks(); }}
+                />
+              )}
+
               {/* TAB 1: Attached File & Reader */}
               {activeTab === 'reader' && (
                 <div>
@@ -909,22 +998,44 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                   <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: 'var(--ink)' }}>Document Version Audit Timeline</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {(document.versions || []).map((ver: any) => (
-                      <div key={ver.id} style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div key={ver.id} style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                             <span style={{ color: 'var(--info)', fontWeight: 700, fontFamily: 'monospace' }}>v{ver.versionNumber}</span>
                             <span style={{ background: 'var(--surface-sunk)', color: 'var(--ink-body)', padding: '2px 6px', borderRadius: '4px', fontSize: '10px' }}>{ver.changeType || 'Revision'}</span>
+                            {ver.state && <span style={statePill(ver.state)}>{STATE_LABEL[ver.state] || ver.state}</span>}
                           </div>
-                          <div style={{ fontSize: '13px', color: 'var(--ink)' }}>{ver.summary || 'Document update'}</div>
+                          <div style={{ fontSize: '13px', color: 'var(--ink)' }}>{ver.summary || ver.startReason || 'Document update'}</div>
+                          {ver.state === 'Superseded' && ver.supersededAt && (
+                            <div style={{ fontSize: '12px', color: 'var(--warning)', marginTop: '4px' }}>{supersededLabel(ver.supersededAt, ver.supersededBy)}</div>
+                          )}
+                          {ver.state === 'Discarded' && ver.discardReason && (
+                            <div style={{ fontSize: '12px', color: 'var(--ink-muted)', marginTop: '4px' }}>Discarded: {ver.discardReason}</div>
+                          )}
                           <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginTop: '4px' }}>
-                            Checked in on {new Date(ver.createdAt).toLocaleString()}
+                            {ver.publishedAt ? `Published on ${new Date(ver.publishedAt).toLocaleString()}` : `Checked in on ${new Date(ver.createdAt).toLocaleString()}`}
+                            {ver.disposedAt && ` · disposed of under the retention schedule on ${new Date(ver.disposedAt).toLocaleDateString()}`}
                           </div>
                         </div>
-                        {ver.fileHash && (
-                          <div style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--success)', background: 'var(--success-bg)', padding: '6px 10px', borderRadius: '4px' }}>
-                            SHA-256: {ver.fileHash.substring(0, 16)}...
-                          </div>
-                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                          {ver.fileHash && (
+                            <div style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--success)', background: 'var(--success-bg)', padding: '6px 10px', borderRadius: '4px' }}>
+                              SHA-256: {ver.fileHash.substring(0, 16)}...
+                            </div>
+                          )}
+                          {ver.state && !ver.disposedAt && (ver.content || ver.fileUrl) && (
+                            <button type="button" onClick={() => downloadVersion(ver)}
+                              style={{ background: 'transparent', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontSize: 12, color: 'var(--ink-body)' }}>
+                              Download v{ver.versionNumber}
+                            </button>
+                          )}
+                          {ver.state === 'Superseded' && !ver.disposedAt && nextInfo?.can?.start && (
+                            <button type="button" onClick={() => { setStartFrom({ id: ver.id, versionNumber: ver.versionNumber }); setActiveTab('next'); }}
+                              style={{ background: 'transparent', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontSize: 12, color: 'var(--info)' }}>
+                              Start next version from this text
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -942,7 +1053,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                       {document.approvals.map((app: any) => (
                         <div key={app.id} style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ink)' }}>{app.approver?.name || 'Reviewer'}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ink)' }}>
+                              {app.approver?.name || 'Reviewer'}
+                              {app.version && <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-muted)' }}> · for v{app.version.versionNumber}</span>}
+                            </div>
                             <span style={{ background: app.status === 'APPROVED' ? '#064e3b' : 'var(--danger)', color: app.status === 'APPROVED' ? 'var(--success)' : 'var(--danger)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
                               {app.status}
                             </span>

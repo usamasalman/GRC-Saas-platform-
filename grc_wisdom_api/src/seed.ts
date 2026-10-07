@@ -7,6 +7,7 @@ import RBAC from './utils/rbacData.json';
 import { generateMaterializedPath } from './utils/treeUtils';
 import { computePriority, DEFAULT_SLA } from './services/slaService';
 import { STANDARDS, CONTROLS } from './utils/grcSeedData';
+import { FEATURE_FLAG_CATALOGUE } from './utils/platformCatalogue';
 import { computeEntityRisk, suggestedBudgetHours } from './services/auditRiskScoring';
 
 /**
@@ -1823,6 +1824,33 @@ async function main() {
   console.log(`  vendors: ${vendorCount} (${vendorAssessmentCount} assessments) · shared services: ${sharedServiceCount}`);
 
   console.log(`  sod rules: ${await prisma.sodRule.count()}`);
+
+  // -- The consulting pilot (consulting engagement, sprint 4) ------------------
+  // Off platform-wide, on for OmniOps and the delivery firm it works with, so
+  // the demo shows the invitation flow end to end. The flag itself is the
+  // catalogue's; provisioning creates it on a real deployment and never
+  // changes its status, and overrides there are set on the Feature Flags screen.
+  const consulting = FEATURE_FLAG_CATALOGUE.find((x) => x.key === 'Consulting Engagements');
+  if (consulting) {
+    const flag = await prisma.featureFlag.upsert({
+      where: { key: consulting.key },
+      update: {},
+      create: {
+        key: consulting.key, description: consulting.description, status: consulting.status,
+        owner: consulting.owner, scope: consulting.scope, rolloutPercentage: consulting.rolloutPercentage, expiryDate: null,
+      },
+    });
+    for (const ctx of ['OmniOps', 'GRC Consulting Partners']) {
+      const tenantId = tenantMap[ctx];
+      if (!tenantId) continue;
+      await prisma.featureFlagOverride.upsert({
+        where: { flagId_tenantId: { flagId: flag.id, tenantId } },
+        update: { enabled: true },
+        create: { flagId: flag.id, tenantId, enabled: true, note: 'Consulting pilot' },
+      });
+    }
+    console.log('  consulting pilot: on for OmniOps and GRC Consulting Partners');
+  }
 
   console.log('Seeding complete. All users log in with: ' + DEMO_PASSWORD);
 }

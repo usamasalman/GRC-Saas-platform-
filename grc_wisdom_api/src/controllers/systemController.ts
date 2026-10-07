@@ -7,6 +7,7 @@ import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResol
 import { reportAllJobs, planTrigger, observe } from '../services/jobReporting';
 import { runEscalationScan, SLA_ESCALATION_JOB } from '../services/slaService';
 import { runRiskReviewScan, RISK_REVIEW_JOB } from '../services/riskLifecycle';
+import { runEngagementAccessScan, ENGAGEMENT_ACCESS_JOB } from '../services/engagementAccessJob';
 import knownDefects from '../qa/known-defects.json';
 
 function str(val: unknown): string {
@@ -93,6 +94,7 @@ export const getSystemHealth = async (req: AuthenticatedRequest, res: Response):
 const RUNNABLE: Record<string, () => Promise<Record<string, number>>> = {
   [SLA_ESCALATION_JOB]: runEscalationScan,
   [RISK_REVIEW_JOB]: runRiskReviewScan,
+  [ENGAGEMENT_ACCESS_JOB]: () => runEngagementAccessScan(),
 };
 
 /**

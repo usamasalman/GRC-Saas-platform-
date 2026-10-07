@@ -5,6 +5,9 @@ import FormDialog from '../../../components/FormDialog';
 import { ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY } from '../../../components/Can';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../../iam/iamStyles';
+import EngagementPanel from './EngagementPanel';
+import type { OpenProject } from './EngagementAfterClose';
+import { HOLD_ACCESS_LABELS } from './holdAccess';
 
 /**
  * Who is on this engagement, and how much of them it has.
@@ -41,10 +44,15 @@ const RACI_MEANS: Record<string, string> = {
   I: 'Informed — told after them',
 };
 
-const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
+const ProjectTeam: React.FC<{ projectId: string; onOpenProject?: (p: OpenProject) => void }> = ({ projectId, onOpenProject }) => {
   const [members, setMembers] = useState<Member[]>([]);
   const [accountable, setAccountable] = useState<{ ownerId: string; managerId: string } | null>(null);
   const [hasProvider, setHasProvider] = useState(false);
+  // With consulting on, a firm is invited, never named directly (sprint 4).
+  const [consulting, setConsulting] = useState(false);
+  useEffect(() => {
+    apiClient.get('/api/engagements/feature').then((r) => setConsulting(Boolean(r.data?.enabled))).catch(() => setConsulting(false));
+  }, []);
   const [raciOptions, setRaciOptions] = useState<string[]>(['R', 'A', 'C', 'I']);
 
   const [people, setPeople] = useState<Candidate[]>([]);
@@ -93,15 +101,44 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
   >([]);
   const [changingProvider, setChangingProvider] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
+  // While held: what the firm may do, who chose it and when (sprint 5).
+  const [held, setHeld] = useState<{
+    firmAccess: string | null; firmAccessSetAt: string | null; firmAccessNote: string | null;
+    firmAccessSetBy: { name: string } | null; startedAt: string;
+  } | null>(null);
+  const [isClientSide, setIsClientSide] = useState(false);
+  // Closed or cancelled: the firm reads it only during the window after close (sprint 7).
+  const [ended, setEnded] = useState(false);
+  const [changingHold, setChangingHold] = useState(false);
+  const [holdError, setHoldError] = useState('');
 
   const loadProvider = useCallback(async () => {
     try {
       const res = await apiClient.get(`/api/projects/${projectId}`);
-      setProvider(res.data?.project?.providerTenant || null);
+      const p = res.data?.project;
+      setProvider(p?.providerTenant || null);
+      setIsClientSide(p?.side === 'Client');
+      setEnded(p?.status === 'Closed' || p?.status === 'Cancelled');
+      setHeld(p?.status === 'OnHold' ? (p.holds || []).find((h: any) => !h.endedAt) || null : null);
     } catch {
       setProvider(null);
+      setHeld(null);
     }
   }, [projectId]);
+
+  const changeHoldAccess = async (values: Record<string, string>) => {
+    setSavingProvider(true);
+    setHoldError('');
+    try {
+      await apiClient.patch(`/api/projects/${projectId}/hold-access`, { firmAccess: values.firmAccess, reason: values.reason.trim() });
+      setChangingHold(false);
+      await loadProvider();
+    } catch (err) {
+      setHoldError(apiError(err, 'That could not be changed.'));
+    } finally {
+      setSavingProvider(false);
+    }
+  };
 
   useEffect(() => { loadProvider(); }, [loadProvider]);
 
@@ -251,6 +288,9 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   return (
     <div>
+      {/* The consulting firm: invitation, its people, the delivery style. */}
+      <EngagementPanel projectId={projectId} onOpenProject={onOpenProject} onChanged={() => { loadProvider(); load(); }} />
+
       {/* Who delivers this, above the people, because it decides which
           organisations the people below may come from. */}
       <div style={{
@@ -267,7 +307,9 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
         </span>
         {provider && (
           <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-            &mdash; their people can read this engagement in full and record work against it
+            {ended
+              ? <>&mdash; the engagement has ended: their people may read it, read-only, only while the window after close lasts</>
+              : <>&mdash; their people can read this engagement in full and record work against it</>}
           </span>
         )}
         <span style={{ marginLeft: 'auto' }}>
@@ -277,12 +319,57 @@ const ProjectTeam: React.FC<{ projectId: string }> = ({ projectId }) => {
               Who delivers this is the project manager's to set.
             </span>}
           >
-            <button style={ghostBtn} onClick={openProvider} disabled={savingProvider}>
-              {provider ? 'Change' : 'Name a delivery firm'}
-            </button>
+            {consulting ? (
+              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>A firm joins by invitation, above.</span>
+            ) : (
+              <button style={ghostBtn} onClick={openProvider} disabled={savingProvider}>
+                {provider ? 'Change' : 'Name a delivery firm'}
+              </button>
+            )}
           </Can>
         </span>
+        {provider && held && (
+          <div style={{ flexBasis: '100%', display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              While on hold
+            </span>
+            <span style={{ color: held.firmAccess === 'None' ? 'var(--danger)' : 'var(--warning)' }}>
+              {HOLD_ACCESS_LABELS[held.firmAccess || 'View']}
+            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+              {held.firmAccessSetBy ? `set by ${held.firmAccessSetBy.name}` : 'set'}
+              {held.firmAccessSetAt ? ` on ${new Date(held.firmAccessSetAt).toLocaleDateString()}` : ''}
+              {held.firmAccessNote ? ` — ${held.firmAccessNote}` : ''}
+            </span>
+            {isClientSide && (
+              <Can do={MAY.MANAGE_PROJECT}>
+                <button style={{ ...ghostBtn, marginLeft: 'auto' }} disabled={savingProvider} onClick={() => { setHoldError(''); setChangingHold(true); }}>
+                  Change hold access
+                </button>
+              </Can>
+            )}
+          </div>
+        )}
       </div>
+      {changingHold && held && (
+        <FormDialog
+          title="Change the firm's access while on hold"
+          intro="Recorded on both organisations' trails with your reason. On resume the firm's people get back exactly the access they had before the hold."
+          fields={[
+            {
+              name: 'firmAccess', label: 'While on hold', type: 'select', options: ['View', 'None'],
+              initial: held.firmAccess === 'None' ? 'View' : 'None', optionLabels: HOLD_ACCESS_LABELS,
+            },
+            { name: 'reason', label: 'Why is it changing?', type: 'textarea', required: true },
+          ]}
+          submitLabel="Change access"
+          busy={savingProvider}
+          error={holdError}
+          validate={(v) => (v.reason.trim().length < 10 ? 'Give a little more detail — at least 10 characters.' : null)}
+          onSubmit={changeHoldAccess}
+          onCancel={() => setChangingHold(false)}
+        />
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>

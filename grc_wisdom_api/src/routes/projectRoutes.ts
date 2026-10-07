@@ -9,6 +9,7 @@ import {
   updateProject,
   activateProject,
   closeProject,
+  changeHoldAccess,
   rebaselineProject,
 } from '../controllers/projectController';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../controllers/projectPlanController';
 import {
   getTimeline,
+  getGantt,
   linkTasks,
   unlinkTasks,
   getImpact,
@@ -60,6 +62,7 @@ import {
   getVerificationQueue,
   getTaskVerifications,
 } from '../controllers/projectVerificationController';
+import { planFromTemplateRoute } from '../controllers/planTemplateController';
 import {
   listMembers, addMember, updateMember, removeMember, getCommitments,
 } from '../controllers/projectMemberController';
@@ -111,7 +114,11 @@ router.get('/:id', getProject);
 router.post('/', requireCapability(CAP.MANAGE_PROJECT), createProject);
 router.patch('/:id', requireCapability(CAP.MANAGE_PROJECT), updateProject);
 router.post('/:id/activate', requireCapability(CAP.MANAGE_PROJECT), activateProject);
+// Lay a tailored plan template out as the draft plan; ?preview=1 only computes it (S3).
+router.post('/:id/plan-from-template', requireCapability(CAP.MANAGE_PROJECT), planFromTemplateRoute);
 router.post('/:id/close', requireCapability(CAP.MANAGE_PROJECT), closeProject);
+// What the delivery firm may do for the rest of a hold (sprint 5).
+router.patch('/:id/hold-access', requireCapability(CAP.MANAGE_PROJECT), changeHoldAccess);
 // Moving the agreed plan is a management act with a reason attached — it is the
 // only thing that can move a baseline after the engagement starts.
 router.post('/:id/rebaseline', requireCapability(CAP.MANAGE_PROJECT), rebaselineProject);
@@ -210,6 +217,9 @@ router.get('/:id/reports/:kind', requireCapability(CAP.REPORT), exportDeliveryRe
 // timeline does not: "if this slips, what else moves" is a question anyone
 // working the engagement should be able to answer without asking a manager.
 router.get('/:id/timeline', getTimeline);
+// Planned, actual and variance with its causes (consulting engagement, S2).
+// Read like the timeline: anyone working the engagement may see why it is late.
+router.get('/:id/gantt', getGantt);
 router.post('/:id/dependencies', requireCapability(CAP.MANAGE_PROJECT), linkTasks);
 router.delete('/dependencies/:dependencyId', requireCapability(CAP.MANAGE_PROJECT), unlinkTasks);
 router.get('/tasks/:taskId/impact', getImpact);

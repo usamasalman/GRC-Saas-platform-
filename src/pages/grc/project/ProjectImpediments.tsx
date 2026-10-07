@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/apiClient';
+import OverdueRequests from './OverdueRequests';
 import { ReasonDialog } from '../../../components/Dialog';
 import { S, pill, ghostBtn, primaryBtn, apiError } from '../../iam/iamStyles';
 
@@ -38,6 +39,8 @@ interface Impediment {
   resolvedBy: Person | null;
   task: { id: string; ref: string; name: string; status: string } | null;
   phase: { id: string; name: string; sequence: number } | null;
+  /** Still open on the engagement before, so carried over to this follow-on (sprint 7). */
+  carriedFromId?: string | null;
 }
 
 interface Summary {
@@ -165,6 +168,9 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
   return (
     <div>
       {error && <div style={S.error}>{error}</div>}
+
+      {/* Sprint 8: information requests past their due day, recorded only on purpose. */}
+      <OverdueRequests projectId={projectId} onRecorded={load} />
 
       {/* ── Who owes the days ─────────────────────────────────────────── */}
       {summary && (
@@ -320,6 +326,7 @@ const ProjectImpediments: React.FC<{ projectId: string }> = ({ projectId }) => {
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                           {i.ref} · {i.kind} · raised {fmtDate(i.raisedAt)}
                           {i.raisedBy && ` by ${i.raisedBy.name}`}
+                          {i.carriedFromId && <span style={{ color: 'var(--brand)' }}> · Carried over</span>}
                         </div>
                         {i.resolutionNote && (
                           <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 3 }}>

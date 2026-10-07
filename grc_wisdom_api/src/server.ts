@@ -7,6 +7,7 @@ import 'dotenv/config';
 import app from './app';
 import { startEscalationScanner } from './services/slaService';
 import { startRiskReviewScanner } from './services/riskLifecycle';
+import { startEngagementAccessScanner } from './services/engagementAccessJob';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -24,6 +25,8 @@ app.listen(PORT, '0.0.0.0', () => {
     startEscalationScanner();
     // ISO 31000 clause 6.6: expire lapsed acceptances and surface overdue reviews.
     startRiskReviewScanner();
+    // Consulting engagements: notices before and when a person's access ends.
+    startEngagementAccessScanner();
   } else {
     console.log('[Server]: Background jobs are off in this process (RUN_BACKGROUND_JOBS=false).');
   }

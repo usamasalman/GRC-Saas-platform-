@@ -25,14 +25,90 @@ import { TenantScope } from './scopeResolver';
  * did not.
  */
 
-/** Prisma `where` fragment restricting Project rows to what this caller may read. */
-export function projectWhere(scope: TenantScope): {
-  OR: [{ tenantId: { in: string[] } }, { providerTenantId: { in: string[] } }];
-} {
+const ENDED = ['Closed', 'Cancelled'];
+const DEFAULT_CLOSE_DAYS = 90;
+
+/**
+ * A closed engagement's window after close is still open: the moment fixed at
+ * close, or, closed before sprint 7, ninety days from its close.
+ */
+const windowOpen = (now: Date) => ({
+  OR: [
+    { closeAccessUntil: { gt: now } },
+    { closeAccessUntil: null, actualEndDate: { gt: new Date(now.getTime() - DEFAULT_CLOSE_DAYS * 86_400_000) } },
+  ],
+});
+
+/**
+ * Prisma `where` fragment restricting Project rows to what this caller may read.
+ *
+ * `enforcedClientIds` are the client organisations whose consulting rules are
+ * enforced (engagementEnforcement.enforcedClientsFor); the list is one query,
+ * so the caller works them out first.
+ */
+export function projectWhere(scope: TenantScope, userId?: string, now: Date = new Date(), enforcedClientIds: readonly string[] = []) {
   return {
     OR: [
       { tenantId: { in: scope.tenantIds } },
-      { providerTenantId: { in: scope.tenantIds } },
+      {
+        providerTenantId: { in: scope.tenantIds },
+        // A consulting engagement (one with a delivery style) is the firm's to
+        // see person by person: only people the organisation approved, inside
+        // their window: from its start to the end of its end date. One naming
+        // a firm the old way, or migrated from one, is read by the firm as
+        // before until the client's rules are enforced (sprints 4 to 6).
+        // Closed, it is read until the window after close ends: by those who
+        // still had access at the close, or by the whole firm on one never
+        // migrated, and through a follow-on that puts it in scope (sprint 7).
+        OR: [
+          { deliveryStyle: null, tenantId: { notIn: [...enforcedClientIds] } },
+          { migratedAt: { not: null }, tenantId: { notIn: [...enforcedClientIds] } },
+          { deliveryStyle: null, status: { in: ENDED }, AND: [windowOpen(now)] },
+          ...(userId ? [
+            {
+              status: { notIn: ENDED },
+              members: {
+                some: {
+                  userId, side: 'Provider', memberStatus: 'Approved', active: true,
+                  AND: [
+                    { OR: [{ accessFrom: null }, { accessFrom: { lte: now } }] },
+                    { OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }] },
+                  ],
+                },
+              },
+            },
+            {
+              status: { in: ENDED },
+              AND: [windowOpen(now)],
+              members: {
+                some: {
+                  userId, side: 'Provider', memberStatus: 'Approved', active: true,
+                  OR: [{ afterCloseAccess: null }, { afterCloseAccess: true }],
+                },
+              },
+            },
+            {
+              status: { in: ENDED },
+              followOns: {
+                some: {
+                  previousInScope: true, status: { notIn: ENDED },
+                  members: {
+                    some: {
+                      userId, side: 'Provider', memberStatus: 'Approved', active: true,
+                      AND: [
+                        { OR: [{ accessFrom: null }, { accessFrom: { lte: now } }] },
+                        { OR: [{ accessTo: null }, { accessTo: { gt: new Date(now.getTime() - 86_400_000) } }] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          ] : []),
+        ],
+        // Held with "Firm has no access": out of the firm's lists entirely.
+        NOT: { status: 'OnHold', holds: { some: { endedAt: null, firmAccess: 'None' } } },
+      },
     ],
   };
 }

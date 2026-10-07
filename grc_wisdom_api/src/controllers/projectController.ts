@@ -4,15 +4,22 @@ import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { resolveTenantScope, auditCrossTenantRead } from '../services/scopeResolver';
-import { projectWhere, canWriteProject, canReadProject, sideOf } from '../services/projectAccess';
+import { projectWhere, canWriteProject, sideOf } from '../services/projectAccess';
+import { enforcedClientsFor } from '../services/engagementEnforcement';
+import { validWindowDays, windowDaysOf, keepsAfterClose } from '../services/engagementAfterClose';
+import { keepEngagementRecord } from '../services/engagementRecord';
+import { canReadEngagement } from '../services/projectGuard';
 import { schedule, derivedStatus, parseFrameworks } from '../services/projectSchedule';
 import { VERIFICATION_POLICIES } from '../services/projectLifecycle';
 import { recomputeProject } from '../services/projectRollup';
 import { stampBaseline } from '../services/projectBaseline';
+import { openHold, endHold } from '../services/projectHolds';
+import { HOLD_FIRM_ACCESS } from '../services/engagementRules';
 import { planStandardBinding } from '../services/projectStandards';
 import { planActivation, noteIsEnough, MIN_NOTE } from '../services/projectActivation';
 import { planProviderNomination, DELIVERY_PARTNER_TYPES } from '../services/providerEngagement';
 import { notify } from '../services/notificationService';
+import { CONSULTING_FLAG, featureStates } from '../services/featureFlags';
 
 /**
  * Delivery projects — slice 1.
@@ -32,7 +39,11 @@ const str = (v: unknown): string => String(v ?? '');
 const STATUSES = ['Draft', 'Active', 'OnHold', 'Closed', 'Cancelled'] as const;
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 const HEALTH = ['Green', 'Amber', 'Red'] as const;
-const TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment'] as const;
+// InternalAudit (sprint 13): an internal audit (9.2) run by a firm, with the independence warning on inviting it.
+const TYPES = ['Certification', 'Readiness', 'Remediation', 'Implementation', 'Assessment', 'InternalAudit'] as const;
+
+/** The status read before the transaction was no longer the status inside it. */
+class StatusChanged extends Error {}
 
 /**
  * Legal status moves. Closed and Cancelled are terminal — a finished engagement
@@ -53,6 +64,25 @@ const TRANSITIONS: Record<string, readonly string[]> = {
  * services/providerEngagement and run without a database; this does the lookup
  * and hands back either a refusal to send or the value to store.
  */
+/**
+ * When the organisation and the firm both have consulting switched on, a firm
+ * joins an engagement only by accepting an invitation, which sets the same
+ * providerTenantId; naming it directly would skip the relationship and the
+ * approval of each person (sprint 4). Otherwise naming works as before.
+ */
+async function invitationRequired(clientTenantId: string, firmTenantId: string | null | undefined): Promise<boolean> {
+  if (!firmTenantId) return false;
+  const on = await featureStates(CONSULTING_FLAG, [clientTenantId, firmTenantId]);
+  return Boolean(on.get(clientTenantId) && on.get(firmTenantId));
+}
+
+const USE_INVITATION = {
+  status: 'error',
+  code: 'USE_INVITATION',
+  message: 'This organisation and this firm work through consulting engagements: invite the firm from the '
+    + 'engagement\'s Team tab. It joins when it accepts, and its people when you approve them.',
+};
+
 async function resolveProvider(
   requested: unknown,
   clientTenantId: string,
@@ -100,6 +130,8 @@ async function nextRef(tenantId: string): Promise<string> {
 }
 
 const LIST_SELECT = {
+  // A consulting engagement's style; null for one named the old way (S4).
+  deliveryStyle: true, migratedAt: true, closeAccessUntil: true, closeWindowDays: true,
   id: true, ref: true, name: true, projectType: true, priority: true, status: true,
   health: true, healthNote: true, reportedProgress: true, verifiedProgress: true,
   verificationPolicy: true,
@@ -150,7 +182,9 @@ export const listProjects = async (req: AuthenticatedRequest, res: Response): Pr
 
     const { status, search } = req.query as Record<string, string | undefined>;
 
-    const where: any = { AND: [projectWhere(scope)] };
+    // A firm's list honours each client's enforcement (sprint 6).
+    const enforced = await enforcedClientsFor(scope.tenantIds);
+    const where: any = { AND: [projectWhere(scope, str(req.user!.id), new Date(), enforced)] };
     if (status) where.AND.push({ status });
     if (search) {
       where.AND.push({
@@ -207,6 +241,17 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
         ...LIST_SELECT,
         description: true, objectives: true, closureNote: true, updatedAt: true,
         sponsor: { select: { id: true, name: true, email: true } },
+        // Every hold, newest first: the open one says why the project is
+        // stopped, and the closed ones are the days it stood still (S1).
+        holds: {
+          orderBy: { startedAt: 'desc' },
+          select: {
+            id: true, startedAt: true, endedAt: true, reason: true, resumeReason: true,
+            startedBy: { select: { name: true } }, endedBy: { select: { name: true } },
+            firmAccess: true, firmAccessSetAt: true, firmAccessNote: true, firmAccessSetBy: { select: { name: true } },
+            windowsSettledAt: true,
+          },
+        },
         members: {
           where: { active: true },
           select: {
@@ -220,7 +265,7 @@ export const getProject = async (req: AuthenticatedRequest, res: Response): Prom
 
     // Not found and not permitted are the same answer on purpose: a 403 here
     // would confirm the project exists to someone with no right to know.
-    if (!project || !canReadProject(scope, project)) {
+    if (!project || !(await canReadEngagement(scope, str(req.user!.id), project))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
       return;
     }
@@ -262,6 +307,31 @@ export const engageableProviders = async (
 
     // A picker: searchable by name and paged, so an organisation beyond the
     // first 200 can still be found (QA-021).
+    // Consulting (sprint 4). ?purpose=invite lists the firms that could be
+    // invited: consulting firms with the flag on. Otherwise, for an
+    // organisation running consulting, the delivery-firm dropdown lists only
+    // firms it has an accepted relationship with; a first engagement with a
+    // firm starts from an invitation.
+    const purpose = str(req.query.purpose);
+    const clientOn = (await featureStates(CONSULTING_FLAG, [clientTenantId])).get(clientTenantId);
+    if (purpose === 'invite') {
+      const flag = await prisma.featureFlag.findUnique({
+        where: { key: CONSULTING_FLAG },
+        select: { status: true, expiryDate: true, overrides: { select: { tenantId: true, enabled: true } } },
+      });
+      const globallyOn = Boolean(flag && flag.status === 'Enabled' && !(flag.expiryDate && flag.expiryDate < new Date()));
+      where.type = { in: [...DELIVERY_PARTNER_TYPES] };
+      delete where.OR;
+      where.id = globallyOn
+        ? { not: clientTenantId, notIn: (flag?.overrides || []).filter((o) => !o.enabled).map((o) => o.tenantId) }
+        : { not: clientTenantId, in: (flag?.overrides || []).filter((o) => o.enabled).map((o) => o.tenantId) };
+    } else if (clientOn) {
+      const related = await prisma.providerRelationship.findMany({
+        where: { clientTenantId, status: 'Active' }, select: { firmTenantId: true },
+      });
+      where.id = { not: clientTenantId, in: related.map((r) => r.firmTenantId) };
+    }
+
     const search = str(req.query.search || '').trim();
     if (search) where.name = { contains: search, mode: 'insensitive' };
     const page = readPage(req.query as Record<string, unknown>, 200);
@@ -440,6 +510,10 @@ export const createProject = async (req: AuthenticatedRequest, res: Response): P
       });
       return;
     }
+    if (await invitationRequired(tenantId, provider.providerTenantId)) {
+      res.status(409).json(USE_INVITATION);
+      return;
+    }
 
     const ref = await nextRef(tenantId);
 
@@ -555,11 +629,11 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, ref: true, name: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, name: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
-    if (!existing || !canReadProject(scope, existing)) {
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
       return;
     }
@@ -600,6 +674,10 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
         return;
       }
       if (providerChange.change !== 'unchanged') {
+        if (await invitationRequired(existing.tenantId, providerChange.providerTenantId)) {
+          res.status(409).json(USE_INVITATION);
+          return;
+        }
         data.providerTenantId = providerChange.providerTenantId;
       }
     }
@@ -651,6 +729,14 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     // Status changes go through the transition table. Closure has its own
     // endpoint because it needs a reason and stamps the completion date.
     let activationDecision: any = null;
+    // Putting a project on hold and resuming it are decisions with reasons,
+    // kept as an interval (consulting engagement, sprint 1): the days it stood
+    // still belong to nobody's delay, and nothing recorded them before.
+    let holdMove: 'hold' | 'resume' | null = null;
+    let holdReason = '';
+    // What the delivery firm may do while held (sprint 5): View (read-only),
+    // the default, or None. Asked only when a firm delivers the engagement.
+    let holdFirmAccess: string | null = null;
     let activationCounts: { phaseCount: number; taskCount: number } = { phaseCount: 0, taskCount: 0 };
     if (b.status !== undefined) {
       if (!STATUSES.includes(b.status)) {
@@ -672,6 +758,29 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
           message: `A project cannot move from ${existing.status} to ${b.status}.`,
         });
         return;
+      }
+
+      if (existing.status === 'Active' && b.status === 'OnHold') holdMove = 'hold';
+      if (existing.status === 'OnHold' && b.status === 'Active') holdMove = 'resume';
+      if (holdMove === 'hold' && existing.providerTenantId) {
+        holdFirmAccess = b.holdFirmAccess === undefined || b.holdFirmAccess === null ? 'View' : str(b.holdFirmAccess);
+        if (!(HOLD_FIRM_ACCESS as readonly string[]).includes(holdFirmAccess)) {
+          res.status(400).json({ status: 'error', message: 'holdFirmAccess must be View or None.' });
+          return;
+        }
+      }
+      if (holdMove) {
+        holdReason = b.reason ? str(b.reason).trim() : '';
+        if (!noteIsEnough(holdReason)) {
+          res.status(400).json({
+            status: 'error',
+            code: 'REASON_REQUIRED',
+            message: holdMove === 'hold'
+              ? `Say why the project is going on hold — at least ${MIN_NOTE} characters.`
+              : `Say why the project is resuming — at least ${MIN_NOTE} characters.`,
+          });
+          return;
+        }
       }
 
       if (b.status === 'Active' && existing.status === 'Draft') {
@@ -715,7 +824,38 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.project.update({ where: { id }, data });
+      if (holdMove) {
+        // Conditional on the status read above, so two clicks arriving together
+        // cannot open two intervals or resume a project twice.
+        const moved = await tx.project.updateMany({ where: { id, status: existing.status }, data });
+        if (moved.count === 0) throw new StatusChanged();
+
+        const actorId = str(req.user!.id);
+        const now = new Date();
+        let interval: 'opened' | 'closed' | 'unrecorded' = 'opened';
+        let daysOnHold: number | null = null;
+        if (holdMove === 'hold') {
+          await openHold(tx, { projectId: id, reason: holdReason, actorId, at: now, firmAccess: holdFirmAccess });
+        } else {
+          ({ interval, daysOnHold } = await endHold(tx, { projectId: id, actorId, at: now, resumeReason: holdReason }));
+        }
+
+        const action = holdMove === 'hold' ? 'PROJECT_PUT_ON_HOLD' : 'PROJECT_RESUMED';
+        await writeAudit(tx, {
+          tenantId: existing.tenantId, actorId, action, subjectType: 'Project', subjectId: id,
+          payload: { ref: existing.ref, reason: holdReason, interval, daysOnHold, ...(holdFirmAccess ? { firmAccess: holdFirmAccess } : {}) },
+        });
+        // The delivery firm's trail records that its engagement stopped or
+        // started again, and why: a firm told nothing cannot plan around it.
+        if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+          await writeAudit(tx, {
+            tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
+            payload: { ref: existing.ref, clientTenantId: existing.tenantId, reason: holdReason, daysOnHold, ...(holdFirmAccess ? { firmAccess: holdFirmAccess } : {}) },
+          });
+        }
+      } else {
+        await tx.project.update({ where: { id }, data });
+      }
       await writeAudit(tx, {
         tenantId: existing.tenantId,
         actorId: str(req.user!.id),
@@ -825,6 +965,14 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response): P
       ],
     });
   } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error',
+        code: 'STATUS_CHANGED',
+        message: 'The project status changed while you were deciding. Reload it and try again.',
+      });
+      return;
+    }
     console.error('[Project Update Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to update project' });
   }
@@ -847,11 +995,11 @@ export const activateProject = async (req: AuthenticatedRequest, res: Response):
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true,
         status: true, startDate: true, targetEndDate: true, baselineSetAt: true,
       },
     });
-    if (!existing || !canReadProject(scope, existing)) {
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
       return;
     }
@@ -959,11 +1107,11 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
     const existing = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, tenantId: true, providerTenantId: true, ref: true,
+        id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true,
         status: true, baselineVersion: true, baselineSetAt: true,
       },
     });
-    if (!existing || !canReadProject(scope, existing)) {
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
       return;
     }
@@ -1021,6 +1169,21 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
           reason,
         },
       });
+      // The baseline is what the firm's delay is measured against, so the
+      // firm's trail records that it moved, and why.
+      if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+        await writeAudit(tx, {
+          tenantId: existing.providerTenantId,
+          actorId: str(req.user!.id),
+          action: 'PROJECT_REBASELINED',
+          subjectType: 'Project',
+          subjectId: id,
+          payload: {
+            ref: existing.ref, clientTenantId: existing.tenantId,
+            from: existing.baselineVersion, to: stamped.version, reason,
+          },
+        });
+      }
       return stamped;
     });
 
@@ -1036,6 +1199,93 @@ export const rebaselineProject = async (req: AuthenticatedRequest, res: Response
   }
 };
 
+// ─── What the firm may do while held ────────────────────────────────────────
+
+/**
+ * PATCH /api/projects/:id/hold-access — "Firm can view" (read-only) or "Firm
+ * has no access" for the rest of the current hold (sprint 5).
+ *
+ * Asked when the hold starts; changed during it only by the organisation's
+ * managers, with a reason, on both organisations' trails. Resuming gives
+ * everyone back exactly the access they had before, because nothing about
+ * their access is stored on them: the choice lives on the hold.
+ */
+export const changeHoldAccess = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const scope = await resolveTenantScope(req.user!);
+    const id = str(req.params.id);
+    const existing = await prisma.project.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, status: true },
+    });
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
+      res.status(404).json({ status: 'error', message: 'Project not found' });
+      return;
+    }
+    if (!canWriteProject(scope, existing.tenantId)) {
+      res.status(403).json({
+        status: 'error', code: 'CLIENT_DECIDES',
+        message: 'Only the organisation\'s managers decide what the firm may do while it is on hold.',
+      });
+      return;
+    }
+    if (existing.status !== 'OnHold' || !existing.providerTenantId) {
+      res.status(409).json({
+        status: 'error', code: 'NOT_HELD_WITH_FIRM',
+        message: 'This applies while an engagement a firm delivers is on hold.',
+      });
+      return;
+    }
+    const firmAccess = str(req.body?.firmAccess);
+    if (!(HOLD_FIRM_ACCESS as readonly string[]).includes(firmAccess)) {
+      res.status(400).json({ status: 'error', message: 'firmAccess must be View or None.' });
+      return;
+    }
+    const reason = str(req.body?.reason).trim();
+    if (!noteIsEnough(reason)) {
+      res.status(400).json({
+        status: 'error', code: 'REASON_REQUIRED', message: `Say why — at least ${MIN_NOTE} characters.`,
+      });
+      return;
+    }
+
+    const actorId = str(req.user!.id);
+    const changed = await prisma.$transaction(async (tx) => {
+      const hold = await tx.projectHold.findFirst({
+        where: { projectId: id, endedAt: null }, orderBy: { startedAt: 'desc' }, select: { id: true, firmAccess: true },
+      });
+      if (!hold) throw new StatusChanged();
+      if (hold.firmAccess === firmAccess) return false;
+      const moved = await tx.projectHold.updateMany({
+        where: { id: hold.id, endedAt: null, firmAccess: hold.firmAccess },
+        data: { firmAccess, firmAccessSetById: actorId, firmAccessSetAt: new Date(), firmAccessNote: reason },
+      });
+      if (moved.count === 0) throw new StatusChanged();
+      for (const tenantId of [existing.tenantId, existing.providerTenantId!]) {
+        await writeAudit(tx, {
+          tenantId, actorId, action: 'PROJECT_HOLD_FIRM_ACCESS_CHANGED', subjectType: 'Project', subjectId: id,
+          payload: {
+            ref: existing.ref, from: hold.firmAccess, to: firmAccess, reason,
+            ...(tenantId !== existing.tenantId ? { clientTenantId: existing.tenantId } : {}),
+          },
+        });
+      }
+      return true;
+    });
+    res.json({ status: 'success', firmAccess, changed });
+  } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error', code: 'STATUS_CHANGED',
+        message: 'The engagement resumed or changed while you were deciding. Reload it.',
+      });
+      return;
+    }
+    console.error('[Hold Access Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to change the firm\'s access' });
+  }
+};
+
 // ─── Close or cancel ────────────────────────────────────────────────────────
 
 export const closeProject = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -1046,6 +1296,13 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
 
     if (outcome !== 'Closed' && outcome !== 'Cancelled') {
       res.status(400).json({ status: 'error', message: "outcome must be 'Closed' or 'Cancelled'" });
+      return;
+    }
+    // The window after close (sprint 7): the days the dialog confirms, else
+    // those set ahead on the engagement, else ninety.
+    const askedDays = req.body?.afterCloseDays;
+    if (askedDays !== undefined && askedDays !== null && askedDays !== '' && validWindowDays(askedDays) === null) {
+      res.status(400).json({ status: 'error', code: 'BAD_WINDOW', message: 'The window after close is 0 to 365 days.' });
       return;
     }
     // One length rule, in services/projectActivation, so closing and
@@ -1061,9 +1318,9 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
 
     const existing = await prisma.project.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, providerTenantId: true, ref: true, status: true, reportedProgress: true },
+      select: { id: true, tenantId: true, providerTenantId: true, deliveryStyle: true, migratedAt: true, actualEndDate: true, closeAccessUntil: true, closeWindowDays: true, ref: true, status: true, reportedProgress: true },
     });
-    if (!existing || !canReadProject(scope, existing)) {
+    if (!existing || !(await canReadEngagement(scope, str(req.user!.id), existing))) {
       res.status(404).json({ status: 'error', message: 'Project not found' });
       return;
     }
@@ -1081,26 +1338,75 @@ export const closeProject = async (req: AuthenticatedRequest, res: Response): Pr
     }
 
     const closed = await prisma.$transaction(async (tx) => {
-      const p = await tx.project.update({
-        where: { id },
-        data: { status: outcome, closureNote: str(closureNote).trim(), actualEndDate: new Date() },
-        select: LIST_SELECT,
+      const now = new Date();
+      const actorId = str(req.user!.id);
+      const action = outcome === 'Closed' ? 'PROJECT_CLOSED' : 'PROJECT_CANCELLED';
+      // Conditional on the status read above, now that Close is a button: two
+      // clicks arriving together close it once, and a project resumed or held
+      // in between is not closed from a state nobody saw.
+      // The window is fixed only where a firm delivers the engagement.
+      const days = validWindowDays(askedDays) ?? windowDaysOf(existing);
+      const until = new Date(now.getTime() + days * 86_400_000);
+      const moved = await tx.project.updateMany({
+        where: { id, status: existing.status },
+        data: {
+          status: outcome, closureNote: str(closureNote).trim(), actualEndDate: now,
+          ...(existing.providerTenantId
+            ? { closeWindowDays: days, closeAccessUntil: until, closeWarnedAt: null, closeEndNoticeAt: null }
+            : {}),
+        },
       });
+      if (moved.count === 0) throw new StatusChanged();
+      // Who keeps read-only access until the window ends: the firm's people
+      // who still had access at this moment, not anyone whose dates had ended.
+      const firmPeople = existing.providerTenantId ? await tx.projectMember.findMany({
+        where: { projectId: id, side: 'Provider', memberStatus: 'Approved', active: true },
+        select: { id: true, accessFrom: true, accessTo: true },
+      }) : [];
+      for (const m of firmPeople) {
+        await tx.projectMember.update({ where: { id: m.id }, data: { afterCloseAccess: keepsAfterClose(m, now) } });
+      }
+      // Cancelling a held project ends its hold, or the interval stays open
+      // and its days keep counting on a project that no longer exists.
+      const hold = existing.status === 'OnHold'
+        ? await endHold(tx, { projectId: id, actorId, at: now, resumeReason: null })
+        : null;
       await writeAudit(tx, {
         tenantId: existing.tenantId,
-        actorId: str(req.user!.id),
-        action: outcome === 'Closed' ? 'PROJECT_CLOSED' : 'PROJECT_CANCELLED',
+        actorId,
+        action,
         subjectType: 'Project',
         subjectId: id,
         // The progress at closure is the number worth keeping: a project closed
         // at 60% is a different event from one closed at 100%.
-        payload: { ref: existing.ref, progressAtClosure: existing.reportedProgress, closureNote },
+        payload: {
+          ref: existing.ref, progressAtClosure: existing.reportedProgress, closureNote,
+          ...(hold ? { daysOnHold: hold.daysOnHold } : {}),
+          ...(existing.providerTenantId ? { afterCloseDays: days, firmReadsUntil: until } : {}),
+        },
       });
-      return p;
+      // The delivery firm's trail records that its engagement ended, and
+      // until when it may still read it; its own record is kept for good.
+      if (existing.providerTenantId && existing.providerTenantId !== existing.tenantId) {
+        await writeAudit(tx, {
+          tenantId: existing.providerTenantId, actorId, action, subjectType: 'Project', subjectId: id,
+          payload: { ref: existing.ref, clientTenantId: existing.tenantId, afterCloseDays: days, firmReadsUntil: until },
+        });
+        await keepEngagementRecord(tx, { projectId: id, actorId, now, outcome });
+      }
+      return tx.project.findUniqueOrThrow({ where: { id }, select: LIST_SELECT });
     });
 
     res.json({ status: 'success', project: decorate(closed, scope) });
   } catch (error: any) {
+    if (error instanceof StatusChanged) {
+      res.status(409).json({
+        status: 'error',
+        code: 'STATUS_CHANGED',
+        message: 'The project status changed while you were deciding. Reload it and try again.',
+      });
+      return;
+    }
     console.error('[Project Close Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to close project' });
   }

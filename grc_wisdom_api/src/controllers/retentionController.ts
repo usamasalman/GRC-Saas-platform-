@@ -11,6 +11,7 @@ import { prisma } from '../db';
 import { readPage, pageInfo } from '../utils/paging';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { hasCapability, CAP } from '../services/capabilityEngine';
+import { generateHash } from '../utils/cryptoUtils';
 import {
   planSchedule, planDisposal, dispositionState, daysUntilDisposal,
   summariseDisposition, disposalDateFor, triggerMomentFor,
@@ -49,9 +50,13 @@ const RETAINED_SELECT = {
  * document on a Published schedule that has not been published has no disposal
  * date, and inventing one would put a destruction date on a record whose
  * retention has not begun.
+ *
+ * The versions a next version replaced are redated with it: each is kept for
+ * the schedule's period from the day it was replaced, and has no date while
+ * the document has no schedule.
  */
 export async function recomputeDisposalDue(
-  tx: { document: any; retentionSchedule: any },
+  tx: { document: any; retentionSchedule: any; documentVersion: any },
   documentId: string,
 ): Promise<Date | null> {
   const doc = await tx.document.findUnique({
@@ -61,12 +66,25 @@ export async function recomputeDisposalDue(
       retentionScheduleId: true,
     },
   });
-  if (!doc || !doc.retentionScheduleId) return null;
+  if (!doc) return null;
 
-  const schedule = await tx.retentionSchedule.findUnique({
-    where: { id: doc.retentionScheduleId },
-    select: { retainMonths: true, trigger: true },
+  const schedule = doc.retentionScheduleId
+    ? await tx.retentionSchedule.findUnique({
+      where: { id: doc.retentionScheduleId },
+      select: { retainMonths: true, trigger: true },
+    })
+    : null;
+
+  const replaced = await tx.documentVersion.findMany({
+    where: { documentId, state: 'Superseded', disposedAt: null },
+    select: { id: true, supersededAt: true },
   });
+  for (const v of replaced) {
+    await tx.documentVersion.update({
+      where: { id: v.id },
+      data: { disposalDueAt: schedule ? disposalDateFor(v.supersededAt, schedule.retainMonths) : null },
+    });
+  }
   if (!schedule) return null;
 
   const startedAt = triggerMomentFor(schedule.trigger, doc);
@@ -325,7 +343,8 @@ export const assignSchedule = async (req: AuthenticatedRequest, res: Response): 
         where: { id },
         data: { retentionScheduleId: schedule ? schedule.id : null },
       });
-      const due = schedule ? await recomputeDisposalDue(tx as any, id) : null;
+      // Run without a schedule too, so the replaced versions lose their dates with it.
+      const due = await recomputeDisposalDue(tx as any, id);
       if (!schedule) {
         await tx.document.update({ where: { id }, data: { disposalDueAt: null } });
       }
@@ -417,6 +436,43 @@ export const dispositionQueue = async (req: AuthenticatedRequest, res: Response)
     const due = withState.filter((d) => d.state === 'Due' || d.state === 'DueSoon');
     const page = readPage(req.query as Record<string, unknown>, 500);
 
+    // Replaced versions come up on their own dates. A legal hold on the
+    // document holds every version of it.
+    const replaced = await prisma.documentVersion.findMany({
+      where: { state: 'Superseded', disposedAt: null, disposalDueAt: { not: null }, document: { tenantId } },
+      select: {
+        id: true, versionNumber: true, supersededAt: true, supersededBy: true, disposalDueAt: true, disposedAt: true,
+        document: {
+          select: {
+            id: true, code: true, title: true, classification: true, legalHoldAt: true, legalHoldMatter: true,
+            retentionSchedule: { select: { id: true, code: true, name: true, reviewWindowDays: true } },
+          },
+        },
+      },
+      orderBy: [{ disposalDueAt: 'asc' }, { id: 'asc' }],
+    });
+    const versions = replaced.map((v) => {
+      const facts = {
+        disposalDueAt: v.disposalDueAt, legalHoldAt: v.document.legalHoldAt, disposedAt: v.disposedAt,
+        reviewWindowDays: v.document.retentionSchedule?.reviewWindowDays ?? null,
+      };
+      return {
+        id: v.id,
+        documentId: v.document.id,
+        code: v.document.code,
+        title: v.document.title,
+        classification: v.document.classification,
+        versionNumber: v.versionNumber,
+        supersededAt: v.supersededAt,
+        supersededBy: v.supersededBy,
+        schedule: v.document.retentionSchedule,
+        disposalDueAt: v.disposalDueAt,
+        daysUntil: daysUntilDisposal(facts, now),
+        legalHoldMatter: v.document.legalHoldMatter,
+        state: dispositionState(facts, now),
+      };
+    }).filter((v) => v.state === 'Due' || v.state === 'DueSoon' || v.state === 'Held');
+
     res.json({
       status: 'success',
       count: withState.length,
@@ -431,6 +487,7 @@ export const dispositionQueue = async (req: AuthenticatedRequest, res: Response)
       queue: due.slice(page.skip, page.skip + page.take),
       paging: pageInfo(due.length, page),
       held: withState.filter((d) => d.state === 'Held'),
+      versions,
     });
   } catch (error: any) {
     console.error('[Disposition Queue Error]:', error);
@@ -550,5 +607,115 @@ export const disposeDocument = async (req: AuthenticatedRequest, res: Response):
   } catch (error: any) {
     console.error('[Disposal Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to dispose of the document' });
+  }
+};
+
+/**
+ * POST /api/retention/versions/:versionId/dispose { reason }
+ *
+ * Disposes of one replaced version once its own date has come: its text and
+ * file are destroyed; its number, dates, hash, approvals and acknowledgement
+ * counts stay as the record. Only a superseded version: the version in force
+ * goes with its document. A legal hold on the document holds it.
+ */
+export const disposeVersion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
+    const versionId = str(req.params.versionId);
+
+    const v = await prisma.documentVersion.findFirst({
+      where: { id: versionId, document: { tenantId } },
+      select: {
+        id: true, documentId: true, versionNumber: true, state: true, content: true, fileUrl: true, fileHash: true,
+        supersededAt: true, supersededBy: true, disposalDueAt: true, disposedAt: true,
+        document: {
+          select: {
+            code: true, title: true, legalHoldAt: true,
+            retentionSchedule: { select: { code: true, retainMonths: true, reviewWindowDays: true } },
+          },
+        },
+      },
+    });
+    if (!v) { res.status(404).json({ status: 'error', message: 'Version not found' }); return; }
+    if (v.state !== 'Superseded') {
+      res.status(409).json({
+        status: 'error', code: 'NOT_SUPERSEDED',
+        message: 'Only a version that was replaced is disposed of on its own. The version in force goes with its document.',
+      });
+      return;
+    }
+
+    const plan = planDisposal({
+      doc: {
+        disposalDueAt: v.disposalDueAt, legalHoldAt: v.document.legalHoldAt, disposedAt: v.disposedAt,
+        reviewWindowDays: v.document.retentionSchedule?.reviewWindowDays ?? null,
+      },
+      reason: req.body?.reason,
+      now: new Date(),
+      mayDispose: await hasCapability(userId, CAP.RETENTION_HOLD),
+    });
+    if (!plan.ok) {
+      res.status(plan.status).json({ status: 'error', code: plan.code, message: plan.message });
+      return;
+    }
+
+    const [approvals, acknowledgements] = await Promise.all([
+      prisma.approvalQueue.count({ where: { versionId: v.id, status: 'APPROVED' } }),
+      prisma.acknowledgement.count({ where: { documentId: v.documentId, version: v.versionNumber } }),
+    ]);
+    const hash = generateHash(`${v.content ?? ''}|${v.fileUrl ?? ''}`);
+    const disposedAt = new Date();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.documentVersion.update({
+        where: { id: v.id },
+        data: {
+          content: null, fileUrl: null, fileName: null, fileSize: null, fileType: null,
+          disposedAt, disposedById: userId, disposalReason: plan.reason,
+        },
+      });
+      await writeAudit(tx, {
+        tenantId,
+        actorId: userId,
+        action: 'DOCUMENT_VERSION_DISPOSED',
+        subjectType: SUBJECT_DOCUMENT,
+        subjectId: v.documentId,
+        payload: {
+          code: v.document.code, title: v.document.title, version: v.versionNumber, hash,
+          supersededAt: v.supersededAt ? v.supersededAt.toISOString() : null, supersededBy: v.supersededBy,
+          approvals, acknowledgements,
+          scheduleCode: v.document.retentionSchedule?.code ?? null,
+          retainMonths: v.document.retentionSchedule?.retainMonths ?? null,
+          disposalDueAt: v.disposalDueAt ? v.disposalDueAt.toISOString() : null,
+          reason: plan.reason,
+        },
+      });
+    });
+
+    // The file only when nothing else still holds it: the version in force, or
+    // another version, can share the stored file it started from.
+    let fileRemoved = false;
+    if (v.fileUrl) {
+      const shared = await prisma.document.count({ where: { fileUrl: v.fileUrl } })
+        + await prisma.documentVersion.count({ where: { fileUrl: v.fileUrl } });
+      if (shared === 0) {
+        try {
+          fileRemoved = removeDocumentFile(v.fileUrl);
+        } catch (e) {
+          console.error('[Version Disposal File Remove Error]:', e);
+        }
+      }
+    }
+
+    res.json({
+      status: 'success',
+      message: `Version ${v.versionNumber} has been disposed of. Its number, dates, hash, approvals and acknowledgements remain.`,
+      disposedAt,
+      fileRemoved,
+    });
+  } catch (error: any) {
+    console.error('[Version Disposal Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to dispose of the version' });
   }
 };

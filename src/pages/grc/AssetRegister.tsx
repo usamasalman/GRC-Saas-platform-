@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SharedWith, useSharedWith } from '../../components/SharedWith';
 import apiClient from '../../api/apiClient';
 import fetchAllPages from '../../api/fetchAllPages';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
@@ -61,6 +62,8 @@ type Tab = 'register' | 'import' | 'posture' | 'formulas';
 const AssetRegister: React.FC = () => {
   const [tab, setTab] = useState<Tab>('register');
   const [assets, setAssets] = useState<any[]>([]);
+  // Which of these a consulting engagement shares, and with whom (sprint 6).
+  const sharedAssets = useSharedWith('Asset', assets.map((a) => a.id));
   const [meta, setMeta] = useState<any>({});
   const [totals, setTotals] = useState<any>({});
   const [analytics, setAnalytics] = useState<any>(null);
@@ -397,6 +400,7 @@ const AssetRegister: React.FC = () => {
                           style={{ ...linkBtn('var(--ink-body)'), fontSize: 13, padding: 0, textAlign: 'left' }}>
                           <strong>{a.ref}</strong> — {a.name}
                         </button>
+                        <SharedWith firms={sharedAssets[a.id]} />
                         <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <span>{a.classification}</span>
                           {a.location && <span>· {a.location}</span>}

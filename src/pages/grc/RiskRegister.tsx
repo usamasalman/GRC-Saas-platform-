@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SharedWith, useSharedWith } from '../../components/SharedWith';
 import apiClient from '../../api/apiClient';
 import fetchAllPages from '../../api/fetchAllPages';
 import { S, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../iam/iamStyles';
@@ -50,6 +51,8 @@ type TabMode = 'cockpit' | 'register' | 'treatments' | 'appetite' | 'network' | 
 const RiskRegister: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>('cockpit');
   const [risks, setRisks] = useState<any[]>([]);
+  // Which of these a consulting engagement shares, and with whom (sprint 6).
+  const sharedRisks = useSharedWith('Risk', risks.map((r) => r.id));
   const [totals, setTotals] = useState<any>({});
   // The register is paged (QA-021); the totals above it cover every risk.
   const [page, setPage] = useState(1);
@@ -1057,6 +1060,7 @@ const RiskRegister: React.FC = () => {
                               >
                                 {r.ref} — {r.title}
                               </button>
+                              <SharedWith firms={sharedRisks[r.id]} />
 
                               <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                                 <span

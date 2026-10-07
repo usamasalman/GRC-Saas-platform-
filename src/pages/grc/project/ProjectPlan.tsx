@@ -5,6 +5,7 @@ import { ReasonDialog, ConfirmDialog } from '../../../components/Dialog';
 import Can, { MAY, can } from '../../../components/Can';
 import { calendarDate } from '../../../utils/calendarDate';
 import ClauseMapDialog from '../ClauseMapDialog';
+import PlanWizard from './PlanWizard';
 import { S, pill, ghostBtn, primaryBtn } from '../../iam/iamStyles';
 
 /**
@@ -66,6 +67,8 @@ interface Task {
   needsVerification: boolean;
   timing: Timing;
   slippage: { baselined: boolean; slipDays: number; slipped: boolean };
+  /** Still open on the engagement before, so carried over to this follow-on (sprint 7). */
+  carriedFromTaskId?: string | null;
   /**
    * The framework clauses this task satisfies.
    *
@@ -298,7 +301,15 @@ const extensionOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 };
 
-const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
+/** Who owes a blocker or a slip, as a person says it. */
+const SIDE_LABEL: Record<string, string> = { Client: 'Client', Provider: 'Provider', ThirdParty: 'Third party' };
+
+const ProjectPlan: React.FC<{
+  projectId: string;
+  onActivated?: () => void;
+  /** Open the template wizard straight away, as after "New engagement" (S3). */
+  startWithWizard?: boolean;
+}> = ({ projectId, onActivated, startWithWizard }) => {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -309,6 +320,10 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [projectStatus, setProjectStatus] = useState<string>('Draft');
   const [activating, setActivating] = useState(false);
   const [showActivateDialog, setShowActivateDialog] = useState(false);
+  // A draft plan can start from a template; any plan can become one (S3).
+  const [wizard, setWizard] = useState(Boolean(startWithWizard));
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -334,6 +349,8 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       setShowActivateDialog(false);
       setProjectStatus('Active');
       await load();
+      // The header's lifecycle bar shows the status too.
+      onActivated?.();
     } catch (err: any) {
       setShowActivateDialog(false);
       setError(apiError(err));
@@ -352,6 +369,29 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [vocab, setVocab] = useState<{ priorities: string[]; sides: string[] }>({
     priorities: [], sides: [],
   });
+
+  // The delivery firm plans too on a consulting engagement (sprint 6): its own
+  // tasks, and the organisation's only when consultant-led. Its people are the
+  // engagement's team, not its own whole firm, and weight stays the
+  // organisation's; the server refuses anything else either way.
+  const [firmPlan, setFirmPlan] = useState<{ deliveryStyle: string; team: { id: string; name: string; side: string }[] } | null>(null);
+  useEffect(() => {
+    apiClient.get(`/api/projects/${projectId}`)
+      .then(async (res) => {
+        const p = res.data?.project;
+        if (p?.side !== 'Provider' || !p.deliveryStyle) { setFirmPlan(null); return; }
+        const m = await apiClient.get(`/api/projects/${projectId}/members`);
+        setFirmPlan({
+          deliveryStyle: p.deliveryStyle,
+          team: (m.data?.members || []).filter((x: any) => x.active).map((x: any) => ({ id: x.userId, name: x.userName, side: x.side })),
+        });
+      })
+      .catch(() => setFirmPlan(null));
+  }, [projectId]);
+  const consultantLed = firmPlan?.deliveryStyle === 'ConsultantLed';
+  const assignable = firmPlan
+    ? firmPlan.team.filter((t) => t.side === 'Provider' || consultantLed)
+    : people;
 
   useEffect(() => {
     apiClient.get('/api/auth/tenant-users')
@@ -413,7 +453,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
       await apiClient.post(`/api/projects/phases/${taskForPhase.id}/tasks`, {
         name: values.name,
         description: values.description || undefined,
-        assigneeId: (people.find((p) => p.name === values.assignee) || {}).id,
+        assigneeId: (assignable.find((p) => p.name === values.assignee) || {}).id,
         priority: values.priority || undefined,
         side: values.side || undefined,
         department: values.department || undefined,
@@ -421,7 +461,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
         dueDate: values.dueDate || undefined,
         // Blank means "the server's default", not zero: a task weighted zero
         // contributes nothing to the rollup, which is a different intention.
-        weight: values.weight === '' ? undefined : Number(values.weight),
+        weight: firmPlan || !values.weight ? undefined : Number(values.weight),
       });
       setTaskForPhase(null);
       await load();
@@ -723,7 +763,29 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
     | { kind: 'block'; task: Task }
     | { kind: 'sendBack'; task: Task }
     | { kind: 'reopen'; task: Task }
+    | { kind: 'move'; task: Task }
   >(null);
+
+  /**
+   * Moving an agreed date later, with who owes the slip and why. The ordinary
+   * edit refuses that (USE_RESCHEDULE_ENDPOINT) because a plan whose dates move
+   * without a reason is never late; this is the route that records one.
+   */
+  const moveTask = async (task: Task, v: Record<string, string>) => {
+    setDialog(null);
+    setBusyTask(task.id);
+    setError('');
+    try {
+      await apiClient.post(`/api/projects/tasks/${task.id}/reschedule`, {
+        dueDate: v.dueDate, owingSide: v.owingSide, category: v.category, reason: v.reason.trim(),
+      });
+      await load();
+    } catch (err: any) {
+      setError(apiError(err));
+    } finally {
+      setBusyTask(null);
+    }
+  };
 
   const blockTask = async (task: Task, title: string, owingSide: string) => {
     setDialog(null);
@@ -824,13 +886,39 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
               >
                 + Phase
               </button>
+              <button
+                onClick={() => { setTemplateNotice(''); setSavingTemplate(true); }}
+                title="Keep this plan's method in your own template library, without the client's details"
+                style={ghostBtn}
+              >
+                Save as template
+              </button>
             </Can>
             <button style={ghostBtn} onClick={load}>Refresh</button>
           </span>
         </div>
       )}
 
-      {phases.length === 0 ? (
+      {projectStatus === 'OnHold' && (
+        <div style={{ ...S.card, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: 'var(--warning)', borderLeft: '3px solid var(--warning)' }}>
+          This engagement is on hold. Work is paused until it resumes — task status and progress, evidence,
+          verification and blockers wait — but the plan can still be adjusted.
+        </div>
+      )}
+
+      {templateNotice && (
+        <div style={{ ...S.card, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: 'var(--success)' }}>
+          {templateNotice}
+        </div>
+      )}
+
+      {phases.length === 0 && wizard && projectStatus === 'Draft' && mayPlan ? (
+        <PlanWizard
+          projectId={projectId}
+          onDone={() => { setWizard(false); load(); }}
+          onCancel={() => setWizard(false)}
+        />
+      ) : phases.length === 0 ? (
         <div style={{ ...S.card, padding: '44px 32px', textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
             No phases yet
@@ -851,6 +939,11 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
               </div>
             )}
           >
+            {projectStatus === 'Draft' && (
+              <button onClick={() => setWizard(true)} style={{ ...primaryBtn(false), marginTop: 16, marginRight: 8 }}>
+                Start from a template
+              </button>
+            )}
             <button
               onClick={openNewPhase}
               disabled={!canOffer}
@@ -988,6 +1081,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                 <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
                                   {t.ref}
                                   {t.side === 'Provider' && ' · provider'}
+                                  {t.carriedFromTaskId && <span style={{ color: 'var(--brand)' }}> · Carried over</span>}
                                   {t.department && ` · ${t.department}`}
                                   {t.needsVerification && (
                                     <span style={{ color: 'var(--warning)' }}> · needs verification</span>
@@ -1099,6 +1193,18 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                     +{t.slippage.slipDays}d vs plan
                                   </div>
                                 )}
+                                {t.slippage?.baselined && !['Done', 'Verified'].includes(t.status) && (
+                                  <Can do={MAY.MANAGE_PROJECT}>
+                                    <button
+                                      style={{ ...actionBtn('var(--ink-muted)', busy), marginTop: 4, marginRight: 0 }}
+                                      disabled={busy}
+                                      title="Move the agreed date later, saying who owes the slip and why"
+                                      onClick={() => setDialog({ kind: 'move', task: t })}
+                                    >
+                                      Move date
+                                    </button>
+                                  </Can>
+                                )}
                               </td>
 
                               <td style={{ ...S.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 12.5 }}>
@@ -1155,7 +1261,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
                                 {t.status === 'Blocked' ? (
                                   <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 3 }}>
                                     {t.impediments?.[0]
-                                      ? `${t.impediments[0].title} · ${t.impediments[0].owingSide}`
+                                      ? `${t.impediments[0].title} · ${SIDE_LABEL[t.impediments[0].owingSide] ?? t.impediments[0].owingSide}`
                                       : 'Blocked'}
                                   </div>
                                 ) : ['InProgress', 'NotStarted', 'Rejected'].includes(t.status) && (
@@ -1220,6 +1326,48 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
         })
       )}
 
+      {dialog?.kind === 'move' && (
+        <FormDialog
+          title={`Move ${dialog.task.ref} later?`}
+          intro={(
+            <>
+              <div>{dialog.task.name} — due {fmtDate(dialog.task.dueDate)}</div>
+              <div style={{ marginTop: 8, color: 'var(--ink-muted)' }}>
+                The agreed date stays as it was; the days this moves past it are recorded as a delay
+                owed by the side you name, and show on the Delays tab and the Gantt.
+              </div>
+            </>
+          )}
+          submitLabel="Move date"
+          fields={[
+            { name: 'dueDate', label: 'New due date', type: 'date', required: true },
+            {
+              name: 'owingSide', label: 'Who owes the slip', type: 'select',
+              options: ['Client', 'Provider', 'ThirdParty'], optionLabels: SIDE_LABEL,
+            },
+            {
+              name: 'category', label: 'Why', type: 'select',
+              options: ['ClientDependency', 'ProviderCapacity', 'ThirdParty', 'Regulatory', 'ScopeChange', 'Technical', 'Resourcing', 'Other'],
+              optionLabels: {
+                ClientDependency: 'Waiting on the client', ProviderCapacity: 'Delivery firm capacity',
+                ThirdParty: 'A third party', Regulatory: 'Regulatory', ScopeChange: 'Scope change',
+                Technical: 'Technical', Resourcing: 'Resourcing', Other: 'Other',
+              },
+            },
+            { name: 'reason', label: 'What happened', type: 'textarea', required: true },
+          ]}
+          validate={(v) => {
+            if (!v.dueDate) return 'Choose the new due date.';
+            if (dialog.task.dueDate && v.dueDate <= dialog.task.dueDate.slice(0, 10)) {
+              return 'Moving a date earlier needs no reason; edit the task instead.';
+            }
+            return v.reason.trim().length < 10 ? 'Say what happened, in at least 10 characters.' : null;
+          }}
+          onSubmit={(v) => moveTask(dialog.task, v)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
       {dialog?.kind === 'block' && (
         <FormDialog
           title={`What is blocking ${dialog.task.ref}?`}
@@ -1250,6 +1398,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
               // Typed free-hand before and validated by the server, so "client"
               // and "3rd party" both came back as a 400.
               options: ['Client', 'Provider', 'ThirdParty'],
+              optionLabels: SIDE_LABEL,
             },
           ]}
           validate={(v) => (v.title.trim().length < 3 ? 'Say what is blocking it.' : null)}
@@ -1370,7 +1519,7 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
               // Blank first, and blank by default: a task nobody has been given
               // is a normal state, and defaulting to whoever happens to head the
               // list would assign work to them without anyone choosing it.
-              options: ['', ...people.map((p) => p.name)],
+              options: ['', ...assignable.map((p) => p.name)],
             },
             // Offered from the server's own lists rather than a copy here: it
             // answers 400 for anything outside them.
@@ -1385,17 +1534,20 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
               name: 'side',
               label: 'Side',
               type: 'select',
-              options: vocab.sides,
-              help: 'Which organisation owes this piece of work.',
+              // The firm's own work first; the organisation's only when consultant-led.
+              options: firmPlan ? (consultantLed ? ['Provider', 'Client'] : ['Provider']) : vocab.sides,
+              help: firmPlan && !consultantLed
+                ? 'This engagement is client-led: the firm plans its own tasks.'
+                : 'Which organisation owes this piece of work.',
             },
             { name: 'dueDate', label: 'Due', type: 'date' },
-            {
+            ...(firmPlan ? [] : [{
               name: 'weight',
               label: 'Weight',
-              type: 'number',
+              type: 'number' as const,
               help: 'How much this task counts toward the phase. Leave blank for the default — a '
                 + 'weight of zero means it contributes nothing, which is a different intention.',
-            },
+            }]),
           ]}
           onSubmit={(v) => saveTask(v)}
           onCancel={() => setTaskForPhase(null)}
@@ -1613,6 +1765,39 @@ const ProjectPlan: React.FC<{ projectId: string }> = ({ projectId }) => {
           )}
           onConfirm={handleActivate}
           onCancel={() => setShowActivateDialog(false)}
+        />
+      )}
+
+      {savingTemplate && (
+        <FormDialog
+          title="Save this plan as a template?"
+          intro={(
+            <>
+              The phases, tasks, sides, lengths, what each waits on and the clauses each addresses go into
+              your own library as a new template. The client's people, organisation and entity names, files
+              and dates do not. This engagement is not linked to it and does not change.
+            </>
+          )}
+          submitLabel="Save as template"
+          fields={[
+            { name: 'name', label: 'Template name', type: 'text', required: true },
+            { name: 'description', label: 'What it is for', type: 'textarea' },
+          ]}
+          validate={(v) => ((v.name || '').trim().length < 3 ? 'Give the template a name of at least 3 characters.' : null)}
+          onSubmit={async (v) => {
+            try {
+              const res = await apiClient.post(`/api/plan-templates/from-project/${projectId}`, {
+                name: v.name.trim(), description: v.description?.trim() || undefined,
+              });
+              const t = res.data?.template;
+              setSavingTemplate(false);
+              setTemplateNotice(`Saved to your ${String(t?.level || '').toLowerCase()} library as "${t?.name}", version ${t?.version}.`);
+            } catch (err: any) {
+              setSavingTemplate(false);
+              setError(err?.response?.data?.message || 'Could not save the plan as a template.');
+            }
+          }}
+          onCancel={() => setSavingTemplate(false)}
         />
       )}
     </div>

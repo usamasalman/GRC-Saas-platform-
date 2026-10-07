@@ -35,7 +35,8 @@ export interface FlagSeed {
   status: string;
   owner: string;
   scope: string;
-  expiryDate: string;
+  /** Null: no expiry. */
+  expiryDate: string | null;
   rolloutPercentage: number;
 }
 
@@ -204,5 +205,30 @@ export const FEATURE_FLAG_CATALOGUE: FlagSeed[] = [
     scope: 'Selected Tenants',
     expiryDate: '2026-10-31',
     rolloutPercentage: 10
+  },
+  {
+    // Read on the server (services/featureFlags): an organisation's override,
+    // else this status. Off platform-wide; switched on per organisation. An
+    // engagement needs it on for the organisation and the firm. No expiry and
+    // no rollout percentage: it is a per-organisation switch, not a trial.
+    key: 'Consulting Engagements',
+    description: 'Consulting firms invited to engagements: relationships, nomination and approval of each person, engagement roles and the delivery style. Needs the organisation and the firm switched on.',
+    status: 'Disabled',
+    owner: 'Product Operations',
+    scope: 'Selected Tenants',
+    expiryDate: null,
+    rolloutPercentage: 0
+  },
+  {
+    // Sprint 6. Separate from consulting being on: enforced for the client
+    // organisation, and only where consulting is also on for it. Off returns
+    // an organisation to shadow mode, not to consulting being off.
+    key: 'Consulting enforcement',
+    description: 'Enforces the consulting rules of an organisation on engagements that named a firm the old way or were migrated from one: only approved people, inside their dates, with their role. Off counts what would be refused instead. Checked against the client organisation; has no effect where consulting is off.',
+    status: 'Disabled',
+    owner: 'Product Operations',
+    scope: 'Selected Tenants',
+    expiryDate: null,
+    rolloutPercentage: 0
   }
 ];
