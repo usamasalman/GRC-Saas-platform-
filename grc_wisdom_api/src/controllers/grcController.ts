@@ -334,6 +334,12 @@ export const listControls = async (req: AuthenticatedRequest, res: Response): Pr
       controls: controls.map((c) => ({
         id: c.id, code: c.code, title: c.title, objective: c.objective, domain: c.domain,
         isLibrary: c.tenantId === null,
+        // Whether this caller maintains it: its own organisation's control, or,
+        // for the platform, the shared library it writes (QA-034). The server
+        // has always let the platform edit, remap and delete library controls;
+        // the screen offered it only "copy to my set".
+        isOwnedHere: (c.tenantId !== null && scope.tenantIds.includes(c.tenantId))
+          || (scope.kind === 'PLATFORM' && c.tenantId === null),
         mappedTo: c.clauseLinks.map((l) => ({
           standardCode: l.clause.standard.code, clauseRef: l.clause.ref, clauseTitle: l.clause.title,
         })),

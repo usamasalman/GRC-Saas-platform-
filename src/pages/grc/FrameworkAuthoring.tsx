@@ -30,6 +30,8 @@ type Clause = {
 type Control = {
   id: string; code: string; title: string; objective: string; domain: string;
   isLibrary: boolean; mappedTo: { standardCode: string; clauseRef: string }[];
+  /** Maintained by this caller: its own control, or the library for the platform (QA-034). */
+  isOwnedHere: boolean;
   implementationCount: number;
 };
 
@@ -69,9 +71,10 @@ const FrameworkAuthoring: React.FC = () => {
   // only operations are has/add/delete and the list runs to hundreds.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // Only the controls this caller could actually map. Library controls are
-  // shared platform-wide, so the server refuses them; excluding them from
-  // "select all" avoids assembling a selection that can only be rejected.
-  const mappable = controls.filter((c) => !c.isLibrary);
+  // shared platform-wide, so the server refuses them to everyone but the
+  // platform; excluding them from "select all" avoids assembling a selection
+  // that can only be rejected.
+  const mappable = controls.filter((c) => c.isOwnedHere);
   const allMappablePicked = mappable.length > 0 && mappable.every((c) => picked.has(c.id));
 
   const togglePicked = (id: string) => setPicked((prev) => {
@@ -438,7 +441,7 @@ const FrameworkAuthoring: React.FC = () => {
   };
 
   const ownStandards = standards.filter((s) => s.isOwnedHere).length;
-  const ownControls = controls.filter((c) => !c.isLibrary).length;
+  const ownControls = controls.filter((c) => c.isOwnedHere).length;
   const unmapped = controls.filter((c) => c.mappedTo.length === 0).length;
 
   const tabBtn = (key: 'standards' | 'controls' | 'import'): React.CSSProperties => ({
@@ -702,9 +705,10 @@ const FrameworkAuthoring: React.FC = () => {
                   }}>
                     <td style={S.td}>
                       {/* Library controls are shared by every tenant, so the
-                          server refuses to remap them. Offering the checkbox
-                          would be offering a selection that can only fail. */}
-                      {!c.isLibrary && (
+                          server refuses to remap them for anyone but the
+                          platform. Offering the checkbox would be offering a
+                          selection that can only fail. */}
+                      {c.isOwnedHere && (
                         <input
                           type="checkbox"
                           checked={picked.has(c.id)}
@@ -735,7 +739,7 @@ const FrameworkAuthoring: React.FC = () => {
                           guard reads at a glance, and it is the shape the
                           verifier can check exactly instead of by proximity. */}
                       <Can do={MAY.AUTHOR_CONTROL}>
-                        {c.isLibrary
+                        {!c.isOwnedHere
                           ? <button onClick={() => cloneControl(c)} style={linkBtn('var(--brand)')}>copy to my set</button>
                           : (
                             <>

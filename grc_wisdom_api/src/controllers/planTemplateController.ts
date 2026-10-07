@@ -8,7 +8,7 @@ import { guardProject, notFound, readOnly } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import {
   levelForTenantType, canSeeTemplate, canMaintainTemplate, checkTemplateBody, checkCustom,
-  planFromTemplate, templateFromPlan, similarTasks, TemplateBody, ClauseRow,
+  planFromTemplate, templateFromPlan, similarTasks, TemplateBody, ClauseRow, pickFramework,
 } from '../services/planTemplates';
 
 /**
@@ -463,19 +463,22 @@ export const planFromTemplateRoute = async (req: AuthenticatedRequest, res: Resp
     if (Number.isNaN(start.getTime())) { res.status(400).json({ status: 'error', message: 'startDate must be a valid date' }); return; }
 
     // The template's framework, as this organisation holds it: bound to the
-    // engagement already, or enabled for the organisation and bound now.
+    // engagement already, or enabled for the organisation and bound now. The
+    // code is matched as a person means it, so ISO-27001 is the ISO27001 the
+    // platform's template names (QA-035).
     let standardId: string | null = null;
     let bindStandard = false;
     let frameworkNote: string | null = null;
     if (t.standardCode) {
-      const bound = full.standards.find((s) => s.standard.code === t.standardCode);
-      if (bound) standardId = bound.standardId;
+      const bound = pickFramework(full.standards.map((s) => ({ id: s.standardId, code: s.standard.code })), t.standardCode);
+      if (bound) standardId = bound.id;
       else {
-        const enabled = await prisma.tenantStandardEnablement.findFirst({
-          where: { tenantId: full.tenantId, standard: { code: t.standardCode } },
-          select: { standardId: true },
+        const enabled = await prisma.tenantStandardEnablement.findMany({
+          where: { tenantId: full.tenantId },
+          select: { standardId: true, standard: { select: { code: true } } },
         });
-        if (enabled) { standardId = enabled.standardId; bindStandard = true; }
+        const match = pickFramework(enabled.map((e) => ({ id: e.standardId, code: e.standard.code })), t.standardCode);
+        if (match) { standardId = match.id; bindStandard = true; }
         else frameworkNote = `${t.standardCode} is not enabled for this organisation, so no task is mapped to a clause.`;
       }
     }

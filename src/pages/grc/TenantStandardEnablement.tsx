@@ -123,8 +123,46 @@ const TenantStandardEnablement: React.FC = () => {
     return by;
   }, [enablements, standards]);
 
+  // What each group has left on its package (QA-031). A framework enabled
+  // anywhere in a group counts once against the package its holder carries,
+  // so enabling one the group already has costs nothing; past the limit the
+  // server refuses the rest. Worked out here, by the same rules the server
+  // applies, so the screen says it before anyone clicks.
+  const groupFrameworks = useMemo(() => {
+    const by = new Map<string, Set<string>>();
+    for (const e of enablements) {
+      const holder = packages[e.tenantId]?.holder.id;
+      if (!holder) continue;
+      if (!by.has(holder)) by.set(holder, new Set());
+      by.get(holder)!.add(e.standardId);
+    }
+    return by;
+  }, [enablements, packages]);
+
+  /** How many frameworks an organisation's package has left, and whether this one fits. */
+  const roomFor = (t: Tenant, standardId: string): { left: number | null; fits: boolean; label: string; why: string } => {
+    const p = packages[t.id];
+    if (!p) {
+      return t.type === 'SAAS' || t.type === 'SAAS_UNIT'
+        ? { left: null, fits: true, label: '', why: '' }
+        : { left: null, fits: false, label: 'no package', why: `${t.name} has no package. Assign one under Subscriptions first.` };
+    }
+    const limit = p.limits.frameworks;
+    if (limit === null) {
+      return { left: null, fits: false, label: 'limit not set', why: `${p.plan.name} sets no framework limit. Set one under Plans & Catalogue first.` };
+    }
+    const left = Math.max(0, limit - p.used.frameworks);
+    if (left > 0 || groupFrameworks.get(p.holder.id)?.has(standardId)) return { left, fits: true, label: '', why: '' };
+    return {
+      left, fits: false, label: 'package full',
+      why: `${p.holder.name} has used all ${limit} frameworks on ${p.plan.name}. Upgrade the package, or disable one first.`,
+    };
+  };
+
   const standard = standards.find((s) => s.id === selected) || null;
   const enabledHere = (standard && enabledTenantIds.get(standard.id)) || new Set<string>();
+  // Entities without the framework whose package has no room for it.
+  const noRoom = standard ? tenants.filter((t) => !enabledHere.has(t.id) && !roomFor(t, standard.id).fits) : [];
 
   const shownTenants = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -392,7 +430,9 @@ const TenantStandardEnablement: React.FC = () => {
                                     <span style={{ color: 'var(--ink-body)' }}>{p.plan.name}</span>
                                     {' · '}
                                     <strong style={{ color: full ? 'var(--warning)' : 'var(--ink-body)' }}>
-                                      {limit === null ? 'framework limit not set' : `${p.used.frameworks} of ${limit} frameworks`}
+                                      {limit === null
+                                        ? 'framework limit not set'
+                                        : `${p.used.frameworks} of ${limit} frameworks · ${full ? 'none left' : `${limit - p.used.frameworks} left`}`}
                                     </strong>
                                     {p.holder.id !== t.id && <div style={{ fontSize: 10.5 }}>via {p.holder.name}</div>}
                                   </>
@@ -411,15 +451,22 @@ const TenantStandardEnablement: React.FC = () => {
                                       disable
                                     </button>
                                   )
-                                  : (
-                                    <button
-                                      onClick={() => runBatch('enable', [t.id])}
-                                      disabled={busy}
-                                      style={linkBtn('var(--brand)')}
-                                    >
-                                      enable
-                                    </button>
-                                  )}
+                                  : (() => {
+                                    // Offered only where the package has room;
+                                    // otherwise the reason, on hover.
+                                    const room = roomFor(t, standard.id);
+                                    return room.fits
+                                      ? (
+                                        <button
+                                          onClick={() => runBatch('enable', [t.id])}
+                                          disabled={busy}
+                                          style={linkBtn('var(--brand)')}
+                                        >
+                                          enable
+                                        </button>
+                                      )
+                                      : <span title={room.why} style={{ fontSize: 11.5, color: 'var(--warning)' }}>{room.label}</span>;
+                                  })()}
                               </Can>
                             </td>
                           </tr>
@@ -443,15 +490,27 @@ const TenantStandardEnablement: React.FC = () => {
         <PickManyDialog
           title={picking === 'enable' ? `Enable ${standard.code}` : `Disable ${standard.code}`}
           intro={picking === 'enable'
-            ? <>Records that each chosen entity is assessed against {standard.code}, with applicability <strong>{applicability}</strong>. Entities that already have it are not listed.</>
+            ? (
+              <>
+                Records that each chosen entity is assessed against {standard.code}, with applicability <strong>{applicability}</strong>. Entities that already have it are not listed.
+                {noRoom.length > 0 && <> Nor are those whose package has no room for it: {noRoom.map((t) => t.name).join(', ')}.</>}
+              </>
+            )
             : <>Stops assessing each chosen entity against {standard.code}. The assessment history is not deleted — implementations and evidence hang off controls, not off this record.</>}
           items={tenants
-            .filter((t) => (picking === 'enable' ? !enabledHere.has(t.id) : enabledHere.has(t.id)))
-            .map((t) => ({ id: t.id, label: t.name, sublabel: t.type }))}
+            .filter((t) => (picking === 'enable' ? !enabledHere.has(t.id) && roomFor(t, standard.id).fits : enabledHere.has(t.id)))
+            .map((t) => {
+              // What the package has left, so the choice is made knowing it.
+              const p = packages[t.id];
+              const left = picking === 'enable' && p && p.limits.frameworks !== null ? roomFor(t, standard.id).left : null;
+              return { id: t.id, label: t.name, sublabel: left === null ? t.type : `${t.type} · ${left} of ${p!.limits.frameworks} frameworks left` };
+            })}
           initiallySelected={[]}
           confirmLabel={picking === 'enable' ? 'Enable for selected' : 'Disable for selected'}
           emptyMessage={picking === 'enable'
-            ? `Every entity in scope already has ${standard.code} enabled.`
+            ? (noRoom.length > 0
+              ? `No entity can take ${standard.code}: those without it have no room left on their package.`
+              : `Every entity in scope already has ${standard.code} enabled.`)
             : `No entity in scope has ${standard.code} enabled.`}
           busy={busy}
           onSubmit={(ids) => runBatch(picking, ids)}
