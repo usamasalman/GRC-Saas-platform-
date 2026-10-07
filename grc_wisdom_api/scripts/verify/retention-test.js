@@ -411,12 +411,14 @@ const held = (over) => Object.assign({
     'it destroys the content',
   );
   ok(
-    /fs\.unlinkSync\(/.test(dispose),
+    // The delete goes through removeDocumentFile, which finds the file in the
+    // document store or in uploads/ from before it.
+    /removeDocumentFile\(/.test(dispose),
     'and the stored file. A disposal that leaves the bytes on disk is a disposal that '
     + 'did not happen',
   );
   ok(
-    dispose.indexOf('fs.unlinkSync(') > dispose.indexOf('writeAudit('),
+    dispose.indexOf('removeDocumentFile(') > dispose.indexOf('writeAudit('),
     'the file goes AFTER the audit entry commits. A filesystem delete cannot be rolled '
     + 'back, and bytes gone with no record of who authorised it is the unrecoverable order',
   );
