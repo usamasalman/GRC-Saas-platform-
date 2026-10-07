@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import apiClient from '../../api/apiClient';
 import { ReasonDialog } from '../../components/Dialog';
+import DocumentDetail from './DocumentDetail';
 
 interface DocumentItem {
   id: string;
@@ -16,11 +17,15 @@ interface DocumentItem {
     sequenceOrder: number;
     canSignNow: boolean;
     waitingOn: string | null;
+    /** Set when the signature is for the next version of a published document. */
+    versionId?: string | null;
+    versionNumber?: string | null;
   } | null;
 }
 
 export default function ApprovalQueue() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [reading, setReading] = useState<DocumentItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -39,8 +44,10 @@ export default function ApprovalQueue() {
       // Only documents awaiting THIS user's signature. Listing every in-review
       // document offered a Sign & Approve the server then refused, because
       // approval comes from an assigned queue row, not from holding the role.
+      // No status filter: the next version of a published document is signed
+      // while the document itself stays PUBLISHED.
       const res = await apiClient.get('/api/documents', {
-        params: { status: 'IN_REVIEW', pendingForMe: 'true' },
+        params: { pendingForMe: 'true' },
       });
       if (res.data.status === 'success') {
         setDocuments(res.data.documents || []);
@@ -144,7 +151,14 @@ export default function ApprovalQueue() {
                   <td style={{ padding: '12px 16px', fontWeight: 'bold', color: 'var(--info)' }}>{doc.code}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--ink)' }}>{doc.title}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>{doc.category}</td>
-                  <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>v{doc.version}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--ink-body)' }}>
+                    {doc.myApproval?.versionNumber ? (
+                      <>
+                        v{doc.myApproval.versionNumber}
+                        <div style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>next version · v{doc.version} in force</div>
+                      </>
+                    ) : `v${doc.version}`}
+                  </td>
                   <td style={{ padding: '12px 16px', color: 'var(--ink-muted)' }}>{doc.owner?.name || 'Unknown'}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                     {/* Approvals are sequenced: an earlier signatory must go first. */}
@@ -154,6 +168,12 @@ export default function ApprovalQueue() {
                       </span>
                     ) : (
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => setReading(doc)}
+                          style={{ background: 'transparent', color: 'var(--ink-body)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          Read
+                        </button>
                         <button
                           onClick={() => openApproveModal(doc)}
                           style={{ background: 'var(--brand)', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
@@ -176,6 +196,14 @@ export default function ApprovalQueue() {
         </div>
       )}
 
+      {reading && (
+        <DocumentDetail
+          documentId={reading.id}
+          initialTab={reading.myApproval?.versionId ? 'next' : 'reader'}
+          onClose={() => setReading(null)}
+        />
+      )}
+
       {/* Digital Signature & Step-up Re-Auth Modal */}
       {signingDoc && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -184,6 +212,7 @@ export default function ApprovalQueue() {
               <span style={{ color: 'var(--success)', fontSize: '12px', fontWeight: 'bold' }}>STEP-UP DIGITAL SIGNATURE RE-AUTHENTICATION</span>
               <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: 'var(--ink)' }}>
                 Approve {signingDoc.code} — {signingDoc.title}
+                {signingDoc.myApproval?.versionNumber && ` (version ${signingDoc.myApproval.versionNumber})`}
               </h2>
             </div>
 

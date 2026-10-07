@@ -184,6 +184,20 @@ export function tenantWhere(scope: TenantScope): { tenantId?: { in: string[] } }
 }
 
 /**
+ * An organisation and the entities beneath it, by the same rule as the
+ * resolver above, for someone acting for it rather than signed in to it: an
+ * engagement's scope can never reach wider than its client's own hierarchy
+ * (consulting engagement, sprint 6). The platform's tenants have none.
+ */
+export async function hierarchyOf(tenantId: string): Promise<string[]> {
+  const own = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, type: true, path: true } });
+  if (!own || PLATFORM_TYPES.has(own.type)) return own ? [own.id] : [];
+  if (!SUBTREE_TYPES.has(own.type)) return [own.id];
+  const subtree = await prisma.tenant.findMany({ where: { path: { startsWith: own.path } }, select: { id: true } });
+  return subtree.length > 0 ? subtree.map((t) => t.id) : [own.id];
+}
+
+/**
  * Records a break-glass read so a customer asking "who looked at our data?"
  * has an answer. Fire-and-forget by design: a logging failure must not block
  * a read, but it is reported loudly.

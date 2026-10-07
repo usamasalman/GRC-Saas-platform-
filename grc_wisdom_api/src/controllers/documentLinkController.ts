@@ -200,7 +200,7 @@ export const linkOptions = async (req: AuthenticatedRequest, res: Response): Pro
 // ─── Write ──────────────────────────────────────────────────────────────────
 
 /** Loads the candidate rows for one target kind, with the tenancy each carries. */
-async function loadCandidates(
+export async function loadCandidates(
   target: string, ids: string[], tenantId: string,
 ): Promise<LinkCandidate[]> {
   if (ids.length === 0) return [];

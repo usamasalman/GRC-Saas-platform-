@@ -39,11 +39,12 @@ interface Provisioned {
   expiresAt: string | null;
 }
 
-const TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER'];
+const TYPES = ['SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER', 'AUDITOR'];
 
 const TYPE_TINT: Record<string, string> = {
   SAAS: '#1f6fff', SAAS_UNIT: 'var(--info)', HOLDING: 'var(--violet)',
   MULTIBRANCH: 'var(--info)', BRANCH: 'var(--ink-muted)', FRANCHISE: 'var(--warning)', PARTNER: 'var(--success)',
+  AUDITOR: 'var(--danger)',
 };
 
 const TenantManager: React.FC = () => {

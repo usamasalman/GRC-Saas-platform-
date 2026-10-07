@@ -22,6 +22,10 @@ import billingRoutes from './routes/billingRoutes';
 import usageRoutes from './routes/usageRoutes';
 import systemRoutes from './routes/systemRoutes';
 import projectRoutes from './routes/projectRoutes';
+import planTemplateRoutes from './routes/planTemplateRoutes';
+import engagementRoutes from './routes/engagementRoutes';
+import certificationRoutes from './routes/certificationRoutes';
+import { requestContext } from './services/requestContext';
 import { requireAuth, enforceTenantIsolation } from './middlewares/authMiddleware';
 import { requireCapability, CAP } from './services/capabilityEngine';
 import { SodViolation } from './services/sodEngine';
@@ -175,6 +179,9 @@ app.use('/api', apiLimiter);
 
 // Body Parsing (50mb limit for document file uploads)
 app.use(express.json({ limit: '50mb' }));
+// The route each request came in on, with ids replaced, for services that
+// must say where something happened without holding the request (sprint 5).
+app.use(requestContext);
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // uploads/ is NOT served statically.
@@ -269,6 +276,10 @@ app.use('/api/system', systemRoutes);
 
 // Delivery projects (slice 1: the engagement itself)
 app.use('/api/projects', projectRoutes);
+app.use('/api/plan-templates', planTemplateRoutes);
+app.use('/api/engagements', engagementRoutes);
+// The certification body's own reads and questions (consulting engagement, sprint 13).
+app.use('/api/certification', certificationRoutes);
 
 // Phase 1 WORM Audit Logs Endpoint (scope-aware per TRD §2.1)
 //

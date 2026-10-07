@@ -1,0 +1,227 @@
+/**
+ * The consulting relationship, the invitation to an engagement, the firm's
+ * people on it, and the delivery style (consulting engagement, sprint 4).
+ *
+ * Pure: no Prisma, no request, no clock beyond the one passed in.
+ *
+ *   relationship  one per firm and organisation, made when the firm first
+ *                 accepts an invitation, never when one is sent
+ *   invitation    one per engagement, to the firm's organisation (not to an
+ *                 email address), single use, 14 days; expired and revoked
+ *                 ones stay on record and re-inviting makes a new one
+ *   people        the firm's Lead nominates; the organisation approves each
+ *                 person, and until it does the person has no access
+ *   style         Client-led by default: the consultant proposes, the
+ *                 organisation decides. Only the organisation changes it
+ */
+
+export const DELIVERY_STYLES = ['ClientLed', 'ConsultantLed'] as const;
+export type DeliveryStyle = (typeof DELIVERY_STYLES)[number];
+export const DEFAULT_DELIVERY_STYLE: DeliveryStyle = 'ClientLed';
+
+export const ENGAGEMENT_ROLES = ['Lead', 'Consultant', 'Reviewer'] as const;
+export type EngagementRole = (typeof ENGAGEMENT_ROLES)[number];
+
+/** Nominated → Approved or Rejected; either side may remove. */
+export const MEMBER_STATUSES = ['Nominated', 'Approved', 'Rejected', 'Removed'] as const;
+
+export const INVITATION_DAYS = 14;
+
+export type InvitationState = 'Pending' | 'Expired' | 'Accepted' | 'Declined' | 'Revoked';
+
+/** An invitation's state now: a pending one past its date has expired. */
+export function invitationState(inv: { status: string; expiresAt: Date }, now: Date = new Date()): InvitationState {
+  if (inv.status === 'Pending' && inv.expiresAt <= now) return 'Expired';
+  return inv.status as InvitationState;
+}
+
+export const invitationExpiry = (from: Date): Date => new Date(from.getTime() + INVITATION_DAYS * 86_400_000);
+
+/**
+ * What the firm's people may do on an engagement, by role.
+ *
+ *   read      see the engagement (every approved member)
+ *   work      work their tasks: status and progress, evidence, blockers
+ *   submit    submit deliverables for the organisation to approve
+ *   sequence  link the firm's tasks (what waits on what)
+ *   nominate  add or remove the firm's people
+ *   request   ask the organisation for evidence, a document, a dataset or a
+ *             clarification, or for a wider scope (sprint 8)
+ *   review    review the organisation's answers to requests (sprint 8)
+ *
+ * The Lead does all of it; a Consultant works assigned tasks; a Reviewer
+ * checks and comments and changes nothing. Approving, verifying and accepting
+ * stay with the organisation's own people whatever the role, and what the
+ * organisation has shared with the firm limits every role further (sprint 6).
+ */
+export type EngagementAction = 'read' | 'work' | 'submit' | 'sequence' | 'nominate' | 'plan' | 'request' | 'review' | 'docreview' | 'suggest' | 'assess';
+
+const MAY: Record<EngagementRole, readonly EngagementAction[]> = {
+  Lead: ['read', 'work', 'submit', 'sequence', 'nominate', 'plan', 'request', 'review', 'docreview', 'suggest', 'assess'],
+  // A Consultant plans their own tasks only (sprint 6, planRefusal below).
+  // Assessing clauses and proposing context entries is the firm's own work (sprint 10).
+  Consultant: ['read', 'work', 'plan', 'request', 'review', 'suggest', 'assess'],
+  // A Reviewer reviews the organisation's documents (sprint 9) and changes nothing.
+  Reviewer: ['read', 'docreview'],
+};
+
+export function roleMay(role: string | null | undefined, action: EngagementAction): boolean {
+  return Boolean(role && (MAY as Record<string, readonly string[]>)[role]?.includes(action));
+}
+
+const WORDS: Record<EngagementAction, string> = {
+  read: 'see this engagement',
+  work: 'work tasks on this engagement',
+  submit: 'submit deliverables on this engagement; the firm\'s Lead does',
+  sequence: 'link tasks on this engagement; the firm\'s Lead does',
+  nominate: 'add or remove the firm\'s people; the firm\'s Lead does',
+  plan: 'plan tasks on this engagement',
+  request: 'raise requests on this engagement; the firm\'s Lead and Consultants do',
+  review: 'review answers on this engagement; the firm\'s Lead and Consultants do',
+  docreview: 'review the organisation\'s documents; the firm\'s Lead and Reviewers do',
+  suggest: 'suggest wording for the organisation\'s documents; the firm\'s Lead and Consultants do',
+  assess: 'assess clauses or propose context entries; the firm\'s Lead and Consultants do',
+};
+
+export function roleRefusal(role: string | null | undefined, action: EngagementAction) {
+  return {
+    status: 403 as const,
+    code: 'ENGAGEMENT_ROLE' as const,
+    message: role
+      ? `As ${role === 'Reviewer' ? 'a Reviewer' : `the firm's ${role}`} you cannot ${WORDS[action]}.`
+      : `You are not an approved member of this engagement, so you cannot ${WORDS[action]}.`,
+  };
+}
+
+export const isDeliveryStyle = (v: unknown): v is DeliveryStyle => (DELIVERY_STYLES as readonly unknown[]).includes(v);
+export const isEngagementRole = (v: unknown): v is EngagementRole => (ENGAGEMENT_ROLES as readonly unknown[]).includes(v);
+
+// ─── Access windows (sprint 5) ──────────────────────────────────────────────
+
+export const DAY_MS = 86_400_000;
+export const WARNING_DAYS = 7;
+export const HOLD_FIRM_ACCESS = ['View', 'None'] as const;
+export type HoldFirmAccess = (typeof HOLD_FIRM_ACCESS)[number];
+
+/**
+ * Whether a person's access window is open now: from their start to the end
+ * of their end date (UTC), both checked on every request, not by a nightly
+ * job, because dates the organisation set on purpose are rules. Before the
+ * start a person sees only the engagement's card (sprint 6).
+ */
+export function accessOpen(m: { accessFrom: Date | null; accessTo: Date | null }, now: Date = new Date()): boolean {
+  if (m.accessFrom && now.getTime() < m.accessFrom.getTime()) return false;
+  return !m.accessTo || now.getTime() < m.accessTo.getTime() + DAY_MS;
+}
+
+/** Whether the window has yet to start, as opposed to having ended. */
+export const accessNotStarted = (m: { accessFrom: Date | null }, now: Date = new Date()): boolean => Boolean(
+  m.accessFrom && now.getTime() < m.accessFrom.getTime(),
+);
+
+/**
+ * When access starts for a person approved now: the start asked for, unless
+ * that is before the approval, in which case at the approval (sprint 6). No
+ * one can be granted access backdated to before anyone approved it.
+ */
+export function startAtApproval(requested: Date, approvedAt: Date): Date {
+  return requested.getTime() < approvedAt.getTime() ? approvedAt : requested;
+}
+
+// ─── The engagement's own window (sprint 5) ─────────────────────────────────
+
+/** The design's engagement window runs to this many days after the target end. */
+export const ENGAGEMENT_WINDOW_TAIL_DAYS = 30;
+
+export const startOfDayUtc = (d: Date): Date => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+export interface EngagementWindow { from: Date; to: Date }
+type PersonWindow = { accessFrom: Date | null; accessTo: Date | null };
+
+/**
+ * The window an engagement gets when it has none yet: its start to 30 days
+ * after its target end, as the design sets it, widened to hold everyone
+ * already approved, so setting it never takes access away from anybody.
+ * Dates are whole UTC days; the end counts in full, as a person's does.
+ */
+export function engagementWindowFor(
+  e: { startDate: Date; targetEndDate: Date },
+  people: readonly PersonWindow[],
+): EngagementWindow {
+  let from = startOfDayUtc(e.startDate);
+  let to = startOfDayUtc(new Date(e.targetEndDate.getTime() + ENGAGEMENT_WINDOW_TAIL_DAYS * DAY_MS));
+  for (const p of people) ({ from, to } = widenToHold({ from, to }, p));
+  return { from, to };
+}
+
+/** The engagement's window, widened as little as needed to hold one person's. */
+export function widenToHold(w: EngagementWindow, p: PersonWindow): EngagementWindow {
+  const from = p.accessFrom && startOfDayUtc(p.accessFrom) < w.from ? startOfDayUtc(p.accessFrom) : w.from;
+  const to = p.accessTo && startOfDayUtc(p.accessTo) > w.to ? startOfDayUtc(p.accessTo) : w.to;
+  return { from, to };
+}
+
+/**
+ * A person's window pulled inside the engagement's, or null when it already
+ * is. Only ever narrows: an end past the engagement's comes back to it, a
+ * start before it moves up to it. A window left with its end before its start
+ * is simply shut, as one that has ended is.
+ */
+export function narrowToEngagement(w: EngagementWindow, p: PersonWindow): PersonWindow | null {
+  const to = !p.accessTo || startOfDayUtc(p.accessTo) > w.to ? w.to : p.accessTo;
+  const from = !p.accessFrom || startOfDayUtc(p.accessFrom) < w.from ? w.from : p.accessFrom;
+  const same = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
+  return same(to, p.accessTo) && same(from, p.accessFrom) ? null : { accessFrom: from, accessTo: to };
+}
+
+/** The notice due for a person's end date now, if any; each is sent once per date. */
+export function noticeDue(
+  m: { accessTo: Date | null; accessWarnedAt: Date | null; accessEndNoticeAt: Date | null },
+  now: Date = new Date(),
+): 'ended' | 'soon' | null {
+  if (!m.accessTo) return null;
+  const end = m.accessTo.getTime() + DAY_MS;
+  if (now.getTime() >= end) return m.accessEndNoticeAt ? null : 'ended';
+  if (end - now.getTime() <= WARNING_DAYS * DAY_MS) return m.accessWarnedAt ? null : 'soon';
+  return null;
+}
+
+// ─── Planning by the firm (sprint 6) ────────────────────────────────────────
+
+/**
+ * Whether a person of the delivery firm may plan this task, by the delivery
+ * style and their engagement role: the firm plans its own tasks; it assigns
+ * the organisation's tasks only on a consultant-led engagement, and only
+ * through its Lead; a Consultant plans only their own tasks; a Reviewer plans
+ * nothing. Null when allowed. Pure: the caller resolves who is on which side.
+ */
+export function planRefusal(args: {
+  role: string | null;
+  deliveryStyle: string | null;
+  callerId: string;
+  /** The task's side after the change, and whether its assignee is the organisation's. */
+  side: string;
+  assigneeIsClient: boolean;
+  /** The assignee after the change and, on an update, before it. */
+  assigneeId: string | null;
+  previousAssigneeId?: string | null;
+}): { status: 403; code: string; message: string } | null {
+  if (!roleMay(args.role, 'plan')) return roleRefusal(args.role, 'plan');
+  const clientTask = args.side === 'Client' || args.assigneeIsClient;
+  if (clientTask && args.deliveryStyle !== 'ConsultantLed') {
+    return {
+      status: 403, code: 'DELIVERY_STYLE',
+      message: 'This engagement is client-led: the firm plans its own tasks, and the organisation sets its own.',
+    };
+  }
+  if (clientTask && args.role !== 'Lead') {
+    return { status: 403, code: 'ENGAGEMENT_ROLE', message: 'Only the firm\'s Lead assigns the organisation\'s tasks.' };
+  }
+  if (args.role === 'Consultant') {
+    const own = (id: string | null | undefined) => !id || id === args.callerId;
+    if (!own(args.assigneeId) || (args.previousAssigneeId !== undefined && args.previousAssigneeId !== args.callerId)) {
+      return { status: 403, code: 'ENGAGEMENT_ROLE', message: 'As a Consultant you plan your own tasks; the firm\'s Lead plans the rest.' };
+    }
+  }
+  return null;
+}

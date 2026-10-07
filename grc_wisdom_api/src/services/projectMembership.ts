@@ -76,7 +76,7 @@ export interface MembershipDecision {
 /** Statuses in which the team is settled and should not be rearranged casually. */
 const CLOSED_STATUSES = ['Closed', 'Cancelled', 'Completed'];
 
-function validAllocation(raw: unknown): number | null | 'invalid' {
+export function validAllocation(raw: unknown): number | null | 'invalid' {
   if (raw === null || raw === undefined || raw === '') return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 100) return 'invalid';

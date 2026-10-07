@@ -4,6 +4,7 @@ import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { guardProject, notFound } from '../services/projectGuard';
+import { buildSchedule, Figures, varianceWords, causeWords } from '../services/projectVariance';
 import {
   ReportDocument, ReportSection, ReportFormat, FORMATS, MIME,
   Provenance, fileNameFor, stampOf,
@@ -14,6 +15,7 @@ import { renderXlsx } from '../services/renderXlsx';
 import { brandingFor, logoBytesFor } from './brandingController';
 import { effectiveMarking, selectSections } from '../services/tenantBranding';
 import { documentHash, snapshotOf, documentRefFor } from '../services/reportIssue';
+import { putEvidence, StoredFile } from '../services/evidenceStore';
 import {
   statusFigures, attentionLists, verificationRows, verificationIntegrity,
   unmappedClauses, taskCounts, attribute, slippage, clauseCoverage,
@@ -22,6 +24,11 @@ import {
 } from '../services/deliveryReportData';
 import { hasEverHadEvidence, evidenceStanding } from '../services/projectEvidence';
 import { readinessScope } from '../services/projectStandards';
+import { acceptedClauseIds } from '../services/engagementRequests';
+import { bindingScope } from '../services/engagementScope';
+import { soaLine, soaClauses, byClauseRef, summarise } from '../services/gapAssessment';
+import { computeReadiness } from './engagementReadinessController';
+import { DIMENSIONS, DIMENSION_LABEL } from '../services/readiness';
 import {
   criticalPath, crossSideLinks, scheduleViolations, downstreamOf,
 } from '../services/projectDependency';
@@ -139,7 +146,9 @@ async function loadEngagement(projectId: string) {
       projectType: true, frameworks: true, reportedProgress: true, verifiedProgress: true,
       verificationPolicy: true, startDate: true, targetEndDate: true, actualEndDate: true,
       baselineStartDate: true, baselineTargetEndDate: true, baselineVersion: true,
-      baselineSetAt: true, closureNote: true, tenantId: true, providerTenantId: true,
+      baselineSetAt: true, closureNote: true, tenantId: true, providerTenantId: true, reportCopiesAllowed: true,
+      firstBaselineStartDate: true, firstBaselineTargetEndDate: true,
+      holds: { select: { startedAt: true, endedAt: true } },
       owner: { select: { id: true, name: true } },
       manager: { select: { id: true, name: true } },
       sponsor: { select: { id: true, name: true } },
@@ -154,6 +163,7 @@ async function loadEngagement(projectId: string) {
         select: {
           id: true, sequence: true, name: true, objectives: true, status: true,
           startDate: true, targetEndDate: true, baselineTargetEndDate: true,
+          firstBaselineTargetEndDate: true,
           reportedProgress: true, verifiedProgress: true,
           owner: { select: { id: true, name: true } },
           tasks: {
@@ -161,7 +171,8 @@ async function loadEngagement(projectId: string) {
             select: {
               id: true, ref: true, name: true, status: true, completionPercent: true,
               weight: true, priority: true, side: true, department: true,
-              startDate: true, dueDate: true, completedAt: true,
+              startDate: true, dueDate: true, completedAt: true, actualStartDate: true,
+              baselineStartDate: true, firstBaselineStartDate: true, firstBaselineDueDate: true,
               baselineDueDate: true, verificationOverride: true, verificationRound: true,
               submittedAt: true, verifiedAt: true,
               assigneeId: true, submittedById: true, verifiedById: true,
@@ -208,6 +219,7 @@ async function loadEngagement(projectId: string) {
         orderBy: [{ raisedAt: 'asc' }],
         select: {
           id: true, ref: true, kind: true, category: true, owingSide: true,
+          taskId: true, phaseId: true,
           severity: true, title: true, description: true, impactDays: true,
           expectedClearDate: true, raisedAt: true, resolvedAt: true, resolutionNote: true,
           raisedBy: { select: { name: true } },
@@ -222,6 +234,32 @@ async function loadEngagement(projectId: string) {
 type Engagement = NonNullable<Awaited<ReturnType<typeof loadEngagement>>>;
 
 const allTasks = (e: Engagement) => e.phases.flatMap((p) => p.tasks);
+
+/**
+ * Planned, actual and variance, from the same function the Gantt tab calls, so
+ * the paper a steering committee reads carries the figure the screen shows
+ * (consulting engagement, sprint 2).
+ */
+const scheduleOf = (e: Engagement, now: Date) => buildSchedule({
+  project: e, phases: e.phases, ledger: e.impediments, holds: e.holds, edges: e.dependencies, now,
+});
+
+const finishLabel = (f: Figures) => (f.actual.forecast ? 'Forecast finish' : 'Actual finish');
+
+/** The variance table's row for one phase or task. */
+const varianceRow = (f: Figures) => ({
+  planned: day(f.planned.finish),
+  finish: day(f.actual.finish) + (f.actual.forecast && f.actual.finish ? ' (forecast)' : ''),
+  variance: varianceWords({ ...f, actual: { ...f.actual, forecast: false } }),
+  why: causeWords(f.causes) || '—',
+});
+
+const VARIANCE_COLUMNS = [
+  { header: 'Planned finish', key: 'planned', width: 13 },
+  { header: 'Actual or forecast', key: 'finish', width: 20 },
+  { header: 'Variance', key: 'variance', width: 14 },
+  { header: 'Why', key: 'why', width: 30 },
+];
 
 /**
  * The tasks, with needsVerification resolved.
@@ -540,6 +578,40 @@ function statusSections(e: Engagement, now: Date): ReportSection[] {
     },
   ];
 
+  // The Gantt's figure, and where the days went. Placed beside the days lost
+  // because the two answer one question from two ends: what the ledger says
+  // was owed, and what that did to the finish.
+  const sched = scheduleOf(e, now);
+  sections.push({
+    kind: 'fields',
+    title: 'Planned, actual and variance',
+    fields: [
+      { label: 'Planned finish (first agreed)', value: day(sched.project.planned.finish) },
+      ...(sched.project.agreedFinish && sched.project.planned.finish
+        && day(sched.project.agreedFinish) !== day(sched.project.planned.finish)
+        ? [{ label: 'Finish as re-agreed', value: day(sched.project.agreedFinish) }]
+        : []),
+      { label: finishLabel(sched.project), value: day(sched.project.actual.finish) },
+      { label: 'Variance', value: varianceWords(sched.project) },
+      { label: 'Why, in days', value: causeWords(sched.project.causes) || 'Nothing to explain' },
+      {
+        label: 'Reading these figures',
+        value: 'Measured from the plan first agreed. Days on hold are counted first and '
+          + 'are nobody\'s delay; then the days each side owed on the work that set the '
+          + 'finish; then any rebaseline; the rest is unattributed. The parts add up to '
+          + 'the variance.'
+          + (sched.project.firstPlanKnown ? '' : ' This engagement was rebaselined before '
+            + 'first agreed plans were kept, so it is measured from its current baseline.'),
+      },
+    ],
+  });
+  sections.push({
+    kind: 'table',
+    title: 'Variance by phase',
+    columns: [{ header: 'Phase', key: 'name', width: 26 }, ...VARIANCE_COLUMNS],
+    rows: e.phases.map((p, i) => ({ name: `${p.sequence}. ${p.name}`, ...varianceRow(sched.phases[i]) })),
+  });
+
   if (openImpediments.length > 0) {
     sections.push({
       kind: 'table',
@@ -662,6 +734,30 @@ function phaseSections(e: Engagement, phaseId: string, now: Date): ReportSection
       ],
     },
   ];
+
+  // The phase's line on the Gantt, and every task's, from the same schedule.
+  const sched = scheduleOf(e, now);
+  const phaseFigures = sched.phases[e.phases.indexOf(p)];
+  sections.push({
+    kind: 'fields',
+    title: 'Planned, actual and variance',
+    fields: [
+      { label: 'Planned end (first agreed)', value: day(phaseFigures.planned.finish) },
+      { label: finishLabel(phaseFigures), value: day(phaseFigures.actual.finish) },
+      { label: 'Variance', value: varianceWords(phaseFigures) },
+      { label: 'Why, in days', value: causeWords(phaseFigures.causes) || 'Nothing to explain' },
+    ],
+  });
+  sections.push({
+    kind: 'table',
+    title: 'Variance by task',
+    columns: [
+      { header: 'Ref', key: 'ref', width: 10 },
+      { header: 'Task', key: 'name', width: 24 },
+      ...VARIANCE_COLUMNS,
+    ],
+    rows: p.tasks.map((t) => ({ ref: t.ref, name: t.name, ...varianceRow(sched.tasks.get(t.id)!) })),
+  });
 
   const COLUMNS = [
     { header: 'Ref', key: 'ref', width: 10 },
@@ -1142,6 +1238,10 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
     })
     : [];
 
+  // Sprint 8: clauses with evidence the delivery firm accepted, a figure of
+  // its own beside the two above, never folded into them.
+  const accepted = scope.standardIds.length ? await acceptedClauseIds(e.id, scope.standardIds) : [];
+
   const gaps = unmappedClauses(
     allClauses.map((c) => ({
       id: c.id, ref: c.ref, title: c.title, standardCode: c.standard.code,
@@ -1176,6 +1276,15 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
           value: 'A clause the plan MAPS TO is an intention. A clause whose every '
             + 'mapped task is finished is something you can defend. Only the '
             + 'second figure is evidence of anything.',
+        },
+        {
+          label: 'Clauses with evidence the firm accepted',
+          value: scope.stated ? String(accepted.length) : '—',
+        },
+        {
+          label: 'What that figure is',
+          value: 'Answers to the firm\'s requests that it reviewed and accepted. It counts toward '
+            + 'readiness only: it finishes no task, verifies nothing and validates no control.',
         },
         {
           label: 'Clauses in scope with no task at all',
@@ -1278,29 +1387,343 @@ async function evidenceSections(e: Engagement, now: Date): Promise<ReportSection
 
 // ─── Dispatch ───────────────────────────────────────────────────────────────
 
+/**
+ * The Statement of Applicability (sprint 10), read off the current clause
+ * assessments of the frameworks and entities the binding scope names. A
+ * clause not applicable prints why; every other clause how far it is
+ * implemented, and its open gap; a clause nobody has assessed says so rather
+ * than being guessed. Issued, it carries a number like every other report.
+ */
+async function soaSections(e: Engagement, now: Date): Promise<ReportSection[]> {
+  const scope = await bindingScope(e.id);
+  const entityIds = scope?.entityIds ?? [];
+  const frameworkIds = scope?.frameworkIds ?? [];
+  const head: ReportSection = {
+    kind: 'fields',
+    title: 'Statement of Applicability',
+    fields: [
+      { label: 'Engagement', value: `${e.ref} — ${e.name}` },
+      { label: 'Client', value: e.tenant?.name ?? '—' },
+      { label: 'Basis', value: `The current clause assessments on ${now.toISOString().slice(0, 10)}. A clause nobody has assessed is printed "Not assessed": this statement does not guess.` },
+    ],
+  };
+  if (!entityIds.length || !frameworkIds.length) {
+    head.fields.push({ label: 'Scope', value: 'No binding scope names both frameworks and entities, so there is nothing to state.' });
+    return [head];
+  }
+  const [entities, standards, current] = await Promise.all([
+    prisma.tenant.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.standard.findMany({
+      where: { id: { in: frameworkIds } }, orderBy: { code: 'asc' },
+      select: { id: true, code: true, title: true, clauses: { select: { id: true, ref: true, title: true } } },
+    }),
+    prisma.clauseAssessment.findMany({
+      where: { projectId: e.id, supersededAt: null, tenantId: { in: entityIds } },
+      select: { tenantId: true, clauseId: true, result: true, justification: true, issueId: true },
+    }),
+  ]);
+  const issueIds = current.map((c) => c.issueId).filter(Boolean) as string[];
+  const issues = issueIds.length ? await prisma.issue.findMany({ where: { id: { in: issueIds } }, select: { id: true, ref: true, status: true } }) : [];
+  const sections: ReportSection[] = [head];
+  for (const std of standards) {
+    for (const ent of entities) {
+      const listed = soaClauses(std.clauses).sort(byClauseRef);
+      const rows = listed.map((c) => {
+        const a = current.find((x) => x.tenantId === ent.id && x.clauseId === c.id) ?? null;
+        const line = soaLine(a);
+        const gap = a?.issueId ? issues.find((i) => i.id === a.issueId) : undefined;
+        return {
+          clause: c.ref, title: c.title, applicable: line.applicable, status: line.status, justification: line.justification,
+          gap: gap ? `${gap.ref} (${gap.status})` : '—', result: a?.result ?? null,
+        };
+      });
+      const n = summarise(rows);
+      sections.push({
+        kind: 'fields',
+        title: `${std.code} — ${ent.name}`,
+        fields: [
+          { label: 'Clauses listed', value: String(rows.length) },
+          { label: 'Implemented', value: String(n.Conformant) },
+          { label: 'Partially implemented', value: String(n.Partial) },
+          { label: 'Not implemented', value: String(n.Missing) },
+          { label: 'Not applicable', value: String(n.NotApplicable) },
+          { label: 'Not assessed', value: String(n.NotAssessed) },
+        ],
+      });
+      sections.push({
+        kind: 'table',
+        title: `${std.code} — ${ent.name}: clauses`,
+        columns: [
+          { header: 'Clause', key: 'clause', width: 10 }, { header: 'Title', key: 'title', width: 32 },
+          { header: 'Applicable', key: 'applicable', width: 11 }, { header: 'Implementation', key: 'status', width: 18 },
+          { header: 'Justification', key: 'justification', width: 40 }, { header: 'Gap', key: 'gap', width: 18 },
+        ],
+        rows: rows.map(({ result, ...r }) => r),
+      });
+    }
+  }
+  return sections;
+}
+
+/**
+ * The readiness report (sprint 12): for each framework and entity the scope
+ * names, every clause's six checks and its verdict, the records period, the
+ * management review (9.3), and the firm's latest opinion beside them.
+ */
+async function readinessSections(e: Engagement, now: Date): Promise<ReportSection[]> {
+  const scope = await bindingScope(e.id);
+  const entityIds = scope?.entityIds ?? [];
+  const frameworkIds = scope?.frameworkIds ?? [];
+  const opinion = await prisma.readinessOpinion.findFirst({ where: { projectId: e.id }, orderBy: { givenAt: 'desc' }, select: { verdict: true, opinion: true, conditions: true, givenAt: true, givenBy: { select: { name: true } } } });
+  const head: ReportSection = {
+    kind: 'fields',
+    title: 'Readiness',
+    fields: [
+      { label: 'Engagement', value: `${e.ref} — ${e.name}` },
+      { label: 'Client', value: e.tenant?.name ?? '—' },
+      { label: 'Basis', value: `Computed on ${now.toISOString().slice(0, 10)} from the records held; nobody types readiness in.` },
+      { label: 'The firm\'s opinion', value: opinion ? `${opinion.verdict} (${opinion.givenBy?.name ?? ''}, ${opinion.givenAt.toISOString().slice(0, 10)}): ${opinion.opinion}${opinion.conditions ? ` Conditions: ${opinion.conditions}` : ''}` : 'None given' },
+    ],
+  };
+  if (!entityIds.length || !frameworkIds.length) {
+    head.fields.push({ label: 'Scope', value: 'No binding scope names both frameworks and entities, so there is nothing to compute.' });
+    return [head];
+  }
+  const [entities, standards] = await Promise.all([
+    prisma.tenant.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.standard.findMany({ where: { id: { in: frameworkIds } }, select: { id: true, code: true }, orderBy: { code: 'asc' } }),
+  ]);
+  const sections: ReportSection[] = [head];
+  for (const std of standards) {
+    for (const ent of entities) {
+      const r = await computeReadiness(e.id, ent.id, std.id, now);
+      sections.push({
+        kind: 'fields',
+        title: `${std.code} — ${ent.name}`,
+        fields: [
+          { label: 'Ready', value: String(r.summary.Ready ?? 0) },
+          { label: 'Nearly ready', value: String(r.summary['Nearly ready'] ?? 0) },
+          { label: 'Not ready', value: String(r.summary['Not ready'] ?? 0) },
+          { label: 'Not applicable', value: String(r.summary['Not applicable'] ?? 0) },
+          { label: 'Records period', value: `${r.recordsPeriodMonths} months of operating evidence` },
+          { label: 'Management review (9.3)', value: r.managementReview93 ? 'Recorded within the last twelve months, every input considered' : 'Not yet' },
+        ],
+      });
+      sections.push({
+        kind: 'table',
+        title: `${std.code} — ${ent.name}: clauses`,
+        columns: [
+          { header: 'Clause', key: 'clause', width: 10 }, { header: 'Title', key: 'title', width: 28 },
+          ...DIMENSIONS.map((d) => ({ header: DIMENSION_LABEL[d], key: d, width: 12 })),
+          { header: 'Readiness', key: 'verdict', width: 14 },
+        ],
+        rows: r.clauses.map((c) => ({
+          clause: c.ref, title: c.title, verdict: c.verdict,
+          ...Object.fromEntries(DIMENSIONS.map((d) => [d, c.verdict === 'Not applicable' ? '—' : (c.checks[d] ? 'Yes' : 'No')])),
+        })),
+      });
+    }
+  }
+  return sections;
+}
+
 const REPORTS: Record<string, { name: string; key: string }> = {
   status: { name: 'Engagement Status Report', key: 'delivery-status' },
   phase: { name: 'Phase Delivery Report', key: 'delivery-phase' },
   audit: { name: 'Delivery Audit Report', key: 'delivery-audit' },
   delay: { name: 'Delay and Impediment Report', key: 'delivery-delay' },
   evidence: { name: 'Evidence and Traceability Report', key: 'delivery-evidence' },
+  // Sprint 10: read off the engagement's current clause assessments.
+  soa: { name: 'Statement of Applicability', key: 'delivery-soa' },
+  // Sprint 12: computed per clause from the records held, never typed in.
+  readiness: { name: 'Readiness Report', key: 'delivery-readiness' },
 };
 
+/** What producing a report gives back: the bytes and their register row, or why not. */
+type Produced =
+  | {
+    ok: true; buf: Buffer; fileName: string; format: ReportFormat; documentRef: string;
+    issueNumber: number; reportIssueId: string; stored: StoredFile | null;
+  }
+  | { ok: false; status: number; code?: string; message: string };
+
+/** The engagement as the reports read it (for the audit pack, sprint 13). */
+export const loadReportEngagement = (projectId: string) => loadEngagement(projectId);
+
 /**
- * Build, record and send one delivery report.
+ * Build and record one delivery report; with `keep`, store its bytes too.
  *
  * The record is written whether or not the caller asked for a formal issue: a
  * plain export is a disclosure — somebody now holds a copy of the client's
  * unremediated weaknesses — and a register with no row for it cannot answer who
- * has one.
+ * has one. The audit pack (sprint 13) keeps the bytes as issued, so what a
+ * certification body reads is exactly what was frozen.
  */
+export async function produceReport(args: {
+  e: Engagement; kind: string; format: ReportFormat; userId: string; issued: boolean;
+  phaseId?: string; sections?: string[]; marking?: string | null; keep?: boolean;
+}): Promise<Produced> {
+  const { e, kind, format, issued } = args;
+  const meta = REPORTS[kind];
+  if (!meta) {
+    return { ok: false, status: 404, code: 'UNKNOWN_REPORT', message: `report must be one of: ${Object.keys(REPORTS).join(', ')}` };
+  }
+
+  const now = new Date();
+  let sections: ReportSection[] | null;
+
+  if (kind === 'phase') {
+    if (!args.phaseId) return { ok: false, status: 400, code: 'PHASE_REQUIRED', message: 'A phase report needs ?phaseId=' };
+    sections = phaseSections(e, args.phaseId, now);
+    if (!sections) return { ok: false, status: 404, message: 'Phase not found on this engagement' };
+  } else if (kind === 'status') sections = statusSections(e, now);
+  else if (kind === 'audit') sections = auditSections(e, now);
+  else if (kind === 'delay') sections = delaySections(e, now);
+  else if (kind === 'soa') sections = await soaSections(e, now);
+  else if (kind === 'readiness') sections = await readinessSections(e, now);
+  else sections = await evidenceSections(e, now);
+
+  // The report is issued in the CLIENT's name even when a consultant pressed
+  // the button — see chromeFor in reportController for the reasoning.
+  const [branding, logo, user] = await Promise.all([
+    brandingFor(e.tenantId),
+    logoBytesFor(e.tenantId),
+    prisma.user.findUnique({
+      where: { id: args.userId }, select: { name: true, email: true },
+    }),
+  ]);
+  const r = branding?.resolved;
+
+  const issueNumber = issued
+    ? await prisma.reportIssue.count({
+      where: { tenantId: e.tenantId, reportKey: meta.key, projectId: e.id, issued: true },
+    }) + 1
+    : 0;
+
+  const provenance: Provenance = {
+    reportName: meta.name,
+    tenantName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
+    generatedBy: `${user?.name ?? 'Unknown'} <${user?.email ?? ''}>`,
+    scopeKind: 'Engagement',
+    subjectRef: `${e.ref} — ${e.name}`,
+    subjectStatus: e.status,
+  };
+
+  const document: ReportDocument = {
+    provenance,
+    sections: selectSections(sections, args.sections),
+    chrome: {
+      displayName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
+      brandColour: r?.brandColour ?? '#0F7A5A',
+      textColour: r?.textColour ?? '#0F7A5A',
+      marking: effectiveMarking(r?.marking ?? 'Confidential', args.marking ?? null),
+      footerText: r?.footerText ?? null,
+      logo,
+      documentRef: documentRefFor(meta.key, now, issued ? issueNumber : null),
+      generatedAt: now,
+    },
+  };
+
+  const buf = format === 'pdf' ? await renderPdf(document)
+    : format === 'docx' ? await renderDocx(document)
+      : await renderXlsx(document);
+
+  const hash = documentHash(document);
+  const snapshot = snapshotOf({
+    reported: e.reportedProgress,
+    verified: e.verifiedProgress,
+    status: e.status,
+    health: e.health,
+    policy: e.verificationPolicy,
+    baselineVersion: e.baselineVersion,
+    daysLost: attribute(e.impediments as any, now).totalDays,
+  });
+
+  const fileName = fileNameFor(meta.name, format, e.ref);
+  // The delivery firm's own copy (consulting engagement, sprint 7), when the
+  // organisation allows it: the bytes as issued, kept in the firm's tenant
+  // for good. An export that is not an issue is never copied.
+  const firmCopy = issued && e.reportCopiesAllowed === true && e.providerTenantId && e.providerTenantId !== e.tenantId
+    ? putEvidence(buf) : null;
+  // The organisation's own stored copy, for the audit pack.
+  const kept = args.keep ? putEvidence(buf) : null;
+
+  const row = await prisma.$transaction(async (tx) => {
+    const issue = await tx.reportIssue.create({
+      data: {
+        tenantId: e.tenantId,
+        reportKey: meta.key,
+        reportName: meta.name,
+        projectId: e.id,
+        documentRef: document.chrome!.documentRef,
+        issueNumber,
+        format,
+        marking: document.chrome!.marking,
+        fileName,
+        fileBytes: buf.length,
+        documentHash: hash,
+        issued,
+        snapshot,
+        issuedById: args.userId,
+        issuedAt: now,
+      },
+      select: { id: true },
+    });
+
+    // Into the WORM chain as well, so the queryable-but-mutable register is
+    // notarised by the immutable-but-unqueryable log.
+    await writeAudit(tx, {
+      tenantId: e.tenantId,
+      actorId: args.userId,
+      action: issued ? 'DELIVERY_REPORT_ISSUED' : 'DELIVERY_REPORT_EXPORTED',
+      subjectType: 'Project',
+      subjectId: e.id,
+      payload: {
+        projectRef: e.ref, report: meta.key, format,
+        documentRef: document.chrome!.documentRef,
+        documentHash: hash, issueNumber, marking: document.chrome!.marking,
+        ...(firmCopy ? { firmCopy: true } : {}),
+        ...(kept ? { stored: { sha256: kept.sha256 } } : {}),
+      },
+    });
+
+    if (firmCopy) {
+      const copy = await tx.engagementReportCopy.create({
+        data: {
+          firmTenantId: e.providerTenantId!, projectId: e.id, clientTenantId: e.tenantId, clientName: e.tenant?.name ?? 'Unknown',
+          projectRef: e.ref, reportKey: meta.key, reportName: meta.name,
+          documentRef: document.chrome!.documentRef, issueNumber, format, fileName,
+          storageKey: firmCopy.storageKey, sha256: firmCopy.sha256, byteLength: firmCopy.byteLength, issuedAt: now,
+        },
+        select: { id: true },
+      });
+      await writeAudit(tx, {
+        tenantId: e.providerTenantId!,
+        actorId: args.userId,
+        action: 'ENGAGEMENT_REPORT_COPY_KEPT',
+        subjectType: 'EngagementReportCopy',
+        subjectId: copy.id,
+        payload: {
+          projectRef: e.ref, clientTenantId: e.tenantId, report: meta.key, format,
+          documentRef: document.chrome!.documentRef, sha256: firmCopy.sha256,
+        },
+      });
+    }
+    return issue;
+  });
+
+  return {
+    ok: true, buf, fileName, format, documentRef: document.chrome!.documentRef, issueNumber, reportIssueId: row.id, stored: kept,
+  };
+}
+
+/** Build, record and send one delivery report. */
 export const exportDeliveryReport = async (
   req: AuthenticatedRequest, res: Response,
 ): Promise<void> => {
   try {
     const kind = str(req.params.kind);
-    const meta = REPORTS[kind];
-    if (!meta) {
+    if (!REPORTS[kind]) {
       res.status(404).json({
         status: 'error',
         code: 'UNKNOWN_REPORT',
@@ -1320,135 +1743,21 @@ export const exportDeliveryReport = async (
     const e = await loadEngagement(guarded.id);
     if (!e) { notFound(res); return; }
 
-    const now = new Date();
-    let sections: ReportSection[] | null;
-
-    if (kind === 'phase') {
-      const phaseId = str(req.query.phaseId);
-      if (!phaseId) {
-        res.status(400).json({
-          status: 'error',
-          code: 'PHASE_REQUIRED',
-          message: 'A phase report needs ?phaseId=',
-        });
-        return;
-      }
-      sections = phaseSections(e, phaseId, now);
-      if (!sections) {
-        res.status(404).json({ status: 'error', message: 'Phase not found on this engagement' });
-        return;
-      }
-    } else if (kind === 'status') sections = statusSections(e, now);
-    else if (kind === 'audit') sections = auditSections(e, now);
-    else if (kind === 'delay') sections = delaySections(e, now);
-    else sections = await evidenceSections(e, now);
-
-    // The report is issued in the CLIENT's name even when a consultant pressed
-    // the button — see chromeFor in reportController for the reasoning.
-    const [branding, logo, user] = await Promise.all([
-      brandingFor(e.tenantId),
-      logoBytesFor(e.tenantId),
-      prisma.user.findUnique({
-        where: { id: str(req.user!.id) }, select: { name: true, email: true },
-      }),
-    ]);
-    const r = branding?.resolved;
-
-    const issued = str(req.query.issue) === 'true';
-    const issueNumber = issued
-      ? await prisma.reportIssue.count({
-        where: { tenantId: e.tenantId, reportKey: meta.key, projectId: e.id, issued: true },
-      }) + 1
-      : 0;
-
-    const provenance: Provenance = {
-      reportName: meta.name,
-      tenantName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
-      generatedBy: `${user?.name ?? 'Unknown'} <${user?.email ?? ''}>`,
-      scopeKind: 'Engagement',
-      subjectRef: `${e.ref} — ${e.name}`,
-      subjectStatus: e.status,
-    };
-
-    const document: ReportDocument = {
-      provenance,
-      sections: selectSections(
-        sections,
-        req.query.sections ? String(req.query.sections).split(',') : undefined,
-      ),
-      chrome: {
-        displayName: r?.displayName ?? e.tenant?.name ?? 'Unknown',
-        brandColour: r?.brandColour ?? '#0F7A5A',
-        textColour: r?.textColour ?? '#0F7A5A',
-        marking: effectiveMarking(
-          r?.marking ?? 'Confidential',
-          req.query.marking ? String(req.query.marking) : null,
-        ),
-        footerText: r?.footerText ?? null,
-        logo,
-        documentRef: documentRefFor(meta.key, now, issued ? issueNumber : null),
-        generatedAt: now,
-      },
-    };
-
-    const buf = format === 'pdf' ? await renderPdf(document)
-      : format === 'docx' ? await renderDocx(document)
-        : await renderXlsx(document);
-
-    const hash = documentHash(document);
-    const snapshot = snapshotOf({
-      reported: e.reportedProgress,
-      verified: e.verifiedProgress,
-      status: e.status,
-      health: e.health,
-      policy: e.verificationPolicy,
-      baselineVersion: e.baselineVersion,
-      daysLost: attribute(e.impediments as any, now).totalDays,
+    const out = await produceReport({
+      e, kind, format, userId: str(req.user!.id), issued: str(req.query.issue) === 'true',
+      phaseId: str(req.query.phaseId) || undefined,
+      sections: req.query.sections ? String(req.query.sections).split(',') : undefined,
+      marking: req.query.marking ? String(req.query.marking) : null,
     });
+    if (!out.ok) {
+      res.status(out.status).json({ status: 'error', ...(out.code ? { code: out.code } : {}), message: out.message });
+      return;
+    }
 
-    const fileName = fileNameFor(meta.name, format, e.ref);
-
-    await prisma.$transaction(async (tx) => {
-      await tx.reportIssue.create({
-        data: {
-          tenantId: e.tenantId,
-          reportKey: meta.key,
-          reportName: meta.name,
-          projectId: e.id,
-          documentRef: document.chrome!.documentRef,
-          issueNumber,
-          format,
-          marking: document.chrome!.marking,
-          fileName,
-          fileBytes: buf.length,
-          documentHash: hash,
-          issued,
-          snapshot,
-          issuedById: str(req.user!.id),
-          issuedAt: now,
-        },
-      });
-
-      // Into the WORM chain as well, so the queryable-but-mutable register is
-      // notarised by the immutable-but-unqueryable log.
-      await writeAudit(tx, {
-        tenantId: e.tenantId,
-        actorId: str(req.user!.id),
-        action: issued ? 'DELIVERY_REPORT_ISSUED' : 'DELIVERY_REPORT_EXPORTED',
-        subjectType: 'Project',
-        subjectId: e.id,
-        payload: {
-          projectRef: e.ref, report: meta.key, format,
-          documentRef: document.chrome!.documentRef,
-          documentHash: hash, issueNumber, marking: document.chrome!.marking,
-        },
-      });
-    });
-
-    res.setHeader('Content-Type', MIME[format]);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('X-Document-Ref', document.chrome!.documentRef);
-    res.send(buf);
+    res.setHeader('Content-Type', MIME[out.format]);
+    res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+    res.setHeader('X-Document-Ref', out.documentRef);
+    res.send(out.buf);
   } catch (error: any) {
     console.error('[Delivery Report Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to build the report' });

@@ -9,13 +9,13 @@
  */
 
 export const TENANT_TYPES = [
-  'SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER',
+  'SAAS', 'SAAS_UNIT', 'HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER', 'AUDITOR',
 ] as const;
 
 /** What each shape may create directly beneath itself. */
 const ALLOWED_CHILDREN: Record<string, string[]> = {
   // The platform operator provisions any customer shape at the root.
-  SAAS: ['HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER', 'SAAS_UNIT'],
+  SAAS: ['HOLDING', 'MULTIBRANCH', 'BRANCH', 'FRANCHISE', 'PARTNER', 'SAAS_UNIT', 'AUDITOR'],
   // Internal business units of the operator do not own customers.
   SAAS_UNIT: [],
   // A group grows operating companies and their sites.
@@ -28,6 +28,9 @@ const ALLOWED_CHILDREN: Record<string, string[]> = {
   PARTNER: ['MULTIBRANCH', 'BRANCH'],
   // A leaf stays a leaf.
   BRANCH: [],
+  // A certification body audits its clients' engagements read-only; it owns
+  // no entities of its own (consulting engagement, sprint 13).
+  AUDITOR: [],
 };
 
 export function allowedChildTypes(parentType: string): string[] {

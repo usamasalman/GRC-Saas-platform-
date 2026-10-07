@@ -202,7 +202,7 @@ jobs:
           done
           curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
-          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             document-upload-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test             audit-concurrency-test             package-limits-test
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             document-upload-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test             audit-concurrency-test             package-limits-test             engagement-s1-lifecycle-test             engagement-s2-gantt-test             engagement-s3-templates-test             engagement-s4-relationship-test             engagement-s5-access-test             engagement-s6-scope-test             engagement-s7-after-close-test             engagement-s8-requests-test             document-next-version-test             engagement-s9-threads-test             engagement-s10-assessment-test             engagement-s11-challenges-test engagement-s12-readiness-test engagement-s13-certification-test
           do
             echo "── $suite ──"
             npm run seed:demo > /dev/null
@@ -404,6 +404,26 @@ jobs:
           script: |
             set -euo pipefail
             cd ~/grcwisdom
+
+            # Back up the database before anything changes. The API applies its
+            # migrations when it starts, so this is the last moment the data is
+            # in the shape the running version left it. A backup that fails, or
+            # that cannot be read back, stops the deploy with the site untouched.
+            # Kept on the server in ~/grcwisdom/backups, newest 10.
+            if [ -n "$(docker compose ps -q db 2>/dev/null)" ]; then
+              mkdir -p backups
+              BACKUP="backups/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)-${{ github.sha }}.dump"
+              docker compose exec -T db pg_dump -U grcwisdom -d grcwisdom -Fc > "$BACKUP"
+              TABLES=$(docker compose exec -T db pg_restore --list < "$BACKUP" | grep -c ' TABLE ' || true)
+              if [ "$TABLES" -lt 1 ]; then
+                echo "The backup $BACKUP lists no tables; not deploying over a database that is not backed up."
+                exit 1
+              fi
+              echo "Backed up the database to ~/grcwisdom/$BACKUP ($(du -h "$BACKUP" | cut -f1), $TABLES tables)."
+              ls -1t backups/pre-deploy-*.dump | tail -n +11 | xargs -r rm -f
+            else
+              echo "No database container running yet; nothing to back up."
+            fi
 
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 

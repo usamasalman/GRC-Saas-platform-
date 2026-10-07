@@ -192,9 +192,15 @@ const detail = code(detailSource);
 // ── The server never types a file by its extension ──────────────────────────
 {
   const ctrl = code(read(API, 'src', 'controllers', 'documentController.ts'));
-  const start = ctrl.indexOf('export const downloadDocument');
-  ok(start >= 0, 'downloadDocument exists');
-  const handler = ctrl.slice(start, ctrl.indexOf('\nexport const', start + 1));
+  // The bytes go out through deliverDocument, which the library download and the
+  // engagement route both call; the checks below are on it.
+  const dl = ctrl.indexOf('export const downloadDocument');
+  ok(dl >= 0, 'downloadDocument exists');
+  ok(/deliverDocument\(res, doc\)/.test(ctrl.slice(dl, ctrl.indexOf('\nexport const', dl + 1))),
+    'downloadDocument hands the file over through deliverDocument');
+  const start = ctrl.indexOf('export function deliverDocument');
+  ok(start >= 0, 'deliverDocument exists');
+  const handler = ctrl.slice(start, ctrl.indexOf('\nexport ', start + 1));
   const from = handler.indexOf('resolveDocumentFile(');
   const to = handler.indexOf('res.download(');
   ok(from >= 0 && to > from, 'downloadDocument resolves the file, then downloads it');

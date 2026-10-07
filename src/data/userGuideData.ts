@@ -118,9 +118,20 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
         title: 'Submit for Sign-Off',
         instruction: 'Click "Submit for Approval" to route the document to the designated Compliance Approver.',
         tip: 'Once approved, the document is sealed with a cryptographic SHA-256 hash in the audit log.'
+      },
+      {
+        step: 4,
+        title: 'Revise a Published Document',
+        instruction: 'Open the published document, go to the "Next version" tab and click "Start next version". Choose Minor (1.0 becomes 1.1) or Major (2.0) and say why. Check it out, edit, check it in, then "Submit for approval" with what changed and why. Once approved, "Publish version" makes it the version in force.',
+        tip: 'The published version stays in force for every reader until the next one is published. The replaced version is kept on the Version History tab, marked superseded and not in force.'
       }
     ],
     proTips: [
+      'Only one next version is open at a time. The owner can "Discard this version"; it is kept as discarded and the published version is untouched.',
+      'A minor version keeps everyone\'s acknowledgement of the same major version; a major version asks the whole audience again.',
+      'Title, classification, category, audience and the controls, risks and clauses it governs are proposed on the next version and change only when it is published.',
+      'To go back to an earlier wording, use "Start next version from this text" on a superseded version in Version History. History only moves forward.',
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'Open a document and use the Governs tab to link the controls it mandates, the risks it treats and the framework clauses it satisfies (e.g. ISO 27001, NCA ECC). Those links are what let the clause be reported as addressed.',
       'Published documents can be assigned for mandatory employee acknowledgement in one click.'
     ],
@@ -156,8 +167,8 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Perform Content & Diff Inspection',
-        instruction: 'Click "Review" on any item to read the document and its author notes before approving or returning it.',
-        tip: 'SOD engine prevents authors from approving their own submissions.'
+        instruction: 'Click "Read" on any item to open the document before approving or returning it. For the next version of a published document, the Version column says "next version" and "Read" opens its Next version tab, where it can be compared with the version in force.',
+        tip: 'SOD engine prevents authors from approving their own submissions. Anyone who edited a next version cannot approve it, nor can the document\'s owner.'
       },
       {
         step: 3,
@@ -174,6 +185,235 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       { id: 'library', title: 'Document Library' },
       { id: 'risk', title: 'Risk Register' },
       { id: 'logs', title: 'Immutable Audit Log' }
+    ]
+  },
+
+  'project-delivery': {
+    id: 'project-delivery',
+    title: 'Compliance Project Delivery',
+    category: 'Assurance & Governance',
+    icon: 'target',
+    badge: 'Engagement Lifecycle',
+    summary: 'Runs a compliance engagement from a draft plan to closure: phases and tasks mapped to clauses, an agreed baseline, independent verification, delays owed by each side, and a lifecycle you can hold, resume, rebaseline and close from the project header.',
+    roles: ['Project Manager', 'Task Assignee', 'Verifier', 'Delivery Firm'],
+    capabilities: ['manage-a-delivery-project', 'execute-project-work', 'verify-project-delivery'],
+    keyActions: [
+      'Create a draft with "New engagement", then build the plan with "+ Phase", "+ task" and "+ clause"',
+      'Stamp the baseline with "Agree plan & activate"; an empty plan is refused',
+      'Put an active project on hold with "Put on hold" and restart it with "Resume", giving a reason each time',
+      'Reset the agreed plan with "Rebaseline", or end the engagement with "Close"',
+      'Move an agreed date later with "Move date", naming who owes the slip and why; the phase and the engagement end no earlier than their work',
+      'See planned, actual and variance for every task, phase and the engagement on the "Gantt" tab',
+      'Plan a new engagement with "Start from a template", or keep a plan\'s method with "Save as template"',
+      'Where consulting is switched on, bring in a firm with "Invite a firm" on the Team tab, and approve each person it nominates',
+      'Set how long each of the firm\'s people has access with "Change access"; answer their "Request more time" with "Grant more time" or "Decline request"',
+      'Set the engagement\'s own access window with "Change engagement access": every person\'s access sits inside it, so ending it earlier ends everyone\'s',
+      'Agree what the firm sees with "Draft a new scope version" on the "Scope" tab; someone else approves it with "Approve scope"',
+      'See what is shared on the "Documents" and "Risks and assets" tabs, and set "Change document access" to view only or download',
+      'Review who from outside sees what on "External access": "Revoke" a person or "Confirm access"; move engagements set up the old way with "Migrate engagement"',
+      'In the firm\'s portal, start from "Home" and "Client engagements", and open a workspace with "Open workspace"',
+      'Decide how long the firm may read a closed engagement with "Window after close", then "Extend or shorten" or "Revoke now" once it has closed; decide "Report copies" for the firm',
+      'Carry on with the same firm from a closed engagement with "Start a follow-on"; tasks, blockers and gaps still open are marked "Carried over"',
+      'In the firm\'s portal, keep every closed engagement in "Completed engagements" and balance people on "Firm team"',
+      'Ask the organisation for evidence, a document, a dataset or a clarification with "Raise a request" or "Import requests" on the "Requests" tab; answer with "Answer" and review with "Review"',
+      'Ask for more than the scope shares with "Ask for a scope change"; the organisation decides with "Approve change", and a second person approves the new version'
+    ],
+    howToUse: [
+      {
+        step: 1,
+        title: 'Plan and agree',
+        instruction: 'Open an engagement from the portfolio. On the Plan tab add phases and tasks with an assignee, due date and the clauses each addresses, then click "Agree plan & activate" to stamp the baseline every slip is measured against.',
+        tip: 'A task records when work on it actually began the first time it moves to In progress, and that date is never overwritten.'
+      },
+      {
+        step: 2,
+        title: 'Hold and resume',
+        instruction: 'Click "Put on hold" in the project header and say why, in at least 10 characters. The hold is kept as an interval with its reason and who started it. While it lasts, work is paused (no task status or progress, evidence, verification or blocker is recorded) but the plan can still be adjusted. "Resume" closes the interval with its own reason and leaves the agreed baseline as it was. When a firm delivers the engagement, choose "Firm can view (read-only)" or "Firm has no access" as you put it on hold; the firm changes nothing either way.',
+        tip: 'The header shows since when the project has been on hold and why. "Change hold access" on the Team tab switches between the two during the hold, with a reason, and on resume the firm\'s people get back exactly the access they had. After a consulting engagement resumes, "Access after the hold" lists each person\'s current and proposed end date, all ticked: untick or edit, then confirm once, or "Leave end dates as they are". The engagement\'s own access window is offered the same days on the same screen. The target end is not moved; "Rebaseline the plan" is on the same screen.'
+      },
+      {
+        step: 3,
+        title: 'Rebaseline or close',
+        instruction: 'Click "Rebaseline" to make the current dates the agreed plan (the plan version goes up by one), or "Close" to end the engagement. Both ask for a reason of at least 10 characters.',
+        tip: 'A closed engagement cannot be reopened, and its reports lose the DRAFT banner. Resume a held project before closing it.'
+      },
+      {
+        step: 4,
+        title: 'Read the Gantt',
+        instruction: 'Open the "Gantt" tab. Each task has three lines: Planned (the plan first agreed), Actual (from the day work began to the day it finished, or a Forecast while unfinished) and the variance between the two finishes. Phases and the engagement roll up the same way.',
+        tip: 'Every variance says why, and the parts add up: days on hold first, then the days each side owed on the work that set the finish, then any rebaseline, then the rest as unattributed. The Engagement status and Phase delivery reports print the same figures.'
+      },
+      {
+        step: 5,
+        title: 'Start from a template',
+        instruction: 'On a new engagement\'s empty plan click "Start from a template", pick one, untick the phases and tasks that do not apply, add your own with "+ Your own task", and check the dates before you click "Create the draft plan". The "Templates" tab holds the library: the platform\'s, your organisation\'s or your firm\'s own.',
+        tip: 'A template is copied, never linked: editing it saves its next version and changes no plan already made from it. "Save as template" on a plan keeps its method and leaves out the client\'s people, names, files and dates. A firm\'s templates are private to the firm.'
+      },
+      {
+        step: 6,
+        title: 'Work with a consulting firm',
+        instruction: 'Where the platform has switched consulting on for your organisation and the firm, click "Invite a firm" on the Team tab, choose the delivery style (Client-led unless you choose otherwise) and send it. The firm answers from its "Invitations" tab: whoever clicks "Accept" becomes its Lead and adds the firm\'s people with "Nominate a person". Nobody from the firm can open the engagement until you "Approve" them, with their role and access dates.',
+        tip: 'Roles: the Lead submits deliverables for you to approve; a Consultant works assigned tasks; a Reviewer checks and changes nothing. Approving and verifying always stay with your own people. Only you can "Change delivery style", and each step is recorded on both organisations\' audit trails. An invitation lasts 14 days and is used once; expired and withdrawn ones stay on record.'
+      },
+      {
+        step: 7,
+        title: 'Access dates of the firm\'s people',
+        instruction: 'Each approved person has access from their "Access from" date to the end of their "Access to" date, both checked on every request; before the start they see only the engagement card. Click "Change access" beside a person on the Team tab to move either date, with a reason; they are told, and a start before their approval counts from the approval. The firm asks with "Request more time", and you answer with "Grant more time" or "Decline request". The person, the firm\'s Lead and your project manager are told seven days before access ends and again when it has ended; nothing is sent while the engagement is on hold. Every person\'s dates sit inside the engagement\'s own access window, shown as "Engagement access" on the Team tab: the first approval sets it to the engagement\'s start to 30 days after its target end, and dates you give a person beyond it widen it. "Change engagement access" sets it with a reason; ending it earlier brings everyone whose access runs past it back inside it, each recorded and told, while ending it later gives nobody more time.',
+        tip: 'Extending brings back access that had ended ("Access ended"), never access that was removed: a removed person must be nominated and approved again.'
+      },
+      {
+        step: 8,
+        title: 'Share by scope',
+        instruction: 'On a consulting engagement open the "Scope" tab and click "Draft a new scope version": tick the organisations, frameworks and registers to share, set the classification ceiling and the dates, and save. Someone other than the person who drafted it clicks "Approve scope"; it then binds, and the version before it is kept as the basis of the work done under it. The firm sees the binding version and never a draft.',
+        tip: 'Audit Programme and Billing are never shared. A record outside the scope answers as not found to the firm, and the attempt is written to your audit trail. Shared records are marked Shared with and the firm\'s name in your registers.'
+      },
+      {
+        step: 9,
+        title: 'Documents, risks and assets',
+        instruction: 'The "Documents" tab lists the shared part of your library: "Read" opens one, and "Download" appears for the firm only where you allow it. "Change document access" switches the engagement between view only and download, with a reason. The "Risks and assets" tab shows the shared registers with your official scores.',
+        tip: 'Every open and download is on the document\'s Access tab. The firm plans its own tasks; on a consultant-led engagement its Lead also assigns yours, and a task\'s weight stays yours to set.'
+      },
+      {
+        step: 10,
+        title: 'External access and engagements set up the old way',
+        instruction: 'Open "External access" to see every outside person by engagement, with their role, dates and last activity: "Revoke" ends a person\'s access, and "Confirm access" records your review. Engagements that named a firm the old way are listed there: tick who keeps access and their role, choose the delivery style and click "Migrate engagement". Your administrator then confirms with "Confirm we are ready".',
+        tip: 'Until your rules are enforced, firms on those engagements work as before and what the rules would refuse is counted. The platform enforces them only after your confirmation, with seven days\' notice to the firms, and can return you to counting at once.'
+      },
+      {
+        step: 11,
+        title: 'For the delivery firm',
+        instruction: 'In the firm\'s portal, "Home" shows your engagements across clients, access ending soon and your overdue tasks, and "Client engagements" has a card for each. Before your access starts you see the card only, with "Access starts on" and its date; the firm\'s Lead can still "Set up your team". "Open workspace" opens the engagement under a bar naming the client, the engagement, the delivery style and when your access ends.'
+      },
+      {
+        step: 12,
+        title: 'After close',
+        instruction: 'When a firm delivers the engagement, the "Close" dialog asks how long the firm may still read it, read-only: "Firm can read it for (days)", from 0 to 365, filled in with the days set ahead with "Window after close" on the Team tab (90 unless you change them). Once it has closed, only your organisation can "Extend or shorten" the window, never past 365 days after the close, or "Revoke now". Each change needs a reason, is on both organisations\' trails, and the firm\'s Lead is told; the firm\'s people are told seven days before the window ends and again when it has ended.',
+        tip: 'Whoever from the firm still had access at the moment of close keeps it until the window ends; anyone removed, or whose dates had ended, does not get it back. "Report copies" (asked as "Firm keeps copies of issued reports" when you invite a firm, No unless you choose Yes) lets the firm keep a copy of each report you issue. Copies made while it was on stay the firm\'s; switching it off stops only the copies still to come.'
+      },
+      {
+        step: 13,
+        title: 'A follow-on engagement',
+        instruction: 'On a closed engagement click "Start a follow-on": name it, give its start (and target end, or keep the length of the one before) and say whether the engagement before is in scope. It is created as a draft with the same firm. The plan comes across with its dates moved and none of its progress; tasks and blockers still open are marked "Carried over"; so are the gaps still open, on the Assessment tab, each the same gap in your issue register with its corrective action plan, still counted by readiness until someone independent closes it; the scope comes across as a draft for you to approve; and the firm\'s people are nominated again, each waiting for your approval.',
+        tip: 'With the engagement before in scope, the firm\'s approved people on the follow-on may read it, read-only, while the follow-on runs, even after its own window has ended. "Change what the firm reads before" switches it, with a reason.'
+      },
+      {
+        step: 14,
+        title: 'The firm\'s records and its team',
+        instruction: 'In the firm\'s portal, "Completed engagements" lists every engagement the firm delivered that has closed. "Open record" shows it as it stood at close: the dates, the team, planned against actual for every phase and task, and the delay ledger; "Download copy" fetches a report copy the client allowed. While the window after close is open, "Open engagement (read-only)" opens the engagement itself. "Firm team" adds up each person\'s allocation across the firm\'s open engagements and by client: "not stated" is counted apart and "Over 100%" is flagged. The firm\'s Lead changes it with "Set allocation".',
+        tip: 'The record holds none of the client\'s documents, evidence, risks or assets, and stays the firm\'s after the window ends.'
+      },
+      {
+        step: 15,
+        title: 'Requests from the firm',
+        instruction: 'On the "Requests" tab the firm\'s Lead and Consultants click "Raise a request": what they need (evidence, a document, a dataset or a clarification), what would satisfy it, what it is about (the engagement, or a task, clause, control or register by its reference), the period it should cover, the due date and whom to ask. They can ask only for what the scope shares, propose only people the organisation put on the engagement, and set a due date inside their own access dates. Reviewers see requests and raise none. "Import requests" takes the template from "Download the template"; "Check the file" checks every row, and "Import all" creates them only when every row is ready.',
+        tip: 'Something outside the scope cannot be requested: "Ask for a scope change" instead. If the organisation agrees with "Approve change", a second person of the organisation approves the new scope version on the "Scope" tab, and only then is your request raised and anything more shared. A rejected change stays in the history. "Export" gives the list as a spreadsheet.'
+      },
+      {
+        step: 16,
+        title: 'Answering a request',
+        instruction: 'The person asked, or the project manager, opens the request and clicks "Answer": "Upload a file", "Link evidence you hold", "Link a published document", "Link a record" or "Answer in words". Only what the scope shares can be linked, at or below its classification ceiling. A file you already hold is offered back to link instead of being stored twice ("Link the existing file"). "Decline" says no with a reason; "Hand to a colleague" passes it on and the project manager is told; the project manager can "Move due date" with a reason. The person asked is reminded three days before the due date, and the project manager is told on the day.',
+        tip: 'Answers are your organisation\'s. Every file is hashed when it is stored; the firm sees it only through the request, while its access is open, and downloads it only where you allow downloads. Replacing an answer keeps the earlier one, with its hash, in the history. "Link to a task or control" uses the same file again without copying it; "Remove link" removes the link and never the file. Requests waiting on you are listed under "Asked of you" in My Work.'
+      },
+      {
+        step: 17,
+        title: 'Reviewing answers, and overdue requests',
+        instruction: 'The firm clicks "Review". Evidence is judged on four tests (Relevant, Complete, Covers the period, Authentic and traceable), each Pass, Fail or "Not applicable"; a Fail needs a note, and anything that fails is "Returned" with what is missing. Otherwise it is "Accepted". Accepted evidence counts toward the engagement\'s readiness ("Clauses with evidence the firm accepted") and never verifies a task or validates a control: that stays with the organisation.',
+        tip: 'Past its due date a request shows how many days it is overdue, here and under "Overdue requests" on the Delays tab, for information only. It becomes a delay owed by the organisation only when the firm\'s Lead or the project manager clicks "Record as blocker". During a hold nothing is sent and the overdue days stop; a request whose due date fell in the hold is marked "Due during the hold".'
+      },
+      {
+        step: 18,
+        title: 'Discussions',
+        instruction: 'Open the "Discussions" tab and click "Start a thread": choose what it is about (the engagement, a task, a request, or a document, risk or asset the scope shares) and who reads it: "Both sides", "Organisation only" or "Firm only". Who reads a thread is fixed once it starts. Reply with a Comment, Question or "Review note"; tick people under "Name:" to tell them, and only people who can read the thread are offered.',
+        tip: 'Posts are never edited: "Retract" keeps the words, struck through, with your reason. A "Decision" is recorded only in a thread both sides read, by the project manager or owner, or by the firm\'s Lead. "Convert to a task" (organisation) or "Convert to a request" (firm) makes it through the usual form and links the thread to it; "Convert to a gap" (whoever may assess, on either side) assesses the clause as the Assessment tab does, raising its gap or keeping the one still open, and links the thread to it.'
+      },
+      {
+        step: 19,
+        title: 'Document review and suggestions',
+        instruction: 'On the "Documents" tab, "Read" a shared document. The firm\'s Lead and Reviewers click "Review this version" and record "Accepted", "Changes requested" or "Not fit for purpose", with comments anchored to quoted words or a page ("Add an anchored comment"). The firm\'s Lead and Consultants click "Suggest wording" on a published version: the section, the words to replace, the proposed wording and why.',
+        tip: 'The firm never edits the organisation\'s document. Its owner or the project manager clicks "Start next version from this suggestion" (or "Add to the open next version"), then "Take the wording into the draft"; the firm\'s author is then recorded as an editor of that version and cannot approve it. When the version is published the suggestion reads "Accepted into" that version; otherwise "Decline" or "Mark superseded" with a reason. A suggestion made on an earlier version says "made on" it and still counts.'
+      },
+      {
+        step: 20,
+        title: 'Gap assessment and the Statement of Applicability',
+        instruction: 'Open the "Assessment" tab, choose the entity and framework the scope names, and click "Assess" on a clause: "Conformant", "Partial", "Missing" or "Not applicable", always with why. A Partial or Missing clause needs what is missing ("Documentation", "Implementation", "Evidence" or "Competence") and raises a gap in the organisation\'s issue register, which it answers and closes there under the usual rule that whoever closes an issue did not raise, answer or own it.',
+        tip: 'Reassessing replaces the current result and keeps the old one as history, and the row says how many times the clause has been assessed; it never closes a gap. On the Reports tab, "Statement of Applicability" lists each control as applicable or not, why, how far it is implemented and its open gap; "Issue" gives it a number in the report register.'
+      },
+      {
+        step: 21,
+        title: 'Context and interested parties',
+        instruction: 'Open the "Context" tab. The organisation clicks "Record an entry": an "Issue (4.1)" or an "Interested party (4.2)" with what it requires, internal or external, where it comes from and how relevant it is. The firm clicks "Propose an entry" instead, and sees only its own proposals.',
+        tip: 'A proposal counts for nothing until the project manager or owner clicks "Accept"; "Reject" needs a reason the firm sees. The figures above the register count accepted entries only ("Proposed, not counted").'
+      },
+      {
+        step: 22,
+        title: 'Risk and asset challenges',
+        instruction: 'Open the "Challenges" tab: the whole shared risk or asset register beside the firm\'s challenges. The firm clicks "Challenge" on a row and gives the scores it would give (likelihood and impact for a risk, confidentiality, integrity and availability for an asset) and why; "Withdraw" takes one back. The owner of the record decides: "Adopt", "Keep" (with the reason the scores stand) or "Adjust" (to scores the owner chooses), one row at a time or with "Adopt selected" and "Keep selected". Owners also find them in My Work under "Challenges to decide".',
+        tip: 'Nothing reads a challenge until it is decided: the dashboard, the tolerance count, acceptance and reports use the register\'s own scores. A risk is challenged on its inherent scores and its residual follows from its verified controls; the row shows what adopting would do to the residual and the tolerance band. The firm can also "Propose a risk" or "Propose an asset" (in no figure until the project manager clicks "Accept into the register") and "Draft risk appetite", which the organisation approves on its Risk Appetite screen; whoever drafts a statement cannot approve it.'
+      },
+      {
+        step: 23,
+        title: 'Readiness and management review',
+        instruction: 'Open the "Readiness" tab and choose the entity and framework. Every clause shows six checks, each computed from what is held: documented, implemented, evidenced (accepted and not stale), gaps closed, risks treated, and the records period; six make it "Ready", four or five "Nearly ready", fewer "Not ready". Nobody types readiness in. The project manager or owner uses "Set the records period" (how many months of operating evidence a control needs for Stage 2; three unless you say otherwise, with a reason). The firm\'s Lead uses "Give readiness opinion" beside the figures, and the engagement\'s owner, as sponsor, uses "Sign off readiness"; both keep the figures as they stood. Under Management reviews (9.3), the firm uses "Prepare a management review" and the organisation "Start a management review": the date, who attended, what was considered for each 9.3.2 input and the decisions. The project manager uses "Record the review" once nothing is missing; the stat "Management review (9.3)" then shows it satisfied for twelve months. A recorded review does not change, but "Add an action" links each decided action to the issue or engagement task that carries it, by its reference.',
+        tip: 'The Reports tab issues the Readiness report with the same figures, clause by clause. A control with five weeks of evidence is not ready for Stage 2 under a three-month records period, however good the evidence; the tooltip on the "Records period" column shows how many days each control\'s evidence spans.'
+      },
+      {
+        step: 24,
+        title: 'The certification body and the audit pack',
+        instruction: 'Open the "Certification" tab (the organisation sees it; the firm does not). The project manager or owner uses "Invite the certification body": an auditor organisation the platform operator has added, read-only, from a first to a last day of access, at most 180 days. If the body\'s people share a company mail domain with the delivery firm\'s, the invitation is held with that warning; going ahead needs "Confirm and invite" with the reason it is acceptable, which is kept on the record. "Freeze the audit pack" issues the Statement of Applicability, the traceability report and the readiness report, stores each and records its hash; nothing later changes what the body reads. Use "Revoke access" to end the body\'s access early, with a reason. The body\'s questions and evidence requests appear below: use "Answer". A nonconformity is not answered: the project manager or owner uses "Record as an issue", which raises an issue of your own with source External audit, answered and closed in Issues & CAP like any other.',
+        tip: 'The body reads only the frozen pack and its own questions, and only inside its days; every attempt outside them, and every report it downloads, is on your audit trail. For an internal audit (9.2) run by a firm, create the engagement with the type Internal audit: if that firm delivered work on the same framework for you before, the invitation warns that it would be auditing its own work, and "Confirm and invite" needs the reason it is acceptable.'
+      }
+    ],
+    proTips: [
+      'Only the organisation that owns the engagement can hold, resume, rebaseline or close it; a named delivery firm sees the status, and each change is written to both organisations\' audit trails.',
+      'If the status changed while you were deciding, the action is refused and you are asked to reload, so a project is never resumed or closed twice.'
+    ],
+    relatedTabs: [
+      { id: 'my-work', title: 'My Work' },
+      { id: 'standards', title: 'Standards' },
+      { id: 'logs', title: 'Immutable Audit Log' }
+    ]
+  },
+
+  certification: {
+    id: 'certification',
+    title: 'Certification Audits',
+    category: 'Assurance & Governance',
+    icon: 'audit',
+    badge: 'Certification Body',
+    summary: 'The certification body\'s own page: the engagements an organisation has invited it to audit, read-only and only for the days the organisation set. It reads the frozen audit pack and asks the organisation; it changes nothing in the organisation\'s records.',
+    roles: ['External Auditor'],
+    capabilities: ['plan-and-execute-an-audit'],
+    keyActions: [
+      'Answer an invitation with "Accept" or "Decline"',
+      'Open the frozen audit pack with "Open the audit pack" and "Download" each report',
+      'Ask a question, ask for evidence, or raise a nonconformity against a clause with "Ask the organisation"'
+    ],
+    howToUse: [
+      {
+        step: 1,
+        title: 'Answer the invitation',
+        instruction: 'Each invitation names the organisation, the engagement and the first and last day of access. Use "Accept" to take it or "Decline" to refuse it.',
+        tip: 'Nothing is readable before you accept, and nothing after the last day.'
+      },
+      {
+        step: 2,
+        title: 'Read the frozen audit pack',
+        instruction: 'Use "Open the audit pack" on an accepted engagement inside its days. Each pack lists the Statement of Applicability, the traceability report and the readiness report as the organisation froze them, each with its reference and hash; use "Download" to read one.',
+        tip: 'A report is served only if its stored bytes still match the hash recorded when it was frozen, and each download is on the organisation\'s audit trail.'
+      },
+      {
+        step: 3,
+        title: 'Ask, ask for evidence, or raise a nonconformity',
+        instruction: 'Use "Ask the organisation" and choose a question, an evidence request or a nonconformity; a nonconformity names the clause it is against. The organisation answers questions and records a nonconformity as an issue of its own.',
+        tip: 'The certificate is your decision; the platform records none.'
+      }
+    ],
+    proTips: [
+      'The organisation can revoke your access early; the engagement then disappears from this page.',
+      'You see only your own questions, never the organisation\'s registers.'
+    ],
+    relatedTabs: [
+      { id: 'library', title: 'Assurance Evidence' }
     ]
   },
 
@@ -932,6 +1172,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'The "Criticality vs protection" tab plots every asset on criticality against how well it is defended. The top-left corner is the register\'s worst quarter: assets whose loss would hurt most, with nothing verified protecting them.',
       '"Exposed, unprotected" on the header counts assets carrying open risk with no control linked at all. It is the single most actionable number on the screen.',
       'The "How the numbers are derived" tab publishes every formula the platform uses with the standard it comes from. When an assessor asks how a score was reached, the product answers rather than a consultant.',
@@ -988,6 +1229,7 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       }
     ],
     proTips: [
+      'Where a consulting engagement shares a record with a firm, the register marks it Shared with and the firm\'s name.',
       'Measurement criteria and board appetite both live on the Risk Appetite tab, and both are versioned. Revising either drafts a new version while the current one keeps binding, so there is never a window with no ceiling — and the superseded version is retained as the basis for every decision taken while it applied.',
       'Use "What was in force on a given date?" to answer the question an assessor actually asks: an acceptance taken last March was judged against the tolerance that applied then, not against today’s. Every acceptance also stores the exact appetite version and score it was judged at.',
       'Approving new criteria re-bands the whole register, so the platform tells you how many risks change rating before you commit and records that in the audit trail. It is a governance event, not a settings change.',
@@ -1240,8 +1482,20 @@ export const USER_GUIDE_DATA: Record<string, TabGuideItem> = {
       {
         step: 2,
         title: 'Toggle or Override',
-        instruction: 'Switch toggle or click "Tenant Overrides" to enable specifically for a beta customer tenant.',
+        instruction: 'Switch toggle or click "Override…" to hold one organisation on or off whatever the platform setting.',
         tip: 'Overrides take effect instantly via WebSocket/SSE stream.'
+      },
+      {
+        step: 3,
+        title: 'Read the engagement guard in shadow',
+        instruction: 'Under the flags, "Engagement guard in shadow" lists, per organisation and rule, how many times the consulting rules would have refused a delivery firm\'s request ("would have refused N times"), on how many engagements, and when first and last seen. Click "Routes" for where.',
+        tip: 'Counted, never enforced, until the organisation is switched to enforcement below. IDs only; rows not seen for 90 days are deleted.'
+      },
+      {
+        step: 4,
+        title: 'Switch an organisation to enforcement',
+        instruction: 'In "Consulting enforcement by organisation" choose the organisation. Each rule and route the guard would refuse needs "Explain": "Correct, keep refusing" or "Rule fixed". When every check passes (all explained, no unexplained refusal for 14 days with real firm activity, nothing left to migrate, and the organisation\'s administrator has confirmed), click "Schedule enforcement" with a date at least seven days ahead and a note; the firms\' Leads are told at once.',
+        tip: 'Zero refusals is not the test: a refusal can be the rule working. "Back to shadow mode" returns the organisation to counting at once. The override has no effect where consulting is off, and the list says so.'
       }
     ],
     proTips: [

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill , apiError } from '../iam/iamStyles';
+import EngagementShadow from './EngagementShadow';
+import EnforcementReadiness from './EnforcementReadiness';
 
 interface FeatureFlag {
   id: string;
@@ -147,6 +149,13 @@ const FeatureFlagsManager: React.FC = () => {
   };
 
   const enabledCount = flags.filter(f => f.status === 'Enabled').length;
+  // Enforcement counts only where consulting is on for the organisation
+  // (sprint 6), so an override that changes nothing says so.
+  const consultingFlag = flags.find((x) => x.key === 'Consulting Engagements');
+  const consultingOnFor = (tenantId: string) => {
+    const o = consultingFlag?.tenantOverrides?.find((x) => x.tenantId === tenantId);
+    return o ? o.enabled : consultingFlag?.status === 'Enabled';
+  };
   const disabledCount = flags.filter(f => f.status === 'Disabled').length;
 
   return (
@@ -222,6 +231,9 @@ const FeatureFlagsManager: React.FC = () => {
                             <span style={{ color: o.enabled ? 'var(--success)' : 'var(--warning)' }}>
                               {o.enabled ? 'on' : 'off'}
                             </span>
+                            {f.key === 'Consulting enforcement' && o.enabled && !consultingOnFor(o.tenantId) && (
+                              <span style={{ color: 'var(--warning)' }}> · no effect: consulting is off</span>
+                            )}
                           </div>
                         ))}
                       </>
@@ -259,6 +271,10 @@ const FeatureFlagsManager: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* What the consulting rules would have refused, per organisation (S5). */}
+      {flags.some((f) => f.key === 'Consulting Engagements') && <EngagementShadow />}
+      {flags.some((f) => f.key === 'Consulting enforcement') && <EnforcementReadiness organisations={tenants} />}
 
       {/* Create Flag Modal */}
       {modalOpen && (

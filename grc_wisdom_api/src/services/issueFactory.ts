@@ -15,6 +15,8 @@ const PREFIX: Record<string, string> = {
   SelfIdentified: 'ISS',
   Incident: 'ISS',
   RiskAssessment: 'RSK',
+  // A gap from a consulting engagement's assessment (sprint 10).
+  ConsultingGap: 'GAP',
 };
 
 export type NewIssue = {

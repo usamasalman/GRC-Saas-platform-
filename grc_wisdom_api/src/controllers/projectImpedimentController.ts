@@ -1,9 +1,12 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { stampActualStart } from '../services/taskActuals';
+import { stretchToWork } from '../services/projectBaseline';
+import { holdDaysWithin } from '../services/projectVariance';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { notify } from '../services/notificationService';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmRefusal, refuse } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { checkTaskTransition } from '../services/projectLifecycle';
 import {
@@ -36,11 +39,13 @@ async function nextRef(projectId: string): Promise<string> {
   const count = await prisma.projectImpediment.count({ where: { projectId } });
   return `IMP-${String(count + 1).padStart(4, '0')}`;
 }
+/** The same numbering for a blocker recorded from an overdue request (sprint 8). */
+export const nextImpedimentRef = nextRef;
 
 const SELECT = {
   id: true, ref: true, kind: true, category: true, owingSide: true, severity: true,
   title: true, description: true, impactDays: true, expectedClearDate: true,
-  raisedAt: true, resolvedAt: true, resolutionNote: true,
+  raisedAt: true, resolvedAt: true, resolutionNote: true, carriedFromId: true, informationRequestId: true,
   raisedBy: { select: { id: true, name: true } },
   resolvedBy: { select: { id: true, name: true } },
   task: { select: { id: true, ref: true, name: true, status: true } },
@@ -73,8 +78,10 @@ export const raiseImpediment = async (req: AuthenticatedRequest, res: Response):
       req.user!, str(req.params.id),
     );
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const b = req.body || {};
     const kind = b.kind ? str(b.kind) : 'Blocker';
@@ -244,7 +251,9 @@ export const blockTask = async (req: AuthenticatedRequest, res: Response): Promi
 
     const { project, canWrite, side } = await guardProject(req.user!, task.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    if (isHeld(project.status)) { held(res); return; }
 
     const userId = str(req.user!.id);
     if (!canWrite && task.assigneeId !== userId && side !== 'Provider') { readOnly(res); return; }
@@ -363,8 +372,13 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
 
     const { project, canWrite, side } = await guardProject(req.user!, imp.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (!canWrite && side !== 'Provider') { readOnly(res); return; }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
+    // On hold the organisation may still clear a blocker: its days stop when
+    // it is cleared, and a blocker left open through a hold would keep running
+    // against whoever owes it. The firm's side is read-only while held.
+    if (isHeld(project.status) && !canWrite) { held(res); return; }
 
     const refusal = checkResolvable(imp);
     if (refusal) {
@@ -385,7 +399,12 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
 
     const now = new Date();
     const userId = str(req.user!.id);
-    const cost = Math.max(0, signedDays(imp.raisedAt, now));
+    // Days the engagement was on hold while this was open are nobody's delay,
+    // as on the Gantt, so they are not charged to the side that owed it.
+    const holds = await prisma.projectHold.findMany({
+      where: { projectId: imp.projectId }, select: { startedAt: true, endedAt: true },
+    });
+    const cost = Math.max(0, signedDays(imp.raisedAt, now) - holdDaysWithin(holds, imp.raisedAt, now, now));
 
     const result = await prisma.$transaction(async (tx) => {
       const cleared = await tx.projectImpediment.update({
@@ -415,6 +434,8 @@ export const resolveImpediment = async (req: AuthenticatedRequest, res: Response
               where: { id: imp.taskId },
               data: { status: 'InProgress' },
             });
+            // Blocked before it ever started: clearing the blocker is its start (S1).
+            await stampActualStart(tx, imp.taskId);
           }
         }
       }
@@ -576,6 +597,8 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
         where: { id: task.id },
         data: { dueDate: newDue },
       });
+      // The phase and the engagement cannot end before this task now does.
+      const stretched = await stretchToWork(tx, project.id);
 
       await writeAudit(tx, {
         tenantId: project.tenantId,
@@ -588,6 +611,8 @@ export const rescheduleTask = async (req: AuthenticatedRequest, res: Response): 
           from: (task.dueDate || task.baselineDueDate)?.toISOString() || null,
           to: newDue.toISOString(),
           slipDays: cost, category: b.category, owingSide: b.owingSide,
+          phasesMoved: stretched.phasesMoved,
+          projectEnd: stretched.projectEnd ? stretched.projectEnd.toISOString().slice(0, 10) : null,
         },
       });
 

@@ -129,10 +129,16 @@ const held = (over) => Object.assign({
   eq(disposalDateFor('not a date', 24), null, 'and so does a value that is not a date');
 
   assert.deepStrictEqual(
-    [...RETENTION_TRIGGERS], ['Published', 'Archived', 'Created'],
+    [...RETENTION_TRIGGERS], ['Published', 'Archived', 'Created', 'Superseded'],
     'what can start the clock',
   );
   checks += 1;
+
+  eq(
+    triggerMomentFor('Superseded', { publishedAt: 'P', archivedAt: 'A', createdAt: 'C' }), null,
+    'a Superseded schedule never dates the version in force: only the versions a next version '
+    + 'replaced are kept for it, each from the day it was replaced',
+  );
 
   eq(
     triggerMomentFor('Published', { publishedAt: 'P', archivedAt: 'A', createdAt: 'C' }), 'P',

@@ -5,6 +5,8 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import RBAC from './utils/rbacData.json';
 import { MODULE_CATALOGUE, FEATURE_FLAG_CATALOGUE } from './utils/platformCatalogue';
+import { PLATFORM_PLAN_TEMPLATES } from './utils/planTemplateCatalogue';
+import { checkTemplateBody } from './services/planTemplates';
 
 /**
  * Provisioning — what a production database needs before anyone can log in.
@@ -232,14 +234,14 @@ async function provisionFeatureFlags(): Promise<number> {
     if (existing) {
       await prisma.featureFlag.update({ where: { key: f.key }, data: describe });
     } else {
-      const expires = new Date(f.expiryDate);
+      const expires = f.expiryDate ? new Date(f.expiryDate) : null;
       await prisma.featureFlag.create({
         data: {
           ...describe,
           key: f.key,
           status: f.status,
           rolloutPercentage: f.rolloutPercentage,
-          expiryDate: Number.isNaN(expires.getTime()) ? null : expires,
+          expiryDate: expires && !Number.isNaN(expires.getTime()) ? expires : null,
         },
       });
     }
@@ -269,6 +271,46 @@ async function provisionPlanCatalogue(): Promise<string> {
     data: PLAN_CATALOGUE.map((p) => ({ ...p, features: JSON.stringify(p.features) })),
   });
   return `${PLAN_CATALOGUE.length} created`;
+}
+
+/**
+ * The platform's plan templates (consulting engagement, sprint 3).
+ *
+ * Version 1 of a family is created only where the family is missing. A family
+ * that exists is left alone: a version the platform has saved since, or a
+ * template it has retired, is a deliberate decision a deploy must not undo.
+ */
+async function provisionPlanTemplates(): Promise<string> {
+  let created = 0;
+  for (const t of PLATFORM_PLAN_TEMPLATES) {
+    const exists = await prisma.planTemplate.count({ where: { familyId: t.familyId } });
+    if (exists > 0) continue;
+    const checked = checkTemplateBody(t);
+    if (!checked.ok) throw new Error(`Plan template ${t.name} is invalid: ${checked.message}`);
+    const b = checked.body;
+    await prisma.planTemplate.create({
+      data: {
+        level: 'Platform', tenantId: null, familyId: t.familyId, version: 1,
+        name: b.name, description: b.description ?? null,
+        engagementType: b.engagementType ?? null, standardCode: b.standardCode ?? null,
+        phases: {
+          create: b.phases.map((p, pi) => ({
+            sequence: pi + 1, name: p.name, description: p.description ?? null, durationDays: p.durationDays,
+            tasks: {
+              create: p.tasks.map((k, ti) => ({
+                key: k.key, sequence: ti + 1, name: k.name, description: k.description ?? null, side: k.side,
+                durationDays: k.durationDays, weight: k.weight, needsVerification: k.needsVerification ?? null,
+                dependsOnKey: k.dependsOnKey ?? null, clauses: JSON.stringify(k.clauses || []),
+                generate: k.generate || 'Once', deliverable: k.deliverable ?? null,
+              })),
+            },
+          })),
+        },
+      },
+    });
+    created += 1;
+  }
+  return `${created} created, ${PLATFORM_PLAN_TEMPLATES.length - created} left as they are`;
 }
 
 async function provisionControlPlaneTenant(): Promise<{ id: string; name: string }> {
@@ -389,6 +431,9 @@ async function main(): Promise<void> {
 
   const plans = await provisionPlanCatalogue();
   console.log(`  plans:          ${plans}`);
+
+  const templates = await provisionPlanTemplates();
+  console.log(`  plan templates: ${templates}`);
 
   const tenant = await provisionControlPlaneTenant();
   console.log(`  control plane:  ${tenant.name}`);

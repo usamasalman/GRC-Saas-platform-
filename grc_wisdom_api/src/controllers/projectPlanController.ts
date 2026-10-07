@@ -1,12 +1,15 @@
 import { Response } from 'express';
 import { prisma } from '../db';
+import { stampActualStart } from '../services/taskActuals';
+import { stretchToWork } from '../services/projectBaseline';
 import { readPage, pageInfo } from '../utils/paging';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { writeAudit } from '../middlewares/auditMiddleware';
-import { guardProject, notFound, readOnly, isFrozen, frozen } from '../services/projectGuard';
+import { guardProject, notFound, readOnly, isFrozen, frozen, isHeld, held, firmRefusal, refuse, firmPlanning } from '../services/projectGuard';
 import { recomputeProject } from '../services/projectRollup';
 import { resolveTenantScope } from '../services/scopeResolver';
 import { projectWhere } from '../services/projectAccess';
+import { enforcedClientsFor } from '../services/engagementEnforcement';
 import { notify } from '../services/notificationService';
 import {
   assignmentAudience, bucketWork, bucketRank, summarise, WORK_BUCKETS,
@@ -90,7 +93,11 @@ export const getPlan = async (req: AuthenticatedRequest, res: Response): Promise
             side: true, department: true, startDate: true, dueDate: true, completedAt: true,
             verificationOverride: true, verificationRound: true,
             submittedAt: true, verifiedAt: true,
+            // Sprint 7: still open on the engagement before, so carried over.
+            carriedFromTaskId: true,
             baselineStartDate: true, baselineDueDate: true,
+            // When work began (S1); the actual line of the Gantt with completedAt.
+            actualStartDate: true,
             assignee: { select: { id: true, name: true, email: true } },
             submittedBy: { select: { id: true, name: true } },
             verifiedBy: { select: { id: true, name: true } },
@@ -250,7 +257,7 @@ export const myWork = async (req: AuthenticatedRequest, res: Response): Promise<
       where: {
         assigneeId: userId,
         project: {
-          ...projectWhere(scope),
+          ...projectWhere(scope, userId, now, await enforcedClientsFor(scope.tenantIds)),
           status: { notIn: ['Closed', 'Cancelled'] },
         },
         ...(includeDone ? {} : { status: { notIn: ['Done', 'Verified'] } }),
@@ -529,13 +536,33 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const { project, canWrite } = await authorise(req, phase.projectId);
     if (!project) { notFound(res); return; }
-    if (!canWrite) { readOnly(res); return; }
+    // The firm plans too on a consulting engagement (sprint 6): its own
+    // tasks, and the organisation's only when consultant-led. Anyone else
+    // without the organisation's write right is read-only, as before.
+    let byFirm = false;
+    if (!canWrite) {
+      const plan = await firmPlanning(project, req.user!, {
+        side: str(req.body?.side || 'Provider'),
+        assigneeId: req.body?.assigneeId ? str(req.body.assigneeId) : null,
+      });
+      if (plan === 'not-firm') { readOnly(res); return; }
+      if (plan) { refuse(res, plan); return; }
+      if (req.body?.weight !== undefined || req.body?.verificationOverride !== undefined) {
+        res.status(403).json({
+          status: 'error', code: 'PLANNING_REQUIRES_MANAGER',
+          message: 'A task\'s weight and whether it is verified are the organisation\'s to set.',
+        });
+        return;
+      }
+      byFirm = true;
+    }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
     const {
-      name, description, assigneeId, priority, side, department,
+      name, description, assigneeId, priority, department,
       startDate, dueDate, weight, sequence, verificationOverride,
     } = req.body || {};
+    const side = req.body?.side || (byFirm ? 'Provider' : undefined);
 
     if (!name) {
       res.status(400).json({ status: 'error', message: 'name is required' });
@@ -595,9 +622,13 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
           // same as one that has slipped by zero.
           baselineStartDate: baselineNow && startDate ? new Date(startDate) : null,
           baselineDueDate: baselineNow && dueDate ? new Date(dueDate) : null,
+          // And that is the first time it was agreed (S2).
+          firstBaselineStartDate: baselineNow && startDate ? new Date(startDate) : null,
+          firstBaselineDueDate: baselineNow && dueDate ? new Date(dueDate) : null,
           verificationOverride: override,
         },
       });
+      if (created.dueDate) await stretchToWork(tx, project.id);
       await writeAudit(tx, {
         tenantId: project.tenantId,
         actorId: str(req.user!.id),
@@ -606,6 +637,14 @@ export const createTask = async (req: AuthenticatedRequest, res: Response): Prom
         subjectId: created.id,
         payload: { projectRef: project.ref, ref, name: created.name, phase: phase.name },
       });
+      // A firm's planning is the client's record; the firm's trail gets a summary.
+      if (byFirm && project.providerTenantId) {
+        await writeAudit(tx, {
+          tenantId: project.providerTenantId, actorId: str(req.user!.id), action: 'PROJECT_TASK_CREATED',
+          subjectType: 'ProjectTask', subjectId: created.id,
+          payload: { projectRef: project.ref, ref, clientTenantId: project.tenantId, side: created.side },
+        });
+      }
 
       await tellAboutAssignment(tx, {
         actorId: str(req.user!.id),
@@ -649,7 +688,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       select: {
         id: true, projectId: true, ref: true, name: true, status: true,
         assigneeId: true, completionPercent: true, verificationOverride: true,
-        dueDate: true, baselineDueDate: true,
+        dueDate: true, baselineDueDate: true, side: true,
         // Unfiltered on purpose: the EvidenceTasks requirement follows whether
         // the task ever produced evidence, so that withdrawing a file cannot
         // remove the obligation to have the work checked.
@@ -660,14 +699,45 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const { project, canWrite } = await authorise(req, existing.projectId);
     if (!project) { notFound(res); return; }
+    { const r = await firmRefusal(project, req.user!, 'work'); if (r) { refuse(res, r); return; } }
     if (isFrozen(project.status)) { frozen(res, project.status); return; }
 
     const userId = str(req.user!.id);
     const isAssignee = existing.assigneeId === userId;
-    if (!canWrite && !isAssignee) { readOnly(res); return; }
-
     const b = req.body || {};
+
+    // ── Planning fields, project managers only ──
+    // verificationOverride sits here rather than with the reporting fields for
+    // the same reason weight does: a flag the assignee can clear is a review
+    // they can skip.
+    const PLANNING = ['name', 'description', 'assigneeId', 'priority', 'side',
+                      'department', 'weight', 'sequence', 'startDate', 'dueDate',
+                      'verificationOverride'];
+    const attemptedPlanning = PLANNING.filter((f) => b[f] !== undefined);
+
+    // On a consulting engagement the firm plans too (sprint 6), by its
+    // delivery style and role, and never a task's weight or verification.
+    const FIRM_PLANNING = ['name', 'description', 'assigneeId', 'priority', 'side', 'department', 'sequence', 'startDate', 'dueDate'];
+    let firmPlans = false;
+    if (!canWrite && attemptedPlanning.length > 0 && attemptedPlanning.every((f) => FIRM_PLANNING.includes(f))) {
+      const plan = await firmPlanning(project, req.user!, {
+        side: b.side !== undefined ? str(b.side) : existing.side,
+        assigneeId: b.assigneeId !== undefined ? (b.assigneeId ? str(b.assigneeId) : null) : existing.assigneeId,
+        previousAssigneeId: existing.assigneeId,
+      });
+      if (plan && plan !== 'not-firm') { refuse(res, plan); return; }
+      firmPlans = plan === null;
+    }
+    if (!canWrite && !isAssignee && !firmPlans) { readOnly(res); return; }
+
     const data: any = {};
+
+    // On hold, work is paused: status and progress wait for the resume, while
+    // the task's planning fields can still be adjusted.
+    if (isHeld(project.status) && (b.status !== undefined || b.completionPercent !== undefined)) {
+      held(res);
+      return;
+    }
 
     // ── Fields anyone working the task may change ──
     if (b.completionPercent !== undefined) {
@@ -709,16 +779,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       }
     }
 
-    // ── Planning fields, project managers only ──
-    // verificationOverride sits here rather than with the reporting fields for
-    // the same reason weight does: a flag the assignee can clear is a review
-    // they can skip.
-    const PLANNING = ['name', 'description', 'assigneeId', 'priority', 'side',
-                      'department', 'weight', 'sequence', 'startDate', 'dueDate',
-                      'verificationOverride'];
-    const attemptedPlanning = PLANNING.filter((f) => b[f] !== undefined);
-
-    if (attemptedPlanning.length > 0 && !canWrite) {
+    if (attemptedPlanning.length > 0 && !canWrite && !firmPlans) {
       res.status(403).json({
         status: 'error',
         code: 'PLANNING_REQUIRES_MANAGER',
@@ -728,7 +789,7 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
-    if (canWrite) {
+    if (canWrite || firmPlans) {
       if (b.name !== undefined) data.name = str(b.name).trim();
       if (b.description !== undefined) data.description = b.description ? str(b.description) : null;
       if (b.assigneeId !== undefined) data.assigneeId = b.assigneeId ? str(b.assigneeId) : null;
@@ -808,6 +869,10 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
 
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.projectTask.update({ where: { id: taskId }, data });
+      // The first move to InProgress is when work began (S1); never overwritten.
+      if (data.status === 'InProgress') await stampActualStart(tx, taskId);
+      // A date moved within what was agreed can still pass its phase's end.
+      if (data.dueDate) await stretchToWork(tx, existing.projectId);
       await writeAudit(tx, {
         tenantId: project.tenantId,
         actorId: userId,
@@ -820,6 +885,14 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response): Prom
           ...(data.status ? { from: existing.status, to: data.status } : {}),
         },
       });
+      // A firm's planning is the client's record; the firm's trail gets a summary.
+      if (firmPlans && project.providerTenantId) {
+        await writeAudit(tx, {
+          tenantId: project.providerTenantId, actorId: userId, action: 'PROJECT_TASK_UPDATED',
+          subjectType: 'ProjectTask', subjectId: taskId,
+          payload: { projectRef: project.ref, ref: existing.ref, clientTenantId: project.tenantId, changed: Object.keys(data) },
+        });
+      }
 
       // This handler is also the reassignment path. Both ends are told: one
       // person has work they did not have, and the other has stopped being

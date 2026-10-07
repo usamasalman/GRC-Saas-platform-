@@ -254,7 +254,10 @@ const {
   );
   checks += 1;
   assert.ok(
-    /projectWhere\(scope\)/.test(plan),
+    // With the caller, so a firm's person sees a consulting engagement's
+    // tasks only while approved on it (sprint 4), and with each client's
+    // enforcement (sprint 6).
+    /projectWhere\(scope, userId[,)]/.test(plan),
     'and must ALSO apply the caller\'s read scope. A task can be reassigned to somebody whose '
     + 'access to the engagement has since been withdrawn, and their own inbox must not become '
     + 'the back door to it.',
@@ -341,6 +344,28 @@ const {
     'a blocked row must name its blocker. "Blocked" with nothing beside it is the status '
     + 'everyone asks about and nobody can answer.',
   );
+}
+
+// ── A notification opens the page it is about ──────────────────────────────
+// The bell hands `link` to the shell as a page key. A key the shell does not
+// render opens nothing useful, and nothing else would ever notice: twelve
+// engagement and document notifications pointed at 'delivery', 'approvals',
+// 'documents' and 'issues', none of which is a page.
+{
+  const sources = [];
+  for (const dir of ['controllers', 'services']) {
+    for (const f of fs.readdirSync(path.join(API, dir)).filter((n) => n.endsWith('.ts'))) sources.push([`${dir}/${f}`, code(read(API, dir, f))]);
+  }
+  const pages = new Set([
+    ...[...shell.matchAll(/currentPage === '([a-z0-9-]+)'/g)].map((m) => m[1]),
+    ...[...shell.matchAll(/\['([a-z0-9-]+)', '[^']*', '[^']+'\]/g)].map((m) => m[1]),
+  ]);
+  const broken = [];
+  for (const [file, src] of sources) {
+    for (const m of src.matchAll(/\blink: '([^']+)'/g)) if (!pages.has(m[1])) broken.push(`${file}: '${m[1]}'`);
+  }
+  ok(pages.has('project-delivery') && pages.has('my-work'), 'the page keys must be readable from the shell');
+  ok(broken.length === 0, `every notification link must be a page the shell renders; not one: ${broken.join(', ')}`);
 }
 
 console.log(`work-notification: ${checks} assertions passed (pure rules, no database)`);
