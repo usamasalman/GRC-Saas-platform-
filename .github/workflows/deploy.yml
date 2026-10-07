@@ -405,6 +405,26 @@ jobs:
             set -euo pipefail
             cd ~/grcwisdom
 
+            # Back up the database before anything changes. The API applies its
+            # migrations when it starts, so this is the last moment the data is
+            # in the shape the running version left it. A backup that fails, or
+            # that cannot be read back, stops the deploy with the site untouched.
+            # Kept on the server in ~/grcwisdom/backups, newest 10.
+            if [ -n "$(docker compose ps -q db 2>/dev/null)" ]; then
+              mkdir -p backups
+              BACKUP="backups/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)-${{ github.sha }}.dump"
+              docker compose exec -T db pg_dump -U grcwisdom -d grcwisdom -Fc > "$BACKUP"
+              TABLES=$(docker compose exec -T db pg_restore --list < "$BACKUP" | grep -c ' TABLE ' || true)
+              if [ "$TABLES" -lt 1 ]; then
+                echo "The backup $BACKUP lists no tables; not deploying over a database that is not backed up."
+                exit 1
+              fi
+              echo "Backed up the database to ~/grcwisdom/$BACKUP ($(du -h "$BACKUP" | cut -f1), $TABLES tables)."
+              ls -1t backups/pre-deploy-*.dump | tail -n +11 | xargs -r rm -f
+            else
+              echo "No database container running yet; nothing to back up."
+            fi
+
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Set dynamic variables from current GitHub repo/owner
