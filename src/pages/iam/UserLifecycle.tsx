@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import apiClient from '../../api/apiClient';
 import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, STATUS_PILL, apiError } from './iamStyles';
 import Can, { MAY } from '../../components/Can';
+import PackagePanel from '../../components/PackagePanel';
 
 interface UserRow {
   id: string; name: string; email: string; roleName: string; roleId: string | null;
@@ -169,6 +170,10 @@ const UserLifecycle: React.FC<{ currentUserId: string }> = ({ currentUserId }) =
         ['Pending pw change', <span style={{ color: (totals.mustChangePassword ?? 0) > 0 ? 'var(--warning)' : 'var(--ink)' }}>{totals.mustChangePassword ?? 0}</span>],
         ['No role', <span style={{ color: (totals.unlinkedRole ?? 0) > 0 ? 'var(--danger)' : 'var(--ink)' }}>{totals.unlinkedRole ?? 0}</span>],
       ]} />
+
+      {/* Seats are counted against the package (QA-031); shown before an
+          invitation is refused, not after. Nothing for the platform's own. */}
+      <PackagePanel focus="users" />
 
       <input placeholder="Search name, email or entity…" value={search}
         onChange={(e) => setSearch(e.target.value)} style={{ ...S.input, maxWidth: 320, marginBottom: 14 }} />

@@ -14,6 +14,7 @@ import {
   canWriteToTenant,
 } from '../services/scopeResolver';
 import { deliveryBlocksDeletion } from '../services/providerEngagement';
+import { assertPackageAllows, PackageLimitError } from '../services/packageLimits';
 
 const SUBJECT_TENANT = 'Tenant';
 
@@ -589,6 +590,11 @@ export const onboardTenant = async (req: AuthenticatedRequest, res: Response): P
         }
       }
 
+      // The administrator is the organisation's first seat, in the package it
+      // was just given or the one its parent holds (QA-031). With neither, it
+      // has no allowance, and onboarding stops here with nothing created.
+      await assertPackageAllows(tx, tenant.id, 'users');
+
       const user = await tx.user.create({
         data: {
           email: cleanEmail,
@@ -624,6 +630,10 @@ export const onboardTenant = async (req: AuthenticatedRequest, res: Response): P
       temporaryPasswordExpiresAt: tempPasswordExpiresAt,
     });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Tenant Onboard Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to onboard organization' });
   }

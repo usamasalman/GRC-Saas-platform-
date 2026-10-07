@@ -6,8 +6,6 @@
  */
 
 import { Response } from 'express';
-import fs from 'fs';
-import path from 'path';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { prisma } from '../db';
 import { readPage, pageInfo } from '../utils/paging';
@@ -19,10 +17,10 @@ import {
   RETENTION_TRIGGERS, DEFAULT_RETAIN_MONTHS, DEFAULT_REVIEW_WINDOW_DAYS,
   MIN_RETAIN_MONTHS, MAX_RETAIN_MONTHS,
 } from '../services/retention';
+import { removeDocumentFile } from '../services/documentFiles';
 
 const SUBJECT_SCHEDULE = 'RetentionSchedule';
 const SUBJECT_DOCUMENT = 'Document';
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
 const str = (v: unknown): string => String(v ?? '');
 
@@ -525,14 +523,13 @@ export const disposeDocument = async (req: AuthenticatedRequest, res: Response):
     // cannot be rolled back. If this throws the record still says disposed,
     // which is recoverable by deleting the file again; the reverse -- bytes
     // gone with no record of who authorised it -- is not.
+    //
+    // Either kind of file: one in the store, or one written to uploads/ before
+    // the library moved there.
     let fileRemoved = false;
-    if (doc.fileUrl && typeof doc.fileUrl === 'string' && doc.fileUrl.startsWith('/uploads/')) {
+    if (doc.fileUrl) {
       try {
-        const fullPath = path.join(UPLOADS_DIR, doc.fileUrl.replace('/uploads/', ''));
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-          fileRemoved = true;
-        }
+        fileRemoved = removeDocumentFile(doc.fileUrl);
       } catch (e) {
         // Said rather than swallowed: a disposal that left the bytes on disk
         // is a disposal that did not happen, and somebody has to know.
@@ -547,7 +544,7 @@ export const disposeDocument = async (req: AuthenticatedRequest, res: Response):
       fileRemoved,
       // Honest about the one part that can fail after the record is written.
       warning: doc.fileUrl && !fileRemoved
-        ? 'The record is marked disposed but the stored file could not be removed. It must be deleted from the uploads directory.'
+        ? 'The record is marked disposed but the stored file could not be removed. It must be deleted from the file store on the server.'
         : null,
     });
   } catch (error: any) {

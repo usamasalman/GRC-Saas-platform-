@@ -106,3 +106,19 @@
 		}
 	}
 }
+
+# ── Other applications on this server ──────────────────────────────────────
+#
+# This Caddy is the server's only entrance on ports 80 and 443, and it also
+# serves other projects: asset management (assets.*, assetsapi.*, assetsfiles.*)
+# and the phishing simulator (phish.*, admin-phish.*). Their site blocks do NOT
+# belong in this file. Every GRC Wisdom deploy copies this file over the one on
+# the server, and when their blocks were kept here by hand, each deploy deleted
+# them and took those sites offline.
+#
+# They live on the server in ~/grcwisdom/sites/*.caddy, one file per project,
+# mounted read-only at /etc/caddy/sites. The deploy never copies, changes or
+# deletes anything there. A glob that matches no file is not an error, so a
+# server with no other projects needs no sites at all. See
+# deploy/SHARED-PROXY.md for the layout and the one-time move.
+import sites/*.caddy

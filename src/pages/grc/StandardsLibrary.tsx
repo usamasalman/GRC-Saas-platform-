@@ -3,6 +3,7 @@ import apiClient from '../../api/apiClient';
 import FormDialog from '../../components/FormDialog';
 import { S, StatStrip, primaryBtn, ghostBtn, pill, apiError } from '../iam/iamStyles';
 import { MAY, can } from '../../components/Can';
+import PackagePanel from '../../components/PackagePanel';
 
 interface Enablement { tenantId: string; tenantName: string; applicability: string; owner: any; enabledAt: string }
 interface Standard {
@@ -49,6 +50,9 @@ const StandardsLibrary: React.FC = () => {
   };
 
   const enabledCount = standards.filter((s) => s.isEnabledHere).length;
+  // Enabling is the platform's, within the package a customer bought (QA-031).
+  // A customer sees what is enabled for it and where its package stands.
+  const platform = scope === 'PLATFORM';
 
   return (
     <div style={S.page}>
@@ -56,7 +60,10 @@ const StandardsLibrary: React.FC = () => {
         <div>
           <h2 style={{ margin: 0, fontSize: 20, color: 'var(--ink)' }}>Standards &amp; frameworks</h2>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ink-muted)' }}>
-            Enable a framework to record that an entity is assessed against it. Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
+            {platform
+              ? 'Enable a framework to record that an entity is assessed against it.'
+              : 'The frameworks your organisation is assessed against. The platform enables them, within your package.'}
+            {' '}Scope: <strong style={{ color: 'var(--info)' }}>{scope || '—'}</strong>
           </p>
         </div>
         <button onClick={load} style={ghostBtn}>↻ Refresh</button>
@@ -68,6 +75,8 @@ const StandardsLibrary: React.FC = () => {
         ['Clauses in library', standards.reduce((a, s) => a + s.clauseCount, 0)],
         [scope === 'PLATFORM' ? 'Enablements platform-wide' : 'Enablements in scope', standards.reduce((a, s) => a + (s.enabledFor?.length || 0), 0)],
       ]} />
+
+      {scope && !platform && <PackagePanel focus="frameworks" />}
 
       {error && <div style={S.error}>{error}</div>}
       {notice && (
@@ -106,7 +115,7 @@ const StandardsLibrary: React.FC = () => {
                 </div>
               )}
 
-              {can(MAY.AUTHOR_STANDARD) && !s.isEnabledHere && (
+              {platform && can(MAY.AUTHOR_STANDARD) && !s.isEnabledHere && (
                 <button onClick={() => setEnabling(s)} disabled={busy === s.id} style={{ ...primaryBtn(busy === s.id), width: '100%' }}>
                   {busy === s.id ? 'Enabling…' : 'Enable for my entity'}
                 </button>

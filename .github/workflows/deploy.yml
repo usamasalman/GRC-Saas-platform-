@@ -100,6 +100,7 @@ jobs:
         working-directory: grc_wisdom_api
         run: |
           node scripts/verify/uploads-not-public-test.js
+          node scripts/verify/document-preview-markup-test.js
           node scripts/verify/no-native-dialogs-test.js
           node scripts/verify/routes-reachable-test.js
           node scripts/verify/record-deletion-test.js
@@ -201,7 +202,7 @@ jobs:
           done
           curl -sf -m 5 http://127.0.0.1:3000/health > /dev/null || { echo "API never came up"; exit 1; }
 
-          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test             audit-concurrency-test
+          for suite in             asset-import-test             asset-lifecycle-test             audit-tabs-test             criteria-versioning-test             document-import-test             document-upload-test             import-export-test             report-formats-test             residual-feedback-test             risk-import-test             risk-lifecycle-loops             journey-document-lifecycle-test             journey-impersonation-test             journey-billing-test             journey-iso-controls-test             qa-role-crawl-test             qa-isolation-test             qa-input-robustness-test             audit-concurrency-test             package-limits-test
           do
             echo "── $suite ──"
             npm run seed:demo > /dev/null
@@ -466,6 +467,14 @@ jobs:
             # (HTTP_PORT / HTTPS_PORT in .env), not to evict the neighbour.
             # Fail loudly instead, so a clash is visible rather than resolved by
             # breaking something else.
+            # This Caddy also serves other projects on the server (see
+            # deploy/SHARED-PROXY.md). Their routes live in ~/grcwisdom/sites,
+            # which this job never writes into, and Caddy reaches their
+            # containers over the shared caddy-edge network. Both are created
+            # here if missing and otherwise left exactly as they are.
+            docker network inspect caddy-edge >/dev/null 2>&1 || docker network create caddy-edge
+            mkdir -p ~/grcwisdom/sites
+
             if ! docker compose up -d --remove-orphans; then
               echo "compose up failed. If this is a port clash, set HTTP_PORT and"
               echo "HTTPS_PORT in ~/grcwisdom/.env to free ports. Currently bound:"
@@ -499,7 +508,9 @@ jobs:
             echo "Reloading Caddy configuration..."
             if ! docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
               echo "FAILED: the Caddyfile did not validate. Caddy is still running"
-              echo "the previous configuration. Fix deploy/Caddyfile and push again."
+              echo "the previous configuration, so every site it serves stays up. The"
+              echo "error is in deploy/Caddyfile or in one of the other projects' files"
+              echo "in ~/grcwisdom/sites (the message above names the file)."
               exit 1
             fi
 
@@ -577,7 +588,7 @@ jobs:
               docker compose exec -T api node -e "fetch('http://127.0.0.1:3000/health').then(r=>console.log('api self:',r.status)).catch(e=>console.log('api self FAILED:',e.message))" || true
               echo
               echo "--- can Caddy reach the API over the docker network? ---"
-              docker compose exec -T caddy wget -qO- --timeout=3 http://api:3000/health >/dev/null 2>&1 \
+              docker compose exec -T caddy wget -qO- --timeout=3 http://grcwisdom-api-svc:3000/health >/dev/null 2>&1 \
                 && echo "caddy -> api OK" || echo "caddy -> api FAILED"
               echo
               echo "--- what is published on the host? ---"

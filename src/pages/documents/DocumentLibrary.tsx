@@ -699,7 +699,7 @@ export default function DocumentLibrary() {
                   <label htmlFor="fileInput" style={{ cursor: 'pointer', display: 'block' }}>
                     <div style={{ fontSize: '28px', marginBottom: '4px' }}>☁️</div>
                     <div style={{ fontSize: '13px', color: 'var(--ink)', fontWeight: 600 }}>Drag & drop file here or <span style={{ color: 'var(--info)', textDecoration: 'underline' }}>browse</span></div>
-                    <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginTop: '4px' }}>Supports all formats up to 25MB</div>
+                    <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginTop: '4px' }}>Documents, spreadsheets, images and PDFs up to 25MB — programs, scripts and web pages are refused</div>
                   </label>
                 )}
               </div>

@@ -22,6 +22,14 @@ const KINDS: CandidateKind[] = ['Clause', 'Control'];
  */
 const OWN_KINDS = { in: KINDS };
 
+/**
+ * Where a committed import lands: the platform-wide library. Importing a
+ * framework is the platform's alone (QA-031), and what it imports is meant to
+ * be enabled for customers; filed under the platform's own organisation, it
+ * was invisible to every customer it was enabled for.
+ */
+const LIBRARY = null;
+
 /** Mirrors the base64 upload the document module already uses. */
 function persistUpload(fileData: string, fileName: string): { fileUrl: string; buffer: Buffer } {
   const matches = fileData.match(/^data:(.+);base64,(.+)$/);
@@ -130,8 +138,9 @@ export const uploadImport = async (req: AuthenticatedRequest, res: Response): Pr
       });
       existingRefs = new Set(rows.map((r) => r.ref.toLowerCase()));
     } else if (kind === 'Control') {
+      // Imported controls join the library (see LIBRARY), so that is where a code clashes.
       const rows = await prisma.control.findMany({
-        where: { tenantId }, select: { code: true },
+        where: { tenantId: LIBRARY }, select: { code: true },
       });
       existingRefs = new Set(rows.map((r) => r.code.toLowerCase()));
     }
@@ -373,12 +382,12 @@ export const commitImport = async (req: AuthenticatedRequest, res: Response): Pr
 
       if (imp.kind === 'Clause' && !standardId) {
         const clash = await tx.standard.findFirst({
-          where: { tenantId: imp.tenantId, code: imp.newStandardCode! },
+          where: { tenantId: LIBRARY, code: imp.newStandardCode! },
         });
         if (clash) throw new Error(`A standard with code "${imp.newStandardCode}" already exists here`);
         createdStandard = await tx.standard.create({
           data: {
-            tenantId: imp.tenantId,
+            tenantId: LIBRARY,
             code: imp.newStandardCode!,
             title: imp.newStandardTitle!,
             authority: imp.newStandardAuthority || 'Internal',
@@ -398,7 +407,7 @@ export const commitImport = async (req: AuthenticatedRequest, res: Response): Pr
       } else {
         await tx.control.createMany({
           data: imp.candidates.map((c) => ({
-            tenantId: imp.tenantId,
+            tenantId: LIBRARY,
             code: c.ref, title: c.title,
             objective: c.body || c.title,
             domain: c.extra || 'General',

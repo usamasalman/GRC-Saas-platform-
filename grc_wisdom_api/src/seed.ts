@@ -360,10 +360,12 @@ async function main() {
 
   // ── 3. Commercial plans (TRD §4 tiers) ──────────────────────────────────
   const PLANS = [
-    { name: 'Essentials', priceMonthly: 5625, maxUsers: 25, features: ['DMS', 'ITSM', 'GRC Core'] },
-    { name: 'Professional', priceMonthly: 16875, maxUsers: 100, features: ['DMS', 'ITSM', 'GRC Core', 'TPRM', 'Reporting'] },
-    { name: 'Assurance', priceMonthly: 33750, maxUsers: 300, features: ['DMS', 'ITSM', 'GRC Core', 'TPRM', 'Reporting', 'Wisdom Eye', 'Eye Phish'] },
-    { name: 'Enterprise Intelligence', priceMonthly: 45000, maxUsers: 1000, features: ['All modules', 'AI assistant', 'Public API', 'Webhooks'] },
+    // Limits stated, because customers are held to them (QA-031); the same
+    // figures as provision's catalogue.
+    { name: 'Essentials', priceMonthly: 5625, maxUsers: 25, features: { modules: ['DMS', 'ITSM', 'GRC Core'], frameworks: 1, storageGb: 10 } },
+    { name: 'Professional', priceMonthly: 16875, maxUsers: 100, features: { modules: ['DMS', 'ITSM', 'GRC Core', 'TPRM', 'Reporting'], frameworks: 3, storageGb: 50 } },
+    { name: 'Assurance', priceMonthly: 33750, maxUsers: 300, features: { modules: ['DMS', 'ITSM', 'GRC Core', 'TPRM', 'Reporting', 'Wisdom Eye', 'Eye Phish'], frameworks: 5, storageGb: 200 } },
+    { name: 'Enterprise Intelligence', priceMonthly: 45000, maxUsers: 1000, features: { modules: ['All modules', 'AI assistant', 'Public API', 'Webhooks'], frameworks: 15, storageGb: 1000 } },
   ];
   const planIdByName: Record<string, string> = {};
   for (const p of PLANS) {

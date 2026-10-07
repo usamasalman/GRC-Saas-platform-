@@ -121,24 +121,30 @@ async function runImport(token, file, name, code) {
 
   const grc = await login('grc.manager@omniops.me');
   if (!grc) { console.error('API not reachable'); process.exit(1); }
+  // Frameworks are imported by the platform alone (QA-031); the customer then
+  // reads what landed in the library.
+  const importer = (await api('/api/auth/login', {
+    method: 'POST', body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD },
+  })).token;
+  if (!importer) { console.error('Set ADMIN_EMAIL and ADMIN_PASSWORD: only the platform imports frameworks.'); process.exit(1); }
 
   console.log('=== PDF ===');
   step(1, 'Upload a PDF with cover, contents, running headers and page numbers:');
-  const pdfRun = await runImport(grc, pdf, 'isms.pdf', 'ISMS-PDF');
+  const pdfRun = await runImport(importer, pdf, 'isms.pdf', 'ISMS-PDF');
 
   if (pdfRun) {
     step(2, 'Accept the clean clauses and commit:');
-    say(await api(`/api/grc/imports/${pdfRun.id}/accept-clean`, { method: 'POST', token: grc, body: {} }));
-    say(await api(`/api/grc/imports/${pdfRun.id}/commit`, { method: 'POST', token: grc, body: {} }));
+    say(await api(`/api/grc/imports/${pdfRun.id}/accept-clean`, { method: 'POST', token: importer, body: {} }));
+    say(await api(`/api/grc/imports/${pdfRun.id}/commit`, { method: 'POST', token: importer, body: {} }));
   }
 
   console.log('\n=== WORD ===');
   step(3, 'Upload the same standard as .docx:');
-  const docxRun = await runImport(grc, docx, 'isms.docx', 'ISMS-DOCX');
+  const docxRun = await runImport(importer, docx, 'isms.docx', 'ISMS-DOCX');
 
   step(4, 'A control set cannot be imported from prose:');
   say(await api('/api/grc/imports', {
-    method: 'POST', token: grc,
+    method: 'POST', token: importer,
     body: { kind: 'Control', fileName: 'isms.pdf', fileData: fs.readFileSync(pdf).toString('base64') },
   }));
 
@@ -147,7 +153,7 @@ async function runImport(token, file, name, code) {
   const d = new Document({ sections: [{ children: [new Paragraph({ text: 'This memo has no clause numbering at all, only prose about the weather.' })] }] });
   fs.writeFileSync(junk, await Packer.toBuffer(d));
   say(await api('/api/grc/imports', {
-    method: 'POST', token: grc,
+    method: 'POST', token: importer,
     body: {
       kind: 'Clause', fileName: 'junk.docx', fileData: fs.readFileSync(junk).toString('base64'),
       newStandardCode: 'JUNK', newStandardTitle: 'Junk',

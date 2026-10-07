@@ -24,6 +24,13 @@ import { S, StatStrip, primaryBtn, ghostBtn, linkBtn, pill, apiError } from '../
  */
 
 interface Tenant { id: string; name: string; type: string }
+/** An organisation's package and what its group has used of it (QA-031). */
+interface PackageUsage {
+  holder: { id: string; name: string };
+  plan: { name: string };
+  limits: { frameworks: number | null };
+  used: { frameworks: number };
+}
 interface Standard { id: string; code: string; title: string; version: string; tenantId: string | null }
 interface Enablement { tenantId: string; standardId: string; applicability: string; enabledAt: string }
 
@@ -41,6 +48,7 @@ const TenantStandardEnablement: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [standards, setStandards] = useState<Standard[]>([]);
   const [enablements, setEnablements] = useState<Enablement[]>([]);
+  const [packages, setPackages] = useState<Record<string, PackageUsage | null>>({});
   const [scope, setScope] = useState('');
 
   const [loading, setLoading] = useState(true);
@@ -67,6 +75,7 @@ const TenantStandardEnablement: React.FC = () => {
       setTenants(res.data?.tenants || []);
       setStandards(res.data?.standards || []);
       setEnablements(res.data?.enablements || []);
+      setPackages(res.data?.packages || {});
       setScope(res.data?.scope || '');
       setLoaded(true);
     } catch (err) {
@@ -324,13 +333,14 @@ const TenantStandardEnablement: React.FC = () => {
                         <th style={S.th}>Operating model</th>
                         <th style={S.th}>{standard.code}</th>
                         <th style={S.th}>All frameworks</th>
+                        <th style={S.th}>Package</th>
                         <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {shownTenants.length === 0 ? (
                         <tr>
-                          <td colSpan={5} style={{ padding: 22, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                          <td colSpan={6} style={{ padding: 22, textAlign: 'center', color: 'var(--ink-muted)' }}>
                             {tenants.length === 0
                               ? 'No entities in scope.'
                               : 'No entity matches that filter.'}
@@ -362,6 +372,29 @@ const TenantStandardEnablement: React.FC = () => {
                                     {' · '}
                                     {codes.slice(0, 3).join(', ')}
                                     {codes.length > 3 && ` +${codes.length - 3}`}
+                                  </>
+                                );
+                              })()}
+                            </td>
+                            <td style={{ ...S.td, fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                              {(() => {
+                                // Frameworks are enabled within the package the
+                                // organisation's group holds, counted across the
+                                // group; past it, enabling is refused (QA-031).
+                                const p = packages[t.id];
+                                // The platform's own organisations are not customers and need none.
+                                if (!p && (t.type === 'SAAS' || t.type === 'SAAS_UNIT')) return <span>platform · not limited</span>;
+                                if (!p) return <span style={{ color: 'var(--warning)' }}>no package</span>;
+                                const limit = p.limits.frameworks;
+                                const full = limit !== null && p.used.frameworks >= limit;
+                                return (
+                                  <>
+                                    <span style={{ color: 'var(--ink-body)' }}>{p.plan.name}</span>
+                                    {' · '}
+                                    <strong style={{ color: full ? 'var(--warning)' : 'var(--ink-body)' }}>
+                                      {limit === null ? 'framework limit not set' : `${p.used.frameworks} of ${limit} frameworks`}
+                                    </strong>
+                                    {p.holder.id !== t.id && <div style={{ fontSize: 10.5 }}>via {p.holder.name}</div>}
                                   </>
                                 );
                               })()}

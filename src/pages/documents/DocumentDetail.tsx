@@ -19,18 +19,86 @@ interface DocumentDetailProps {
  * that case, which is why the reader looked broken: it was being asked to show
  * a format no browser shows, and then claiming to be showing it.
  *
- * Decided on the served content type, falling back to the extension, because a
- * server that sends application/octet-stream tells us nothing and the filename
- * usually does.
+ * And only what runs nothing. The frame's source is a blob: URL made by this
+ * page, and a blob URL belongs to the page's own origin, so an HTML page or an
+ * SVG drawing shown in it runs its script as the application, with the
+ * reader's session. New uploads can no longer be markup, but files uploaded
+ * before that still can be, and opening one was stored XSS against whoever
+ * did: an approver, typically. HTML and SVG are not shown at all; they get the
+ * download card, like any other format a frame does not show.
+ *
+ * Each type the frame shows maps to the type its blob is given, and the blob
+ * is typed from this table, never from the server's word. A frame offers
+ * text/csv as a download, so CSV is shown as the plain text it is.
  */
-const RENDERABLE_MIME = /^(application\/pdf|image\/(png|jpeg|jpg|gif|webp|svg\+xml|bmp)|text\/(plain|html|csv))/i;
-const RENDERABLE_EXT = /\.(pdf|png|jpe?g|gif|webp|svg|bmp|txt|csv|html?)$/i;
+const FRAME_TYPES: Record<string, string> = {
+  'application/pdf': 'application/pdf',
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/jpg': 'image/jpeg',
+  'image/gif': 'image/gif',
+  'image/webp': 'image/webp',
+  'image/bmp': 'image/bmp',
+  'text/plain': 'text/plain',
+  'text/csv': 'text/plain',
+};
 
-function browserCanRender(mime: string | null, fileName?: string): boolean {
-  if (mime && RENDERABLE_MIME.test(mime)) return true;
-  // octet-stream is the server saying "bytes"; ask the name instead.
-  if (mime && !/octet-stream/i.test(mime)) return false;
-  return !!fileName && RENDERABLE_EXT.test(fileName);
+/**
+ * The same, by extension, for a file the server can only call bytes.
+ *
+ * The server types a file from its bytes, and plain text, WebP and BMP have no
+ * signature it reads, so they arrive as application/octet-stream and the name
+ * is all that says what they are. A name can lie about the bytes; the worst
+ * that gets is a PDF viewer or an image decoder failing on something that is
+ * not a PDF or an image, because the type given is still this table's.
+ */
+const FRAME_TYPES_BY_EXT: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  txt: 'text/plain',
+  csv: 'text/plain',
+};
+
+/**
+ * The type to give the frame's blob, or null when the frame must not show the
+ * file at all.
+ *
+ * Decided on the served content type, falling back to the extension only when
+ * that type is application/octet-stream (or missing): a server that sends
+ * octet-stream tells us nothing and the filename usually does. Any other type
+ * the server names and the table does not list is not shown — text/html and
+ * image/svg+xml among them.
+ */
+function frameType(served: string | null, fileName?: string): string | null {
+  const [essence, ...params] = (served || '').split(';');
+  const mime = essence.trim().toLowerCase();
+  const ext = (fileName?.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+  const type = mime && mime !== 'application/octet-stream'
+    ? FRAME_TYPES[mime]
+    : FRAME_TYPES_BY_EXT[ext];
+  if (!type) return null;
+  // Text keeps its charset; without one the browser guesses, and the export's
+  // dashes come out as mojibake.
+  const charset = params.map((p) => p.trim()).find((p) => /^charset=/i.test(p));
+  return type.startsWith('text/') && charset ? `${type}; ${charset}` : type;
+}
+
+/** Formats refused on screen because they can carry script, said so on the card. */
+const MARKUP_EXT = /\.(html?|xhtml?|svgz?|xml)$/i;
+
+/**
+ * The frame's sandbox: everything withheld for an image or text, which runs
+ * nothing anyway, so it costs nothing and still holds if the table above is
+ * ever wrong. Not for a PDF: the browser's PDF viewer does not load inside a
+ * sandboxed frame.
+ */
+function frameSandbox(type: string | null): string | undefined {
+  return type === 'application/pdf' ? undefined : '';
 }
 
 /** The format in the words on the file card, for a message a person can act on. */
@@ -181,8 +249,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
   const [pdfLoading, setPdfLoading] = useState(false);
   /** Why the file could not be served, when it could not. Never swallowed. */
   const [previewError, setPreviewError] = useState<string | null>(null);
-  /** What the server actually sent, which decides whether a frame can show it. */
+  /** What the server actually sent, for the card that names the format. */
   const [previewMime, setPreviewMime] = useState<string | null>(null);
+  /** The type the frame's blob was given; null means no frame shows this file. */
+  const [frameAs, setFrameAs] = useState<string | null>(null);
 
   const fetchDocumentDetail = async () => {
     setLoading(true);
@@ -195,7 +265,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
         setReach(res.data.access || null);
 
         // Fetch PDF Blob URL if an uploaded file exists or if doc has content
-        loadPdfBlob(doc.id, doc.fileType);
+        loadPdfBlob(doc.id, doc.fileType, doc.fileName);
       }
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed to load document details');
@@ -204,10 +274,11 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
     }
   };
 
-  const loadPdfBlob = async (id: string, fileType?: string) => {
+  const loadPdfBlob = async (id: string, fileType?: string, fileName?: string) => {
     setPdfLoading(true);
     setPreviewError(null);
     setPreviewMime(null);
+    setFrameAs(null);
     try {
       // Declared, because the reader pane and the Download button reach the
       // same endpoint. Both are recorded either way; this is what separates
@@ -215,9 +286,14 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
       const response = await apiClient.get(`/api/documents/${id}/download?disposition=preview`, {
         responseType: 'blob',
       });
-      const mime = (response.headers['content-type'] as string) || fileType || '';
-      const blob = new Blob([response.data], { type: mime });
-      setPreviewMime(mime);
+      const served = (response.headers['content-type'] as string) || fileType || '';
+      const framed = frameType(served, fileName);
+      // A file the frame does not show is still held, as bare bytes, for the
+      // card that offers it as a download. Its blob is never given the
+      // server's type: nothing made here can be a page that runs.
+      const blob = new Blob([response.data], { type: framed ?? 'application/octet-stream' });
+      setPreviewMime(served);
+      setFrameAs(framed);
       setPdfBlobUrl(window.URL.createObjectURL(blob));
     } catch (err: any) {
       // A refusal has to be visible. This was a console.warn, so the pane fell
@@ -639,7 +715,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                           {previewError}
                         </div>
                       </div>
-                    ) : pdfBlobUrl && browserCanRender(previewMime, document.fileName) ? (
+                    ) : pdfBlobUrl && frameAs ? (
                       <div style={{ background: 'var(--surface-sunk)', border: '1px solid var(--line)', borderRadius: '10px', padding: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--line)' }}>
                           <span style={{ fontSize: '12px', color: 'var(--info)', fontWeight: 600 }}>IN-APP READER ({document.fileName || document.code})</span>
@@ -653,6 +729,7 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                         <iframe
                           src={pdfBlobUrl}
                           title="Document reader"
+                          sandbox={frameSandbox(frameAs)}
                           style={{ width: '100%', height: '580px', border: '1px solid var(--line)', borderRadius: '8px', background: 'var(--surface)' }}
                         />
                       </div>
@@ -673,6 +750,10 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                           text can be shown on screen; a spreadsheet or a Word file has to be
                           opened in the application that owns it. The Formatted Document and
                           Text View tabs above still show this record's own content.
+                          {MARKUP_EXT.test(document.fileName || '') && (
+                            <> Web pages and SVG drawings are never shown here: either can carry
+                            a script, and on this screen it would run as you.</>
+                          )}
                         </div>
                         <button
                           onClick={handleDownload}
@@ -788,12 +869,21 @@ export default function DocumentDetail({ documentId, onClose }: DocumentDetailPr
                         </button>
                       </div>
 
-                      {/* Embedded File Viewer Frame via Same-Origin Blob URL */}
-                      <iframe
-                        src={pdfBlobUrl}
-                        title="Embedded File Preview"
-                        style={{ width: '100%', height: '520px', border: '1px solid var(--line)', borderRadius: '8px', background: 'var(--surface)' }}
-                      />
+                      {/* The same rule as the reader: this frame showed whatever
+                          came back, with no check at all, so an .html or .svg
+                          from before uploads were checked ran here too. */}
+                      {frameAs ? (
+                        <iframe
+                          src={pdfBlobUrl}
+                          title="Embedded File Preview"
+                          sandbox={frameSandbox(frameAs)}
+                          style={{ width: '100%', height: '520px', border: '1px solid var(--line)', borderRadius: '8px', background: 'var(--surface)' }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: '12.5px', color: 'var(--ink-muted)', textAlign: 'center', padding: '16px' }}>
+                          {describeFormat(previewMime, document.fileName)} cannot be displayed in the browser. Download it to open it.
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div style={{ background: 'var(--surface-sunk)', border: '1px dashed var(--line)', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>

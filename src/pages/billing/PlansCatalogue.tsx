@@ -35,7 +35,16 @@ interface Plan {
   features: string;
 }
 
-const BLANK = { name: '', priceMonthly: 3000, maxUsers: 50, frameworksCount: 3, storageGb: 100 };
+// A package's limits are what customers are held to (QA-031). An empty field
+// stays empty rather than becoming 0 or a default, and the server refuses a
+// plan that does not state all three.
+type Limit = number | '';
+const BLANK: { name: string; priceMonthly: number; maxUsers: Limit; frameworksCount: Limit; storageGb: Limit } = {
+  name: '', priceMonthly: 3000, maxUsers: 50, frameworksCount: 3, storageGb: 100,
+};
+const limitOf = (v: string): Limit => (v.trim() === '' ? '' : Number(v));
+/** A stated whole-number limit, or null when the plan does not state one. */
+const stated = (v: unknown): number | null => (Number.isInteger(v) && (v as number) >= 0 ? (v as number) : null);
 
 const PlansCatalogue: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -97,8 +106,8 @@ const PlansCatalogue: React.FC = () => {
       name: p.name,
       priceMonthly: Number(p.priceMonthly),
       maxUsers: p.maxUsers,
-      frameworksCount: f.frameworks ?? 1,
-      storageGb: f.storageGb ?? 10,
+      frameworksCount: stated(f.frameworks) ?? '',
+      storageGb: stated(f.storageGb) ?? '',
     });
     setFormErr('');
     setRepricing(null);
@@ -232,8 +241,8 @@ const PlansCatalogue: React.FC = () => {
 
                   <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 6, border: '1px solid var(--line)', fontSize: 12, color: 'var(--ink-body)', display: 'grid', gap: 6 }}>
                     <div><Icon name="teams" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Named users: <strong style={{ color: 'var(--ink)' }}>{p.maxUsers}</strong></div>
-                    <div>§ Enabled frameworks: <strong style={{ color: 'var(--ink)' }}>{f.frameworks || 1}</strong></div>
-                    <div><Icon name="install" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Encrypted storage: <strong style={{ color: 'var(--ink)' }}>{f.storageGb || 10} GB</strong></div>
+                    <div>§ Enabled frameworks: <strong style={{ color: 'var(--ink)' }}>{stated(f.frameworks) ?? 'not set'}</strong></div>
+                    <div><Icon name="install" size={14} style={{ display: 'inline-block', verticalAlign: '-2px' }} /> Encrypted storage: <strong style={{ color: 'var(--ink)' }}>{stated(f.storageGb) === null ? 'not set' : `${f.storageGb} GB`}</strong></div>
                     {f.aiCredits && <div>✦ AI RAG credits: <strong style={{ color: 'var(--info)' }}>{f.aiCredits.toLocaleString()}</strong></div>}
                   </div>
                 </div>
@@ -291,9 +300,9 @@ const PlansCatalogue: React.FC = () => {
             <form onSubmit={(e) => submit(e)}>
               {field('Plan name', form.name, (v) => setForm({ ...form, name: v }), 'text', 'e.g. Enterprise Intelligence Plus')}
               {field('Monthly price (SAR)', form.priceMonthly, (v) => setForm({ ...form, priceMonthly: Number(v) }))}
-              {field('Max named users', form.maxUsers, (v) => setForm({ ...form, maxUsers: Number(v) }))}
-              {field('Frameworks quota', form.frameworksCount, (v) => setForm({ ...form, frameworksCount: Number(v) }))}
-              {field('Storage quota (GB)', form.storageGb, (v) => setForm({ ...form, storageGb: Number(v) }))}
+              {field('Max named users', form.maxUsers, (v) => setForm({ ...form, maxUsers: limitOf(v) }))}
+              {field('Frameworks quota', form.frameworksCount, (v) => setForm({ ...form, frameworksCount: limitOf(v) }))}
+              {field('Storage quota (GB)', form.storageGb, (v) => setForm({ ...form, storageGb: limitOf(v) }))}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
                 <button

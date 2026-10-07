@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
@@ -15,6 +16,7 @@ import {
   decodeUpload, putEvidence, resolveEvidencePath, verifyStoredHash,
 } from '../services/evidenceStore';
 import { clausesInScope } from '../services/projectStandards';
+import { assertPackageAllows, PackageLimitError } from '../services/packageLimits';
 
 /**
  * Evidence for delivered work, and the line from that work back to the clause
@@ -152,6 +154,15 @@ export const attachEvidence = async (req: AuthenticatedRequest, res: Response): 
     const ref = await nextRef(project.id);
 
     const result = await prisma.$transaction(async (tx) => {
+      // Counted against the package of the organisation the project is for
+      // (QA-031). Each upload has a key of its own, so a refused file is
+      // removed without touching any other.
+      await assertPackageAllows(tx, project.tenantId, 'storage', { bytes: stored.byteLength })
+        .catch((e) => {
+          const full = resolveEvidencePath(stored.storageKey);
+          if (full) { try { fs.unlinkSync(full); } catch { /* already gone */ } }
+          throw e;
+        });
       const evidence = await tx.projectEvidence.create({
         data: {
           projectId: project.id,
@@ -198,6 +209,10 @@ export const attachEvidence = async (req: AuthenticatedRequest, res: Response): 
       rollup: result.rollup,
     });
   } catch (error: any) {
+    if (error instanceof PackageLimitError) {
+      res.status(error.status).json({ status: 'error', code: error.code, message: error.message });
+      return;
+    }
     console.error('[Evidence Attach Error]:', error);
     res.status(500).json({ status: 'error', message: 'Failed to attach evidence' });
   }

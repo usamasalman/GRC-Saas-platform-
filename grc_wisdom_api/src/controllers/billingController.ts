@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { writeAudit } from '../middlewares/auditMiddleware';
 import { judgeDeletion } from '../services/recordDeletion';
 import { resolveTenantScope, auditCrossTenantRead, canWriteToTenant } from '../services/scopeResolver';
+import { packageUsage, packageHolderId } from '../services/packageLimits';
 import {
   DEFAULT_VAT_RATE,
   PERIOD_KINDS,
@@ -135,6 +136,46 @@ export const listPlans = async (req: AuthenticatedRequest, res: Response): Promi
   }
 };
 
+/**
+ * A package's limits, stated. Customers are held to them (QA-031), so a plan
+ * that leaves one out would refuse everything of that kind, and a guess in its
+ * place would be a limit nobody chose: framework and storage limits are
+ * required, whole numbers, zero or above.
+ */
+function packageFeatures(features: unknown): { ok: true; json: string } | { ok: false; message: string } {
+  let f: any = features;
+  if (typeof f === 'string') {
+    try { f = JSON.parse(f); } catch { return { ok: false, message: 'features must be JSON' }; }
+  }
+  if (!f || typeof f !== 'object' || Array.isArray(f)) {
+    return { ok: false, message: 'A package must state its framework and storage limits (features.frameworks, features.storageGb).' };
+  }
+  for (const [key, label] of [['frameworks', 'The framework limit'], ['storageGb', 'The storage limit (GB)']] as const) {
+    if (!Number.isInteger(f[key]) || f[key] < 0) {
+      return { ok: false, message: `${label} must be a whole number, zero or above.` };
+    }
+  }
+  return { ok: true, json: JSON.stringify(f) };
+}
+
+/**
+ * The caller's own package and what their organisation's group has used of it
+ * (QA-031). Read-only: the platform sets packages; customers see where they
+ * stand before an addition is refused.
+ */
+export const getMyPackage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    // The platform's own organisations have no package and need none; a
+    // customer with none is told so, because it can add nothing a package limits.
+    const holder = await packageHolderId(req.user!.tenantId);
+    const usage = holder && holder !== 'platform' ? await packageUsage(req.user!.tenantId) : null;
+    res.json({ status: 'success', platform: holder === 'platform', package: usage });
+  } catch (error: any) {
+    console.error('[My Package Error]:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to read the package' });
+  }
+};
+
 export const createPlan = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { name, priceMonthly, maxUsers, features } = req.body;
@@ -143,12 +184,20 @@ export const createPlan = async (req: AuthenticatedRequest, res: Response): Prom
       return;
     }
 
+    const seats = Number(maxUsers);
+    if (!Number.isInteger(seats) || seats < 1) {
+      res.status(400).json({ status: 'error', message: 'The named-user limit must be a whole number, one or above.' });
+      return;
+    }
+    const limits = packageFeatures(features);
+    if (!limits.ok) { res.status(400).json({ status: 'error', message: limits.message }); return; }
+
     const plan = await prisma.plan.create({
       data: {
         name: String(name),
         priceMonthly: Number(priceMonthly),
-        maxUsers: Number(maxUsers || 50),
-        features: typeof features === 'string' ? features : JSON.stringify(features || {})
+        maxUsers: seats,
+        features: limits.json,
       }
     });
 
@@ -200,14 +249,16 @@ export const updatePlan = async (req: AuthenticatedRequest, res: Response): Prom
     if (name) data.name = String(name).trim();
     if (maxUsers !== undefined) {
       const n = Number(maxUsers);
-      if (!Number.isFinite(n) || n < 1) {
-        res.status(400).json({ status: 'error', message: 'maxUsers must be a positive number' });
+      if (!Number.isInteger(n) || n < 1) {
+        res.status(400).json({ status: 'error', message: 'The named-user limit must be a whole number, one or above.' });
         return;
       }
-      data.maxUsers = Math.floor(n);
+      data.maxUsers = n;
     }
     if (features !== undefined) {
-      data.features = typeof features === 'string' ? features : JSON.stringify(features || {});
+      const limits = packageFeatures(features);
+      if (!limits.ok) { res.status(400).json({ status: 'error', message: limits.message }); return; }
+      data.features = limits.json;
     }
 
     if (priceMonthly !== undefined) {

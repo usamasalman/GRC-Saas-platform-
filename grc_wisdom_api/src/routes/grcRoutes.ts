@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, rejectIfMustChangePassword } from '../middlewares/authMiddleware';
+import { requireAuth, rejectIfMustChangePassword, requirePlatformTenant } from '../middlewares/authMiddleware';
 import { requireCapability, requireAnyCapability, CAP } from '../services/capabilityEngine';
 import {
   createStandard, addClauses, updateClause, deleteClause, updateStandard, deleteStandard, mapControlToClauses,
@@ -125,10 +125,16 @@ router.get('/summary', getGrcSummary);
 router.get('/posture', getEstatePosture);
 
 router.get('/standards', listStandards);
-router.post('/standards/enable', requireCapability(CAP.ENABLE_STANDARD), enableStandard);
+// Which frameworks an organisation is assessed against is the platform's to
+// decide, within the package the organisation bought: customers could enable,
+// write and import frameworks themselves, and no package limit was checked
+// (QA-031). Every framework write below is the platform's alone; customers
+// read what has been enabled for them.
+const PLATFORM = requirePlatformTenant;
+router.post('/standards/enable', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), enableStandard);
 // The counterpart deleteStandard has always pointed at and which never existed,
 // leaving a standard created by mistake impossible to remove.
-router.post('/standards/disable', requireCapability(CAP.ENABLE_STANDARD), disableStandard);
+router.post('/standards/disable', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), disableStandard);
 
 // Enabling a framework across an estate, from the control plane. The single
 // endpoints above have always read an optional tenantId; what was missing was a
@@ -139,20 +145,20 @@ router.post('/standards/disable', requireCapability(CAP.ENABLE_STANDARD), disabl
 // are read as standard ids and hit updateStandard and deleteStandard instead —
 // the same trap the control routes carry a comment about.
 router.get('/standards/enablement-matrix', getEnablementMatrix);
-router.post('/standards/bulk-enable', requireCapability(CAP.ENABLE_STANDARD), bulkEnableStandards);
-router.post('/standards/bulk-disable', requireCapability(CAP.ENABLE_STANDARD), bulkDisableStandards);
+router.post('/standards/bulk-enable', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), bulkEnableStandards);
+router.post('/standards/bulk-disable', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), bulkDisableStandards);
 
 // ── Authoring your own framework ──────────────────────────────────────────
 // The capability is literally "import or enable a standard", so importing one
 // belongs to the same people who enable them.
-router.post('/standards', requireCapability(CAP.ENABLE_STANDARD), createStandard);
-router.post('/standards/:id/clauses', requireCapability(CAP.ENABLE_STANDARD), addClauses);
+router.post('/standards', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), createStandard);
+router.post('/standards/:id/clauses', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), addClauses);
 // Clauses were add-only. A mistyped reference used to mean deleting the whole
 // standard and re-importing it.
-router.patch('/clauses/:id', requireCapability(CAP.ENABLE_STANDARD), updateClause);
-router.delete('/clauses/:id', requireCapability(CAP.ENABLE_STANDARD), deleteClause);
-router.patch('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), updateStandard);
-router.delete('/standards/:id', requireCapability(CAP.ENABLE_STANDARD), deleteStandard);
+router.patch('/clauses/:id', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), updateClause);
+router.delete('/clauses/:id', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), deleteClause);
+router.patch('/standards/:id', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), updateStandard);
+router.delete('/standards/:id', PLATFORM, requireCapability(CAP.ENABLE_STANDARD), deleteStandard);
 // Mapping a control to clauses is what makes the framework auditable.
 // Must precede '/controls/:controlId/clauses' — Express matches in order, and
 // a literal declared after a parameter is shadowed by it: this would be read
@@ -164,11 +170,11 @@ router.post('/controls/:controlId/clauses', requireAnyCapability(CAP.ENABLE_STAN
 // Extraction stages candidates; only commit writes to the library.
 router.get('/imports', listImports);
 router.get('/imports/:id', getImport);
-router.post('/imports', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), uploadImport);
-router.patch('/import-candidates/:candidateId', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), reviewCandidate);
-router.post('/imports/:id/accept-clean', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), acceptClean);
-router.post('/imports/:id/commit', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), commitImport);
-router.post('/imports/:id/discard', requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), discardImport);
+router.post('/imports', PLATFORM, requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), uploadImport);
+router.patch('/import-candidates/:candidateId', PLATFORM, requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), reviewCandidate);
+router.post('/imports/:id/accept-clean', PLATFORM, requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), acceptClean);
+router.post('/imports/:id/commit', PLATFORM, requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), commitImport);
+router.post('/imports/:id/discard', PLATFORM, requireAnyCapability(CAP.ENABLE_STANDARD, CAP.MANAGE_IMPLEMENTATION), discardImport);
 
 // ── Reports ───────────────────────────────────────────────────────────────
 // This is what generate-and-distribute-a-report was reserved for; until now

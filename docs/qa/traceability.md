@@ -15,7 +15,7 @@ The screen used to mark all twelve **Verified** by string, with a compliance fig
 | REQ-07 | ZATCA Phase 2 e-invoicing | `journey-billing-test`, `invoicing-test` | Hash and QR are placeholders (QA-011). Paying another organisation's invoice, or paying twice, is fixed (QA-012, 013) | **No** |
 | REQ-08 | PDPL encrypted PII fields | `qa-claims-test` | Nothing collects a national ID or phone, and encryption is never called (QA-017). The key now comes from configuration | **No** |
 | REQ-09 | Customer-authorised support impersonation | `journey-impersonation-test`, `reported-defects-test` | Holds. Approver set too wide (OI-04) | Yes |
-| REQ-10 | Usage and quota management | `qa-write-guards-test` (reads that write), `scripts/load/load-test.js` | Nothing is invented any more (QA-015 fixed). Usage figures are what an administrator records, not measured from use | Partly |
+| REQ-10 | Usage and quota management | `package-limits-test`, `qa-write-guards-test` (reads that write), `scripts/load/load-test.js` | Nothing is invented any more (QA-015 fixed). A customer's package now limits it: frameworks, named users and storage are measured across the customer and its branches and refused past the plan, with the limit named (QA-031). The usage screens still show what an administrator records | Partly |
 | REQ-11 | Wisdom Eye and Eye Phish | `capabilities-mean-something-test`, `audit-trail-access-test` (routes guarded) | Guarding is tested; the scanning and phishing results are not | **Untested** beyond access control |
 | REQ-12 | OCI Riyadh sovereign cloud | `qa-claims-test` | Deploys to Contabo (QA-018) | **No** |
 

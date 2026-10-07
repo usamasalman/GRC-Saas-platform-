@@ -324,7 +324,9 @@ async function buildMessyRegister() {
   // they listed a risk import in the framework history and would accept its
   // rows (passing over the duplicate hold above), commit it as controls, or
   // discard it — behind the framework permission, not the risk one (QA-026).
-  // risk.manager holds that framework permission, so these reach the handler.
+  // The framework routes are the platform's alone now (QA-031), so a customer
+  // is refused at the door; the platform administrator is who reaches the
+  // handler, and whose reach across every organisation the kind scoping bounds.
   console.log('\nJ. The framework import routes leave a risk import alone');
   const probe = await api('/api/grc/risks/import', {
     token: risk, method: 'POST',
@@ -337,7 +339,11 @@ async function buildMessyRegister() {
   if (!probeId) {
     bad('probe upload failed', JSON.stringify(probe.json).slice(0, 160));
   } else {
-    const listed = await api('/api/grc/imports', { token: risk });
+    const operator = (await api('/api/auth/login', {
+      method: 'POST', body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD },
+    })).json?.token;
+    if (!operator) bad('no platform administrator to probe with', 'set ADMIN_EMAIL and ADMIN_PASSWORD');
+    const listed = await api('/api/grc/imports', { token: operator });
     !(listed.json.imports || []).some((i) => i.id === probeId)
       ? ok('the framework import history does not list a risk import')
       : bad('a risk import is listed in the framework import history');
@@ -352,11 +358,16 @@ async function buildMessyRegister() {
       ['discard', `/api/grc/imports/${probeId}/discard`, 'POST'],
     ];
     for (const [what, url, method, body] of attempts) {
-      const r = await api(url, { token: risk, method, body });
+      const r = await api(url, { token: operator, method, body });
       r.status === 404
         ? ok(`the framework route refuses ${what} of a risk import`, 'HTTP 404')
         : bad(`the framework route allowed ${what} of a risk import`, `HTTP ${r.status}`);
     }
+
+    const customer = await api(`/api/grc/imports/${probeId}/commit`, { token: risk, method: 'POST' });
+    customer.status === 403
+      ? ok('a customer is refused the framework routes outright', 'HTTP 403')
+      : bad('a customer reached a framework route', `HTTP ${customer.status}`);
 
     const after = await api(`/api/grc/risks/imports/${probeId}`, { token: risk });
     after.status === 200 && after.json.import?.status === 'Extracted'
